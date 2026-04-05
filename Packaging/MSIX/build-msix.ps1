@@ -1,12 +1,16 @@
 param(
     [string]$Configuration = "Release",
     [string]$Platform = "x64",
-    [string]$PackageName = "OpenAI.FramePlayer",
+    [string]$PackageName = "JonathanFloyd.FramePlayer",
     [string]$PackageDisplayName = "Frame Player",
     [string]$Publisher = "CN=Frame Player Dev",
     [string]$PublisherDisplayName = "Frame Player Dev",
     [string]$PackageVersion = "",
+    [string]$SigningPfxPath = "",
+    [string]$SigningPfxPassword = "",
+    [string]$TimestampUrl = "",
     [string]$CertificatePassword = "",
+    [switch]$UseDevCertificate,
     [switch]$TrustCertificate,
     [switch]$InstallPackage
 )
@@ -195,39 +199,90 @@ Remove-Item $msixPath -Force -ErrorAction SilentlyContinue
 
 & $makeappxPath pack /o /h SHA256 /d $packageRoot /p $msixPath | Out-Host
 
-$plainPassword = if ([string]::IsNullOrWhiteSpace($CertificatePassword)) {
-    [Guid]::NewGuid().ToString("N")
-}
-else {
-    $CertificatePassword
-}
-
-$securePassword = ConvertTo-SecureString -String $plainPassword -AsPlainText -Force
 $pfxPath = Join-Path $certificateDir "FramePlayer-TestCert.pfx"
 $cerPath = Join-Path $distDir "FramePlayer-TestCert.cer"
+$usingCustomSigningCertificate = -not [string]::IsNullOrWhiteSpace($SigningPfxPath)
 
-$certificate = New-SelfSignedCertificate `
-    -Type Custom `
-    -Subject $Publisher `
-    -FriendlyName "Frame Player MSIX Test Certificate" `
-    -KeyAlgorithm RSA `
-    -KeyLength 2048 `
-    -HashAlgorithm SHA256 `
-    -KeyExportPolicy Exportable `
-    -KeyUsage DigitalSignature `
-    -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3") `
-    -CertStoreLocation "Cert:\CurrentUser\My"
+if (-not $usingCustomSigningCertificate -and -not $UseDevCertificate) {
+    throw "MSIX signing requires either -SigningPfxPath for a trusted certificate or -UseDevCertificate for local testing."
+}
 
-Export-PfxCertificate -Cert $certificate -FilePath $pfxPath -Password $securePassword | Out-Null
-Export-Certificate -Cert $certificate -FilePath $cerPath | Out-Null
+if ($usingCustomSigningCertificate) {
+    if (-not (Test-Path $SigningPfxPath)) {
+        throw "The signing PFX was not found at '$SigningPfxPath'."
+    }
+
+    $plainPassword = $SigningPfxPassword
+    $securePassword = if ([string]::IsNullOrWhiteSpace($SigningPfxPassword)) {
+        $null
+    }
+    else {
+        ConvertTo-SecureString -String $SigningPfxPassword -AsPlainText -Force
+    }
+
+    $pfxPath = $SigningPfxPath
+
+    $pfxData = if ($securePassword -eq $null) {
+        Get-PfxData -FilePath $SigningPfxPath
+    }
+    else {
+        Get-PfxData -FilePath $SigningPfxPath -Password $securePassword
+    }
+
+    Export-Certificate -Cert $pfxData.EndEntityCertificates[0] -FilePath $cerPath | Out-Null
+
+    if ([string]::IsNullOrWhiteSpace($TimestampUrl)) {
+        Write-Warning "No timestamp URL was provided. The signed MSIX will expire with the signing certificate."
+    }
+}
+else {
+    $plainPassword = if ([string]::IsNullOrWhiteSpace($CertificatePassword)) {
+        [Guid]::NewGuid().ToString("N")
+    }
+    else {
+        $CertificatePassword
+    }
+
+    $securePassword = ConvertTo-SecureString -String $plainPassword -AsPlainText -Force
+
+    $certificate = New-SelfSignedCertificate `
+        -Type Custom `
+        -Subject $Publisher `
+        -FriendlyName "Frame Player MSIX Test Certificate" `
+        -KeyAlgorithm RSA `
+        -KeyLength 2048 `
+        -HashAlgorithm SHA256 `
+        -KeyExportPolicy Exportable `
+        -KeyUsage DigitalSignature `
+        -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3") `
+        -CertStoreLocation "Cert:\CurrentUser\My"
+
+    Export-PfxCertificate -Cert $certificate -FilePath $pfxPath -Password $securePassword | Out-Null
+    Export-Certificate -Cert $certificate -FilePath $cerPath | Out-Null
+}
 
 if ($TrustCertificate) {
     Import-Certificate -FilePath $cerPath -CertStoreLocation "Cert:\CurrentUser\TrustedPeople" | Out-Null
 }
 
-& $signtoolPath sign /fd SHA256 /a /f $pfxPath /p $plainPassword $msixPath | Out-Host
+$signArguments = @("sign", "/fd", "SHA256", "/a", "/f", $pfxPath)
+if (-not [string]::IsNullOrWhiteSpace($plainPassword)) {
+    $signArguments += @("/p", $plainPassword)
+}
+$useTimestamp = $usingCustomSigningCertificate -and -not [string]::IsNullOrWhiteSpace($TimestampUrl)
+if ($useTimestamp) {
+    $signArguments += @("/tr", $TimestampUrl, "/td", "SHA256")
+}
+$signArguments += $msixPath
+& $signtoolPath $signArguments | Out-Host
 
 $installScriptPath = Join-Path $distDir "Install-FramePlayer-MSIX.ps1"
+$certificateInstallCommand = if ($usingCustomSigningCertificate) {
+    "# Trusted signing certificates should already be deployed through your enterprise certificate policy."
+}
+else {
+    'Import-Certificate -FilePath $certificatePath -CertStoreLocation "Cert:\CurrentUser\TrustedPeople" | Out-Null'
+}
 $installScript = @"
 param(
     [switch]`$ForceUpdate
@@ -237,7 +292,7 @@ param(
 `$packagePath = Join-Path `$PSScriptRoot "$msixFileName"
 `$certificatePath = Join-Path `$PSScriptRoot "FramePlayer-TestCert.cer"
 
-Import-Certificate -FilePath `$certificatePath -CertStoreLocation "Cert:\CurrentUser\TrustedPeople" | Out-Null
+$certificateInstallCommand
 
 if (`$ForceUpdate) {
     Add-AppxPackage -ForceUpdateFromAnyVersion -Path `$packagePath
@@ -249,7 +304,9 @@ else {
 Set-Content -Path $installScriptPath -Value $installScript -Encoding UTF8
 
 if ($InstallPackage) {
-    Import-Certificate -FilePath $cerPath -CertStoreLocation "Cert:\CurrentUser\TrustedPeople" | Out-Null
+    if (-not $usingCustomSigningCertificate) {
+        Import-Certificate -FilePath $cerPath -CertStoreLocation "Cert:\CurrentUser\TrustedPeople" | Out-Null
+    }
     Add-AppxPackage -ForceUpdateFromAnyVersion -Path $msixPath
 }
 
@@ -263,7 +320,14 @@ Write-Host "  $cerPath"
 Write-Host "Install helper:"
 Write-Host "  $installScriptPath"
 
-if ([string]::IsNullOrWhiteSpace($CertificatePassword)) {
-    Write-Host "Generated PFX password:" -ForegroundColor Yellow
-    Write-Host "  $plainPassword"
+if ($usingCustomSigningCertificate) {
+    Write-Host "Signing certificate:"
+    Write-Host "  $SigningPfxPath"
+    if ($useTimestamp) {
+        Write-Host "Timestamp URL:"
+        Write-Host "  $TimestampUrl"
+    }
+}
+elseif ([string]::IsNullOrWhiteSpace($CertificatePassword)) {
+    Write-Warning "A temporary self-signed development certificate was used. Do not use this package for production deployment."
 }

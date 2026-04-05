@@ -2,9 +2,11 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="About Frame Player"
-        Width="420"
-        Height="300"
-        ResizeMode="NoResize"
+        Width="460"
+        Height="380"
+        MinWidth="440"
+        MinHeight="340"
+        ResizeMode="CanMinimize"
         WindowStartupLocation="CenterOwner"
         Background="#17191D"
         Foreground="#F3F4F6"
@@ -37,61 +39,65 @@
             BorderThickness="1"
             CornerRadius="12"
             Padding="18">
-      <StackPanel>
-        <TextBlock FontSize="24"
-                   FontWeight="SemiBold"
-                   Text="Frame Player" />
-        <TextBlock x:Name="VersionTextBlock"
-                   Margin="0,4,0,0"
-                   Foreground="{StaticResource MutedBrush}"
-                   FontFamily="Consolas"
-                   FontSize="12"
-                   Text="Version 1.0.0.0" />
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+          <TextBlock FontSize="24"
+                     FontWeight="SemiBold"
+                     Text="Frame Player" />
+          <TextBlock x:Name="VersionTextBlock"
+                     Margin="0,4,0,0"
+                     Foreground="{StaticResource MutedBrush}"
+                     FontFamily="Consolas"
+                     FontSize="12"
+                     Text="Version 1.0.0.0" />
 
-        <TextBlock Margin="0,16,0,0"
-                   FontSize="16"
-                   FontWeight="SemiBold"
-                   Text="Designed by jfleezy23 and built by CODEX." />
+          <TextBlock Margin="0,16,0,0"
+                     FontSize="16"
+                     FontWeight="SemiBold"
+                     TextWrapping="Wrap"
+                     Text="Designed by jfleezy23 and built by CODEX." />
 
-        <TextBlock Margin="0,12,0,0"
-                   Foreground="{StaticResource MutedBrush}"
-                   FontSize="13"
-                   LineHeight="20"
-                   TextWrapping="Wrap">
-          Frame Player was created by Jonathan Floyd and tied to the jfleezy23 Git identity, with app development by CODEX.
-        </TextBlock>
+          <TextBlock Margin="0,12,0,0"
+                     Foreground="{StaticResource MutedBrush}"
+                     FontSize="13"
+                     LineHeight="20"
+                     TextWrapping="Wrap">
+            Frame Player was created by Jonathan Floyd and tied to the jfleezy23 Git identity, with app development by CODEX.
+          </TextBlock>
 
-        <Border Margin="0,16,0,0"
-                Background="#1C2026"
-                BorderBrush="{StaticResource PanelBorderBrush}"
-                BorderThickness="1"
-                CornerRadius="10"
-                Padding="12">
-          <StackPanel>
-            <TextBlock Foreground="{StaticResource MutedBrush}"
-                       FontSize="11"
-                       Text="Credits" />
-            <TextBlock Margin="0,6,0,0"
-                       FontSize="13"
-                       Text="Jonathan Floyd" />
-            <TextBlock Foreground="{StaticResource MutedBrush}"
-                       FontFamily="Consolas"
-                       FontSize="12"
-                       Text="Git: jfleezy23" />
-            <TextBlock Margin="0,10,0,0"
-                       FontSize="13"
-                       Text="CODEX" />
-            <TextBlock Foreground="{StaticResource MutedBrush}"
-                       FontSize="12"
-                       Text="App development and implementation support" />
-          </StackPanel>
-        </Border>
+          <Border Margin="0,16,0,0"
+                  Background="#1C2026"
+                  BorderBrush="{StaticResource PanelBorderBrush}"
+                  BorderThickness="1"
+                  CornerRadius="10"
+                  Padding="12">
+            <StackPanel>
+              <TextBlock Foreground="{StaticResource MutedBrush}"
+                         FontSize="11"
+                         Text="Credits" />
+              <TextBlock Margin="0,6,0,0"
+                         FontSize="13"
+                         Text="Jonathan Floyd" />
+              <TextBlock Foreground="{StaticResource MutedBrush}"
+                         FontFamily="Consolas"
+                         FontSize="12"
+                         Text="Git: jfleezy23" />
+              <TextBlock Margin="0,10,0,0"
+                         FontSize="13"
+                         Text="CODEX" />
+              <TextBlock Foreground="{StaticResource MutedBrush}"
+                         FontSize="12"
+                         Text="App development and implementation support" />
+            </StackPanel>
+          </Border>
 
-        <TextBlock Margin="0,16,0,0"
-                   Foreground="{StaticResource MutedBrush}"
-                   FontSize="12"
-                   Text="WPF desktop UI, FFME playback, bundled FFmpeg runtime." />
-      </StackPanel>
+          <TextBlock Margin="0,16,0,0"
+                     Foreground="{StaticResource MutedBrush}"
+                     FontSize="12"
+                     TextWrapping="Wrap"
+                     Text="WPF desktop UI, FFME playback, bundled FFmpeg runtime. License and third-party notices ship with the package instead of the About window." />
+        </StackPanel>
+      </ScrollViewer>
     </Border>
 
     <StackPanel Grid.Row="1"

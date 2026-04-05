@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -77,10 +78,12 @@ namespace Rpcs3VideoPlayer
 
             LogInfo(string.Format(
                 CultureInfo.InvariantCulture,
-                "Session started. Version {0}. Runtime available: {1}. Runtime directory: {2}.",
+                "Session started. Version {0}. Runtime available: {1}. Runtime source: {2}.",
                 GetApplicationVersion(),
                 App.HasBundledFfmpegRuntime ? "Yes" : "No",
-                string.IsNullOrWhiteSpace(App.RuntimeDirectory) ? "(none)" : App.RuntimeDirectory));
+                App.HasBundledFfmpegRuntime
+                    ? "Bundled runtime verified."
+                    : GetRuntimeStatusMessage()));
         }
 
         private async void OpenFileButton_Click(object sender, RoutedEventArgs e)
@@ -385,14 +388,14 @@ namespace Rpcs3VideoPlayer
         {
             if (!File.Exists(filePath))
             {
-                LogWarning("Open requested for a file that does not exist: " + filePath);
+                LogWarning("Open requested for a file that does not exist: " + GetSafeFileDisplay(filePath));
                 MessageBox.Show(this, "That file does not exist.", "Missing File", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             if (!IsSupportedVideoFile(filePath))
             {
-                LogWarning("Open requested for an unsupported file type: " + filePath);
+                LogWarning("Open requested for an unsupported file type: " + GetSafeFileDisplay(filePath));
                 MessageBox.Show(this, "Supported file types are AVI, MOV, M4V, and MP4.", "Unsupported File", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
@@ -402,7 +405,7 @@ namespace Rpcs3VideoPlayer
                 Mouse.OverrideCursor = Cursors.Wait;
                 _lastMediaErrorMessage = string.Empty;
                 SetPlaybackMessage("Opening media...");
-                LogInfo("Opening media: " + filePath);
+                LogInfo("Opening media: " + GetSafeFileDisplay(filePath));
 
                 if (_isMediaLoaded)
                 {
@@ -436,18 +439,18 @@ namespace Rpcs3VideoPlayer
                 LogInfo(string.Format(
                     CultureInfo.InvariantCulture,
                     "Media opened: {0} | FPS {1:0.###} | Step {2} | Duration {3}.",
-                    Path.GetFileName(filePath),
+                    GetSafeFileDisplay(filePath),
                     _framesPerSecond,
                     FormatStepDuration(_positionStep),
                     FormatTime(_mediaDuration)));
             }
             catch (Exception ex)
             {
-                _lastMediaErrorMessage = ex.Message;
+                _lastMediaErrorMessage = SanitizeSensitiveText(ex.Message);
                 ResetMediaState(clearFilePath: true, clearErrorMessage: false);
                 SetPlaybackMessage("Could not open the selected media.");
                 SetMediaSummary(_lastMediaErrorMessage);
-                LogError("Open failed for " + filePath, ex);
+                LogError("Open failed for " + GetSafeFileDisplay(filePath), ex);
             }
             finally
             {
@@ -462,10 +465,10 @@ namespace Rpcs3VideoPlayer
                 return true;
             }
 
-            LogError("Bundled FFmpeg runtime DLLs were not found beside the app.");
+            LogError(GetRuntimeStatusMessage());
             MessageBox.Show(
                 this,
-                "The packaged FFmpeg runtime DLLs were not found next to the app. Rebuild or use the packaged dist folder.",
+                GetRuntimeStatusMessage(),
                 "Playback Runtime Missing",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
@@ -505,7 +508,7 @@ namespace Rpcs3VideoPlayer
 
             if (_isMediaLoaded)
             {
-                LogInfo("Closing media: " + _currentFilePath);
+                LogInfo("Closing media: " + GetSafeFileDisplay(_currentFilePath));
                 await Media.Close();
             }
 
@@ -661,7 +664,7 @@ namespace Rpcs3VideoPlayer
             {
                 _recentFilesService.Remove(recentPath);
                 RefreshRecentFilesMenu();
-                LogWarning("Recent file no longer exists: " + recentPath);
+                LogWarning("Recent file no longer exists: " + GetSafeFileDisplay(recentPath));
                 MessageBox.Show(this, "That recent file no longer exists.", "Missing File", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
@@ -1039,7 +1042,7 @@ namespace Rpcs3VideoPlayer
         {
             EndHeldFrameStep();
             _lastMediaErrorMessage = e.ErrorException != null
-                ? e.ErrorException.Message
+                ? SanitizeSensitiveText(e.ErrorException.Message)
                 : "An unknown media error occurred.";
             ResetMediaState(clearFilePath: false, clearErrorMessage: false);
             SetPlaybackMessage("Playback failed.");
@@ -1168,7 +1171,7 @@ namespace Rpcs3VideoPlayer
             if (!App.HasBundledFfmpegRuntime)
             {
                 EmptyStateTitleTextBlock.Text = "Playback runtime missing";
-                EmptyStateBodyTextBlock.Text = "Frame Player could not find its bundled playback DLLs beside the app. Launch it from the packaged folder or rebuild the release package.";
+                EmptyStateBodyTextBlock.Text = GetRuntimeStatusMessage();
                 return;
             }
 
@@ -1267,9 +1270,9 @@ namespace Rpcs3VideoPlayer
                     "OS: " + Environment.OSVersion,
                     ".NET: " + Environment.Version,
                     "Runtime available: " + (App.HasBundledFfmpegRuntime ? "Yes" : "No"),
-                    "Runtime directory: " + (string.IsNullOrWhiteSpace(App.RuntimeDirectory) ? "(none)" : App.RuntimeDirectory),
-                    "Latest session log: " + _diagnosticLogService.LatestLogPath,
-                    "Current file: " + (string.IsNullOrWhiteSpace(_currentFilePath) ? "(none)" : _currentFilePath),
+                    "Runtime status: " + GetRuntimeStatusMessage(),
+                    "Latest session log: " + GetSafeFileDisplay(_diagnosticLogService.LatestLogPath),
+                    "Current file: " + GetSafeFileDisplay(_currentFilePath),
                     "Media loaded: " + (_isMediaLoaded ? "Yes" : "No"),
                     "Playback state: " + (_isPlaying ? "Playing" : "Paused/Idle"),
                     "Full screen: " + (_isFullScreen ? "Yes" : "No"),
@@ -1286,7 +1289,7 @@ namespace Rpcs3VideoPlayer
                 });
 
                 File.WriteAllText(dialog.FileName, report);
-                LogInfo("Diagnostics exported to " + dialog.FileName);
+                LogInfo("Diagnostics exported to " + GetSafeFileDisplay(dialog.FileName));
                 SetPlaybackMessage("Diagnostics exported.");
             }
             catch (Exception ex)
@@ -1307,6 +1310,33 @@ namespace Rpcs3VideoPlayer
             return version != null
                 ? version.ToString()
                 : "unknown";
+        }
+
+        private static string GetSafeFileDisplay(string filePath)
+        {
+            return string.IsNullOrWhiteSpace(filePath)
+                ? "(none)"
+                : Path.GetFileName(filePath);
+        }
+
+        private static string GetRuntimeStatusMessage()
+        {
+            return !string.IsNullOrWhiteSpace(App.RuntimeValidationMessage)
+                ? App.RuntimeValidationMessage
+                : "The bundled FFmpeg runtime could not be validated.";
+        }
+
+        private static string SanitizeSensitiveText(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            return Regex.Replace(
+                value,
+                @"(?i)(?:[A-Z]:\\|\\\\)[^\r\n]+?(?=(?:\s|$))",
+                match => GetSafeFileDisplay(match.Value));
         }
 
         private void LogInfo(string message)
@@ -1337,7 +1367,7 @@ namespace Rpcs3VideoPlayer
                 "{0} {1}: {2}",
                 message,
                 exception.GetType().Name,
-                exception.Message));
+                SanitizeSensitiveText(exception.Message)));
         }
 
         private TimeSpan GetDisplayPosition()

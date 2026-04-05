@@ -1,4 +1,14 @@
 {
-  "tag": "v1.0.0",
-  "assetName": "FramePlayer-ffmpeg-runtime-x64.zip"
+  "tag": "v1.0.1",
+  "assetName": "FramePlayer-ffmpeg-runtime-x64.zip",
+  "assetSha256": "12c02dd69ea72eed996af0c6473753c143341f314648adc67806e0bfce2c77a9",
+  "files": {
+    "avcodec-61.dll": "942cc1d3d3924ea29844e10c7d3807fab814e7ab40db2561fe8117e7080489b3",
+    "avdevice-61.dll": "2e66090c5c41287e3e2cd1d7a79f981b04fa0075ba8e55c921e3c1d05545f526",
+    "avfilter-10.dll": "b6c42c527de7113c1eeb26ef9aacab4bf125f981d974f1622f980a93b4195644",
+    "avformat-61.dll": "e7c65c9e6835460446ef9cd6e29cbcfaf1264878ec5a7c08c08ae1ab13e23791",
+    "avutil-59.dll": "16e510d28932daa34ca684bce5f22890c5cfaef522c7acd2fd7e592031854a5e",
+    "swresample-5.dll": "b74b627b9b2e381e2f3dd53087cfabbfeb1e9019fbf70cca0b8dfa96d1c9efc6",
+    "swscale-8.dll": "d9ce6021a2ac19cfdce2da1a8b981534c37ce09d17e5d268f6149e3b2986072e"
+  }
 }

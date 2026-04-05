@@ -2,12 +2,15 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace Rpcs3VideoPlayer.Services
 {
     internal sealed class DiagnosticLogService
     {
+        private const string StoragePrefix = "DPAPIv1:";
+        private static readonly byte[] StorageEntropy = Encoding.UTF8.GetBytes("FramePlayer.DiagnosticLog");
         private readonly List<string> _entries = new List<string>();
         private readonly string _latestLogPath;
 
@@ -24,7 +27,7 @@ namespace Rpcs3VideoPlayer.Services
 
             try
             {
-                File.WriteAllText(_latestLogPath, string.Empty, Encoding.UTF8);
+                PersistEntries();
             }
             catch
             {
@@ -96,7 +99,7 @@ namespace Rpcs3VideoPlayer.Services
 
             try
             {
-                File.AppendAllText(_latestLogPath, entry + Environment.NewLine, Encoding.UTF8);
+                PersistEntries();
             }
             catch
             {
@@ -107,6 +110,20 @@ namespace Rpcs3VideoPlayer.Services
         private IReadOnlyList<string> Snapshot()
         {
             return _entries.ToList();
+        }
+
+        private void PersistEntries()
+        {
+            var serializedEntries = string.Join(Environment.NewLine, _entries);
+            var protectedBytes = ProtectedData.Protect(
+                Encoding.UTF8.GetBytes(serializedEntries),
+                StorageEntropy,
+                DataProtectionScope.CurrentUser);
+
+            File.WriteAllText(
+                _latestLogPath,
+                StoragePrefix + Convert.ToBase64String(protectedBytes),
+                Encoding.UTF8);
         }
     }
 }

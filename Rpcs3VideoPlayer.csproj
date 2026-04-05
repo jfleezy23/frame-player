@@ -43,7 +43,10 @@
     <Reference Include="System.Core" />
     <Reference Include="System.Data" />
     <Reference Include="System.Drawing" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
     <Reference Include="System.Runtime.Serialization" />
+    <Reference Include="System.Security" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xaml" />
     <Reference Include="System.Xml" />
@@ -91,15 +94,24 @@
     <PackageReference Include="FFME.Windows" Version="7.0.361-beta.1" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Assets\FramePlayer.ico" />
-    <None Include="Runtime\runtime-manifest.json" />
+    <Compile Include="Services\RuntimeManifestService.cs" />
+    <None Include="Assets\FramePlayer.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="Runtime\README.md" />
     <None Include="scripts\Build-FramePlayer.ps1" />
     <None Include="scripts\Ensure-DevRuntime.ps1" />
+    <None Include="LICENSE">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="THIRD_PARTY_NOTICES.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <Content Include="Runtime\ffmpeg\*.dll">
       <Link>%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <EmbeddedResource Include="Runtime\runtime-manifest.json" />
   </ItemGroup>
   <Target Name="WarnIfBundledRuntimeMissing" BeforeTargets="Build">
     <Message Condition="!Exists('Runtime\\ffmpeg\\avcodec-61.dll')"

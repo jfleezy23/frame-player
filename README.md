@@ -37,11 +37,14 @@ The shipped app is packaged with the FFmpeg runtime DLLs next to `FramePlayer.ex
 - There is no FFmpeg folder picker in the UI
 - The app does not call `ffmpeg.exe` or `ffprobe.exe`
 - Playback and frame stepping run through FFME and the bundled FFmpeg DLLs loaded in-process
-- Session diagnostics are written to `%LocalAppData%\\FramePlayer\\Logs\\latest-session.log`
+- Session diagnostics are mirrored to `%LocalAppData%\\FramePlayer\\Logs\\latest-session.log` and protected at rest with Windows DPAPI
 - `File > Export Diagnostics...` saves a shareable text report with runtime and playback state
+- Recent-file history is protected at rest with Windows DPAPI for the current user profile
+- Diagnostics and UI error messages redact absolute file paths where practical
 - A signed local MSIX can be built with `Packaging\\MSIX\\build-msix.ps1`
 - The generated MSIX artifacts are written to `dist\\MSIX`
 - The FFmpeg development runtime is downloaded on demand instead of being stored in git
+- The pinned runtime archive and DLL hashes are recorded in `Runtime\\runtime-manifest.json`
 
 ## Quick Start
 
@@ -54,8 +57,9 @@ If you just want a working local build without thinking about dependencies:
 That script:
 
 1. Downloads the pinned FFmpeg runtime from this repository's GitHub release assets
-2. Restores NuGet packages
-3. Builds the app in `Release|x64`
+2. Verifies the runtime archive SHA256 and the extracted DLL hashes
+3. Restores NuGet packages
+4. Builds the app in `Release|x64`
 
 ## Requirements
 
@@ -76,7 +80,13 @@ From a Visual Studio Developer PowerShell or with MSBuild installed:
 To build the local MSIX package:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\Packaging\MSIX\build-msix.ps1 -CertificatePassword "YourLocalPassword"
+powershell -ExecutionPolicy Bypass -File .\Packaging\MSIX\build-msix.ps1 -UseDevCertificate -CertificatePassword "YourLocalPassword"
+```
+
+To build the MSIX package with an organization's trusted signing certificate:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Packaging\MSIX\build-msix.ps1 -SigningPfxPath "C:\path\to\signing-cert.pfx" -SigningPfxPassword "YourPfxPassword" -TimestampUrl "https://your-approved-timestamp-service"
 ```
 
 ## Notes
@@ -91,3 +101,10 @@ powershell -ExecutionPolicy Bypass -File .\Packaging\MSIX\build-msix.ps1 -Certif
 
 - Project source: [MIT](LICENSE)
 - Third-party components and runtime notes: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+
+## Deployment Notes
+
+- The portable ZIP is convenient for testing, but production deployments should prefer a signed package and a protected install location.
+- The included MSIX script now requires either `-UseDevCertificate` for local testing or `-SigningPfxPath` for real signing.
+- For production or government deployments, use an organization's trusted code-signing certificate, timestamp the signature, and distribute the app through a protected install location.
+- The About dialog intentionally stays short; full license and third-party notice text ships as `LICENSE` and `THIRD_PARTY_NOTICES.md` instead of being embedded in the dialog.
