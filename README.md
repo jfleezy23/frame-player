@@ -86,3 +86,8 @@ powershell -ExecutionPolicy Bypass -File .\Packaging\MSIX\build-msix.ps1 -Certif
 - The build output is in `bin\Release`
 - The packaged app folder used for testing is `dist\Frame Player`
 - The runtime bootstrap is pinned through `Runtime\runtime-manifest.json`
+
+## License
+
+- Project source: [MIT](LICENSE)
+- Third-party components and runtime notes: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
