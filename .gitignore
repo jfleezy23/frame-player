@@ -1,0 +1,16 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.cache
+*.log
+*.zip
+*.msix
+*.pfx
+*.cer
+dist/
+downloads/
+AppData/
+packages/
+Runtime/ffmpeg/

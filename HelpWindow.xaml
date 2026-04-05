@@ -1,0 +1,119 @@
+<Window x:Class="Rpcs3VideoPlayer.HelpWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Frame Player Help"
+        Width="560"
+        Height="430"
+        MinWidth="520"
+        MinHeight="390"
+        WindowStartupLocation="CenterOwner"
+        Background="#17191D"
+        Foreground="#F3F4F6"
+        ShowInTaskbar="False">
+  <Window.Resources>
+    <SolidColorBrush x:Key="PanelBrush" Color="#21252B" />
+    <SolidColorBrush x:Key="PanelBorderBrush" Color="#31363F" />
+    <SolidColorBrush x:Key="MutedBrush" Color="#B7BDC6" />
+
+    <Style TargetType="Button">
+      <Setter Property="Padding" Value="12,7" />
+      <Setter Property="Background" Value="#2A2F37" />
+      <Setter Property="Foreground" Value="#F3F4F6" />
+      <Setter Property="BorderBrush" Value="#3B424D" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+  </Window.Resources>
+
+  <Grid Margin="14">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <Border Background="{StaticResource PanelBrush}"
+            BorderBrush="{StaticResource PanelBorderBrush}"
+            BorderThickness="1"
+            CornerRadius="12"
+            Padding="18">
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+          <TextBlock FontSize="24"
+                     FontWeight="SemiBold"
+                     Text="Frame Player Help" />
+          <TextBlock Margin="0,8,0,0"
+                     Foreground="{StaticResource MutedBrush}"
+                     FontSize="13"
+                     LineHeight="20"
+                     TextWrapping="Wrap"
+                     Text="Frame Player is built for simple playback, quick navigation, and precise frame stepping." />
+
+          <TextBlock Margin="0,18,0,0"
+                     FontSize="15"
+                     FontWeight="SemiBold"
+                     Text="Playback" />
+          <TextBlock Margin="0,8,0,0"
+                     Foreground="{StaticResource MutedBrush}"
+                     FontFamily="Consolas"
+                     FontSize="12"
+                     Text="Space  Play / Pause" />
+          <TextBlock Foreground="{StaticResource MutedBrush}"
+                     FontFamily="Consolas"
+                     FontSize="12"
+                     Text="J / L  Rewind or fast forward 5 seconds" />
+          <TextBlock Foreground="{StaticResource MutedBrush}"
+                     FontFamily="Consolas"
+                     FontSize="12"
+                     Text="F11 or Alt+Enter  Toggle full screen" />
+
+          <TextBlock Margin="0,18,0,0"
+                     FontSize="15"
+                     FontWeight="SemiBold"
+                     Text="Frame Stepping" />
+          <TextBlock Margin="0,8,0,0"
+                     Foreground="{StaticResource MutedBrush}"
+                     FontSize="13"
+                     LineHeight="20"
+                     TextWrapping="Wrap"
+                     Text="Pause the video, then use Left and Right to move one frame at a time. Hold either arrow to enter delayed auto-step mode. The frame field shows current / total, and you can type a frame number there before pressing Enter or Go." />
+
+          <TextBlock Margin="0,18,0,0"
+                     FontSize="15"
+                     FontWeight="SemiBold"
+                     Text="Files and Diagnostics" />
+          <TextBlock Margin="0,8,0,0"
+                     Foreground="{StaticResource MutedBrush}"
+                     FontFamily="Consolas"
+                     FontSize="12"
+                     Text="Ctrl+O  Open a supported video" />
+          <TextBlock Foreground="{StaticResource MutedBrush}"
+                     FontFamily="Consolas"
+                     FontSize="12"
+                     Text="Ctrl+W  Close the current video" />
+          <TextBlock Foreground="{StaticResource MutedBrush}"
+                     FontFamily="Consolas"
+                     FontSize="12"
+                     Text="Ctrl+Shift+E  Export diagnostics for testing" />
+          <TextBlock Margin="0,8,0,0"
+                     Foreground="{StaticResource MutedBrush}"
+                     FontSize="13"
+                     LineHeight="20"
+                     TextWrapping="Wrap"
+                     Text="Supported formats: AVI, MOV, M4V, and MP4." />
+        </StackPanel>
+      </ScrollViewer>
+    </Border>
+
+    <StackPanel Grid.Row="1"
+                Margin="0,12,0,0"
+                HorizontalAlignment="Right"
+                Orientation="Horizontal">
+      <Button Width="88"
+              IsDefault="True"
+              IsCancel="True"
+              Content="Close"
+              Click="CloseButton_Click" />
+    </StackPanel>
+  </Grid>
+</Window>
