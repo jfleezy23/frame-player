@@ -66,7 +66,12 @@ namespace Rpcs3VideoPlayer.Services
                     return null;
                 }
 
-                var serializer = new DataContractJsonSerializer(typeof(RuntimeManifest));
+                var serializer = new DataContractJsonSerializer(
+                    typeof(RuntimeManifest),
+                    new DataContractJsonSerializerSettings
+                    {
+                        UseSimpleDictionaryFormat = true
+                    });
                 return serializer.ReadObject(stream) as RuntimeManifest;
             }
         }
