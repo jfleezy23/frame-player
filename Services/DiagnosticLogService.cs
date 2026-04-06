@@ -5,7 +5,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Rpcs3VideoPlayer.Services
+namespace FramePlayer.Services
 {
     internal sealed class DiagnosticLogService
     {

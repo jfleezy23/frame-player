@@ -72,14 +72,20 @@ Regular Visual Studio and MSBuild builds now try to bootstrap the pinned runtime
 
 ## Build From Source
 
-From a Visual Studio Developer PowerShell or with MSBuild installed:
+For most machines, use the helper script:
 
 ```powershell
-.\scripts\Ensure-DevRuntime.ps1
-& "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\amd64\MSBuild.exe" .\Rpcs3VideoPlayer.csproj /t:Restore,Build /p:Configuration=Release /p:Platform=x64
+.\scripts\Build-FramePlayer.ps1
 ```
 
 If the build machine blocks the automatic runtime download, run `.\scripts\Ensure-DevRuntime.ps1` once and rebuild.
+
+If you need to call MSBuild directly, use a Visual Studio Developer PowerShell or a machine with Visual Studio Build Tools installed:
+
+```powershell
+.\scripts\Ensure-DevRuntime.ps1
+& "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\amd64\MSBuild.exe" .\FramePlayer.csproj /t:Restore,Build /p:Configuration=Release /p:Platform=x64
+```
 
 To build the local MSIX package:
 

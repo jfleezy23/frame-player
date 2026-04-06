@@ -11,10 +11,10 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
-using Rpcs3VideoPlayer.Services;
+using FramePlayer.Services;
 using Unosquare.FFME.Common;
 
-namespace Rpcs3VideoPlayer
+namespace FramePlayer
 {
     public partial class MainWindow : Window
     {
@@ -48,6 +48,8 @@ namespace Rpcs3VideoPlayer
         public MainWindow()
         {
             InitializeComponent();
+
+            Media.RendererOptions.VideoImageType = VideoRendererImageType.WriteableBitmap;
 
             _diagnosticLogService = new DiagnosticLogService();
             _recentFilesService = new RecentFilesService();
@@ -142,25 +144,7 @@ namespace Rpcs3VideoPlayer
 
         private async void PlayButton_Click(object sender, RoutedEventArgs e)
         {
-            if (!_isMediaLoaded)
-            {
-                return;
-            }
-
-            var playing = await Media.Play();
-            _isPlaying = playing;
-            if (!playing)
-            {
-                _lastMediaErrorMessage = "Playback did not start.";
-                SetMediaSummary(_lastMediaErrorMessage);
-                LogWarning("Playback did not start.");
-            }
-            else
-            {
-                LogInfo("Playback started at " + FormatTime(GetDisplayPosition()) + ".");
-            }
-
-            UpdateTransportState();
+            await StartPlaybackAsync();
         }
 
         private async void PauseButton_Click(object sender, RoutedEventArgs e)
@@ -486,20 +470,7 @@ namespace Rpcs3VideoPlayer
                 return;
             }
 
-            var playing = await Media.Play();
-            _isPlaying = playing;
-            if (!playing)
-            {
-                _lastMediaErrorMessage = "Playback did not start.";
-                SetMediaSummary(_lastMediaErrorMessage);
-                LogWarning("Playback did not start.");
-            }
-            else
-            {
-                LogInfo("Playback started at " + FormatTime(GetDisplayPosition()) + ".");
-            }
-
-            UpdateTransportState();
+            await StartPlaybackAsync();
         }
 
         private async Task CloseMediaAsync()
@@ -532,6 +503,29 @@ namespace Rpcs3VideoPlayer
             {
                 LogInfo("Playback paused at " + FormatTime(positionBeforePause) + ".");
             }
+        }
+
+        private async Task StartPlaybackAsync()
+        {
+            if (!_isMediaLoaded)
+            {
+                return;
+            }
+
+            var playing = await Media.Play();
+            _isPlaying = playing;
+            if (!playing)
+            {
+                _lastMediaErrorMessage = "Playback did not start.";
+                SetMediaSummary(_lastMediaErrorMessage);
+                LogWarning("Playback did not start.");
+            }
+            else
+            {
+                LogInfo("Playback started at " + FormatTime(GetDisplayPosition()) + ".");
+            }
+
+            UpdateTransportState();
         }
 
         private void SeekRelative(TimeSpan offset)
@@ -1401,21 +1395,14 @@ namespace Rpcs3VideoPlayer
             _frameStepRepeatTimer.Stop();
             _frameStepRepeatTimer.Interval = FrameStepInitialDelay;
             _frameStepRepeatTimer.Start();
-            LogInfo("Held frame stepping started: " + (_heldFrameStepDirection < 0 ? "backward" : "forward") + ".");
             _ = StepFrameAsync(_heldFrameStepDirection);
         }
 
         private void EndHeldFrameStep()
         {
-            var hadActiveStep = _heldFrameStepDirection != 0;
             _heldFrameStepDirection = 0;
             _frameStepRepeatTimer.Stop();
             _frameStepRepeatTimer.Interval = FrameStepInitialDelay;
-
-            if (hadActiveStep)
-            {
-                LogInfo("Held frame stepping stopped.");
-            }
         }
 
         private void FrameStepRepeatTimer_Tick(object sender, EventArgs e)

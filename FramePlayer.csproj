@@ -6,7 +6,7 @@
     <Platform Condition=" '$(Platform)' == '' ">x64</Platform>
     <ProjectGuid>{A6F0D60A-4E80-4A9D-8D41-357C57BAA6D9}</ProjectGuid>
     <OutputType>WinExe</OutputType>
-    <RootNamespace>Rpcs3VideoPlayer</RootNamespace>
+    <RootNamespace>FramePlayer</RootNamespace>
     <AssemblyName>FramePlayer</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
@@ -95,9 +95,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Services\RuntimeManifestService.cs" />
-    <None Include="Assets\FramePlayer.ico">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    <None Include="Assets\FramePlayer.ico" />
     <None Include="Runtime\README.md" />
     <None Include="scripts\Build-FramePlayer.ps1" />
     <None Include="scripts\Ensure-DevRuntime.ps1" />

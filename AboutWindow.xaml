@@ -1,4 +1,4 @@
-<Window x:Class="Rpcs3VideoPlayer.AboutWindow"
+<Window x:Class="FramePlayer.AboutWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="About Frame Player"
@@ -49,7 +49,7 @@
                      Foreground="{StaticResource MutedBrush}"
                      FontFamily="Consolas"
                      FontSize="12"
-                     Text="Version 1.0.0.0" />
+                     Text="Version --" />
 
           <TextBlock Margin="0,16,0,0"
                      FontSize="16"
@@ -62,7 +62,7 @@
                      FontSize="13"
                      LineHeight="20"
                      TextWrapping="Wrap">
-            Frame Player was created by Jonathan Floyd and tied to the jfleezy23 Git identity, with app development by CODEX.
+            Frame Player was designed by Jonathan Floyd and published under the jfleezy23 Git identity, with implementation support from CODEX.
           </TextBlock>
 
           <Border Margin="0,16,0,0"

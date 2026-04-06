@@ -12,7 +12,7 @@ Scope:
 - Repository hygiene and obvious secret exposure
 
 Verdict:
-- No critical or high-severity code findings remain after the 1.0.1 hardening pass.
+- No critical or high-severity code findings remain after the latest hardening pass.
 - Government deployment should not use the portable ZIP as the primary distribution channel.
 - Government deployment should resolve the remaining prerelease dependency risk before production rollout.
 
@@ -21,7 +21,7 @@ Verdict:
 ### P2 Open: Playback stack still depends on a prerelease FFME package
 
 Location:
-- [Rpcs3VideoPlayer.csproj](Rpcs3VideoPlayer.csproj):94
+- [FramePlayer.csproj](FramePlayer.csproj)
 
 Why it matters:
 - The app currently depends on `FFME.Windows` `7.0.361-beta.1`.
@@ -38,10 +38,9 @@ Status:
 ### P2 Open: Portable ZIP distribution remains less tamper-resistant than signed package deployment
 
 Locations:
-- [App.xaml.cs](App.xaml.cs):29
-- [App.xaml.cs](App.xaml.cs):40
-- [Rpcs3VideoPlayer.csproj](Rpcs3VideoPlayer.csproj):110
-- [README.md](README.md):107
+- [App.xaml.cs](App.xaml.cs)
+- [FramePlayer.csproj](FramePlayer.csproj)
+- [README.md](README.md)
 
 Why it matters:
 - The app validates required FFmpeg DLL hashes at startup, which is good defense-in-depth.
@@ -58,7 +57,7 @@ Status:
 ### P3 Advisory: Exported diagnostics intentionally contain filenames and playback metadata
 
 Location:
-- [MainWindow.xaml.cs](MainWindow.xaml.cs):1264
+- [MainWindow.xaml.cs](MainWindow.xaml.cs)
 
 Why it matters:
 - The export flow is intentionally readable and includes filenames, playback state, timecode, frame counts, and recent runtime status.
@@ -71,7 +70,7 @@ Recommendation:
 Status:
 - Advisory
 
-## Resolved In 1.0.1
+## Resolved
 
 ### Runtime integrity validation
 
@@ -79,8 +78,8 @@ Implemented:
 - Embedded manifest-backed DLL hash validation before FFmpeg is enabled
 
 Locations:
-- [Services/RuntimeManifestService.cs](Services/RuntimeManifestService.cs):17
-- [App.xaml.cs](App.xaml.cs):25
+- [Services/RuntimeManifestService.cs](Services/RuntimeManifestService.cs)
+- [App.xaml.cs](App.xaml.cs)
 - [scripts/Ensure-DevRuntime.ps1](scripts/Ensure-DevRuntime.ps1)
 
 ### Sensitive local data now protected at rest
@@ -90,8 +89,8 @@ Implemented:
 - On-disk session log moved from plaintext to DPAPI-protected storage
 
 Locations:
-- [Services/RecentFilesService.cs](Services/RecentFilesService.cs):95
-- [Services/DiagnosticLogService.cs](Services/DiagnosticLogService.cs):115
+- [Services/RecentFilesService.cs](Services/RecentFilesService.cs)
+- [Services/DiagnosticLogService.cs](Services/DiagnosticLogService.cs)
 
 ### Diagnostics and error reporting now redact paths more consistently
 
@@ -100,8 +99,7 @@ Implemented:
 - Best-effort path redaction in exception/log text
 
 Location:
-- [MainWindow.xaml.cs](MainWindow.xaml.cs):1272
-- [MainWindow.xaml.cs](MainWindow.xaml.cs):1329
+- [MainWindow.xaml.cs](MainWindow.xaml.cs)
 
 ### MSIX signing workflow now distinguishes test signing from production signing
 
@@ -111,9 +109,7 @@ Implemented:
 - Install helper no longer assumes enterprise certs should be imported into `TrustedPeople`
 
 Location:
-- [Packaging/MSIX/build-msix.ps1](Packaging/MSIX/build-msix.ps1):1
-- [Packaging/MSIX/build-msix.ps1](Packaging/MSIX/build-msix.ps1):206
-- [Packaging/MSIX/build-msix.ps1](Packaging/MSIX/build-msix.ps1):272
+- [Packaging/MSIX/build-msix.ps1](Packaging/MSIX/build-msix.ps1)
 
 ## Repository Hygiene Checks
 
@@ -131,7 +127,7 @@ Result:
 Validated:
 - `scripts\\Ensure-DevRuntime.ps1` passed with the pinned runtime present
 - Release build succeeded with `0 warnings, 0 errors`
-- `Packaging\\MSIX\\build-msix.ps1 -UseDevCertificate` produced a signed `1.0.1.0` MSIX successfully
+- `Packaging\\MSIX\\build-msix.ps1 -UseDevCertificate` produced a signed local MSIX successfully
 - The rebuilt portable EXE launched successfully
 
 ## Government Deployment Recommendation

@@ -1,10 +1,9 @@
 using System;
-using System.IO;
 using System.Windows;
-using Rpcs3VideoPlayer.Services;
+using FramePlayer.Services;
 using Unosquare.FFME;
 
-namespace Rpcs3VideoPlayer
+namespace FramePlayer
 {
     public partial class App : Application
     {

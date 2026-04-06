@@ -1,4 +1,4 @@
-<Window x:Class="Rpcs3VideoPlayer.HelpWindow"
+<Window x:Class="FramePlayer.HelpWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Frame Player Help"

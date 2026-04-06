@@ -1,6 +1,6 @@
 using System.Windows;
 
-namespace Rpcs3VideoPlayer
+namespace FramePlayer
 {
     public partial class HelpWindow : Window
     {

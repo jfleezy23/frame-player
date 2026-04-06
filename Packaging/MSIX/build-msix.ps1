@@ -17,6 +17,25 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Resolve-MSBuildPath {
+    $vswherePath = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+    if (Test-Path $vswherePath) {
+        $resolvedPath = & $vswherePath -latest -products * -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" |
+            Select-Object -First 1
+
+        if (-not [string]::IsNullOrWhiteSpace($resolvedPath) -and (Test-Path $resolvedPath)) {
+            return $resolvedPath
+        }
+    }
+
+    $fallbackPath = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\amd64\MSBuild.exe"
+    if (Test-Path $fallbackPath) {
+        return $fallbackPath
+    }
+
+    throw "MSBuild was not found. Install Visual Studio Build Tools 2022 with .NET desktop build tools."
+}
+
 function Get-ToolPath {
     param(
         [Parameter(Mandatory = $true)]
@@ -84,7 +103,7 @@ function New-PngFromIcon {
 }
 
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$projectPath = Join-Path $repoRoot "Rpcs3VideoPlayer.csproj"
+$projectPath = Join-Path $repoRoot "FramePlayer.csproj"
 $ensureRuntimeScript = Join-Path $repoRoot "scripts\Ensure-DevRuntime.ps1"
 $releaseDir = Join-Path $repoRoot ("bin\" + $Configuration)
 $distDir = Join-Path $repoRoot "dist\MSIX"
@@ -93,14 +112,10 @@ $packageRoot = Join-Path $buildRoot "PackageRoot"
 $assetsDir = Join-Path $packageRoot "Assets"
 $certificateDir = Join-Path $buildRoot "cert"
 $iconPath = Join-Path $repoRoot "Assets\FramePlayer.ico"
-$msbuildPath = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\amd64\MSBuild.exe"
+$msbuildPath = Resolve-MSBuildPath
 $makeappxPath = Get-ToolPath -ToolName "makeappx.exe"
 $makepriPath = Get-ToolPath -ToolName "makepri.exe"
 $signtoolPath = Get-ToolPath -ToolName "signtool.exe"
-
-if (-not (Test-Path $msbuildPath)) {
-    throw "MSBuild was not found at '$msbuildPath'."
-}
 
 & $ensureRuntimeScript | Out-Host
 & $msbuildPath $projectPath /t:Restore,Build /p:Configuration=$Configuration /p:Platform=$Platform | Out-Host

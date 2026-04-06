@@ -7,11 +7,11 @@ using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Security.Cryptography;
 
-namespace Rpcs3VideoPlayer.Services
+namespace FramePlayer.Services
 {
     internal static class RuntimeManifestService
     {
-        private const string ResourceName = "Rpcs3VideoPlayer.Runtime.runtime-manifest.json";
+        private const string ResourceName = "FramePlayer.Runtime.runtime-manifest.json";
         private static readonly Lazy<RuntimeManifest> Manifest = new Lazy<RuntimeManifest>(LoadManifest);
 
         public static bool TryValidateRuntimeDirectory(string runtimeDirectory, out string errorMessage)
