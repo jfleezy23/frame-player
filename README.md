@@ -61,6 +61,8 @@ That script:
 3. Restores NuGet packages
 4. Builds the app in `Release|x64`
 
+Regular Visual Studio and MSBuild builds now try to bootstrap the pinned runtime automatically if `Runtime\ffmpeg` is missing.
+
 ## Requirements
 
 - Windows 10 or later
@@ -76,6 +78,8 @@ From a Visual Studio Developer PowerShell or with MSBuild installed:
 .\scripts\Ensure-DevRuntime.ps1
 & "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\amd64\MSBuild.exe" .\Rpcs3VideoPlayer.csproj /t:Restore,Build /p:Configuration=Release /p:Platform=x64
 ```
+
+If the build machine blocks the automatic runtime download, run `.\scripts\Ensure-DevRuntime.ps1` once and rebuild.
 
 To build the local MSIX package:
 
