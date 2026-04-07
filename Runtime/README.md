@@ -11,4 +11,4 @@ The runtime is pinned through `Runtime\runtime-manifest.json` and is downloaded 
 
 Current pinned FFmpeg runtime version: `n7.0.2-6-g7e69129d2f-20240831`.
 
-Manifest note: the `tag` field is the GitHub release tag that hosts the pinned runtime archive. Its current value, `v1.0.4`, is a legacy runtime-asset source tag and is not the current app release version.
+Manifest note: the `tag` field is the GitHub release tag that hosts the pinned runtime archive. Its current value is `v1.1.0`, matching the current public app release line.

@@ -45,7 +45,7 @@ The shipped app is packaged with the FFmpeg runtime DLLs next to `FramePlayer.ex
 
 - Current app release line: `v1.1.0`
 - Pinned FFmpeg runtime version: `n7.0.2-6-g7e69129d2f-20240831`
-- Runtime asset source tag: `v1.0.4` in `Runtime\\runtime-manifest.json`; this only identifies the GitHub release asset that hosts the pinned runtime archive and is not the current app release version
+- Runtime asset source tag: `v1.1.0` in `Runtime\\runtime-manifest.json`; the pinned runtime archive is hosted on the current public app release
 - There is no FFmpeg folder picker in the UI
 - The app does not call `ffmpeg.exe` or `ffprobe.exe`
 - Playback and frame stepping run through the custom FFmpeg engine and the bundled FFmpeg DLLs loaded in-process
