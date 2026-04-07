@@ -1,8 +1,6 @@
 # Frame Player
 
-Compact WPF desktop video player built on a custom FFmpeg engine with a bundled in-process FFmpeg runtime.
-
-Frame Player is a compact Windows video player focused on exact frame stepping, quick playback controls, and easy local packaging.
+Frame Player is a frames-first WPF review tool built on a custom FFmpeg engine with a bundled in-process FFmpeg runtime. It treats decoded display-order frame identity as the source of truth for exact zero-indexed frame stepping, frame seeks, and review state, prioritizing deterministic review behavior over generic consumer media-player parity.
 
 ## What It Does
 
@@ -19,6 +17,14 @@ Frame Player is a compact Windows video player focused on exact frame stepping, 
 - Shows decoded-frame cache status so it is clear when seek/step operations are warming or rebuilding the local cache
 - Can export a diagnostic session log for external testers
 - Includes `Help` and `About` dialogs in the menu bar
+
+## Review Architecture
+
+- The custom FFmpeg engine decodes video frames directly through `FFmpeg.AutoGen` and presents converted BGRA frames to the WPF surface.
+- Decoded display-order frame identity is the source of truth; frame stepping is not derived from slider position, timestamp math, nominal FPS, or wall-clock playback time.
+- A file-global frame index maps zero-based absolute frame indices to stream timestamps and decode anchors so seeks can materialize the real target frame through FFmpeg seek/decode-forward work.
+- A decoded review cache keeps a small local window around the cursor for responsive frame review; this cache is separate from the file-global index.
+- Playback uses the audio clock when audio output is active, otherwise video presentation timing, while pause/seek/step operations continue to preserve exact frame identity.
 
 ## Shortcuts
 
@@ -37,6 +43,9 @@ Frame Player is a compact Windows video player focused on exact frame stepping, 
 
 The shipped app is packaged with the FFmpeg runtime DLLs next to `FramePlayer.exe`.
 
+- Current app release line: `v1.1.0`
+- Pinned FFmpeg runtime version: `n7.0.2-6-g7e69129d2f-20240831`
+- Runtime asset source tag: `v1.0.4` in `Runtime\\runtime-manifest.json`; this only identifies the GitHub release asset that hosts the pinned runtime archive and is not the current app release version
 - There is no FFmpeg folder picker in the UI
 - The app does not call `ffmpeg.exe` or `ffprobe.exe`
 - Playback and frame stepping run through the custom FFmpeg engine and the bundled FFmpeg DLLs loaded in-process
@@ -48,7 +57,7 @@ The shipped app is packaged with the FFmpeg runtime DLLs next to `FramePlayer.ex
 - A signed local MSIX can be built with `Packaging\\MSIX\\build-msix.ps1`
 - The generated MSIX artifacts are written to `dist\\MSIX`
 - The FFmpeg development runtime is downloaded on demand instead of being stored in git
-- The pinned runtime archive and DLL hashes are recorded in `Runtime\\runtime-manifest.json`
+- The pinned runtime archive, human-readable FFmpeg version, and DLL hashes are recorded in `Runtime\\runtime-manifest.json`
 
 ## Quick Start
 

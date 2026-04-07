@@ -26,6 +26,8 @@ Release: `1.1.0`
 - Playback is an MVP path: no audio device selection, volume controls, hardware acceleration, advanced drift correction, or frame dropping/catch-up behavior yet.
 - Cache/index status is intentionally coarse (`building` / `ready`) and may change quickly on short clips.
 - Large files still require a full-file frame index scan, but that work now happens in the background after the first frame is visible.
+- The pinned FFmpeg runtime is `n7.0.2-6-g7e69129d2f-20240831`, recorded in `Runtime\runtime-manifest.json`.
+- The manifest's `v1.0.4` tag is only the runtime asset source tag; the current app release line is `v1.1.0`.
 
 ## Build and shortcut
 

@@ -1,5 +1,8 @@
 {
   "tag": "v1.0.4",
+  "tagPurpose": "GitHub release tag that hosts the pinned FFmpeg runtime archive; not the current app release version.",
+  "ffmpegVersion": "n7.0.2-6-g7e69129d2f-20240831",
+  "ffmpegVersionSource": "FileVersionInfo ProductVersion from avcodec-61.dll",
   "assetName": "FramePlayer-ffmpeg-runtime-x64.zip",
   "assetSha256": "12c02dd69ea72eed996af0c6473753c143341f314648adc67806e0bfce2c77a9",
   "files": {
