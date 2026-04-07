@@ -1,20 +1,22 @@
 # Frame Player
 
-Compact WPF desktop video player built on FFME with a bundled in-process FFmpeg runtime.
+Compact WPF desktop video player built on a custom FFmpeg engine with a bundled in-process FFmpeg runtime.
 
 Frame Player is a compact Windows video player focused on exact frame stepping, quick playback controls, and easy local packaging.
 
 ## What It Does
 
-- Opens `.avi`, `.mov`, `.m4v`, and `.mp4`
+- Opens `.avi`, `.mov`, `.m4v`, `.mp4`, `.mkv`, `.wmv`, and `.ts`
 - Uses a standard desktop UI with `Open Video`, `Open Recent`, and `Close Video`
 - Supports drag and drop for supported files
 - Supports play, pause, rewind 5 seconds, fast forward 5 seconds, previous frame, and next frame
+- Plays decoded audio when a supported audio stream is present, with video-only fallback for silent clips or unsupported audio
 - Lets you jump directly to a frame number
 - Shows the frame jump field as `current / total`
 - Supports full screen playback controls
 - Keeps Left and Right for single-frame stepping while paused, and supports hold-to-repeat stepping
 - Shows playback state, FPS, frame-step size, duration, frame number, and a frame-derived timecode readout
+- Shows decoded-frame cache status so it is clear when seek/step operations are warming or rebuilding the local cache
 - Can export a diagnostic session log for external testers
 - Includes `Help` and `About` dialogs in the menu bar
 
@@ -27,6 +29,7 @@ Frame Player is a compact Windows video player focused on exact frame stepping, 
 - `Space` plays or pauses
 - `Left` / `Right` step one frame while paused
 - hold `Left` / `Right` to continue stepping frame by frame
+- after entering a frame number, `Enter` commits the jump and returns focus to video controls for immediate arrow-key stepping
 - `J` / `L` seek backward or forward 5 seconds
 - `F11` or `Alt+Enter` toggles full screen
 
@@ -36,7 +39,8 @@ The shipped app is packaged with the FFmpeg runtime DLLs next to `FramePlayer.ex
 
 - There is no FFmpeg folder picker in the UI
 - The app does not call `ffmpeg.exe` or `ffprobe.exe`
-- Playback and frame stepping run through FFME and the bundled FFmpeg DLLs loaded in-process
+- Playback and frame stepping run through the custom FFmpeg engine and the bundled FFmpeg DLLs loaded in-process
+- Playback uses a simple audio-master clock when audio output is active, while exact frame stepping remains decode/index based
 - Session diagnostics are mirrored to `%LocalAppData%\\FramePlayer\\Logs\\latest-session.log` and protected at rest with Windows DPAPI
 - `File > Export Diagnostics...` saves a shareable text report with runtime and playback state
 - Recent-file history is protected at rest with Windows DPAPI for the current user profile
@@ -101,7 +105,7 @@ powershell -ExecutionPolicy Bypass -File .\Packaging\MSIX\build-msix.ps1 -Signin
 
 ## Notes
 
-- Frame stepping uses FFME's native step APIs instead of timestamp math
+- Frame stepping uses decoded display-order frame identity instead of timestamp math
 - Timecode is frame-derived and uses nominal whole-frame buckets for fractional frame rates like `23.976` -> `24`
 - The build output is in `bin\Release`
 - The packaged app folder used for testing is `dist\Frame Player`

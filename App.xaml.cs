@@ -1,7 +1,7 @@
 using System;
 using System.Windows;
+using FFmpeg.AutoGen;
 using FramePlayer.Services;
-using Unosquare.FFME;
 
 namespace FramePlayer
 {
@@ -36,7 +36,7 @@ namespace FramePlayer
 
             RuntimeDirectory = baseDirectory;
             RuntimeValidationMessage = string.Empty;
-            Library.FFmpegDirectory = baseDirectory;
+            ffmpeg.RootPath = baseDirectory;
         }
     }
 }

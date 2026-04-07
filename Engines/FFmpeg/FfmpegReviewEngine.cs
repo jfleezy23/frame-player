@@ -1,0 +1,2307 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
+using FFmpeg.AutoGen;
+using FramePlayer.Core.Abstractions;
+using FramePlayer.Core.Events;
+using FramePlayer.Core.Models;
+
+namespace FramePlayer.Engines.FFmpeg
+{
+    public unsafe sealed class FfmpegReviewEngine : IVideoReviewEngine
+    {
+        private const int CachedPreviousFrameCount = 8;
+        private const int CachedForwardFrameCount = 3;
+        private static readonly TimeSpan MinimumPlaybackDelay = TimeSpan.FromMilliseconds(1d);
+
+        // Decoded display-order frame identity is the source of truth for this engine.
+        // Frame stepping must be cache- or decode-based rather than timestamp math.
+        // Backward stepping should first use cached decoded frames, then seek to the prior
+        // keyframe and decode forward until the requested display-order frame is reconstructed.
+        private static readonly Type FfmpegBindingsAnchor = typeof(ffmpeg);
+        private const string OutputPixelFormatName = "bgra";
+
+        private readonly object _playbackSync = new object();
+        private readonly object _indexBuildSync = new object();
+        private readonly FfmpegDecodedFrameCache _frameCache;
+        private FfmpegGlobalFrameIndex _globalFrameIndex;
+        private FfmpegAudioPlaybackSession _audioPlaybackSession;
+        private FfmpegAudioStreamInfo _audioStreamInfo;
+        private bool _disposed;
+        private bool _hasPendingVideoPacket;
+        private bool _inputExhausted;
+        private bool _flushPacketSent;
+        private bool _segmentFrameIndexAbsolute;
+        private string _currentFilePath;
+        private string _lastErrorMessage;
+        private string _lastAudioErrorMessage;
+        private VideoMediaInfo _mediaInfo;
+        private ReviewPosition _position;
+        private DecodedVideoFrame _currentFrame;
+        private long _decodedSegmentFrameCount;
+        private int _videoStreamIndex;
+        private AVRational _videoStreamTimeBase;
+        private AVRational _nominalFrameRate;
+        private AVFormatContext* _formatContext;
+        private AVCodecContext* _codecContext;
+        private AVStream* _videoStream;
+        private AVPacket* _packet;
+        private AVFrame* _decodedFrame;
+        private FfmpegFrameConverter _frameConverter;
+        private CancellationTokenSource _playbackCancellationSource;
+        private Task _playbackTask;
+        private CancellationTokenSource _indexBuildCancellationSource;
+        private Task _indexBuildTask;
+        private long _lastAudioSubmittedBytes;
+        private int _indexBuildGeneration;
+        private bool _isGlobalFrameIndexBuildInProgress;
+        private string _globalFrameIndexStatus;
+
+        public FfmpegReviewEngine()
+        {
+            _frameCache = new FfmpegDecodedFrameCache(CachedPreviousFrameCount, CachedForwardFrameCount);
+            _currentFilePath = string.Empty;
+            _lastErrorMessage = string.Empty;
+            _mediaInfo = VideoMediaInfo.Empty;
+            _position = ReviewPosition.Empty;
+            _globalFrameIndex = null;
+            _audioStreamInfo = FfmpegAudioStreamInfo.None;
+            _lastAudioErrorMessage = string.Empty;
+            _globalFrameIndexStatus = "not-started";
+            LastSeekMode = string.Empty;
+            _videoStreamIndex = -1;
+            _videoStreamTimeBase = default(AVRational);
+            _nominalFrameRate = default(AVRational);
+        }
+
+        public bool IsMediaOpen { get; private set; }
+
+        public bool IsPlaying { get; private set; }
+
+        public bool LastSeekLandedAtOrAfterTarget { get; private set; }
+
+        public bool LastFrameAdvanceWasCacheHit { get; private set; }
+
+        public bool LastFrameSeekWasCacheHit { get; private set; }
+
+        public bool HasAudioStream
+        {
+            get { return _audioStreamInfo != null && _audioStreamInfo.HasAudioStream; }
+        }
+
+        public bool IsAudioPlaybackActive
+        {
+            get { return _audioPlaybackSession != null && _audioPlaybackSession.IsActive; }
+        }
+
+        public bool LastPlaybackUsedAudioClock { get; private set; }
+
+        public long LastAudioSubmittedBytes
+        {
+            get
+            {
+                var session = _audioPlaybackSession;
+                if (session != null)
+                {
+                    _lastAudioSubmittedBytes = Math.Max(_lastAudioSubmittedBytes, session.SubmittedAudioBytes);
+                }
+
+                return _lastAudioSubmittedBytes;
+            }
+        }
+
+        public string LastAudioErrorMessage
+        {
+            get { return _lastAudioErrorMessage; }
+        }
+
+        internal FfmpegAudioStreamInfo AudioStreamInfo
+        {
+            get { return _audioStreamInfo ?? FfmpegAudioStreamInfo.None; }
+        }
+
+        public bool IsGlobalFrameIndexAvailable
+        {
+            get { return _globalFrameIndex != null && _globalFrameIndex.IsAvailable; }
+        }
+
+        public bool IsGlobalFrameIndexBuildInProgress
+        {
+            get { return _isGlobalFrameIndexBuildInProgress; }
+        }
+
+        public string GlobalFrameIndexStatus
+        {
+            get { return _globalFrameIndexStatus; }
+        }
+
+        public long IndexedFrameCount
+        {
+            get { return _globalFrameIndex != null ? _globalFrameIndex.Count : 0L; }
+        }
+
+        public double LastOpenTotalMilliseconds { get; private set; }
+
+        public double LastOpenContainerProbeMilliseconds { get; private set; }
+
+        public double LastOpenStreamDiscoveryMilliseconds { get; private set; }
+
+        public double LastOpenAudioProbeMilliseconds { get; private set; }
+
+        public double LastOpenVideoDecoderInitializationMilliseconds { get; private set; }
+
+        public double LastOpenFirstFrameDecodeMilliseconds { get; private set; }
+
+        public double LastOpenInitialCacheWarmMilliseconds { get; private set; }
+
+        public double LastGlobalFrameIndexBuildMilliseconds { get; private set; }
+
+        public double LastSeekTotalMilliseconds { get; private set; }
+
+        public double LastSeekIndexWaitMilliseconds { get; private set; }
+
+        public double LastSeekMaterializeMilliseconds { get; private set; }
+
+        public double LastSeekForwardCacheWarmMilliseconds { get; private set; }
+
+        public string LastSeekMode { get; private set; } = string.Empty;
+
+        public int MaxPreviousCachedFrameCount
+        {
+            get { return CachedPreviousFrameCount; }
+        }
+
+        public int MaxForwardCachedFrameCount
+        {
+            get { return CachedForwardFrameCount; }
+        }
+
+        public int PreviousCachedFrameCount
+        {
+            get { return _frameCache.PreviousCount; }
+        }
+
+        public bool LastOperationUsedGlobalIndex { get; private set; }
+
+        public long? LastAnchorFrameIndex { get; private set; }
+
+        public string LastAnchorStrategy { get; private set; } = string.Empty;
+
+        public int CachedFrameCount
+        {
+            get { return _frameCache.Count; }
+        }
+
+        public int ForwardCachedFrameCount
+        {
+            get { return _frameCache.ForwardCount; }
+        }
+
+        public string CurrentFilePath
+        {
+            get { return _currentFilePath; }
+        }
+
+        public string LastErrorMessage
+        {
+            get { return _lastErrorMessage; }
+        }
+
+        public VideoMediaInfo MediaInfo
+        {
+            get { return _mediaInfo; }
+        }
+
+        public ReviewPosition Position
+        {
+            get { return _position; }
+        }
+
+        public event EventHandler<VideoReviewEngineStateChangedEventArgs> StateChanged;
+
+        public event EventHandler<FramePresentedEventArgs> FramePresented;
+
+        public Task OpenAsync(string filePath, CancellationToken cancellationToken = default(CancellationToken))
+        {
+            ThrowIfDisposed();
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                throw new ArgumentException("A media file path is required.", nameof(filePath));
+            }
+
+            if (!File.Exists(filePath))
+            {
+                throw new FileNotFoundException("The requested media file was not found.", filePath);
+            }
+
+            StopPlayback(raiseStateChanged: false);
+            CloseCore(clearFilePath: true, clearErrorMessage: true);
+            EnsureFfmpegRuntimePathConfigured();
+
+            _currentFilePath = filePath;
+            _lastErrorMessage = string.Empty;
+            LastSeekLandedAtOrAfterTarget = true;
+            LastFrameAdvanceWasCacheHit = false;
+            LastFrameSeekWasCacheHit = false;
+            LastOperationUsedGlobalIndex = false;
+            LastPlaybackUsedAudioClock = false;
+            _lastAudioSubmittedBytes = 0L;
+            _lastAudioErrorMessage = string.Empty;
+            LastAnchorFrameIndex = null;
+            LastAnchorStrategy = string.Empty;
+            ResetOpenPerformanceInstrumentation();
+
+            try
+            {
+                var openStopwatch = Stopwatch.StartNew();
+                var stepStopwatch = Stopwatch.StartNew();
+                OpenContainer(filePath);
+                LastOpenContainerProbeMilliseconds = stepStopwatch.Elapsed.TotalMilliseconds;
+
+                stepStopwatch.Restart();
+                FindPrimaryVideoStream();
+                LastOpenStreamDiscoveryMilliseconds = stepStopwatch.Elapsed.TotalMilliseconds;
+
+                stepStopwatch.Restart();
+                ProbePrimaryAudioStream();
+                LastOpenAudioProbeMilliseconds = stepStopwatch.Elapsed.TotalMilliseconds;
+
+                stepStopwatch.Restart();
+                InitializeVideoDecoder();
+                LastOpenVideoDecoderInitializationMilliseconds = stepStopwatch.Elapsed.TotalMilliseconds;
+                BeginDecodeSegment(frameIndexAbsolute: true);
+
+                cancellationToken.ThrowIfCancellationRequested();
+                stepStopwatch.Restart();
+                var firstFrame = ReadNextDisplayableFrame(cancellationToken);
+                LastOpenFirstFrameDecodeMilliseconds = stepStopwatch.Elapsed.TotalMilliseconds;
+                if (firstFrame == null)
+                {
+                    throw new InvalidOperationException("No displayable video frame could be decoded from the selected stream.");
+                }
+
+                _frameCache.Reset(firstFrame);
+                SetCurrentFrame(firstFrame);
+                stepStopwatch.Restart();
+                PrimeForwardCache(cancellationToken);
+                LastOpenInitialCacheWarmMilliseconds = stepStopwatch.Elapsed.TotalMilliseconds;
+                IsMediaOpen = true;
+                IsPlaying = false;
+                LastOperationUsedGlobalIndex = false;
+                LastAnchorFrameIndex = 0L;
+                LastAnchorStrategy = "stream-start-index-background";
+                openStopwatch.Stop();
+                LastOpenTotalMilliseconds = openStopwatch.Elapsed.TotalMilliseconds;
+                StartGlobalFrameIndexBuild(filePath, _videoStreamIndex);
+
+                OnStateChanged();
+                OnFramePresented(_currentFrame);
+                return Task.CompletedTask;
+            }
+            catch (OperationCanceledException)
+            {
+                CloseCore(clearFilePath: true, clearErrorMessage: true);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _lastErrorMessage = ex.Message;
+                CloseCore(clearFilePath: true, clearErrorMessage: false);
+                OnStateChanged();
+                throw;
+            }
+        }
+
+        public Task CloseAsync()
+        {
+            ThrowIfDisposed();
+            StopPlayback(raiseStateChanged: false);
+            CloseCore(clearFilePath: true, clearErrorMessage: true);
+            OnStateChanged();
+            return Task.CompletedTask;
+        }
+
+        public Task PlayAsync()
+        {
+            ThrowIfDisposed();
+
+            if (!IsMediaOpen || _currentFrame == null)
+            {
+                return Task.CompletedTask;
+            }
+
+            lock (_playbackSync)
+            {
+                if (IsPlaying)
+                {
+                    return Task.CompletedTask;
+                }
+
+                _lastErrorMessage = string.Empty;
+                LastFrameSeekWasCacheHit = false;
+                LastOperationUsedGlobalIndex = false;
+                LastAnchorStrategy = "playback-start";
+                LastAnchorFrameIndex = GetAbsoluteFrameIndex(_currentFrame);
+                LastPlaybackUsedAudioClock = false;
+
+                var cancellationSource = new CancellationTokenSource();
+                _lastAudioSubmittedBytes = 0L;
+                _lastAudioErrorMessage = string.Empty;
+                _playbackCancellationSource = cancellationSource;
+                _audioPlaybackSession = TryStartAudioPlayback(_currentFrame.Descriptor.PresentationTime, cancellationSource.Token);
+                _playbackTask = Task.Run(() => PlaybackLoop(cancellationSource.Token, cancellationSource));
+                IsPlaying = true;
+            }
+
+            OnStateChanged();
+            return Task.CompletedTask;
+        }
+
+        public Task PauseAsync()
+        {
+            ThrowIfDisposed();
+
+            if (!IsMediaOpen)
+            {
+                return Task.CompletedTask;
+            }
+
+            StopPlayback(raiseStateChanged: false);
+            LastFrameSeekWasCacheHit = false;
+            LastOperationUsedGlobalIndex = false;
+            LastAnchorFrameIndex = null;
+            LastAnchorStrategy = string.Empty;
+            OnStateChanged();
+            return Task.CompletedTask;
+        }
+
+        public Task<FrameStepResult> StepForwardAsync(CancellationToken cancellationToken = default(CancellationToken))
+        {
+            ThrowIfDisposed();
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!IsMediaOpen)
+            {
+                return Task.FromResult(FrameStepResult.Failed(+1, ReviewPosition.Empty, "No media is open.", false));
+            }
+
+            StopPlayback(raiseStateChanged: false);
+
+            DecodedVideoFrame nextFrame;
+            if (_frameCache.TryMoveNext(out nextFrame))
+            {
+                LastFrameAdvanceWasCacheHit = true;
+                IsPlaying = false;
+                SetCurrentFrame(nextFrame);
+                SetOperationInstrumentation(
+                    IsGlobalFrameIndexAvailable && nextFrame.Descriptor.IsFrameIndexAbsolute,
+                    "cache",
+                    nextFrame.Descriptor.IsFrameIndexAbsolute ? nextFrame.Descriptor.FrameIndex : null);
+                OnStateChanged();
+                OnFramePresented(_currentFrame);
+                return Task.FromResult(FrameStepResult.Succeeded(
+                    +1,
+                    _position,
+                    true,
+                    "Advanced to the next cached decoded frame."));
+            }
+
+            nextFrame = ReadNextDisplayableFrame(cancellationToken);
+            if (nextFrame == null)
+            {
+                LastFrameAdvanceWasCacheHit = false;
+                return Task.FromResult(FrameStepResult.Failed(
+                    +1,
+                    _position,
+                    "No later displayable frame is available.",
+                    false));
+            }
+
+            LastFrameAdvanceWasCacheHit = false;
+            IsPlaying = false;
+            _frameCache.AppendForwardAndAdvance(nextFrame);
+            SetCurrentFrame(_frameCache.Current);
+            PrimeForwardCache(cancellationToken);
+            SetOperationInstrumentation(
+                IsGlobalFrameIndexAvailable && _currentFrame.Descriptor.IsFrameIndexAbsolute,
+                "decode-forward",
+                _currentFrame.Descriptor.IsFrameIndexAbsolute ? _currentFrame.Descriptor.FrameIndex : null);
+            OnStateChanged();
+            OnFramePresented(_currentFrame);
+            return Task.FromResult(FrameStepResult.Succeeded(
+                +1,
+                _position,
+                false,
+                "Advanced by decoding the next displayable frame."));
+        }
+
+        public Task<FrameStepResult> StepBackwardAsync(CancellationToken cancellationToken = default(CancellationToken))
+        {
+            ThrowIfDisposed();
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!IsMediaOpen)
+            {
+                return Task.FromResult(FrameStepResult.Failed(-1, ReviewPosition.Empty, "No media is open.", false, false));
+            }
+
+            StopPlayback(raiseStateChanged: false);
+
+            if (_currentFrame == null)
+            {
+                return Task.FromResult(FrameStepResult.Failed(
+                    -1,
+                    _position,
+                    "No current decoded frame is available.",
+                    false,
+                    false));
+            }
+
+            DecodedVideoFrame previousFrame;
+            if (_frameCache.TryMovePrevious(out previousFrame))
+            {
+                LastFrameAdvanceWasCacheHit = true;
+                SetCurrentFrame(previousFrame);
+                IsPlaying = false;
+                SetOperationInstrumentation(
+                    IsGlobalFrameIndexAvailable && previousFrame.Descriptor.IsFrameIndexAbsolute,
+                    "cache",
+                    previousFrame.Descriptor.IsFrameIndexAbsolute ? previousFrame.Descriptor.FrameIndex : null);
+                OnStateChanged();
+                OnFramePresented(_currentFrame);
+                return Task.FromResult(FrameStepResult.Succeeded(
+                    -1,
+                    _position,
+                    true,
+                    false,
+                    "Moved to the previous cached decoded frame."));
+            }
+
+            var currentAbsoluteFrameIndex = GetAbsoluteFrameIndex(_currentFrame);
+            if (IsGlobalFrameIndexAvailable && currentAbsoluteFrameIndex.HasValue)
+            {
+                if (currentAbsoluteFrameIndex.Value <= 0L)
+                {
+                    SetOperationInstrumentation(true, "global-index-first-frame", 0L);
+                    return Task.FromResult(FrameStepResult.Failed(
+                        -1,
+                        _position,
+                        "Already at the first displayable frame.",
+                        false,
+                        false));
+                }
+
+                FfmpegGlobalFrameIndexEntry previousEntry;
+                if (_globalFrameIndex.TryGetByAbsoluteFrameIndex(currentAbsoluteFrameIndex.Value - 1L, out previousEntry))
+                {
+                    var indexedWindow = MaterializeIndexedFrameWindow(previousEntry, cancellationToken);
+                    if (indexedWindow != null)
+                    {
+                        _frameCache.LoadWindow(indexedWindow.WindowFrames, indexedWindow.CurrentIndex);
+                        SetCurrentFrame(_frameCache.Current);
+                        LastFrameAdvanceWasCacheHit = false;
+                        IsPlaying = false;
+                        SetOperationInstrumentation(true, previousEntry.SeekAnchorStrategy, previousEntry.SeekAnchorFrameIndex);
+                        OnStateChanged();
+                        OnFramePresented(_currentFrame);
+                        return Task.FromResult(FrameStepResult.Succeeded(
+                            -1,
+                            _position,
+                            false,
+                            true,
+                            "Moved to the previous decoded frame using the global frame index anchor."));
+                    }
+                }
+            }
+
+            var originalCurrentFrame = _currentFrame;
+            var reconstructionSeekTimestamp = FindBackwardReconstructionSeekTimestamp(originalCurrentFrame);
+            var reconstruction = ReconstructPreviousFrameWindow(
+                originalCurrentFrame,
+                reconstructionSeekTimestamp,
+                cancellationToken);
+
+            // Some indexed formats can seek back to the current keyframe when we ask for the
+            // timestamp immediately before the current frame. Retry from stream start before
+            // reporting "already at first frame" so the result stays truthful.
+            if ((reconstruction == null || !reconstruction.HasPreviousFrame) && reconstructionSeekTimestamp > 0L)
+            {
+                reconstruction = ReconstructPreviousFrameWindow(originalCurrentFrame, 0L, cancellationToken);
+            }
+
+            if (reconstruction == null)
+            {
+                throw new InvalidOperationException(
+                    "The custom FFmpeg review engine could not reconstruct the previous-frame window.");
+            }
+
+            _frameCache.LoadWindow(reconstruction.WindowFrames, reconstruction.CurrentIndex);
+            SetCurrentFrame(_frameCache.Current);
+            LastFrameAdvanceWasCacheHit = false;
+            IsPlaying = false;
+            SetOperationInstrumentation(false, reconstructionSeekTimestamp > 0L ? "timestamp-backtrack" : "stream-start", null);
+
+            if (!reconstruction.HasPreviousFrame)
+            {
+                return Task.FromResult(FrameStepResult.Failed(
+                    -1,
+                    _position,
+                    "Already at the first displayable frame.",
+                    false,
+                    true));
+            }
+
+            OnStateChanged();
+            OnFramePresented(_currentFrame);
+            return Task.FromResult(FrameStepResult.Succeeded(
+                -1,
+                _position,
+                false,
+                true,
+                "Moved to the previous decoded frame by seeking backward and reconstructing forward."));
+        }
+
+        public Task SeekToTimeAsync(TimeSpan position, CancellationToken cancellationToken = default(CancellationToken))
+        {
+            ThrowIfDisposed();
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!IsMediaOpen)
+            {
+                return Task.CompletedTask;
+            }
+
+            StopPlayback(raiseStateChanged: false);
+            ResetSeekPerformanceInstrumentation();
+            var seekStopwatch = Stopwatch.StartNew();
+            var stepStopwatch = Stopwatch.StartNew();
+
+            var clampedTarget = ClampSeekTarget(position);
+            LastSeekIndexWaitMilliseconds = stepStopwatch.Elapsed.TotalMilliseconds;
+
+            var targetTimestamp = FfmpegNativeHelpers.ToStreamTimestamp(clampedTarget, _videoStreamTimeBase);
+            FfmpegGlobalFrameIndexEntry indexedTargetEntry;
+            bool landedAtOrAfterTarget;
+            if (TryResolveIndexedSeekTarget(targetTimestamp, out indexedTargetEntry, out landedAtOrAfterTarget))
+            {
+                DecodedVideoFrame cachedSeekFrame;
+                if (_frameCache.TryMoveToAbsoluteFrameIndex(indexedTargetEntry.AbsoluteFrameIndex, out cachedSeekFrame))
+                {
+                    SetCurrentFrame(cachedSeekFrame);
+                    LastSeekLandedAtOrAfterTarget = landedAtOrAfterTarget;
+                    LastFrameAdvanceWasCacheHit = false;
+                    LastFrameSeekWasCacheHit = false;
+                    IsPlaying = false;
+                    SetOperationInstrumentation(true, "cache-absolute-frame", indexedTargetEntry.AbsoluteFrameIndex);
+                    seekStopwatch.Stop();
+                    LastSeekMode = "cache-absolute-frame";
+                    LastSeekTotalMilliseconds = seekStopwatch.Elapsed.TotalMilliseconds;
+                    OnStateChanged();
+                    OnFramePresented(_currentFrame);
+                    return Task.CompletedTask;
+                }
+
+                stepStopwatch.Restart();
+                var indexedWindow = MaterializeIndexedFrameWindow(indexedTargetEntry, cancellationToken, primeForwardFrames: false);
+                LastSeekMaterializeMilliseconds = stepStopwatch.Elapsed.TotalMilliseconds;
+                if (indexedWindow != null)
+                {
+                    _frameCache.LoadWindow(indexedWindow.WindowFrames, indexedWindow.CurrentIndex);
+                    SetCurrentFrame(_frameCache.Current);
+                    LastSeekLandedAtOrAfterTarget = landedAtOrAfterTarget;
+                    LastFrameAdvanceWasCacheHit = false;
+                    LastFrameSeekWasCacheHit = false;
+                    IsPlaying = false;
+                    SetOperationInstrumentation(true, indexedTargetEntry.SeekAnchorStrategy, indexedTargetEntry.SeekAnchorFrameIndex);
+                    seekStopwatch.Stop();
+                    LastSeekMode = "global-index-landed-no-forward-prime";
+                    LastSeekTotalMilliseconds = seekStopwatch.Elapsed.TotalMilliseconds;
+                    OnStateChanged();
+                    OnFramePresented(_currentFrame);
+                    return Task.CompletedTask;
+                }
+            }
+
+            // Without a global index, this path lands the visible frame promptly and marks
+            // its index as segment-local instead of blocking the UI on a full-file scan.
+            // The UI must not display that segment-local number as a global frame number.
+            var fallbackSeekTimestamp = targetTimestamp;
+            var fallbackFrameIndexAbsolute = fallbackSeekTimestamp <= 0L;
+            stepStopwatch.Restart();
+            SeekToStreamTimestamp(fallbackSeekTimestamp, fallbackFrameIndexAbsolute);
+
+            var landedFrame = DecodeFrameAtOrAfterTarget(clampedTarget, targetTimestamp, cancellationToken, out landedAtOrAfterTarget);
+            LastSeekMaterializeMilliseconds = stepStopwatch.Elapsed.TotalMilliseconds;
+            if (landedFrame == null)
+            {
+                throw new InvalidOperationException("No displayable frame could be decoded after seeking.");
+            }
+
+            _frameCache.Reset(landedFrame);
+            SetCurrentFrame(landedFrame);
+            LastSeekForwardCacheWarmMilliseconds = 0d;
+            LastSeekLandedAtOrAfterTarget = landedAtOrAfterTarget;
+            LastFrameAdvanceWasCacheHit = false;
+            LastFrameSeekWasCacheHit = false;
+            IsPlaying = false;
+            SetOperationInstrumentation(
+                false,
+                fallbackFrameIndexAbsolute
+                    ? "stream-start"
+                    : "timestamp-seek-pending-index",
+                null);
+            seekStopwatch.Stop();
+            LastSeekMode = fallbackFrameIndexAbsolute
+                ? "stream-start"
+                : "timestamp-seek-pending-index";
+            LastSeekTotalMilliseconds = seekStopwatch.Elapsed.TotalMilliseconds;
+            OnStateChanged();
+            OnFramePresented(_currentFrame);
+            return Task.CompletedTask;
+        }
+
+        public Task SeekToFrameAsync(long frameIndex, CancellationToken cancellationToken = default(CancellationToken))
+        {
+            ThrowIfDisposed();
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!IsMediaOpen)
+            {
+                return Task.CompletedTask;
+            }
+
+            StopPlayback(raiseStateChanged: false);
+
+            var targetFrameIndex = Math.Max(0L, frameIndex);
+            var requestedFrameIndex = targetFrameIndex;
+            FfmpegGlobalFrameIndexEntry indexedTargetEntry = null;
+            bool wasClampedToLastIndexedFrame = false;
+
+            if (IsGlobalFrameIndexAvailable)
+            {
+                if (!_globalFrameIndex.TryGetByAbsoluteFrameIndex(targetFrameIndex, out indexedTargetEntry))
+                {
+                    FfmpegGlobalFrameIndexEntry lastIndexedFrame;
+                    if (_globalFrameIndex.TryGetLastEntry(out lastIndexedFrame))
+                    {
+                        indexedTargetEntry = lastIndexedFrame;
+                        targetFrameIndex = lastIndexedFrame.AbsoluteFrameIndex;
+                        wasClampedToLastIndexedFrame = requestedFrameIndex > targetFrameIndex;
+                    }
+                }
+            }
+
+            DecodedVideoFrame cachedFrame;
+            if (_frameCache.TryMoveToAbsoluteFrameIndex(targetFrameIndex, out cachedFrame))
+            {
+                LastFrameSeekWasCacheHit = true;
+                LastFrameAdvanceWasCacheHit = false;
+                IsPlaying = false;
+                SetCurrentFrame(cachedFrame);
+                SetOperationInstrumentation(
+                    IsGlobalFrameIndexAvailable,
+                    wasClampedToLastIndexedFrame ? "cache-absolute-frame-clamped" : "cache-absolute-frame",
+                    cachedFrame.Descriptor.FrameIndex);
+                OnStateChanged();
+                OnFramePresented(_currentFrame);
+                return Task.CompletedTask;
+            }
+
+            var reconstruction = indexedTargetEntry != null
+                ? MaterializeIndexedFrameWindow(indexedTargetEntry, cancellationToken)
+                : ReconstructAbsoluteFrameWindow(targetFrameIndex, cancellationToken);
+            if (reconstruction == null)
+            {
+                throw new InvalidOperationException(string.Format(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    "The requested absolute frame index {0} is not available in this media.",
+                    targetFrameIndex));
+            }
+
+            _frameCache.LoadWindow(reconstruction.WindowFrames, reconstruction.CurrentIndex);
+            SetCurrentFrame(_frameCache.Current);
+            LastFrameSeekWasCacheHit = false;
+            LastFrameAdvanceWasCacheHit = false;
+            IsPlaying = false;
+            SetOperationInstrumentation(
+                indexedTargetEntry != null,
+                indexedTargetEntry != null
+                    ? (wasClampedToLastIndexedFrame
+                        ? indexedTargetEntry.SeekAnchorStrategy + "-clamped"
+                        : indexedTargetEntry.SeekAnchorStrategy)
+                    : "stream-start",
+                indexedTargetEntry != null
+                    ? (long?)indexedTargetEntry.SeekAnchorFrameIndex
+                    : null);
+            OnStateChanged();
+            OnFramePresented(_currentFrame);
+            return Task.CompletedTask;
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            StopPlaybackForDispose();
+            CloseCore(clearFilePath: true, clearErrorMessage: true);
+            _disposed = true;
+        }
+
+        private void StartGlobalFrameIndexBuild(string filePath, int videoStreamIndex)
+        {
+            if (string.IsNullOrWhiteSpace(filePath) || videoStreamIndex < 0)
+            {
+                return;
+            }
+
+            var cancellationSource = new CancellationTokenSource();
+            int generation;
+            lock (_indexBuildSync)
+            {
+                generation = ++_indexBuildGeneration;
+                _indexBuildCancellationSource = cancellationSource;
+                _isGlobalFrameIndexBuildInProgress = true;
+                _globalFrameIndexStatus = "building";
+                LastGlobalFrameIndexBuildMilliseconds = 0d;
+            }
+
+            var stopwatch = Stopwatch.StartNew();
+            var buildTask = Task.Run(
+                () => FfmpegGlobalFrameIndex.Build(filePath, videoStreamIndex, cancellationSource.Token),
+                cancellationSource.Token);
+
+            lock (_indexBuildSync)
+            {
+                if (generation == _indexBuildGeneration)
+                {
+                    _indexBuildTask = buildTask;
+                }
+            }
+
+            buildTask.ContinueWith(
+                task => CompleteGlobalFrameIndexBuild(generation, filePath, stopwatch, cancellationSource, task),
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+        }
+
+        private void CompleteGlobalFrameIndexBuild(
+            int generation,
+            string filePath,
+            Stopwatch stopwatch,
+            CancellationTokenSource cancellationSource,
+            Task<FfmpegGlobalFrameIndex> buildTask)
+        {
+            bool raiseStateChanged = false;
+            try
+            {
+                stopwatch.Stop();
+                lock (_indexBuildSync)
+                {
+                    if (generation != _indexBuildGeneration)
+                    {
+                        return;
+                    }
+
+                    _indexBuildTask = null;
+                    _indexBuildCancellationSource = null;
+                    _isGlobalFrameIndexBuildInProgress = false;
+                    LastGlobalFrameIndexBuildMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
+
+                    if (buildTask.IsCanceled)
+                    {
+                        _globalFrameIndexStatus = "cancelled";
+                    }
+                    else if (buildTask.IsFaulted)
+                    {
+                        var exception = buildTask.Exception != null
+                            ? buildTask.Exception.GetBaseException()
+                            : null;
+                        _globalFrameIndexStatus = "failed: " + (exception != null ? exception.Message : "unknown error");
+                    }
+                    else
+                    {
+                        _globalFrameIndex = buildTask.Result;
+                        _globalFrameIndexStatus = IsGlobalFrameIndexAvailable
+                            ? "ready"
+                            : "empty";
+                    }
+
+                    raiseStateChanged = IsMediaOpen &&
+                        string.Equals(filePath, _currentFilePath, StringComparison.OrdinalIgnoreCase);
+                }
+            }
+            finally
+            {
+                cancellationSource.Dispose();
+            }
+
+            if (raiseStateChanged)
+            {
+                var normalizedCurrentFrame = TryNormalizeCachedFramesWithGlobalIndex();
+                OnStateChanged();
+                if (normalizedCurrentFrame)
+                {
+                    OnFramePresented(_currentFrame);
+                }
+            }
+        }
+
+        private void CancelGlobalFrameIndexBuild(bool resetStatus)
+        {
+            CancellationTokenSource cancellationSource;
+            Task buildTask;
+            lock (_indexBuildSync)
+            {
+                _indexBuildGeneration++;
+                cancellationSource = _indexBuildCancellationSource;
+                buildTask = _indexBuildTask;
+                _indexBuildCancellationSource = null;
+                _indexBuildTask = null;
+                _isGlobalFrameIndexBuildInProgress = false;
+                if (resetStatus)
+                {
+                    _globalFrameIndexStatus = "not-started";
+                    LastGlobalFrameIndexBuildMilliseconds = 0d;
+                }
+            }
+
+            if (cancellationSource == null)
+            {
+                return;
+            }
+
+            cancellationSource.Cancel();
+            if (buildTask == null || buildTask.IsCompleted)
+            {
+                cancellationSource.Dispose();
+                return;
+            }
+
+            buildTask.ContinueWith(
+                _ => cancellationSource.Dispose(),
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+        }
+
+        private bool TryNormalizeCachedFramesWithGlobalIndex()
+        {
+            if (!IsGlobalFrameIndexAvailable || !_frameCache.HasCurrent)
+            {
+                return false;
+            }
+
+            var changed = _frameCache.ReplaceFrames(frame =>
+            {
+                if (frame == null || frame.Descriptor == null || frame.Descriptor.IsFrameIndexAbsolute)
+                {
+                    return frame;
+                }
+
+                var indexedEntry = ResolveIndexedFrameIdentity(
+                    frame.Descriptor.PresentationTimestamp,
+                    frame.Descriptor.DecodeTimestamp);
+                return indexedEntry != null
+                    ? NormalizeFrameToIndexedEntry(frame, indexedEntry)
+                    : frame;
+            });
+
+            if (changed && _frameCache.Current != null)
+            {
+                SetCurrentFrame(_frameCache.Current);
+                if (_position.IsFrameIndexAbsolute)
+                {
+                    SetOperationInstrumentation(true, "background-index-normalized", _position.FrameIndex);
+                }
+            }
+
+            return changed;
+        }
+
+        private void ResetOpenPerformanceInstrumentation()
+        {
+            LastOpenTotalMilliseconds = 0d;
+            LastOpenContainerProbeMilliseconds = 0d;
+            LastOpenStreamDiscoveryMilliseconds = 0d;
+            LastOpenAudioProbeMilliseconds = 0d;
+            LastOpenVideoDecoderInitializationMilliseconds = 0d;
+            LastOpenFirstFrameDecodeMilliseconds = 0d;
+            LastOpenInitialCacheWarmMilliseconds = 0d;
+            LastGlobalFrameIndexBuildMilliseconds = 0d;
+            _globalFrameIndexStatus = "not-started";
+            ResetSeekPerformanceInstrumentation();
+        }
+
+        private void ResetSeekPerformanceInstrumentation()
+        {
+            LastSeekTotalMilliseconds = 0d;
+            LastSeekIndexWaitMilliseconds = 0d;
+            LastSeekMaterializeMilliseconds = 0d;
+            LastSeekForwardCacheWarmMilliseconds = 0d;
+            LastSeekMode = string.Empty;
+        }
+
+        private void PlaybackLoop(
+            CancellationToken cancellationToken,
+            CancellationTokenSource cancellationSource)
+        {
+            try
+            {
+                while (true)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    var currentFrame = _currentFrame;
+                    if (currentFrame == null)
+                    {
+                        CompletePlaybackNaturally("playback-no-current-frame", cancellationSource);
+                        return;
+                    }
+
+                    DecodedVideoFrame nextFrame;
+                    bool wasCacheHit;
+                    if (!TryPreparePlaybackFrame(cancellationToken, out nextFrame, out wasCacheHit))
+                    {
+                        CompletePlaybackNaturally("playback-end-of-stream", cancellationSource);
+                        return;
+                    }
+
+                    WaitForPlaybackFrameDue(currentFrame, nextFrame, cancellationToken);
+
+                    PresentPlaybackFrame(nextFrame, wasCacheHit);
+                    OnStateChanged();
+                    OnFramePresented(_currentFrame);
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+            }
+            catch (Exception ex)
+            {
+                _lastErrorMessage = ex.Message;
+                lock (_playbackSync)
+                {
+                    IsPlaying = false;
+                }
+
+                OnStateChanged();
+            }
+            finally
+            {
+                ReleasePlaybackLoopState(cancellationSource);
+            }
+        }
+
+        private void StopPlayback(bool raiseStateChanged)
+        {
+            Task playbackTask;
+            CancellationTokenSource cancellationSource;
+            FfmpegAudioPlaybackSession audioSession;
+            bool wasPlaying;
+
+            lock (_playbackSync)
+            {
+                playbackTask = _playbackTask;
+                cancellationSource = _playbackCancellationSource;
+                audioSession = _audioPlaybackSession;
+                _audioPlaybackSession = null;
+                wasPlaying = IsPlaying || (playbackTask != null && !playbackTask.IsCompleted);
+                IsPlaying = false;
+
+                if (cancellationSource != null && !cancellationSource.IsCancellationRequested)
+                {
+                    cancellationSource.Cancel();
+                }
+            }
+
+            StopAudioPlaybackSession(audioSession);
+
+            if (playbackTask != null)
+            {
+                try
+                {
+                    playbackTask.GetAwaiter().GetResult();
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            }
+
+            lock (_playbackSync)
+            {
+                if (ReferenceEquals(_playbackTask, playbackTask))
+                {
+                    _playbackTask = null;
+                }
+
+                if (ReferenceEquals(_playbackCancellationSource, cancellationSource))
+                {
+                    _playbackCancellationSource = null;
+                }
+            }
+
+            if (cancellationSource != null)
+            {
+                cancellationSource.Dispose();
+            }
+
+            if (raiseStateChanged && wasPlaying)
+            {
+                OnStateChanged();
+            }
+        }
+
+        private void StopPlaybackForDispose()
+        {
+            Task playbackTask;
+            CancellationTokenSource cancellationSource;
+            FfmpegAudioPlaybackSession audioSession;
+
+            lock (_playbackSync)
+            {
+                playbackTask = _playbackTask;
+                cancellationSource = _playbackCancellationSource;
+                audioSession = _audioPlaybackSession;
+                _audioPlaybackSession = null;
+                IsPlaying = false;
+
+                if (cancellationSource != null && !cancellationSource.IsCancellationRequested)
+                {
+                    cancellationSource.Cancel();
+                }
+            }
+
+            StopAudioPlaybackSession(audioSession);
+
+            if (playbackTask != null)
+            {
+                try
+                {
+                    playbackTask.GetAwaiter().GetResult();
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            }
+
+            lock (_playbackSync)
+            {
+                if (ReferenceEquals(_playbackTask, playbackTask))
+                {
+                    _playbackTask = null;
+                }
+
+                if (ReferenceEquals(_playbackCancellationSource, cancellationSource))
+                {
+                    _playbackCancellationSource = null;
+                }
+            }
+
+            if (cancellationSource != null)
+            {
+                cancellationSource.Dispose();
+            }
+        }
+
+        private void CompletePlaybackNaturally(string anchorStrategy, CancellationTokenSource cancellationSource)
+        {
+            FfmpegAudioPlaybackSession audioSession;
+            lock (_playbackSync)
+            {
+                audioSession = _audioPlaybackSession;
+                _audioPlaybackSession = null;
+                IsPlaying = false;
+
+                if (cancellationSource != null && !cancellationSource.IsCancellationRequested)
+                {
+                    cancellationSource.Cancel();
+                }
+            }
+
+            StopAudioPlaybackSession(audioSession);
+            SetOperationInstrumentation(
+                IsGlobalFrameIndexAvailable && _position.IsFrameIndexAbsolute,
+                anchorStrategy,
+                _position.IsFrameIndexAbsolute ? _position.FrameIndex : null);
+            OnStateChanged();
+        }
+
+        private void ReleasePlaybackLoopState(CancellationTokenSource cancellationSource)
+        {
+            lock (_playbackSync)
+            {
+                if (ReferenceEquals(_playbackCancellationSource, cancellationSource))
+                {
+                    _playbackCancellationSource = null;
+                    _playbackTask = null;
+                }
+            }
+
+            if (cancellationSource != null)
+            {
+                cancellationSource.Dispose();
+            }
+        }
+
+        private FfmpegAudioPlaybackSession TryStartAudioPlayback(TimeSpan startPosition, CancellationToken cancellationToken)
+        {
+            if (_audioStreamInfo == null || !_audioStreamInfo.HasAudioStream || !_audioStreamInfo.DecoderAvailable)
+            {
+                LastPlaybackUsedAudioClock = false;
+                return null;
+            }
+
+            try
+            {
+                var session = FfmpegAudioPlaybackSession.Start(_currentFilePath, startPosition, cancellationToken);
+                LastPlaybackUsedAudioClock = session.IsActive;
+                return session;
+            }
+            catch (Exception ex)
+            {
+                _lastAudioErrorMessage = ex.Message;
+                LastPlaybackUsedAudioClock = false;
+                return null;
+            }
+        }
+
+        private void StopAudioPlaybackSession(FfmpegAudioPlaybackSession audioSession)
+        {
+            if (audioSession == null)
+            {
+                return;
+            }
+
+            _lastAudioSubmittedBytes = audioSession.SubmittedAudioBytes;
+            audioSession.Dispose();
+            _lastAudioSubmittedBytes = Math.Max(_lastAudioSubmittedBytes, audioSession.SubmittedAudioBytes);
+            if (_lastAudioSubmittedBytes > 0L)
+            {
+                LastPlaybackUsedAudioClock = true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(audioSession.LastErrorMessage))
+            {
+                _lastAudioErrorMessage = audioSession.LastErrorMessage;
+            }
+        }
+
+        private bool TryPreparePlaybackFrame(
+            CancellationToken cancellationToken,
+            out DecodedVideoFrame frame,
+            out bool wasCacheHit)
+        {
+            if (_frameCache.TryPeekNext(out frame))
+            {
+                wasCacheHit = true;
+                return true;
+            }
+
+            frame = ReadNextDisplayableFrame(cancellationToken);
+            wasCacheHit = false;
+            return frame != null;
+        }
+
+        private void PresentPlaybackFrame(DecodedVideoFrame preparedFrame, bool wasCacheHit)
+        {
+            if (preparedFrame == null)
+            {
+                throw new ArgumentNullException(nameof(preparedFrame));
+            }
+
+            DecodedVideoFrame frameToPresent;
+            if (wasCacheHit)
+            {
+                if (!_frameCache.TryMoveNext(out frameToPresent))
+                {
+                    throw new InvalidOperationException("The decoded frame cache could not advance during playback.");
+                }
+            }
+            else
+            {
+                frameToPresent = _frameCache.AppendForwardAndAdvance(preparedFrame);
+            }
+
+            SetCurrentFrame(frameToPresent);
+            LastFrameAdvanceWasCacheHit = wasCacheHit;
+            LastFrameSeekWasCacheHit = false;
+            SetOperationInstrumentation(
+                IsGlobalFrameIndexAvailable && frameToPresent.Descriptor.IsFrameIndexAbsolute,
+                wasCacheHit ? "playback-cache" : "playback-decode",
+                frameToPresent.Descriptor.IsFrameIndexAbsolute ? frameToPresent.Descriptor.FrameIndex : null);
+        }
+
+        private TimeSpan CalculatePlaybackDelay(
+            DecodedVideoFrame currentFrame,
+            DecodedVideoFrame nextFrame)
+        {
+            if (currentFrame != null && nextFrame != null)
+            {
+                var presentationDelta = nextFrame.Descriptor.PresentationTime - currentFrame.Descriptor.PresentationTime;
+                if (presentationDelta > TimeSpan.Zero)
+                {
+                    return presentationDelta;
+                }
+
+                var currentDuration = GetFrameDuration(currentFrame.Descriptor);
+                if (currentDuration > TimeSpan.Zero)
+                {
+                    return currentDuration;
+                }
+
+                var nextDuration = GetFrameDuration(nextFrame.Descriptor);
+                if (nextDuration > TimeSpan.Zero)
+                {
+                    return nextDuration;
+                }
+            }
+
+            var fallbackDelay = _mediaInfo.PositionStep > TimeSpan.Zero
+                ? _mediaInfo.PositionStep
+                : FfmpegNativeHelpers.GetPositionStep(_nominalFrameRate);
+            return fallbackDelay > TimeSpan.Zero ? fallbackDelay : MinimumPlaybackDelay;
+        }
+
+        private void WaitForPlaybackFrameDue(
+            DecodedVideoFrame currentFrame,
+            DecodedVideoFrame nextFrame,
+            CancellationToken cancellationToken)
+        {
+            var audioSession = _audioPlaybackSession;
+            if (audioSession != null && audioSession.IsActive && nextFrame != null)
+            {
+                LastPlaybackUsedAudioClock = true;
+                _lastAudioSubmittedBytes = Math.Max(_lastAudioSubmittedBytes, audioSession.SubmittedAudioBytes);
+                while (true)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    _lastAudioSubmittedBytes = Math.Max(_lastAudioSubmittedBytes, audioSession.SubmittedAudioBytes);
+
+                    var remaining = nextFrame.Descriptor.PresentationTime - audioSession.PlaybackPosition;
+                    if (remaining <= TimeSpan.Zero)
+                    {
+                        return;
+                    }
+
+                    var wait = remaining > TimeSpan.FromMilliseconds(10d)
+                        ? TimeSpan.FromMilliseconds(10d)
+                        : remaining;
+                    if (cancellationToken.WaitHandle.WaitOne(wait))
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                    }
+                }
+            }
+
+            LastPlaybackUsedAudioClock = LastPlaybackUsedAudioClock && _lastAudioSubmittedBytes > 0L;
+            var delay = CalculatePlaybackDelay(currentFrame, nextFrame);
+            if (cancellationToken.WaitHandle.WaitOne(delay))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+        }
+
+        private TimeSpan GetFrameDuration(FrameDescriptor descriptor)
+        {
+            if (descriptor == null || !descriptor.DurationTimestamp.HasValue || descriptor.DurationTimestamp.Value <= 0L)
+            {
+                return TimeSpan.Zero;
+            }
+
+            var duration = FfmpegNativeHelpers.ToTimeSpan(descriptor.DurationTimestamp.Value, _videoStreamTimeBase);
+            return duration > TimeSpan.Zero ? duration : TimeSpan.Zero;
+        }
+
+        private void OpenContainer(string filePath)
+        {
+            var formatContext = _formatContext;
+            FfmpegNativeHelpers.ThrowIfError(
+                ffmpeg.avformat_open_input(&formatContext, filePath, null, null),
+                "Open media container");
+            _formatContext = formatContext;
+            FfmpegNativeHelpers.ThrowIfError(
+                ffmpeg.avformat_find_stream_info(_formatContext, null),
+                "Probe media streams");
+        }
+
+        private void FindPrimaryVideoStream()
+        {
+            AVCodec* decoder = null;
+            var bestStreamIndex = ffmpeg.av_find_best_stream(
+                _formatContext,
+                AVMediaType.AVMEDIA_TYPE_VIDEO,
+                -1,
+                -1,
+                &decoder,
+                0);
+            FfmpegNativeHelpers.ThrowIfError(bestStreamIndex, "Select primary video stream");
+
+            _videoStreamIndex = bestStreamIndex;
+            _videoStream = _formatContext->streams[_videoStreamIndex];
+            _videoStreamTimeBase = _videoStream->time_base;
+            _nominalFrameRate = FfmpegNativeHelpers.GetNominalFrameRate(_formatContext, _videoStream, null);
+
+            if (decoder == null)
+            {
+                decoder = ffmpeg.avcodec_find_decoder(_videoStream->codecpar->codec_id);
+            }
+
+            if (decoder == null)
+            {
+                throw new InvalidOperationException("No decoder is available for the selected video stream.");
+            }
+
+            _codecContext = ffmpeg.avcodec_alloc_context3(decoder);
+            if (_codecContext == null)
+            {
+                throw new InvalidOperationException("Could not allocate the FFmpeg codec context.");
+            }
+
+            FfmpegNativeHelpers.ThrowIfError(
+                ffmpeg.avcodec_parameters_to_context(_codecContext, _videoStream->codecpar),
+                "Copy codec parameters");
+
+            _codecContext->pkt_timebase = _videoStreamTimeBase;
+            _codecContext->framerate = _nominalFrameRate;
+        }
+
+        private void ProbePrimaryAudioStream()
+        {
+            _audioStreamInfo = FfmpegAudioStreamInfo.None;
+            _lastAudioErrorMessage = string.Empty;
+
+            AVCodec* decoder = null;
+            var bestStreamIndex = ffmpeg.av_find_best_stream(
+                _formatContext,
+                AVMediaType.AVMEDIA_TYPE_AUDIO,
+                -1,
+                _videoStreamIndex,
+                &decoder,
+                0);
+            if (bestStreamIndex < 0)
+            {
+                return;
+            }
+
+            var audioStream = _formatContext->streams[bestStreamIndex];
+            if (decoder == null)
+            {
+                decoder = ffmpeg.avcodec_find_decoder(audioStream->codecpar->codec_id);
+            }
+
+            _audioStreamInfo = new FfmpegAudioStreamInfo(
+                true,
+                decoder != null,
+                bestStreamIndex,
+                FfmpegNativeHelpers.GetCodecName(audioStream->codecpar->codec_id),
+                audioStream->codecpar->sample_rate,
+                audioStream->codecpar->ch_layout.nb_channels);
+
+            if (decoder == null)
+            {
+                _lastAudioErrorMessage = "No decoder is available for the selected audio stream.";
+            }
+        }
+
+        private void InitializeVideoDecoder()
+        {
+            FfmpegNativeHelpers.ThrowIfError(
+                ffmpeg.avcodec_open2(_codecContext, _codecContext->codec, null),
+                "Open video decoder");
+
+            _packet = ffmpeg.av_packet_alloc();
+            if (_packet == null)
+            {
+                throw new InvalidOperationException("Could not allocate an FFmpeg packet.");
+            }
+
+            _decodedFrame = ffmpeg.av_frame_alloc();
+            if (_decodedFrame == null)
+            {
+                throw new InvalidOperationException("Could not allocate an FFmpeg frame.");
+            }
+
+            _frameConverter = new FfmpegFrameConverter();
+        }
+
+        private void BeginDecodeSegment(bool frameIndexAbsolute)
+        {
+            _segmentFrameIndexAbsolute = frameIndexAbsolute;
+            _decodedSegmentFrameCount = 0L;
+            _frameCache.Clear();
+            _currentFrame = null;
+            ResetDecodeReadState();
+        }
+
+        private void SeekToStreamTimestamp(long targetTimestamp, bool frameIndexAbsolute)
+        {
+            FfmpegNativeHelpers.ThrowIfError(
+                ffmpeg.av_seek_frame(
+                    _formatContext,
+                    _videoStreamIndex,
+                    targetTimestamp,
+                    ffmpeg.AVSEEK_FLAG_BACKWARD),
+                "Seek video stream");
+
+            ffmpeg.avcodec_flush_buffers(_codecContext);
+            BeginDecodeSegment(frameIndexAbsolute);
+        }
+
+        private void ResetDecodeReadState()
+        {
+            _hasPendingVideoPacket = false;
+            _inputExhausted = false;
+            _flushPacketSent = false;
+
+            if (_packet != null)
+            {
+                ffmpeg.av_packet_unref(_packet);
+            }
+
+            if (_decodedFrame != null)
+            {
+                ffmpeg.av_frame_unref(_decodedFrame);
+            }
+        }
+
+        private DecodedVideoFrame DecodeFrameAtOrAfterTarget(
+            TimeSpan requestedPosition,
+            long requestedTimestamp,
+            CancellationToken cancellationToken,
+            out bool landedAtOrAfterTarget)
+        {
+            DecodedVideoFrame fallbackFrame = null;
+
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var frame = ReadNextDisplayableFrame(cancellationToken);
+                if (frame == null)
+                {
+                    landedAtOrAfterTarget = fallbackFrame != null && IsAtOrAfterRequestedTarget(fallbackFrame, requestedPosition, requestedTimestamp);
+                    return fallbackFrame;
+                }
+
+                fallbackFrame = frame;
+                if (IsAtOrAfterRequestedTarget(frame, requestedPosition, requestedTimestamp))
+                {
+                    landedAtOrAfterTarget = true;
+                    return frame;
+                }
+            }
+        }
+
+        private void PrimeForwardCache(CancellationToken cancellationToken)
+        {
+            while (_frameCache.ForwardCount < CachedForwardFrameCount)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var frame = ReadNextDisplayableFrame(cancellationToken);
+                if (frame == null)
+                {
+                    return;
+                }
+
+                _frameCache.AppendForward(frame);
+            }
+        }
+
+        private bool TryResolveIndexedSeekTarget(
+            long requestedTimestamp,
+            out FfmpegGlobalFrameIndexEntry targetEntry,
+            out bool landedAtOrAfterTarget)
+        {
+            landedAtOrAfterTarget = false;
+            targetEntry = null;
+
+            if (!IsGlobalFrameIndexAvailable)
+            {
+                return false;
+            }
+
+            if (_globalFrameIndex.TryGetFirstAtOrAfterTimestamp(requestedTimestamp, out targetEntry))
+            {
+                landedAtOrAfterTarget = true;
+                return true;
+            }
+
+            if (_globalFrameIndex.TryGetLastEntry(out targetEntry))
+            {
+                landedAtOrAfterTarget = targetEntry.SearchTimestamp.HasValue &&
+                    targetEntry.SearchTimestamp.Value >= requestedTimestamp;
+                return true;
+            }
+
+            return false;
+        }
+
+        private FrameSeekWindowResult MaterializeIndexedFrameWindow(
+            FfmpegGlobalFrameIndexEntry targetEntry,
+            CancellationToken cancellationToken,
+            bool primeForwardFrames = true)
+        {
+            if (targetEntry == null)
+            {
+                throw new ArgumentNullException(nameof(targetEntry));
+            }
+
+            var anchorEntry = ResolveIndexedAnchorEntry(targetEntry);
+            SeekToStreamTimestamp(targetEntry.SeekAnchorTimestamp, targetEntry.SeekAnchorTimestamp <= 0L);
+
+            var framesBeforeTarget = new List<DecodedVideoFrame>(CachedPreviousFrameCount);
+            var anchorReached = anchorEntry != null &&
+                anchorEntry.AbsoluteFrameIndex == 0L &&
+                targetEntry.SeekAnchorTimestamp <= 0L;
+            var nextAbsoluteFrameIndex = anchorReached && anchorEntry != null
+                ? anchorEntry.AbsoluteFrameIndex
+                : -1L;
+
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var decodedFrame = ReadNextDisplayableFrame(cancellationToken);
+                if (decodedFrame == null)
+                {
+                    return null;
+                }
+
+                if (!anchorReached)
+                {
+                    if (anchorEntry == null || !FrameMatchesIndexEntry(decodedFrame, anchorEntry))
+                    {
+                        continue;
+                    }
+
+                    anchorReached = true;
+                    nextAbsoluteFrameIndex = anchorEntry.AbsoluteFrameIndex;
+                }
+
+                FfmpegGlobalFrameIndexEntry currentEntry;
+                if (!_globalFrameIndex.TryGetByAbsoluteFrameIndex(nextAbsoluteFrameIndex, out currentEntry))
+                {
+                    return null;
+                }
+
+                var normalizedFrame = NormalizeFrameToIndexedEntry(decodedFrame, currentEntry);
+                if (currentEntry.AbsoluteFrameIndex == targetEntry.AbsoluteFrameIndex)
+                {
+                    return BuildFrameSeekWindowResult(framesBeforeTarget, normalizedFrame, cancellationToken, primeForwardFrames);
+                }
+
+                framesBeforeTarget.Add(normalizedFrame);
+                while (framesBeforeTarget.Count > CachedPreviousFrameCount)
+                {
+                    framesBeforeTarget.RemoveAt(0);
+                }
+
+                nextAbsoluteFrameIndex++;
+            }
+        }
+
+        private BackwardReconstructionResult ReconstructPreviousFrameWindow(
+            DecodedVideoFrame originalCurrentFrame,
+            long seekTimestamp,
+            CancellationToken cancellationToken)
+        {
+            SeekToStreamTimestamp(seekTimestamp, seekTimestamp <= 0L);
+
+            var framesBeforeOriginal = new List<DecodedVideoFrame>(CachedPreviousFrameCount + 1);
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var frame = ReadNextDisplayableFrame(cancellationToken);
+                if (frame == null)
+                {
+                    return null;
+                }
+
+                if (FramesReferToSameDisplayFrame(frame, originalCurrentFrame))
+                {
+                    return BuildBackwardReconstructionResult(
+                        framesBeforeOriginal,
+                        frame,
+                        cancellationToken);
+                }
+
+                framesBeforeOriginal.Add(frame);
+                while (framesBeforeOriginal.Count > CachedPreviousFrameCount + 1)
+                {
+                    framesBeforeOriginal.RemoveAt(0);
+                }
+            }
+        }
+
+        private FrameSeekWindowResult ReconstructAbsoluteFrameWindow(long targetFrameIndex, CancellationToken cancellationToken)
+        {
+            SeekToStreamTimestamp(0L, frameIndexAbsolute: true);
+
+            var framesBeforeTarget = new List<DecodedVideoFrame>(CachedPreviousFrameCount);
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var frame = ReadNextDisplayableFrame(cancellationToken);
+                if (frame == null)
+                {
+                    return null;
+                }
+
+                if (frame.Descriptor.IsFrameIndexAbsolute &&
+                    frame.Descriptor.FrameIndex.HasValue &&
+                    frame.Descriptor.FrameIndex.Value == targetFrameIndex)
+                {
+                    return BuildFrameSeekWindowResult(framesBeforeTarget, frame, cancellationToken);
+                }
+
+                framesBeforeTarget.Add(frame);
+                while (framesBeforeTarget.Count > CachedPreviousFrameCount)
+                {
+                    framesBeforeTarget.RemoveAt(0);
+                }
+            }
+        }
+
+        private BackwardReconstructionResult BuildBackwardReconstructionResult(
+            IList<DecodedVideoFrame> framesBeforeOriginal,
+            DecodedVideoFrame matchedCurrentFrame,
+            CancellationToken cancellationToken)
+        {
+            var windowFrames = new List<DecodedVideoFrame>(framesBeforeOriginal.Count + CachedForwardFrameCount + 1);
+            int currentIndex;
+            bool hasPreviousFrame = framesBeforeOriginal.Count > 0;
+            var nextAbsoluteFrameIndex = GetAbsoluteFrameIndex(matchedCurrentFrame);
+
+            if (hasPreviousFrame)
+            {
+                windowFrames.AddRange(framesBeforeOriginal);
+                currentIndex = windowFrames.Count - 1;
+                windowFrames.Add(matchedCurrentFrame);
+            }
+            else
+            {
+                windowFrames.Add(matchedCurrentFrame);
+                currentIndex = 0;
+            }
+
+            while (windowFrames.Count - currentIndex - 1 < CachedForwardFrameCount)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var nextFrame = ReadNextDisplayableFrame(cancellationToken);
+                if (nextFrame == null)
+                {
+                    break;
+                }
+
+                if (nextAbsoluteFrameIndex.HasValue && IsGlobalFrameIndexAvailable)
+                {
+                    nextAbsoluteFrameIndex++;
+                    FfmpegGlobalFrameIndexEntry indexedEntry;
+                    if (_globalFrameIndex.TryGetByAbsoluteFrameIndex(nextAbsoluteFrameIndex.Value, out indexedEntry))
+                    {
+                        nextFrame = NormalizeFrameToIndexedEntry(nextFrame, indexedEntry);
+                    }
+                }
+
+                windowFrames.Add(nextFrame);
+            }
+
+            return new BackwardReconstructionResult(windowFrames, currentIndex, hasPreviousFrame);
+        }
+
+        private FrameSeekWindowResult BuildFrameSeekWindowResult(
+            IList<DecodedVideoFrame> framesBeforeTarget,
+            DecodedVideoFrame targetFrame,
+            CancellationToken cancellationToken,
+            bool primeForwardFrames = true)
+        {
+            var windowFrames = new List<DecodedVideoFrame>(framesBeforeTarget.Count + CachedForwardFrameCount + 1);
+            windowFrames.AddRange(framesBeforeTarget);
+            windowFrames.Add(targetFrame);
+            var currentIndex = windowFrames.Count - 1;
+            var nextAbsoluteFrameIndex = GetAbsoluteFrameIndex(targetFrame);
+
+            while (primeForwardFrames && windowFrames.Count - currentIndex - 1 < CachedForwardFrameCount)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var nextFrame = ReadNextDisplayableFrame(cancellationToken);
+                if (nextFrame == null)
+                {
+                    break;
+                }
+
+                if (nextAbsoluteFrameIndex.HasValue && IsGlobalFrameIndexAvailable)
+                {
+                    nextAbsoluteFrameIndex++;
+                    FfmpegGlobalFrameIndexEntry indexedEntry;
+                    if (_globalFrameIndex.TryGetByAbsoluteFrameIndex(nextAbsoluteFrameIndex.Value, out indexedEntry))
+                    {
+                        nextFrame = NormalizeFrameToIndexedEntry(nextFrame, indexedEntry);
+                    }
+                }
+
+                windowFrames.Add(nextFrame);
+            }
+
+            return new FrameSeekWindowResult(windowFrames, currentIndex);
+        }
+
+        private FfmpegGlobalFrameIndexEntry ResolveIndexedAnchorEntry(FfmpegGlobalFrameIndexEntry targetEntry)
+        {
+            if (targetEntry == null || !IsGlobalFrameIndexAvailable)
+            {
+                return null;
+            }
+
+            FfmpegGlobalFrameIndexEntry anchorEntry;
+            if (_globalFrameIndex.TryGetByAbsoluteFrameIndex(targetEntry.SeekAnchorFrameIndex, out anchorEntry))
+            {
+                return anchorEntry;
+            }
+
+            if (_globalFrameIndex.TryGetByAbsoluteFrameIndex(0L, out anchorEntry))
+            {
+                return anchorEntry;
+            }
+
+            return null;
+        }
+
+        private DecodedVideoFrame NormalizeFrameToIndexedEntry(
+            DecodedVideoFrame frame,
+            FfmpegGlobalFrameIndexEntry indexedEntry)
+        {
+            if (frame == null || indexedEntry == null)
+            {
+                return frame;
+            }
+
+            if (frame.Descriptor.IsFrameIndexAbsolute &&
+                frame.Descriptor.FrameIndex.HasValue &&
+                frame.Descriptor.FrameIndex.Value == indexedEntry.AbsoluteFrameIndex)
+            {
+                return frame;
+            }
+
+            var descriptor = new FrameDescriptor(
+                indexedEntry.AbsoluteFrameIndex,
+                indexedEntry.PresentationTime != TimeSpan.Zero
+                    ? indexedEntry.PresentationTime
+                    : frame.Descriptor.PresentationTime,
+                frame.Descriptor.IsKeyFrame || indexedEntry.IsKeyFrame,
+                true,
+                frame.Descriptor.PixelWidth,
+                frame.Descriptor.PixelHeight,
+                frame.Descriptor.PixelFormatName,
+                frame.Descriptor.SourcePixelFormatName,
+                indexedEntry.PresentationTimestamp ?? frame.Descriptor.PresentationTimestamp,
+                indexedEntry.DecodeTimestamp ?? frame.Descriptor.DecodeTimestamp,
+                frame.Descriptor.DurationTimestamp);
+
+            return new DecodedVideoFrame(
+                descriptor,
+                frame.BitmapSource,
+                frame.PixelBuffer,
+                frame.Stride,
+                frame.PixelFormat);
+        }
+
+        private DecodedVideoFrame ReadNextDisplayableFrame(CancellationToken cancellationToken)
+        {
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var bufferedFrame = TryReceiveDecodedFrame(cancellationToken);
+                if (bufferedFrame != null)
+                {
+                    return bufferedFrame;
+                }
+
+                if (_hasPendingVideoPacket)
+                {
+                    var sendPendingResult = ffmpeg.avcodec_send_packet(_codecContext, _packet);
+                    if (sendPendingResult == ffmpeg.AVERROR(ffmpeg.EAGAIN))
+                    {
+                        continue;
+                    }
+
+                    FfmpegNativeHelpers.ThrowIfError(sendPendingResult, "Submit packet to decoder");
+                    _hasPendingVideoPacket = false;
+                    ffmpeg.av_packet_unref(_packet);
+                    continue;
+                }
+
+                if (_inputExhausted)
+                {
+                    if (_flushPacketSent)
+                    {
+                        return null;
+                    }
+
+                    var flushResult = ffmpeg.avcodec_send_packet(_codecContext, null);
+                    if (flushResult == ffmpeg.AVERROR(ffmpeg.EAGAIN))
+                    {
+                        continue;
+                    }
+
+                    if (flushResult == ffmpeg.AVERROR_EOF)
+                    {
+                        _flushPacketSent = true;
+                        return null;
+                    }
+
+                    FfmpegNativeHelpers.ThrowIfError(flushResult, "Flush decoder at end of stream");
+                    _flushPacketSent = true;
+                    continue;
+                }
+
+                var readResult = ffmpeg.av_read_frame(_formatContext, _packet);
+                if (readResult == ffmpeg.AVERROR_EOF)
+                {
+                    _inputExhausted = true;
+                    continue;
+                }
+
+                FfmpegNativeHelpers.ThrowIfError(readResult, "Read encoded packet");
+                if (_packet->stream_index != _videoStreamIndex)
+                {
+                    ffmpeg.av_packet_unref(_packet);
+                    continue;
+                }
+
+                _hasPendingVideoPacket = true;
+            }
+        }
+
+        private DecodedVideoFrame TryReceiveDecodedFrame(CancellationToken cancellationToken)
+        {
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var receiveResult = ffmpeg.avcodec_receive_frame(_codecContext, _decodedFrame);
+                if (receiveResult == ffmpeg.AVERROR(ffmpeg.EAGAIN) || receiveResult == ffmpeg.AVERROR_EOF)
+                {
+                    return null;
+                }
+
+                FfmpegNativeHelpers.ThrowIfError(receiveResult, "Decode video frame");
+
+                try
+                {
+                    if (_decodedFrame->width <= 0 || _decodedFrame->height <= 0)
+                    {
+                        continue;
+                    }
+
+                    return BuildDecodedVideoFrame(_decodedFrame);
+                }
+                finally
+                {
+                    ffmpeg.av_frame_unref(_decodedFrame);
+                }
+            }
+        }
+
+        private DecodedVideoFrame BuildDecodedVideoFrame(AVFrame* decodedFrame)
+        {
+            var presentationTimestamp = GetPresentationTimestamp(decodedFrame);
+            var decodeTimestamp = FfmpegNativeHelpers.AsNullableTimestamp(decodedFrame->pkt_dts);
+            var durationTimestamp = decodedFrame->duration > 0
+                ? (long?)decodedFrame->duration
+                : FfmpegNativeHelpers.AsNullableTimestamp(decodedFrame->duration);
+            _nominalFrameRate = FfmpegNativeHelpers.GetNominalFrameRate(_formatContext, _videoStream, decodedFrame);
+            var indexedEntry = ResolveIndexedFrameIdentity(presentationTimestamp, decodeTimestamp);
+            var resolvedPresentationTime = indexedEntry != null
+                ? indexedEntry.PresentationTime
+                : presentationTimestamp.HasValue
+                    ? FfmpegNativeHelpers.ToTimeSpan(presentationTimestamp.Value, _videoStreamTimeBase)
+                    : TimeSpan.Zero;
+            var resolvedFrameIndex = indexedEntry != null
+                ? (long?)indexedEntry.AbsoluteFrameIndex
+                : _decodedSegmentFrameCount;
+            var isFrameIndexAbsolute = indexedEntry != null || _segmentFrameIndexAbsolute;
+
+            var descriptor = new FrameDescriptor(
+                resolvedFrameIndex,
+                resolvedPresentationTime,
+                indexedEntry != null ? indexedEntry.IsKeyFrame : (decodedFrame->flags & ffmpeg.AV_FRAME_FLAG_KEY) != 0,
+                isFrameIndexAbsolute,
+                decodedFrame->width,
+                decodedFrame->height,
+                OutputPixelFormatName,
+                FfmpegNativeHelpers.GetPixelFormatName((AVPixelFormat)decodedFrame->format),
+                indexedEntry != null ? indexedEntry.PresentationTimestamp : presentationTimestamp,
+                indexedEntry != null ? indexedEntry.DecodeTimestamp : decodeTimestamp,
+                durationTimestamp);
+
+            var convertedFrame = _frameConverter.Convert(decodedFrame, descriptor);
+            _decodedSegmentFrameCount++;
+            return convertedFrame;
+        }
+
+        private void SetCurrentFrame(DecodedVideoFrame frame)
+        {
+            _currentFrame = frame ?? throw new ArgumentNullException(nameof(frame));
+            _mediaInfo = BuildMediaInfo(frame.Descriptor);
+            _position = BuildReviewPosition(frame.Descriptor);
+        }
+
+        private VideoMediaInfo BuildMediaInfo(FrameDescriptor descriptor)
+        {
+            var duration = FfmpegNativeHelpers.GetDuration(_formatContext, _videoStream);
+            var framesPerSecond = FfmpegNativeHelpers.ToDouble(_nominalFrameRate);
+            var positionStep = FfmpegNativeHelpers.GetPositionStep(_nominalFrameRate);
+
+            return new VideoMediaInfo(
+                _currentFilePath,
+                duration,
+                positionStep,
+                framesPerSecond,
+                descriptor.PixelWidth,
+                descriptor.PixelHeight,
+                FfmpegNativeHelpers.GetCodecName(_codecContext->codec_id),
+                _videoStreamIndex,
+                _nominalFrameRate.num,
+                _nominalFrameRate.den,
+                _videoStreamTimeBase.num,
+                _videoStreamTimeBase.den,
+                _audioStreamInfo != null && _audioStreamInfo.HasAudioStream,
+                _audioStreamInfo != null && _audioStreamInfo.DecoderAvailable && string.IsNullOrWhiteSpace(_lastAudioErrorMessage),
+                _audioStreamInfo != null ? _audioStreamInfo.CodecName : string.Empty,
+                _audioStreamInfo != null ? _audioStreamInfo.StreamIndex : -1,
+                _audioStreamInfo != null ? _audioStreamInfo.SampleRate : 0,
+                _audioStreamInfo != null ? _audioStreamInfo.ChannelCount : 0);
+        }
+
+        private static ReviewPosition BuildReviewPosition(FrameDescriptor descriptor)
+        {
+            return new ReviewPosition(
+                descriptor.PresentationTime,
+                descriptor.FrameIndex,
+                true,
+                descriptor.IsFrameIndexAbsolute,
+                descriptor.PresentationTimestamp,
+                descriptor.DecodeTimestamp);
+        }
+
+        private static long? GetPresentationTimestamp(AVFrame* decodedFrame)
+        {
+            return FfmpegNativeHelpers.GetBestPresentationTimestamp(decodedFrame);
+        }
+
+        private FfmpegGlobalFrameIndexEntry ResolveIndexedFrameIdentity(long? presentationTimestamp, long? decodeTimestamp)
+        {
+            if (!IsGlobalFrameIndexAvailable)
+            {
+                return null;
+            }
+
+            FfmpegGlobalFrameIndexEntry indexedEntry;
+            return _globalFrameIndex.TryResolve(presentationTimestamp, decodeTimestamp, out indexedEntry)
+                ? indexedEntry
+                : null;
+        }
+
+        private long FindBackwardReconstructionSeekTimestamp(DecodedVideoFrame frame)
+        {
+            if (frame == null)
+            {
+                return 0L;
+            }
+
+            var referenceTimestamp = frame.Descriptor.PresentationTimestamp
+                ?? frame.Descriptor.DecodeTimestamp
+                ?? FfmpegNativeHelpers.ToStreamTimestamp(frame.Descriptor.PresentationTime, _videoStreamTimeBase);
+
+            return referenceTimestamp > 0L
+                ? referenceTimestamp - 1L
+                : 0L;
+        }
+
+        private long? GetAbsoluteFrameIndex(DecodedVideoFrame frame)
+        {
+            return frame != null &&
+                frame.Descriptor.IsFrameIndexAbsolute &&
+                frame.Descriptor.FrameIndex.HasValue
+                ? frame.Descriptor.FrameIndex.Value
+                : (long?)null;
+        }
+
+        private static bool FramesReferToSameDisplayFrame(DecodedVideoFrame candidate, DecodedVideoFrame original)
+        {
+            if (candidate == null || original == null)
+            {
+                return false;
+            }
+
+            if (candidate.Descriptor.PresentationTimestamp.HasValue && original.Descriptor.PresentationTimestamp.HasValue)
+            {
+                return candidate.Descriptor.PresentationTimestamp.Value ==
+                    original.Descriptor.PresentationTimestamp.Value;
+            }
+
+            if (candidate.Descriptor.DecodeTimestamp.HasValue && original.Descriptor.DecodeTimestamp.HasValue)
+            {
+                return candidate.Descriptor.DecodeTimestamp.Value ==
+                    original.Descriptor.DecodeTimestamp.Value;
+            }
+
+            if (candidate.Descriptor.PresentationTime != TimeSpan.Zero || original.Descriptor.PresentationTime != TimeSpan.Zero)
+            {
+                return candidate.Descriptor.PresentationTime == original.Descriptor.PresentationTime;
+            }
+
+            return candidate.Descriptor.IsFrameIndexAbsolute &&
+                original.Descriptor.IsFrameIndexAbsolute &&
+                candidate.Descriptor.FrameIndex.HasValue &&
+                original.Descriptor.FrameIndex.HasValue &&
+                candidate.Descriptor.FrameIndex.Value == original.Descriptor.FrameIndex.Value;
+        }
+
+        private bool FrameMatchesIndexEntry(DecodedVideoFrame frame, FfmpegGlobalFrameIndexEntry indexedEntry)
+        {
+            if (frame == null || indexedEntry == null)
+            {
+                return false;
+            }
+
+            if (frame.Descriptor.IsFrameIndexAbsolute &&
+                frame.Descriptor.FrameIndex.HasValue &&
+                frame.Descriptor.FrameIndex.Value == indexedEntry.AbsoluteFrameIndex)
+            {
+                return true;
+            }
+
+            if (indexedEntry.PresentationTimestamp.HasValue &&
+                frame.Descriptor.PresentationTimestamp.HasValue &&
+                indexedEntry.PresentationTimestamp.Value == frame.Descriptor.PresentationTimestamp.Value)
+            {
+                return true;
+            }
+
+            if (indexedEntry.DecodeTimestamp.HasValue &&
+                frame.Descriptor.DecodeTimestamp.HasValue &&
+                indexedEntry.DecodeTimestamp.Value == frame.Descriptor.DecodeTimestamp.Value)
+            {
+                return true;
+            }
+
+            return indexedEntry.PresentationTime != TimeSpan.Zero &&
+                frame.Descriptor.PresentationTime == indexedEntry.PresentationTime;
+        }
+
+        private bool IsAtOrAfterRequestedTarget(DecodedVideoFrame frame, TimeSpan requestedPosition, long requestedTimestamp)
+        {
+            if (frame == null)
+            {
+                return false;
+            }
+
+            if (frame.Descriptor.PresentationTimestamp.HasValue)
+            {
+                return frame.Descriptor.PresentationTimestamp.Value >= requestedTimestamp;
+            }
+
+            return frame.Descriptor.PresentationTime >= requestedPosition;
+        }
+
+        private void SetOperationInstrumentation(bool usedGlobalIndex, string anchorStrategy, long? anchorFrameIndex)
+        {
+            LastOperationUsedGlobalIndex = usedGlobalIndex;
+            LastAnchorStrategy = anchorStrategy ?? string.Empty;
+            LastAnchorFrameIndex = anchorFrameIndex;
+        }
+
+        private TimeSpan ClampSeekTarget(TimeSpan requestedPosition)
+        {
+            if (requestedPosition < TimeSpan.Zero)
+            {
+                return TimeSpan.Zero;
+            }
+
+            var duration = _mediaInfo.Duration;
+            if (duration <= TimeSpan.Zero)
+            {
+                return requestedPosition;
+            }
+
+            if (requestedPosition >= duration)
+            {
+                return duration > TimeSpan.FromTicks(1L)
+                    ? duration - TimeSpan.FromTicks(1L)
+                    : TimeSpan.Zero;
+            }
+
+            return requestedPosition;
+        }
+
+        private static void EnsureFfmpegRuntimePathConfigured()
+        {
+            if (!string.IsNullOrWhiteSpace(ffmpeg.RootPath))
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(App.RuntimeDirectory))
+            {
+                ffmpeg.RootPath = App.RuntimeDirectory;
+                return;
+            }
+
+            ffmpeg.RootPath = AppDomain.CurrentDomain.BaseDirectory;
+        }
+
+        private void CloseCore(bool clearFilePath, bool clearErrorMessage)
+        {
+            CancelGlobalFrameIndexBuild(resetStatus: true);
+            ReleaseNativeState();
+
+            IsMediaOpen = false;
+            IsPlaying = false;
+            LastSeekLandedAtOrAfterTarget = false;
+            LastFrameAdvanceWasCacheHit = false;
+            LastFrameSeekWasCacheHit = false;
+            LastOperationUsedGlobalIndex = false;
+            LastAnchorFrameIndex = null;
+            LastAnchorStrategy = string.Empty;
+            _mediaInfo = VideoMediaInfo.Empty;
+            _position = ReviewPosition.Empty;
+            _currentFrame = null;
+            _globalFrameIndex = null;
+            _audioStreamInfo = FfmpegAudioStreamInfo.None;
+            _decodedSegmentFrameCount = 0L;
+            _videoStreamIndex = -1;
+            _videoStreamTimeBase = default(AVRational);
+            _nominalFrameRate = default(AVRational);
+            _segmentFrameIndexAbsolute = false;
+            _frameCache.Clear();
+            ResetDecodeReadState();
+
+            if (clearFilePath)
+            {
+                _currentFilePath = string.Empty;
+            }
+
+            if (clearErrorMessage)
+            {
+                _lastErrorMessage = string.Empty;
+                _lastAudioErrorMessage = string.Empty;
+            }
+        }
+
+        private void ReleaseNativeState()
+        {
+            StopAudioPlaybackSession(_audioPlaybackSession);
+            _audioPlaybackSession = null;
+
+            _frameConverter?.Dispose();
+            _frameConverter = null;
+
+            if (_decodedFrame != null)
+            {
+                var decodedFrame = _decodedFrame;
+                ffmpeg.av_frame_free(&decodedFrame);
+                _decodedFrame = null;
+            }
+
+            if (_packet != null)
+            {
+                var packet = _packet;
+                ffmpeg.av_packet_free(&packet);
+                _packet = null;
+            }
+
+            if (_codecContext != null)
+            {
+                var codecContext = _codecContext;
+                ffmpeg.avcodec_free_context(&codecContext);
+                _codecContext = null;
+            }
+
+            if (_formatContext != null)
+            {
+                var formatContext = _formatContext;
+                ffmpeg.avformat_close_input(&formatContext);
+                _formatContext = null;
+            }
+
+            _videoStream = null;
+        }
+
+        private void OnFramePresented(DecodedVideoFrame frame)
+        {
+            if (frame == null)
+            {
+                return;
+            }
+
+            FramePresented?.Invoke(this, new FramePresentedEventArgs(frame));
+        }
+
+        private void OnStateChanged()
+        {
+            StateChanged?.Invoke(
+                this,
+                new VideoReviewEngineStateChangedEventArgs(
+                    IsMediaOpen,
+                    IsPlaying,
+                    _currentFilePath,
+                    _lastErrorMessage,
+                    _mediaInfo,
+                    _position));
+        }
+
+        private void ThrowIfDisposed()
+        {
+            if (_disposed)
+            {
+                throw new ObjectDisposedException(nameof(FfmpegReviewEngine));
+            }
+        }
+
+        private sealed class BackwardReconstructionResult
+        {
+            public BackwardReconstructionResult(List<DecodedVideoFrame> windowFrames, int currentIndex, bool hasPreviousFrame)
+            {
+                WindowFrames = windowFrames ?? throw new ArgumentNullException(nameof(windowFrames));
+                CurrentIndex = currentIndex;
+                HasPreviousFrame = hasPreviousFrame;
+            }
+
+            public List<DecodedVideoFrame> WindowFrames { get; }
+
+            public int CurrentIndex { get; }
+
+            public bool HasPreviousFrame { get; }
+        }
+
+        private sealed class FrameSeekWindowResult
+        {
+            public FrameSeekWindowResult(List<DecodedVideoFrame> windowFrames, int currentIndex)
+            {
+                WindowFrames = windowFrames ?? throw new ArgumentNullException(nameof(windowFrames));
+                CurrentIndex = currentIndex;
+            }
+
+            public List<DecodedVideoFrame> WindowFrames { get; }
+
+            public int CurrentIndex { get; }
+        }
+    }
+}

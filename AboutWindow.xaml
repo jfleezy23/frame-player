@@ -50,6 +50,11 @@
                      FontFamily="Consolas"
                      FontSize="12"
                      Text="Version --" />
+          <TextBlock Margin="0,2,0,0"
+                     Foreground="{StaticResource MutedBrush}"
+                     FontFamily="Consolas"
+                     FontSize="12"
+                     Text="Checkpoint 1.1.0-test1" />
 
           <TextBlock Margin="0,16,0,0"
                      FontSize="16"
@@ -95,7 +100,7 @@
                      Foreground="{StaticResource MutedBrush}"
                      FontSize="12"
                      TextWrapping="Wrap"
-                     Text="WPF desktop UI, FFME playback, bundled FFmpeg runtime. License and third-party notices ship with the package instead of the About window." />
+                     Text="WPF desktop UI, custom FFmpeg A/V playback, bundled FFmpeg runtime. License and third-party notices ship with the package instead of the About window." />
         </StackPanel>
       </ScrollViewer>
     </Border>

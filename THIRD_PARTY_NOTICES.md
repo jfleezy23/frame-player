@@ -4,18 +4,11 @@ Frame Player depends on third-party libraries and runtime components that are no
 
 ## Managed Dependencies
 
-### FFME.Windows 7.0.361-beta.1
-
-- Project: <https://github.com/unosquare/ffmediaelement>
-- Package metadata source: `packages/ffme.windows/7.0.361-beta.1/ffme.windows.nuspec`
-- Package license file source: `packages/ffme.windows/7.0.361-beta.1/LICENSE`
-- License: Microsoft Public License (Ms-PL)
-
-### FFmpeg.AutoGen 7.0.0
+### FFmpeg.AutoGen 7.1.1
 
 - Project: <https://github.com/Ruslan-B/FFmpeg.AutoGen>
-- Package metadata source: `packages/ffmpeg.autogen/7.0.0/*.nuspec`
-- Package license file source: `packages/ffmpeg.autogen/7.0.0/LICENSE.txt`
+- Package metadata source: `packages/ffmpeg.autogen/7.1.1/*.nuspec`
+- Package license file source: `packages/ffmpeg.autogen/7.1.1/LICENSE.txt`
 - License: GNU Lesser General Public License v3.0
 
 ## Native Runtime

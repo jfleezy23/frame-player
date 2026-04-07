@@ -14,26 +14,9 @@ Scope:
 Verdict:
 - No critical or high-severity code findings remain after the latest hardening pass.
 - Government deployment should not use the portable ZIP as the primary distribution channel.
-- Government deployment should resolve the remaining prerelease dependency risk before production rollout.
+- Government deployment should still prefer signed package deployment over portable ZIP distribution.
 
 ## Findings
-
-### P2 Open: Playback stack still depends on a prerelease FFME package
-
-Location:
-- [FramePlayer.csproj](FramePlayer.csproj)
-
-Why it matters:
-- The app currently depends on `FFME.Windows` `7.0.361-beta.1`.
-- Prerelease packages carry weaker stability and support guarantees than stable production releases.
-- For a government deployment, this increases operational risk during patching, incident response, and long-term sustainment.
-
-Recommendation:
-- Replace the prerelease package with a stable equivalent if one supports the required frame-step behavior.
-- If that is not practical, formally vendor and approve the exact package version and monitor upstream updates before deployment.
-
-Status:
-- Open
 
 ### P2 Open: Portable ZIP distribution remains less tamper-resistant than signed package deployment
 
@@ -111,6 +94,15 @@ Implemented:
 Location:
 - [Packaging/MSIX/build-msix.ps1](Packaging/MSIX/build-msix.ps1)
 
+### Prerelease FFME dependency removed
+
+Implemented:
+- The app no longer references the prerelease FFME package; playback and frame review now run through the custom FFmpeg engine.
+
+Locations:
+- [FramePlayer.csproj](FramePlayer.csproj)
+- [Engines/FFmpeg/FfmpegReviewEngine.cs](Engines/FFmpeg/FfmpegReviewEngine.cs)
+
 ## Repository Hygiene Checks
 
 Performed:
@@ -138,7 +130,6 @@ Recommended baseline:
 - Timestamp the package signature
 - Install into a protected location with controlled write access
 - Treat diagnostics exports as sensitive
-- Resolve or formally accept the prerelease FFME dependency before production rollout
 
 Not covered by this review:
 - Formal authority-to-operate requirements

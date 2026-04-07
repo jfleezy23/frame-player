@@ -1,7 +1,6 @@
 <Window x:Class="FramePlayer.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:ffme="clr-namespace:Unosquare.FFME;assembly=ffme.win"
         Title="Frame Player"
         Width="820"
         Height="520"
@@ -234,8 +233,7 @@
           <MenuItem Header="E_xit" Click="ExitMenuItem_Click" />
         </MenuItem>
         <MenuItem Header="_Playback">
-          <MenuItem Header="_Play" InputGestureText="Space" Click="PlayButton_Click" />
-          <MenuItem Header="_Pause" InputGestureText="Space" Click="PauseButton_Click" />
+          <MenuItem x:Name="PlayPauseMenuItem" Header="_Play" InputGestureText="Space" Click="PlayPauseButton_Click" />
           <Separator />
           <MenuItem Header="_Rewind 5s" InputGestureText="J" Click="RewindButton_Click" />
           <MenuItem Header="_Fast Forward 5s" InputGestureText="L" Click="FastForwardButton_Click" />
@@ -296,19 +294,15 @@
             BorderThickness="1"
             CornerRadius="12">
       <Grid>
-        <ffme:MediaElement x:Name="Media"
-                           Background="#101317"
-                           Focusable="True"
-                           LoadedBehavior="Manual"
-                           UnloadedBehavior="Manual"
-                           VerticalSyncEnabled="True"
-                           ScrubbingEnabled="True"
-                           Stretch="Uniform"
-                           RenderOptions.BitmapScalingMode="NearestNeighbor"
-                           MediaOpened="Media_MediaOpened"
-                           MediaFailed="Media_MediaFailed"
-                           MediaStateChanged="Media_MediaStateChanged"
-                           MouseDoubleClick="Media_MouseDoubleClick" />
+        <Border x:Name="CustomVideoSurfaceHost"
+                Background="#101317"
+                Focusable="True"
+                MouseLeftButtonDown="CustomVideoSurfaceHost_MouseLeftButtonDown">
+          <Image x:Name="CustomVideoSurface"
+                 Stretch="Uniform"
+                 SnapsToDevicePixels="True"
+                 RenderOptions.BitmapScalingMode="NearestNeighbor" />
+        </Border>
 
         <Border x:Name="EmptyStateOverlay"
                 Margin="18"
@@ -344,7 +338,7 @@
                          VerticalAlignment="Center"
                          Foreground="{StaticResource MutedBrush}"
                          FontSize="12"
-                         Text="AVI, MOV, M4V, MP4" />
+                         Text="AVI, MOV, M4V, MP4, MKV, WMV, TS" />
             </StackPanel>
           </StackPanel>
         </Border>
@@ -371,14 +365,10 @@
               <Image Width="16" Height="16" Source="{StaticResource RewindIcon}" />
             </Button>
             <Button Style="{StaticResource TransportButtonStyle}"
+                    x:Name="OverlayPlayPauseButton"
                     ToolTip="Play"
-                    Click="PlayButton_Click">
-              <Image Width="16" Height="16" Source="{StaticResource PlayIcon}" />
-            </Button>
-            <Button Style="{StaticResource TransportButtonStyle}"
-                    ToolTip="Pause"
-                    Click="PauseButton_Click">
-              <Image Width="16" Height="16" Source="{StaticResource PauseIcon}" />
+                    Click="PlayPauseButton_Click">
+              <Image x:Name="OverlayPlayPauseIcon" Width="16" Height="16" Source="{StaticResource PlayIcon}" />
             </Button>
             <Button Style="{StaticResource TransportButtonStyle}"
                     ToolTip="Fast Forward 5 Seconds"
@@ -437,9 +427,7 @@
                   Margin="12,0"
                   Minimum="0"
                   Maximum="1"
-                  IsMoveToPointEnabled="True"
-                  PreviewMouseLeftButtonDown="PositionSlider_PreviewMouseLeftButtonDown"
-                  PreviewMouseLeftButtonUp="PositionSlider_PreviewMouseLeftButtonUp"
+                  IsMoveToPointEnabled="False"
                   ValueChanged="PositionSlider_ValueChanged" />
 
           <TextBlock x:Name="DurationTextBlock"
@@ -470,17 +458,11 @@
                     Click="RewindButton_Click">
               <Image Width="16" Height="16" Source="{StaticResource RewindIcon}" />
             </Button>
-            <Button x:Name="PlayButton"
+            <Button x:Name="PlayPauseButton"
                     Style="{StaticResource TransportButtonStyle}"
                     ToolTip="Play"
-                    Click="PlayButton_Click">
-              <Image Width="16" Height="16" Source="{StaticResource PlayIcon}" />
-            </Button>
-            <Button x:Name="PauseButton"
-                    Style="{StaticResource TransportButtonStyle}"
-                    ToolTip="Pause"
-                    Click="PauseButton_Click">
-              <Image Width="16" Height="16" Source="{StaticResource PauseIcon}" />
+                    Click="PlayPauseButton_Click">
+              <Image x:Name="PlayPauseIcon" Width="16" Height="16" Source="{StaticResource PlayIcon}" />
             </Button>
             <Button x:Name="FastForwardButton"
                     Style="{StaticResource TransportButtonStyle}"
@@ -563,6 +545,14 @@
                    FontSize="12"
                    TextTrimming="CharacterEllipsis"
                    Text="Idle. Open a video to begin." />
+      </StatusBarItem>
+      <Separator />
+      <StatusBarItem>
+        <TextBlock x:Name="CacheStatusTextBlock"
+                   Foreground="{StaticResource MutedBrush}"
+                   FontFamily="Consolas"
+                   FontSize="12"
+                   Text="Cache: idle" />
       </StatusBarItem>
       <Separator />
       <StatusBarItem>

@@ -7,21 +7,26 @@
     <ProjectGuid>{A6F0D60A-4E80-4A9D-8D41-357C57BAA6D9}</ProjectGuid>
     <OutputType>WinExe</OutputType>
     <RootNamespace>FramePlayer</RootNamespace>
-    <AssemblyName>FramePlayer</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <Deterministic>true</Deterministic>
     <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
     <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationIcon>Assets\FramePlayer.ico</ApplicationIcon>
+    <FramePlayerVariant Condition="'$(FramePlayerVariant)' == ''">Standard</FramePlayerVariant>
+    <VariantDefineConstants Condition="'$(FramePlayerVariant)' == 'CustomFfmpeg'">FRAMEPLAYER_COMPARE_BUILD;FRAMEPLAYER_FORCE_CUSTOM_FFMPEG</VariantDefineConstants>
+    <VariantAssemblyName Condition="'$(FramePlayerVariant)' == 'CustomFfmpeg'">Frame Player - Custom FFmpeg</VariantAssemblyName>
+    <VariantAssemblyName Condition="'$(VariantAssemblyName)' == ''">FramePlayer</VariantAssemblyName>
+    <AssemblyName>$(VariantAssemblyName)</AssemblyName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
     <DebugSymbols>true</DebugSymbols>
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
     <OutputPath>bin\Debug\</OutputPath>
-    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <DefineConstants>DEBUG;TRACE;$(VariantDefineConstants)</DefineConstants>
     <WarningLevel>4</WarningLevel>
     <PlatformTarget>x64</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
@@ -30,7 +35,7 @@
     <DebugType>pdbonly</DebugType>
     <Optimize>true</Optimize>
     <OutputPath>bin\Release\</OutputPath>
-    <DefineConstants>TRACE</DefineConstants>
+    <DefineConstants>TRACE;$(VariantDefineConstants)</DefineConstants>
     <WarningLevel>4</WarningLevel>
     <PlatformTarget>x64</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
@@ -70,11 +75,30 @@
       <DependentUpon>HelpWindow.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="Core\Abstractions\IVideoReviewEngine.cs" />
+    <Compile Include="Core\Events\FramePresentedEventArgs.cs" />
+    <Compile Include="Core\Events\VideoReviewEngineStateChangedEventArgs.cs" />
+    <Compile Include="Core\Models\DecodedVideoFrame.cs" />
+    <Compile Include="Core\Models\FrameDescriptor.cs" />
+    <Compile Include="Core\Models\FrameStepResult.cs" />
+    <Compile Include="Core\Models\ReviewPosition.cs" />
+    <Compile Include="Core\Models\VideoMediaInfo.cs" />
+    <Compile Include="Diagnostics\ReviewEngineComparisonRunner.cs" />
+    <Compile Include="Diagnostics\ReviewEngineManualTestRunner.cs" />
+    <Compile Include="Engines\FFmpeg\FfmpegAudioPlaybackSession.cs" />
+    <Compile Include="Engines\FFmpeg\FfmpegAudioStreamInfo.cs" />
+    <Compile Include="Engines\FFmpeg\FfmpegDecodedFrameCache.cs" />
+    <Compile Include="Engines\FFmpeg\FfmpegFrameConverter.cs" />
+    <Compile Include="Engines\FFmpeg\FfmpegGlobalFrameIndex.cs" />
+    <Compile Include="Engines\FFmpeg\FfmpegNativeHelpers.cs" />
+    <Compile Include="Engines\FFmpeg\FfmpegReviewEngine.cs" />
+    <Compile Include="Engines\FFmpeg\WinMmAudioOutput.cs" />
     <Compile Include="MainWindow.xaml.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Services\BuildVariantInfo.cs" />
     <Compile Include="Services\DiagnosticLogService.cs" />
     <Compile Include="Services\RecentFilesService.cs" />
     <Page Include="AboutWindow.xaml">
@@ -91,14 +115,17 @@
     </Page>
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="FFME.Windows" Version="7.0.361-beta.1" />
+    <PackageReference Include="FFmpeg.AutoGen" Version="7.1.1" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Services\RuntimeManifestService.cs" />
     <None Include="Assets\FramePlayer.ico" />
     <None Include="Runtime\README.md" />
     <None Include="scripts\Build-FramePlayer.ps1" />
+    <None Include="scripts\Build-Comparison-Variants.ps1" />
+    <None Include="scripts\Create-Comparison-Shortcuts.ps1" />
     <None Include="scripts\Ensure-DevRuntime.ps1" />
+    <None Include="scripts\Run-ReviewEngine-ManualTests.ps1" />
     <None Include="LICENSE">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

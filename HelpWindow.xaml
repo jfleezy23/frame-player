@@ -76,7 +76,7 @@
                      FontSize="13"
                      LineHeight="20"
                      TextWrapping="Wrap"
-                     Text="Pause the video, then use Left and Right to move one frame at a time. Hold either arrow to enter delayed auto-step mode. The frame field shows current / total, and you can type a frame number there before pressing Enter or Go." />
+                     Text="Pause the video, then use Left and Right to move one frame at a time. Hold either arrow to enter delayed auto-step mode. The frame field shows current / total, and you can type a frame number there before pressing Enter or Go. After Enter or Go, focus returns to the video so arrow stepping works immediately." />
 
           <TextBlock Margin="0,18,0,0"
                      FontSize="15"
@@ -100,7 +100,7 @@
                      FontSize="13"
                      LineHeight="20"
                      TextWrapping="Wrap"
-                     Text="Supported formats: AVI, MOV, M4V, and MP4." />
+                     Text="Supported formats: AVI, MOV, M4V, MP4, MKV, WMV, and TS." />
         </StackPanel>
       </ScrollViewer>
     </Border>

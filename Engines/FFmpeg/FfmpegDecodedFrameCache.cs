@@ -1,0 +1,221 @@
+using System;
+using System.Collections.Generic;
+using FramePlayer.Core.Models;
+
+namespace FramePlayer.Engines.FFmpeg
+{
+    internal sealed class FfmpegDecodedFrameCache
+    {
+        private readonly List<DecodedVideoFrame> _frames = new List<DecodedVideoFrame>();
+        private readonly int _maxPreviousFrames;
+        private readonly int _maxForwardFrames;
+        private int _currentIndex = -1;
+
+        public FfmpegDecodedFrameCache(int maxPreviousFrames, int maxForwardFrames)
+        {
+            _maxPreviousFrames = Math.Max(0, maxPreviousFrames);
+            _maxForwardFrames = Math.Max(0, maxForwardFrames);
+        }
+
+        public int Count
+        {
+            get { return _frames.Count; }
+        }
+
+        public int ForwardCount
+        {
+            get { return HasCurrent ? _frames.Count - _currentIndex - 1 : 0; }
+        }
+
+        public int PreviousCount
+        {
+            get { return HasCurrent ? _currentIndex : 0; }
+        }
+
+        public bool HasCurrent
+        {
+            get { return _currentIndex >= 0 && _currentIndex < _frames.Count; }
+        }
+
+        public DecodedVideoFrame Current
+        {
+            get { return HasCurrent ? _frames[_currentIndex] : null; }
+        }
+
+        public void Clear()
+        {
+            _frames.Clear();
+            _currentIndex = -1;
+        }
+
+        public void Reset(DecodedVideoFrame currentFrame)
+        {
+            if (currentFrame == null)
+            {
+                throw new ArgumentNullException(nameof(currentFrame));
+            }
+
+            _frames.Clear();
+            _frames.Add(currentFrame);
+            _currentIndex = 0;
+        }
+
+        public void LoadWindow(IList<DecodedVideoFrame> frames, int currentIndex)
+        {
+            if (frames == null)
+            {
+                throw new ArgumentNullException(nameof(frames));
+            }
+
+            if (frames.Count == 0)
+            {
+                throw new ArgumentException("The cache window must contain at least one decoded frame.", nameof(frames));
+            }
+
+            if (currentIndex < 0 || currentIndex >= frames.Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(currentIndex));
+            }
+
+            _frames.Clear();
+            _frames.AddRange(frames);
+            _currentIndex = currentIndex;
+        }
+
+        public void AppendForward(DecodedVideoFrame frame)
+        {
+            if (frame == null)
+            {
+                throw new ArgumentNullException(nameof(frame));
+            }
+
+            _frames.Add(frame);
+            TrimForwardFrames();
+        }
+
+        public DecodedVideoFrame AppendForwardAndAdvance(DecodedVideoFrame frame)
+        {
+            AppendForward(frame);
+            DecodedVideoFrame currentFrame;
+            if (!TryMoveNext(out currentFrame))
+            {
+                throw new InvalidOperationException("The decoded frame cache could not advance to the appended frame.");
+            }
+
+            return currentFrame;
+        }
+
+        public bool TryMoveNext(out DecodedVideoFrame frame)
+        {
+            if (!HasCurrent || _currentIndex + 1 >= _frames.Count)
+            {
+                frame = null;
+                return false;
+            }
+
+            _currentIndex++;
+            TrimPreviousFrames();
+            frame = _frames[_currentIndex];
+            return true;
+        }
+
+        public bool TryPeekNext(out DecodedVideoFrame frame)
+        {
+            if (!HasCurrent || _currentIndex + 1 >= _frames.Count)
+            {
+                frame = null;
+                return false;
+            }
+
+            frame = _frames[_currentIndex + 1];
+            return true;
+        }
+
+        public bool TryMovePrevious(out DecodedVideoFrame frame)
+        {
+            if (!HasCurrent || _currentIndex <= 0)
+            {
+                frame = null;
+                return false;
+            }
+
+            _currentIndex--;
+            frame = _frames[_currentIndex];
+            return true;
+        }
+
+        public bool TryMoveToAbsoluteFrameIndex(long frameIndex, out DecodedVideoFrame frame)
+        {
+            if (frameIndex < 0)
+            {
+                frame = null;
+                return false;
+            }
+
+            for (var index = 0; index < _frames.Count; index++)
+            {
+                var candidate = _frames[index];
+                if (candidate == null ||
+                    !candidate.Descriptor.IsFrameIndexAbsolute ||
+                    !candidate.Descriptor.FrameIndex.HasValue ||
+                    candidate.Descriptor.FrameIndex.Value != frameIndex)
+                {
+                    continue;
+                }
+
+                _currentIndex = index;
+                TrimPreviousFrames();
+                TrimForwardFrames();
+                frame = _frames[_currentIndex];
+                return true;
+            }
+
+            frame = null;
+            return false;
+        }
+
+        public bool ReplaceFrames(Func<DecodedVideoFrame, DecodedVideoFrame> replaceFrame)
+        {
+            if (replaceFrame == null)
+            {
+                throw new ArgumentNullException(nameof(replaceFrame));
+            }
+
+            var changed = false;
+            for (var index = 0; index < _frames.Count; index++)
+            {
+                var existingFrame = _frames[index];
+                var replacementFrame = replaceFrame(existingFrame);
+                if (replacementFrame == null)
+                {
+                    replacementFrame = existingFrame;
+                }
+
+                if (!ReferenceEquals(existingFrame, replacementFrame))
+                {
+                    _frames[index] = replacementFrame;
+                    changed = true;
+                }
+            }
+
+            return changed;
+        }
+
+        private void TrimPreviousFrames()
+        {
+            while (_currentIndex > _maxPreviousFrames)
+            {
+                _frames.RemoveAt(0);
+                _currentIndex--;
+            }
+        }
+
+        private void TrimForwardFrames()
+        {
+            while (HasCurrent && ForwardCount > _maxForwardFrames)
+            {
+                _frames.RemoveAt(_frames.Count - 1);
+            }
+        }
+    }
+}

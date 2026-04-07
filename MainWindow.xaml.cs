@@ -7,12 +7,16 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
-using Microsoft.Win32;
+using FramePlayer.Core.Abstractions;
+using FramePlayer.Core.Events;
+using FramePlayer.Core.Models;
+using FramePlayer.Engines.FFmpeg;
 using FramePlayer.Services;
-using Unosquare.FFME.Common;
+using Microsoft.Win32;
 
 namespace FramePlayer
 {
@@ -25,8 +29,10 @@ namespace FramePlayer
 
         private readonly DispatcherTimer _positionTimer;
         private readonly DispatcherTimer _frameStepRepeatTimer;
+        private readonly BuildVariantInfo _buildVariant;
         private readonly DiagnosticLogService _diagnosticLogService;
         private readonly RecentFilesService _recentFilesService;
+        private readonly IVideoReviewEngine _videoReviewEngine;
 
         private WindowState _restoreWindowState;
         private WindowStyle _restoreWindowStyle;
@@ -44,15 +50,29 @@ namespace FramePlayer
         private TimeSpan _mediaDuration;
         private string _currentFilePath;
         private string _lastMediaErrorMessage;
+        private bool _isCacheStatusActive;
 
         public MainWindow()
         {
             InitializeComponent();
 
-            Media.RendererOptions.VideoImageType = VideoRendererImageType.WriteableBitmap;
+            PositionSlider.AddHandler(
+                PreviewMouseLeftButtonDownEvent,
+                new MouseButtonEventHandler(PositionSlider_PreviewMouseLeftButtonDown),
+                true);
+            PositionSlider.AddHandler(
+                PreviewMouseLeftButtonUpEvent,
+                new MouseButtonEventHandler(PositionSlider_PreviewMouseLeftButtonUp),
+                true);
+
+            _buildVariant = BuildVariantInfo.Current;
+            CustomVideoSurfaceHost.Visibility = Visibility.Visible;
 
             _diagnosticLogService = new DiagnosticLogService();
             _recentFilesService = new RecentFilesService();
+            _videoReviewEngine = CreateVideoReviewEngine();
+            _videoReviewEngine.StateChanged += VideoReviewEngine_StateChanged;
+            _videoReviewEngine.FramePresented += VideoReviewEngine_FramePresented;
             _framesPerSecond = DefaultFramesPerSecond;
             _positionStep = TimeSpan.FromSeconds(1d / DefaultFramesPerSecond);
             _mediaDuration = TimeSpan.Zero;
@@ -80,12 +100,34 @@ namespace FramePlayer
 
             LogInfo(string.Format(
                 CultureInfo.InvariantCulture,
-                "Session started. Version {0}. Runtime available: {1}. Runtime source: {2}.",
+                "Session started. Build {0}. Forced backend: {1}. Version {2}. Runtime available: {3}. Runtime source: {4}.",
+                _buildVariant.BuildDisplayName,
+                _buildVariant.ForcedBackend,
                 GetApplicationVersion(),
                 App.HasBundledFfmpegRuntime ? "Yes" : "No",
                 App.HasBundledFfmpegRuntime
                     ? "Bundled runtime verified."
                     : GetRuntimeStatusMessage()));
+        }
+
+        private IVideoReviewEngine CreateVideoReviewEngine()
+        {
+            return new FfmpegReviewEngine();
+        }
+
+        private void FocusPreferredVideoSurface()
+        {
+            Keyboard.Focus(CustomVideoSurfaceHost);
+        }
+
+        private static string GetSupportedVideoExtensionsDescription()
+        {
+            return "AVI, MOV, M4V, MP4, MKV, WMV, TS";
+        }
+
+        private static string GetOpenFileFilter()
+        {
+            return "Supported Video Files|*.avi;*.mov;*.m4v;*.mp4;*.mkv;*.wmv;*.ts|AVI Files|*.avi|MOV Files|*.mov|M4V Files|*.m4v|MP4 Files|*.mp4|MKV Files|*.mkv|WMV Files|*.wmv|TS Files|*.ts|All Files|*.*";
         }
 
         private async void OpenFileButton_Click(object sender, RoutedEventArgs e)
@@ -98,7 +140,7 @@ namespace FramePlayer
             var dialog = new OpenFileDialog
             {
                 Title = "Open Video File",
-                Filter = "Supported Video Files|*.avi;*.mov;*.m4v;*.mp4|AVI Files|*.avi|MOV Files|*.mov|M4V Files|*.m4v|MP4 Files|*.mp4|All Files|*.*"
+                Filter = GetOpenFileFilter()
             };
 
             if (dialog.ShowDialog(this) == true)
@@ -142,24 +184,19 @@ namespace FramePlayer
             ToggleFullScreen();
         }
 
-        private async void PlayButton_Click(object sender, RoutedEventArgs e)
+        private async void PlayPauseButton_Click(object sender, RoutedEventArgs e)
         {
-            await StartPlaybackAsync();
+            await TogglePlaybackAsync();
         }
 
-        private async void PauseButton_Click(object sender, RoutedEventArgs e)
+        private async void RewindButton_Click(object sender, RoutedEventArgs e)
         {
-            await PausePlaybackAsync();
+            await SeekRelativeAsync(-SeekJump);
         }
 
-        private void RewindButton_Click(object sender, RoutedEventArgs e)
+        private async void FastForwardButton_Click(object sender, RoutedEventArgs e)
         {
-            SeekRelative(-SeekJump);
-        }
-
-        private void FastForwardButton_Click(object sender, RoutedEventArgs e)
-        {
-            SeekRelative(SeekJump);
+            await SeekRelativeAsync(SeekJump);
         }
 
         private async void PreviousFrameButton_Click(object sender, RoutedEventArgs e)
@@ -191,21 +228,91 @@ namespace FramePlayer
             FrameNumberTextBox.SelectAll();
         }
 
-        private void PositionSlider_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-        {
-            _isSliderDragActive = true;
-        }
-
-        private void PositionSlider_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        private async void PositionSlider_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             if (!_isMediaLoaded)
+            {
+                return;
+            }
+
+            if (IsSliderThumbSource(e.OriginalSource as DependencyObject))
+            {
+                _isSliderDragActive = true;
+                return;
+            }
+
+            _isSliderDragActive = false;
+            e.Handled = true;
+
+            TimeSpan clickedTarget;
+            if (TryMoveSliderToPoint(e, out clickedTarget))
+            {
+                await CommitSliderSeekAsync("click", clickedTarget);
+            }
+        }
+
+        private async void PositionSlider_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            if (!_isMediaLoaded || !_isSliderDragActive)
             {
                 _isSliderDragActive = false;
                 return;
             }
 
             _isSliderDragActive = false;
-            SeekTo(TimeSpan.FromSeconds(PositionSlider.Value));
+            await CommitSliderSeekAsync("drag", TimeSpan.FromSeconds(PositionSlider.Value));
+        }
+
+        private bool TryMoveSliderToPoint(MouseButtonEventArgs e, out TimeSpan target)
+        {
+            target = TimeSpan.Zero;
+            if (PositionSlider.Maximum <= PositionSlider.Minimum)
+            {
+                return false;
+            }
+
+            var track = PositionSlider.Template.FindName("PART_Track", PositionSlider) as Track;
+            double value;
+            if (track != null)
+            {
+                value = track.ValueFromPoint(e.GetPosition(track));
+            }
+            else
+            {
+                if (PositionSlider.ActualWidth <= 0d)
+                {
+                    return false;
+                }
+
+                var point = e.GetPosition(PositionSlider);
+                var ratio = Math.Max(0d, Math.Min(1d, point.X / PositionSlider.ActualWidth));
+                if (PositionSlider.FlowDirection == FlowDirection.RightToLeft)
+                {
+                    ratio = 1d - ratio;
+                }
+
+                value = PositionSlider.Minimum + ((PositionSlider.Maximum - PositionSlider.Minimum) * ratio);
+            }
+
+            value = Math.Max(PositionSlider.Minimum, Math.Min(PositionSlider.Maximum, value));
+            PositionSlider.Value = value;
+            target = TimeSpan.FromSeconds(value);
+            return true;
+        }
+
+        private static bool IsSliderThumbSource(DependencyObject source)
+        {
+            while (source != null)
+            {
+                if (source is Thumb)
+                {
+                    return true;
+                }
+
+                source = VisualTreeHelper.GetParent(source);
+            }
+
+            return false;
         }
 
         private void PositionSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -217,7 +324,6 @@ namespace FramePlayer
 
             var previewPosition = TimeSpan.FromSeconds(PositionSlider.Value);
             CurrentPositionTextBlock.Text = FormatTime(previewPosition);
-            UpdateCurrentFrameDisplay(previewPosition);
         }
 
         private async void Window_Drop(object sender, DragEventArgs e)
@@ -231,7 +337,12 @@ namespace FramePlayer
             var firstSupportedFile = files.FirstOrDefault(IsSupportedVideoFile);
             if (firstSupportedFile == null)
             {
-                MessageBox.Show(this, "Drop an AVI, MOV, M4V, or MP4 file.", "Unsupported File", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(
+                    this,
+                    "Drop a supported video file (" + GetSupportedVideoExtensionsDescription() + ").",
+                    "Unsupported File",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
                 return;
             }
 
@@ -252,7 +363,7 @@ namespace FramePlayer
             e.Handled = true;
         }
 
-        private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+        private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.O)
             {
@@ -263,7 +374,7 @@ namespace FramePlayer
 
             if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.W)
             {
-                _ = CloseMediaAsync();
+                await CloseMediaAsync();
                 e.Handled = true;
                 return;
             }
@@ -322,7 +433,7 @@ namespace FramePlayer
             switch (e.Key)
             {
                 case Key.Space:
-                    _ = TogglePlaybackAsync();
+                    await TogglePlaybackAsync();
                     e.Handled = true;
                     break;
                 case Key.Left:
@@ -340,11 +451,11 @@ namespace FramePlayer
                     }
                     break;
                 case Key.J:
-                    SeekRelative(-SeekJump);
+                    await SeekRelativeAsync(-SeekJump);
                     e.Handled = true;
                     break;
                 case Key.L:
-                    SeekRelative(SeekJump);
+                    await SeekRelativeAsync(SeekJump);
                     e.Handled = true;
                     break;
             }
@@ -365,7 +476,9 @@ namespace FramePlayer
             LogInfo("Session ended.");
             _positionTimer.Stop();
             _frameStepRepeatTimer.Stop();
-            Media.Dispose();
+            _videoReviewEngine.StateChanged -= VideoReviewEngine_StateChanged;
+            _videoReviewEngine.FramePresented -= VideoReviewEngine_FramePresented;
+            _videoReviewEngine.Dispose();
         }
 
         private async Task OpenMediaAsync(string filePath)
@@ -380,7 +493,12 @@ namespace FramePlayer
             if (!IsSupportedVideoFile(filePath))
             {
                 LogWarning("Open requested for an unsupported file type: " + GetSafeFileDisplay(filePath));
-                MessageBox.Show(this, "Supported file types are AVI, MOV, M4V, and MP4.", "Unsupported File", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(
+                    this,
+                    "Supported file types are " + GetSupportedVideoExtensionsDescription() + ".",
+                    "Unsupported File",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
                 return;
             }
 
@@ -394,22 +512,21 @@ namespace FramePlayer
                 if (_isMediaLoaded)
                 {
                     LogInfo("Closing current media before opening the new file.");
-                    await Media.Close();
+                    await _videoReviewEngine.CloseAsync();
                 }
 
-                var opened = await Media.Open(new Uri(filePath));
-                if (!opened)
-                {
-                    throw new InvalidOperationException("The bundled playback runtime could not open this video.");
-                }
-
+                await RunWithCacheStatusAsync(
+                    "Cache: indexing and warming...",
+                    () => _videoReviewEngine.OpenAsync(filePath));
                 _currentFilePath = filePath;
-                _isMediaLoaded = true;
-                _isPlaying = false;
+                _isMediaLoaded = _videoReviewEngine.IsMediaOpen;
+                _isPlaying = _videoReviewEngine.IsPlaying;
 
-                await Media.Pause();
-                RefreshMediaMetricsFromElement();
-                await Media.Seek(TimeSpan.Zero);
+                await _videoReviewEngine.PauseAsync();
+                RefreshMediaMetricsFromEngine();
+                await RunWithCacheStatusAsync(
+                    "Cache: warming first frame...",
+                    () => _videoReviewEngine.SeekToTimeAsync(TimeSpan.Zero));
 
                 _recentFilesService.Add(filePath);
                 RefreshRecentFilesMenu();
@@ -418,7 +535,7 @@ namespace FramePlayer
                 UpdateTransportState();
                 Activate();
                 Focus();
-                Keyboard.Focus(Media);
+                FocusPreferredVideoSurface();
 
                 LogInfo(string.Format(
                     CultureInfo.InvariantCulture,
@@ -427,10 +544,27 @@ namespace FramePlayer
                     _framesPerSecond,
                     FormatStepDuration(_positionStep),
                     FormatTime(_mediaDuration)));
+                var ffmpegEngine = _videoReviewEngine as FfmpegReviewEngine;
+                if (ffmpegEngine != null)
+                {
+                    LogInfo(string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Open timing: total {0:0.0} ms | container/probe {1:0.0} ms | stream {2:0.0} ms | audio probe {3:0.0} ms | decoder {4:0.0} ms | first frame {5:0.0} ms | cache warm {6:0.0} ms | index {7}.",
+                        ffmpegEngine.LastOpenTotalMilliseconds,
+                        ffmpegEngine.LastOpenContainerProbeMilliseconds,
+                        ffmpegEngine.LastOpenStreamDiscoveryMilliseconds,
+                        ffmpegEngine.LastOpenAudioProbeMilliseconds,
+                        ffmpegEngine.LastOpenVideoDecoderInitializationMilliseconds,
+                        ffmpegEngine.LastOpenFirstFrameDecodeMilliseconds,
+                        ffmpegEngine.LastOpenInitialCacheWarmMilliseconds,
+                        ffmpegEngine.GlobalFrameIndexStatus));
+                }
             }
             catch (Exception ex)
             {
-                _lastMediaErrorMessage = SanitizeSensitiveText(ex.Message);
+                _lastMediaErrorMessage = !string.IsNullOrWhiteSpace(_videoReviewEngine.LastErrorMessage)
+                    ? SanitizeSensitiveText(_videoReviewEngine.LastErrorMessage)
+                    : SanitizeSensitiveText(ex.Message);
                 ResetMediaState(clearFilePath: true, clearErrorMessage: false);
                 SetPlaybackMessage("Could not open the selected media.");
                 SetMediaSummary(_lastMediaErrorMessage);
@@ -464,6 +598,13 @@ namespace FramePlayer
         {
             EndHeldFrameStep();
 
+            if (!_buildVariant.SupportsTimedPlayback)
+            {
+                SetPlaybackMessage(_buildVariant.PlaybackCapabilityText);
+                LogInfo(_buildVariant.PlaybackCapabilityText);
+                return;
+            }
+
             if (_isPlaying)
             {
                 await PausePlaybackAsync();
@@ -480,7 +621,7 @@ namespace FramePlayer
             if (_isMediaLoaded)
             {
                 LogInfo("Closing media: " + GetSafeFileDisplay(_currentFilePath));
-                await Media.Close();
+                await _videoReviewEngine.CloseAsync();
             }
 
             ResetMediaState(clearFilePath: true, clearErrorMessage: true);
@@ -495,8 +636,8 @@ namespace FramePlayer
 
             var positionBeforePause = GetDisplayPosition();
             var wasPlaying = _isPlaying;
-            await Media.Pause();
-            _isPlaying = false;
+            await _videoReviewEngine.PauseAsync();
+            _isPlaying = _videoReviewEngine.IsPlaying;
             UpdateTransportState();
 
             if (logAction && wasPlaying)
@@ -512,11 +653,21 @@ namespace FramePlayer
                 return;
             }
 
-            var playing = await Media.Play();
-            _isPlaying = playing;
-            if (!playing)
+            if (!_buildVariant.SupportsTimedPlayback)
             {
-                _lastMediaErrorMessage = "Playback did not start.";
+                SetPlaybackMessage(_buildVariant.PlaybackCapabilityText);
+                SetMediaSummary(_buildVariant.StatusText);
+                LogInfo(_buildVariant.PlaybackCapabilityText);
+                return;
+            }
+
+            await _videoReviewEngine.PlayAsync();
+            _isPlaying = _videoReviewEngine.IsPlaying;
+            if (!_isPlaying)
+            {
+                _lastMediaErrorMessage = !string.IsNullOrWhiteSpace(_videoReviewEngine.LastErrorMessage)
+                    ? SanitizeSensitiveText(_videoReviewEngine.LastErrorMessage)
+                    : "Playback did not start.";
                 SetMediaSummary(_lastMediaErrorMessage);
                 LogWarning("Playback did not start.");
             }
@@ -528,7 +679,7 @@ namespace FramePlayer
             UpdateTransportState();
         }
 
-        private void SeekRelative(TimeSpan offset)
+        private async Task SeekRelativeAsync(TimeSpan offset)
         {
             EndHeldFrameStep();
 
@@ -537,15 +688,18 @@ namespace FramePlayer
                 return;
             }
 
-            var target = ClampPosition(Media.Position + offset);
-            Media.Position = target;
-            UpdatePositionDisplay(target);
+            var target = ClampPosition(GetDisplayPosition() + offset);
+            await RunWithCacheStatusAsync(
+                "Cache: seeking and warming...",
+                () => _videoReviewEngine.SeekToTimeAsync(target));
+            UpdatePositionDisplay(GetDisplayPosition());
             LogInfo(string.Format(
                 CultureInfo.InvariantCulture,
-                "Seeked {0}{1} to {2}.",
+                "Seeked {0}{1} to {2}; landed at {3}.",
                 offset < TimeSpan.Zero ? "-" : "+",
                 FormatTime(offset.Duration()),
-                FormatTime(target)));
+                FormatTime(target),
+                FormatTime(GetDisplayPosition())));
         }
 
         private async Task StepFrameAsync(int delta)
@@ -561,20 +715,20 @@ namespace FramePlayer
             {
                 await PausePlaybackAsync(logAction: false);
 
-                bool stepped;
-                if (delta < 0)
-                {
-                    stepped = await Media.StepBackward();
-                }
-                else
-                {
-                    stepped = await Media.StepForward();
-                }
+                FrameStepResult stepResult = null;
+                await RunWithCacheStatusAsync(
+                    delta < 0 ? "Cache: checking backward window..." : "Cache: refilling forward window...",
+                    async () =>
+                    {
+                        stepResult = delta < 0
+                            ? await _videoReviewEngine.StepBackwardAsync()
+                            : await _videoReviewEngine.StepForwardAsync();
+                    });
 
-                if (!stepped)
+                if (!stepResult.Success)
                 {
-                    SetPlaybackMessage("Frame step did not advance. This media may not support precise stepping at the current position.");
-                    LogWarning("Frame step did not advance.");
+                    SetPlaybackMessage(stepResult.Message);
+                    LogWarning(stepResult.Message);
                 }
 
                 UpdatePositionDisplay(GetDisplayPosition());
@@ -585,7 +739,19 @@ namespace FramePlayer
             }
         }
 
-        private void SeekTo(TimeSpan target)
+        private async Task CommitSliderSeekAsync(string interactionName, TimeSpan target)
+        {
+            LogInfo(string.Format(
+                CultureInfo.InvariantCulture,
+                "Timeline {0} seek requested from slider at {1}.",
+                interactionName,
+                FormatTime(ClampPosition(target))));
+
+            await SeekToAsync(target, "timeline " + interactionName);
+            FocusPreferredVideoSurface();
+        }
+
+        private async Task SeekToAsync(TimeSpan target, string diagnosticSource = null)
         {
             EndHeldFrameStep();
 
@@ -595,8 +761,15 @@ namespace FramePlayer
             }
 
             var clampedTarget = ClampPosition(target);
-            Media.Position = clampedTarget;
-            UpdatePositionDisplay(clampedTarget);
+            await RunWithCacheStatusAsync(
+                "Cache: seeking...",
+                () => _videoReviewEngine.SeekToTimeAsync(clampedTarget));
+            UpdatePositionDisplay(GetDisplayPosition());
+
+            if (!string.IsNullOrWhiteSpace(diagnosticSource))
+            {
+                LogSeekResult(diagnosticSource, target, clampedTarget);
+            }
         }
 
         private async Task JumpToFrameFromInputAsync()
@@ -615,23 +788,23 @@ namespace FramePlayer
                 return;
             }
 
-            requestedFrameNumber = Math.Max(1L, requestedFrameNumber);
             var maxFrameIndex = GetMaxFrameIndex();
-            var targetFrameIndex = requestedFrameNumber - 1L;
+            var targetFrameIndex = GetFrameIndexFromDisplayedFrameNumber(requestedFrameNumber);
             if (maxFrameIndex >= 0 && targetFrameIndex > maxFrameIndex)
             {
                 targetFrameIndex = maxFrameIndex;
             }
 
             await PausePlaybackAsync();
-
-            var targetPosition = GetFramePosition(targetFrameIndex);
-            Media.Position = ClampPosition(targetPosition);
+            await RunWithCacheStatusAsync(
+                "Cache: seeking frame...",
+                () => _videoReviewEngine.SeekToFrameAsync(targetFrameIndex));
+            FocusPreferredVideoSurface();
             UpdatePositionDisplay(GetDisplayPosition());
             LogInfo(string.Format(
                 CultureInfo.InvariantCulture,
                 "Jumped to frame {0} at {1}.",
-                targetFrameIndex + 1L,
+                GetDisplayedFrameNumber(targetFrameIndex),
                 FormatTime(GetDisplayPosition())));
         }
 
@@ -717,51 +890,47 @@ namespace FramePlayer
             RecentFilesMenuItem.Items.Add(clearItem);
         }
 
-        private void RefreshMediaMetricsFromElement()
+        private void RefreshMediaMetricsFromEngine()
         {
-            _positionStep = Media.PositionStep > TimeSpan.Zero
-                ? Media.PositionStep
+            var mediaInfo = _videoReviewEngine.MediaInfo;
+            _positionStep = mediaInfo.PositionStep > TimeSpan.Zero
+                ? mediaInfo.PositionStep
                 : TimeSpan.FromSeconds(1d / DefaultFramesPerSecond);
-            _framesPerSecond = _positionStep > TimeSpan.Zero
-                ? 1.0 / _positionStep.TotalSeconds
+            _framesPerSecond = mediaInfo.FramesPerSecond > 0
+                ? mediaInfo.FramesPerSecond
+                : _positionStep > TimeSpan.Zero
+                    ? 1.0 / _positionStep.TotalSeconds
                 : DefaultFramesPerSecond;
-
-            if (Media.NaturalDuration.HasValue && Media.NaturalDuration.Value > TimeSpan.Zero)
-            {
-                _mediaDuration = Media.NaturalDuration.Value;
-            }
-            else if (Media.MediaInfo != null && Media.MediaInfo.Duration > TimeSpan.Zero)
-            {
-                _mediaDuration = Media.MediaInfo.Duration;
-            }
-            else
-            {
-                _mediaDuration = TimeSpan.Zero;
-            }
+            _mediaDuration = mediaInfo.Duration > TimeSpan.Zero
+                ? mediaInfo.Duration
+                : TimeSpan.Zero;
         }
 
         private void UpdateHeader()
         {
+            var titlePrefix = _buildVariant.BuildDisplayName;
             if (string.IsNullOrWhiteSpace(_currentFilePath))
             {
                 CurrentFileTextBlock.Text = "No file loaded";
                 CurrentFileTextBlock.ToolTip = null;
-                Title = "Frame Player";
+                Title = titlePrefix;
             }
             else
             {
                 CurrentFileTextBlock.Text = Path.GetFileName(_currentFilePath);
                 CurrentFileTextBlock.ToolTip = _currentFilePath;
-                Title = "Frame Player - " + Path.GetFileName(_currentFilePath);
+                Title = titlePrefix + " - " + Path.GetFileName(_currentFilePath);
             }
         }
 
         private void UpdateTransportState()
         {
             var canControl = _isMediaLoaded;
+            var canPlay = canControl && _buildVariant.SupportsTimedPlayback;
 
-            PlayButton.IsEnabled = canControl && !_isPlaying;
-            PauseButton.IsEnabled = canControl && _isPlaying;
+            PlayPauseButton.IsEnabled = canPlay;
+            OverlayPlayPauseButton.IsEnabled = canPlay;
+            PlayPauseMenuItem.IsEnabled = canPlay;
             RewindButton.IsEnabled = canControl;
             FastForwardButton.IsEnabled = canControl;
             PreviousFrameButton.IsEnabled = canControl;
@@ -773,6 +942,7 @@ namespace FramePlayer
             ToggleFullScreenButton.IsEnabled = canControl;
             OverlayToggleFullScreenButton.IsEnabled = canControl;
             FullscreenControlBar.IsEnabled = canControl;
+            UpdatePlayPauseToggleVisuals();
             EmptyStateOverlay.Visibility = canControl ? Visibility.Collapsed : Visibility.Visible;
             UpdateEmptyState();
 
@@ -782,10 +952,12 @@ namespace FramePlayer
                     !string.IsNullOrWhiteSpace(_lastMediaErrorMessage)
                         ? "The last action did not complete."
                         : App.HasBundledFfmpegRuntime
-                            ? "Ready. Open a video to begin."
+                            ? _buildVariant.IsComparisonBuild
+                                ? _buildVariant.StatusText
+                                : "Ready. Open a video to begin."
                             : "Bundled playback runtime is missing.");
                 SetMediaSummary(string.IsNullOrWhiteSpace(_lastMediaErrorMessage)
-                    ? "AVI | MOV | M4V | MP4"
+                    ? GetSupportedVideoExtensionsDescription().Replace(", ", " | ")
                     : _lastMediaErrorMessage);
                 CurrentFrameTextBlock.Text = "Frame --";
                 CurrentFrameTextBlock.ToolTip = null;
@@ -794,34 +966,65 @@ namespace FramePlayer
                 TotalFramesTextBlock.Text = "--";
                 TotalFramesTextBlock.ToolTip = null;
                 FrameNumberTextBox.Text = string.Empty;
-                FrameNumberTextBox.ToolTip = "Type a frame number and press Enter.";
-                KeyboardHintTextBlock.Text = "Ctrl+O open   drag and drop supported   F11 full screen";
+                FrameNumberTextBox.ToolTip = GetFrameNumberInputToolTip();
+                KeyboardHintTextBlock.Text = _buildVariant.SupportsTimedPlayback
+                    ? "Ctrl+O open   drag and drop supported   F11 full screen"
+                    : "Ctrl+O open   seek and frame-step ready   F11 full screen";
+                UpdateCacheStatusFromEngine();
                 UpdateFullScreenButtonIcon();
                 return;
             }
 
-            SetPlaybackMessage(_isPlaying
-                ? "Playing. Pause to use Left or Right for frame stepping."
-                : "Paused. Press Play or Space to begin. Left and Right step a single frame.");
-            KeyboardHintTextBlock.Text = _isPlaying
-                ? "Space pause   J/L seek   F11 full screen"
-                : "Left/Right frame step or hold   J/L seek   Space play   F11 full screen";
+            if (_buildVariant.SupportsTimedPlayback)
+            {
+                SetPlaybackMessage(_isPlaying
+                    ? "Playing. Pause to use Left or Right for frame stepping."
+                    : "Paused. Press Play or Space to begin. Left and Right step a single frame.");
+                KeyboardHintTextBlock.Text = _isPlaying
+                    ? "Space pause   J/L seek   F11 full screen"
+                    : "Left/Right frame step or hold   J/L seek   Space play   F11 full screen";
+            }
+            else
+            {
+                SetPlaybackMessage(_buildVariant.PlaybackCapabilityText);
+                KeyboardHintTextBlock.Text = "Left/Right frame step or hold   J/L seek   F11 full screen";
+            }
 
             SetMediaSummary(string.Format(
                 CultureInfo.InvariantCulture,
-                "FPS: {0:0.###} | Step: {1} | Duration: {2}",
+                "{0} | FPS: {1:0.###} | Step: {2} | Duration: {3} | Audio: {4}",
+                "FRAME PLAYER",
                 _framesPerSecond,
                 FormatStepDuration(_positionStep),
-                FormatTime(_mediaDuration)));
+                FormatTime(_mediaDuration),
+                GetAudioSummaryText(_videoReviewEngine.MediaInfo)));
             MediaSummaryTextBlock.ToolTip = string.Format(
                 CultureInfo.InvariantCulture,
-                "Frame rate {0:0.###} fps, frame step {1}, duration {2}.",
+                "{0}. Frame rate {1:0.###} fps, frame step {2}, duration {3}. Audio: {4}.",
+                "Frame Player",
                 _framesPerSecond,
                 FormatStepDuration(_positionStep),
-                FormatTime(_mediaDuration));
+                FormatTime(_mediaDuration),
+                GetAudioTooltipText(_videoReviewEngine.MediaInfo));
 
             UpdateCurrentFrameDisplay(GetDisplayPosition());
+            UpdateCacheStatusFromEngine();
             UpdateFullScreenButtonIcon();
+        }
+
+        private void UpdatePlayPauseToggleVisuals()
+        {
+            var icon = FindResource(_isPlaying ? "PauseIcon" : "PlayIcon") as ImageSource;
+            if (icon != null)
+            {
+                PlayPauseIcon.Source = icon;
+                OverlayPlayPauseIcon.Source = icon;
+            }
+
+            var label = _isPlaying ? "Pause" : "Play";
+            PlayPauseButton.ToolTip = label;
+            OverlayPlayPauseButton.ToolTip = label;
+            PlayPauseMenuItem.Header = _isPlaying ? "_Pause" : "_Play";
         }
 
         private void UpdatePositionDisplay(TimeSpan currentPosition)
@@ -844,9 +1047,12 @@ namespace FramePlayer
             {
                 UpdateCurrentFrameDisplay(currentPosition);
 
-                if (!FrameNumberTextBox.IsKeyboardFocusWithin)
+                long currentFrameIndex;
+                bool isAbsoluteFrameIndex;
+                if (!FrameNumberTextBox.IsKeyboardFocusWithin &&
+                    TryGetCurrentEngineFrameIndex(out currentFrameIndex, out isAbsoluteFrameIndex))
                 {
-                    FrameNumberTextBox.Text = (GetNearestFrameIndex(currentPosition) + 1L).ToString(CultureInfo.InvariantCulture);
+                    FrameNumberTextBox.Text = GetDisplayedFrameNumber(currentFrameIndex).ToString(CultureInfo.InvariantCulture);
                 }
             }
         }
@@ -861,44 +1067,99 @@ namespace FramePlayer
                 TimecodeTextBlock.ToolTip = null;
                 TotalFramesTextBlock.Text = "--";
                 TotalFramesTextBlock.ToolTip = null;
-                FrameNumberTextBox.ToolTip = "Type a frame number and press Enter.";
+                FrameNumberTextBox.ToolTip = GetFrameNumberInputToolTip();
                 return;
             }
 
-            var currentFrameIndex = GetNearestFrameIndex(currentPosition);
-            var currentFrame = currentFrameIndex + 1L;
-            var totalFrames = GetMaxFrameIndex() + 1L;
+            long currentFrameIndex;
+            bool isAbsoluteFrameIndex;
+            if (!TryGetCurrentEngineFrameIndex(out currentFrameIndex, out isAbsoluteFrameIndex))
+            {
+                CurrentFrameTextBlock.Text = "Frame --";
+                CurrentFrameTextBlock.ToolTip = "No decoded frame identity is currently available from the engine.";
+                TotalFramesTextBlock.Text = GetTotalFrameCount() > 0
+                    ? GetDisplayedTotalFrameValue(GetTotalFrameCount()).ToString(CultureInfo.InvariantCulture)
+                    : "--";
+                TimecodeTextBlock.Text = string.Format(CultureInfo.InvariantCulture, "TC --:--:--:-- | {0}", FormatTime(currentPosition));
+                TimecodeTextBlock.ToolTip = "Timeline time is available, but frame identity is not.";
+                FrameNumberTextBox.ToolTip = GetFrameNumberInputToolTip();
+                return;
+            }
+
+            var currentFrame = GetDisplayedFrameNumber(currentFrameIndex);
+            var totalFrames = GetTotalFrameCount();
+            var totalFrameDisplay = totalFrames > 0
+                ? GetDisplayedTotalFrameValue(totalFrames)
+                : -1L;
             var frameDigits = Math.Max(
                 4,
                 totalFrames > 0
-                    ? totalFrames.ToString(CultureInfo.InvariantCulture).Length
+                    ? totalFrameDisplay.ToString(CultureInfo.InvariantCulture).Length
                     : currentFrame.ToString(CultureInfo.InvariantCulture).Length);
             var frameFormat = "D" + frameDigits.ToString(CultureInfo.InvariantCulture);
             var timecode = FormatTimecode(currentFrameIndex);
 
-            CurrentFrameTextBlock.Text = totalFrames > 0
-                ? string.Format(
+            if (totalFrames > 0)
+            {
+                CurrentFrameTextBlock.Text = string.Format(
                     CultureInfo.InvariantCulture,
-                    "Frame {0} / {1}",
+                    _buildVariant.UsesZeroIndexedFrameDisplay
+                        ? "Frame {0} / {1} (0-index)"
+                        : "Frame {0} / {1}",
                     currentFrame.ToString(frameFormat, CultureInfo.InvariantCulture),
-                    totalFrames.ToString(frameFormat, CultureInfo.InvariantCulture))
-                : string.Format(
+                    totalFrameDisplay.ToString(frameFormat, CultureInfo.InvariantCulture));
+                CurrentFrameTextBlock.ToolTip = _buildVariant.UsesZeroIndexedFrameDisplay
+                    ? string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Current zero-indexed frame {0}. Last zero-indexed frame {1}. Total decoded frames: {2}. Identity: {3}.",
+                        currentFrame,
+                        totalFrameDisplay,
+                        totalFrames,
+                        isAbsoluteFrameIndex ? "absolute" : "segment-local")
+                    : string.Format(CultureInfo.InvariantCulture, "Current frame {0} of {1}.", currentFrame, totalFrames);
+            }
+            else
+            {
+                CurrentFrameTextBlock.Text = string.Format(
                     CultureInfo.InvariantCulture,
-                    "Frame {0}",
+                    _buildVariant.UsesZeroIndexedFrameDisplay ? "Frame {0} (0-index)" : "Frame {0}",
                     currentFrame.ToString(frameFormat, CultureInfo.InvariantCulture));
-            CurrentFrameTextBlock.ToolTip = totalFrames > 0
-                ? string.Format(CultureInfo.InvariantCulture, "Current frame {0} of {1}.", currentFrame, totalFrames)
-                : string.Format(CultureInfo.InvariantCulture, "Current frame {0}.", currentFrame);
+                CurrentFrameTextBlock.ToolTip = _buildVariant.UsesZeroIndexedFrameDisplay
+                    ? string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Current zero-indexed frame {0}. Identity: {1}.",
+                        currentFrame,
+                        isAbsoluteFrameIndex ? "absolute" : "segment-local")
+                    : string.Format(CultureInfo.InvariantCulture, "Current frame {0}.", currentFrame);
+            }
 
             TotalFramesTextBlock.Text = totalFrames > 0
-                ? totalFrames.ToString(frameFormat, CultureInfo.InvariantCulture)
+                ? totalFrameDisplay.ToString(frameFormat, CultureInfo.InvariantCulture)
                 : "--";
             TotalFramesTextBlock.ToolTip = totalFrames > 0
-                ? string.Format(CultureInfo.InvariantCulture, "Total available frames: {0}.", totalFrames)
+                ? _buildVariant.UsesZeroIndexedFrameDisplay
+                    ? string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Last zero-indexed frame: {0}. Total decoded frames: {1}.",
+                        totalFrameDisplay,
+                        totalFrames)
+                    : string.Format(CultureInfo.InvariantCulture, "Total available frames: {0}.", totalFrames)
                 : "Total available frames are not known.";
             FrameNumberTextBox.ToolTip = totalFrames > 0
-                ? string.Format(CultureInfo.InvariantCulture, "Current / total frames: {0} / {1}. Type a frame number and press Enter.", currentFrame, totalFrames)
-                : string.Format(CultureInfo.InvariantCulture, "Current frame: {0}. Type a frame number and press Enter.", currentFrame);
+                ? _buildVariant.UsesZeroIndexedFrameDisplay
+                    ? string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Current / last zero-indexed frames: {0} / {1}. Identity: {2}. Type a zero-indexed frame number and press Enter.",
+                        currentFrame,
+                        totalFrameDisplay,
+                        isAbsoluteFrameIndex ? "absolute" : "segment-local")
+                    : string.Format(CultureInfo.InvariantCulture, "Current / total frames: {0} / {1}. Type a frame number and press Enter.", currentFrame, totalFrames)
+                : string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Current frame: {0}. Identity: {1}. {2}",
+                    currentFrame,
+                    isAbsoluteFrameIndex ? "absolute" : "segment-local",
+                    GetFrameNumberInputToolTip());
 
             TimecodeTextBlock.Text = string.Format(
                 CultureInfo.InvariantCulture,
@@ -907,9 +1168,123 @@ namespace FramePlayer
                 FormatTime(currentPosition));
             TimecodeTextBlock.ToolTip = string.Format(
                 CultureInfo.InvariantCulture,
-                "Frame-derived timecode using nominal {0} fps buckets for {1:0.###} fps media.",
+                "Frame-derived timecode using the engine's current decoded frame identity and nominal {0} fps buckets for {1:0.###} fps media.",
                 GetNominalTimecodeFramesPerSecond(),
                 _framesPerSecond);
+        }
+
+        private long GetCurrentFrameIndex(TimeSpan currentPosition)
+        {
+            long frameIndex;
+            bool isAbsoluteFrameIndex;
+            if (TryGetCurrentEngineFrameIndex(out frameIndex, out isAbsoluteFrameIndex))
+            {
+                return frameIndex;
+            }
+
+            return 0L;
+        }
+
+        private bool TryGetCurrentEngineFrameIndex(out long frameIndex, out bool isAbsoluteFrameIndex)
+        {
+            frameIndex = 0L;
+            isAbsoluteFrameIndex = false;
+
+            var enginePosition = _videoReviewEngine.Position;
+            if (enginePosition == null || !enginePosition.FrameIndex.HasValue)
+            {
+                return false;
+            }
+
+            if (!enginePosition.IsFrameIndexAbsolute)
+            {
+                return false;
+            }
+
+            frameIndex = Math.Max(0L, enginePosition.FrameIndex.Value);
+            isAbsoluteFrameIndex = enginePosition.IsFrameIndexAbsolute;
+            return true;
+        }
+
+        private long GetDisplayedFrameNumber(long frameIndex)
+        {
+            var clampedFrameIndex = Math.Max(0L, frameIndex);
+            return _buildVariant.UsesZeroIndexedFrameDisplay
+                ? clampedFrameIndex
+                : clampedFrameIndex + 1L;
+        }
+
+        private long GetFrameIndexFromDisplayedFrameNumber(long displayedFrameNumber)
+        {
+            return _buildVariant.UsesZeroIndexedFrameDisplay
+                ? Math.Max(0L, displayedFrameNumber)
+                : Math.Max(1L, displayedFrameNumber) - 1L;
+        }
+
+        private long GetDisplayedTotalFrameValue(long totalFrameCount)
+        {
+            if (totalFrameCount <= 0L)
+            {
+                return -1L;
+            }
+
+            return _buildVariant.UsesZeroIndexedFrameDisplay
+                ? totalFrameCount - 1L
+                : totalFrameCount;
+        }
+
+        private string GetFrameNumberInputToolTip()
+        {
+            return _buildVariant.UsesZeroIndexedFrameDisplay
+                ? "Type a zero-indexed frame number and press Enter."
+                : "Type a frame number and press Enter.";
+        }
+
+        private static string GetAudioSummaryText(VideoMediaInfo mediaInfo)
+        {
+            if (mediaInfo == null || !mediaInfo.HasAudioStream)
+            {
+                return "none";
+            }
+
+            return mediaInfo.IsAudioPlaybackAvailable
+                ? "enabled"
+                : "stream present, playback unavailable";
+        }
+
+        private static string GetAudioTooltipText(VideoMediaInfo mediaInfo)
+        {
+            if (mediaInfo == null || !mediaInfo.HasAudioStream)
+            {
+                return "No audio stream detected";
+            }
+
+            var codec = string.IsNullOrWhiteSpace(mediaInfo.AudioCodecName)
+                ? "unknown codec"
+                : mediaInfo.AudioCodecName;
+            var format = mediaInfo.AudioSampleRate > 0 && mediaInfo.AudioChannelCount > 0
+                ? string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0}, {1} Hz, {2} channel(s)",
+                    codec,
+                    mediaInfo.AudioSampleRate,
+                    mediaInfo.AudioChannelCount)
+                : codec;
+
+            return mediaInfo.IsAudioPlaybackAvailable
+                ? format + " available for playback"
+                : format + " detected, but playback is unavailable";
+        }
+
+        private long GetTotalFrameCount()
+        {
+            var ffmpegEngine = _videoReviewEngine as FfmpegReviewEngine;
+            if (ffmpegEngine != null && ffmpegEngine.IsGlobalFrameIndexAvailable && ffmpegEngine.IndexedFrameCount > 0L)
+            {
+                return ffmpegEngine.IndexedFrameCount;
+            }
+
+            return GetMaxFrameIndex() + 1L;
         }
 
         private TimeSpan ClampPosition(TimeSpan target)
@@ -927,18 +1302,14 @@ namespace FramePlayer
             return target;
         }
 
-        private long GetNearestFrameIndex(TimeSpan position)
-        {
-            if (_positionStep <= TimeSpan.Zero)
-            {
-                return 0L;
-            }
-
-            return Math.Max(0L, position.Ticks / _positionStep.Ticks);
-        }
-
         private long GetMaxFrameIndex()
         {
+            var ffmpegEngine = _videoReviewEngine as FfmpegReviewEngine;
+            if (ffmpegEngine != null && ffmpegEngine.IsGlobalFrameIndexAvailable && ffmpegEngine.IndexedFrameCount > 0L)
+            {
+                return ffmpegEngine.IndexedFrameCount - 1L;
+            }
+
             if (_mediaDuration <= TimeSpan.Zero || _positionStep <= TimeSpan.Zero)
             {
                 return -1;
@@ -958,7 +1329,10 @@ namespace FramePlayer
             return extension.Equals(".avi", StringComparison.OrdinalIgnoreCase)
                 || extension.Equals(".mov", StringComparison.OrdinalIgnoreCase)
                 || extension.Equals(".m4v", StringComparison.OrdinalIgnoreCase)
-                || extension.Equals(".mp4", StringComparison.OrdinalIgnoreCase);
+                || extension.Equals(".mp4", StringComparison.OrdinalIgnoreCase)
+                || extension.Equals(".mkv", StringComparison.OrdinalIgnoreCase)
+                || extension.Equals(".wmv", StringComparison.OrdinalIgnoreCase)
+                || extension.Equals(".ts", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string FormatTime(TimeSpan value)
@@ -1023,43 +1397,73 @@ namespace FramePlayer
                 frames);
         }
 
-        private void Media_MediaOpened(object sender, MediaOpenedEventArgs e)
+        private void VideoReviewEngine_StateChanged(object sender, VideoReviewEngineStateChangedEventArgs e)
         {
-            RefreshMediaMetricsFromElement();
-            UpdatePositionDisplay(GetDisplayPosition());
-            UpdateTransportState();
-            Activate();
-            Keyboard.Focus(Media);
-        }
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action<object, VideoReviewEngineStateChangedEventArgs>(VideoReviewEngine_StateChanged), sender, e);
+                return;
+            }
 
-        private void Media_MediaFailed(object sender, MediaFailedEventArgs e)
-        {
-            EndHeldFrameStep();
-            _lastMediaErrorMessage = e.ErrorException != null
-                ? SanitizeSensitiveText(e.ErrorException.Message)
-                : "An unknown media error occurred.";
-            ResetMediaState(clearFilePath: false, clearErrorMessage: false);
-            SetPlaybackMessage("Playback failed.");
-            SetMediaSummary(_lastMediaErrorMessage);
-            LogError("Playback failed: " + _lastMediaErrorMessage);
-        }
+            var wasMediaLoaded = _isMediaLoaded;
+            if (!string.IsNullOrWhiteSpace(e.LastErrorMessage) && !e.IsMediaOpen)
+            {
+                EndHeldFrameStep();
+                _lastMediaErrorMessage = SanitizeSensitiveText(e.LastErrorMessage);
+                ResetMediaState(clearFilePath: false, clearErrorMessage: false);
+                SetPlaybackMessage("Playback failed.");
+                SetMediaSummary(_lastMediaErrorMessage);
+                if (wasMediaLoaded)
+                {
+                    LogError("Playback failed: " + _lastMediaErrorMessage);
+                }
+                return;
+            }
 
-        private void Media_MediaStateChanged(object sender, MediaStateChangedEventArgs e)
-        {
-            _isPlaying = Media.IsPlaying;
+            _isMediaLoaded = e.IsMediaOpen;
+            _isPlaying = e.IsPlaying;
+
             if (_isPlaying)
             {
                 EndHeldFrameStep();
             }
 
-            UpdateTransportState();
+            if (!_isMediaLoaded)
+            {
+                UpdateTransportState();
+                return;
+            }
+
+            _currentFilePath = e.CurrentFilePath;
+            _lastMediaErrorMessage = string.Empty;
+            RefreshMediaMetricsFromEngine();
+            UpdatePositionDisplay(e.Position.PresentationTime);
+                UpdateTransportState();
+
+            if (!wasMediaLoaded)
+            {
+                Activate();
+                FocusPreferredVideoSurface();
+            }
         }
 
-        private void Media_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        private void VideoReviewEngine_FramePresented(object sender, FramePresentedEventArgs e)
         {
-            if (_isMediaLoaded)
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action<object, FramePresentedEventArgs>(VideoReviewEngine_FramePresented), sender, e);
+                return;
+            }
+
+            CustomVideoSurface.Source = e != null && e.Frame != null ? e.Frame.BitmapSource : null;
+        }
+
+        private void CustomVideoSurfaceHost_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ClickCount >= 2 && _isMediaLoaded)
             {
                 ToggleFullScreen();
+                e.Handled = true;
             }
         }
 
@@ -1171,7 +1575,9 @@ namespace FramePlayer
 
             EmptyStateTitleTextBlock.Text = "Drop a video here";
             EmptyStateBodyTextBlock.Text = string.IsNullOrWhiteSpace(_lastMediaErrorMessage)
-                ? "Open an AVI, MOV, M4V, or MP4 file, or press Ctrl+O. When paused, Left and Right step one frame at a time."
+                ? _buildVariant.SupportsTimedPlayback
+                    ? "Open a supported video file, or press Ctrl+O. When paused, Left and Right step one frame at a time."
+                    : "Open a supported video file, or press Ctrl+O. Seek and frame stepping are available, but timed playback is not."
                 : _lastMediaErrorMessage;
         }
 
@@ -1180,12 +1586,14 @@ namespace FramePlayer
             _isMediaLoaded = false;
             _isPlaying = false;
             _isFrameStepInProgress = false;
+            _isCacheStatusActive = false;
             _heldFrameStepDirection = 0;
             _frameStepRepeatTimer.Stop();
             _isSliderDragActive = false;
             _framesPerSecond = DefaultFramesPerSecond;
             _positionStep = TimeSpan.FromSeconds(1d / DefaultFramesPerSecond);
             _mediaDuration = TimeSpan.Zero;
+            CustomVideoSurface.Source = null;
 
             if (clearFilePath)
             {
@@ -1212,6 +1620,93 @@ namespace FramePlayer
         {
             MediaSummaryTextBlock.Text = message;
             MediaSummaryTextBlock.ToolTip = message;
+        }
+
+        private async Task RunWithCacheStatusAsync(string activeMessage, Func<Task> operation)
+        {
+            if (operation == null)
+            {
+                throw new ArgumentNullException(nameof(operation));
+            }
+
+            BeginCacheStatus(activeMessage);
+            await Dispatcher.Yield(DispatcherPriority.Render);
+            try
+            {
+                await operation();
+            }
+            finally
+            {
+                _isCacheStatusActive = false;
+                UpdateCacheStatusFromEngine();
+            }
+        }
+
+        private void BeginCacheStatus(string message)
+        {
+            _isCacheStatusActive = true;
+            SetCacheStatus(
+                string.IsNullOrWhiteSpace(message) ? "Cache: active" : message,
+                "The engine is decoding and refreshing the local frame cache.",
+                true);
+        }
+
+        private void UpdateCacheStatusFromEngine()
+        {
+            if (_isCacheStatusActive)
+            {
+                return;
+            }
+
+            if (!_isMediaLoaded)
+            {
+                SetCacheStatus("Cache: idle", "Open media to populate the decoded-frame cache.", false);
+                return;
+            }
+
+            var ffmpegEngine = _videoReviewEngine as FfmpegReviewEngine;
+            if (ffmpegEngine == null)
+            {
+                SetCacheStatus("Cache: unavailable", "Cache details are not available for this engine.", false);
+                return;
+            }
+
+            var forwardCount = Math.Max(0, ffmpegEngine.ForwardCachedFrameCount);
+            var previousCount = Math.Max(0, ffmpegEngine.PreviousCachedFrameCount);
+            var indexStatus = ffmpegEngine.IsGlobalFrameIndexBuildInProgress
+                ? "Index: building"
+                : ffmpegEngine.IsGlobalFrameIndexAvailable
+                    ? string.Format(CultureInfo.InvariantCulture, "Index: ready ({0} frames)", ffmpegEngine.IndexedFrameCount)
+                    : "Index: not ready";
+            var positionIdentity = _videoReviewEngine.Position != null && _videoReviewEngine.Position.IsFrameIndexAbsolute
+                ? "absolute frame ready"
+                : "frame number pending index";
+            var message = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} | {1} | Cache: ready ({2} back / {3} ahead)",
+                indexStatus,
+                positionIdentity,
+                previousCount,
+                forwardCount);
+            var tooltip = string.Format(
+                CultureInfo.InvariantCulture,
+                "Index status: {0}. Review cache holds up to {1} prior and {2} forward decoded frames. Timeline seeks show the landed frame first; user-visible frame numbers are shown only when the engine has absolute frame identity.",
+                ffmpegEngine.GlobalFrameIndexStatus,
+                ffmpegEngine.MaxPreviousCachedFrameCount,
+                ffmpegEngine.MaxForwardCachedFrameCount);
+            SetCacheStatus(message, tooltip, false);
+        }
+
+        private void SetCacheStatus(string message, string tooltip, bool isActive)
+        {
+            CacheStatusTextBlock.Text = message;
+            CacheStatusTextBlock.ToolTip = tooltip;
+
+            var brush = FindResource(isActive ? "AccentBrush" : "MutedBrush") as Brush;
+            if (brush != null)
+            {
+                CacheStatusTextBlock.Foreground = brush;
+            }
         }
 
         private void ShowHelpWindow()
@@ -1252,14 +1747,25 @@ namespace FramePlayer
             try
             {
                 var currentPosition = GetDisplayPosition();
-                var currentFrameIndex = _isMediaLoaded ? GetNearestFrameIndex(currentPosition) : -1L;
-                var totalFrames = GetMaxFrameIndex();
+                var currentFrameIndex = _isMediaLoaded ? GetCurrentFrameIndex(currentPosition) : -1L;
+                var totalFrames = _isMediaLoaded ? GetTotalFrameCount() : -1L;
+                var displayedCurrentFrame = _isMediaLoaded
+                    ? GetDisplayedFrameNumber(currentFrameIndex).ToString(CultureInfo.InvariantCulture)
+                    : "--";
+                var displayedTotalFrame = totalFrames > 0
+                    ? GetDisplayedTotalFrameValue(totalFrames).ToString(CultureInfo.InvariantCulture)
+                    : string.Empty;
+                var ffmpegEngine = _videoReviewEngine as FfmpegReviewEngine;
 
                 var report = _diagnosticLogService.BuildReport(new[]
                 {
                     "Frame Player Diagnostics",
                     string.Format(CultureInfo.InvariantCulture, "Generated: {0:yyyy-MM-dd HH:mm:ss.fff zzz}", DateTime.Now),
                     string.Format(CultureInfo.InvariantCulture, "Session started: {0:yyyy-MM-dd HH:mm:ss.fff zzz}", _diagnosticLogService.SessionStarted),
+                    "Build variant: " + _buildVariant.BuildDisplayName,
+                    "Forced backend: " + _buildVariant.ForcedBackend,
+                    "Timed playback supported: " + (_buildVariant.SupportsTimedPlayback ? "Yes" : "No"),
+                    "Frame display mode: " + (_buildVariant.UsesZeroIndexedFrameDisplay ? "Zero-indexed" : "Baseline display numbering"),
                     "Version: " + GetApplicationVersion(),
                     "OS: " + Environment.OSVersion,
                     ".NET: " + Environment.Version,
@@ -1269,14 +1775,43 @@ namespace FramePlayer
                     "Current file: " + GetSafeFileDisplay(_currentFilePath),
                     "Media loaded: " + (_isMediaLoaded ? "Yes" : "No"),
                     "Playback state: " + (_isPlaying ? "Playing" : "Paused/Idle"),
+                    "Audio stream: " + (_videoReviewEngine.MediaInfo.HasAudioStream ? "Yes" : "No"),
+                    "Audio playback available: " + (_videoReviewEngine.MediaInfo.IsAudioPlaybackAvailable ? "Yes" : "No"),
+                    "Audio codec: " + (string.IsNullOrWhiteSpace(_videoReviewEngine.MediaInfo.AudioCodecName) ? "(none)" : _videoReviewEngine.MediaInfo.AudioCodecName),
+                    "Audio details: " + GetAudioTooltipText(_videoReviewEngine.MediaInfo),
+                    "Frame index status: " + (ffmpegEngine != null ? ffmpegEngine.GlobalFrameIndexStatus : "(unavailable)"),
+                    "Frame index available: " + (ffmpegEngine != null && ffmpegEngine.IsGlobalFrameIndexAvailable ? "Yes" : "No"),
+                    "Indexed frame count: " + (ffmpegEngine != null ? ffmpegEngine.IndexedFrameCount.ToString(CultureInfo.InvariantCulture) : "(unavailable)"),
+                    "Review cache window: " + (ffmpegEngine != null
+                        ? string.Format(
+                            CultureInfo.InvariantCulture,
+                            "{0} back / {1} ahead cached, max {2} back / {3} ahead",
+                            ffmpegEngine.PreviousCachedFrameCount,
+                            ffmpegEngine.ForwardCachedFrameCount,
+                            ffmpegEngine.MaxPreviousCachedFrameCount,
+                            ffmpegEngine.MaxForwardCachedFrameCount)
+                        : "(unavailable)"),
+                    "Open timing: " + (ffmpegEngine != null
+                        ? string.Format(
+                            CultureInfo.InvariantCulture,
+                            "total {0:0.0} ms, container/probe {1:0.0} ms, stream {2:0.0} ms, audio probe {3:0.0} ms, decoder {4:0.0} ms, first frame {5:0.0} ms, cache warm {6:0.0} ms, index build {7:0.0} ms",
+                            ffmpegEngine.LastOpenTotalMilliseconds,
+                            ffmpegEngine.LastOpenContainerProbeMilliseconds,
+                            ffmpegEngine.LastOpenStreamDiscoveryMilliseconds,
+                            ffmpegEngine.LastOpenAudioProbeMilliseconds,
+                            ffmpegEngine.LastOpenVideoDecoderInitializationMilliseconds,
+                            ffmpegEngine.LastOpenFirstFrameDecodeMilliseconds,
+                            ffmpegEngine.LastOpenInitialCacheWarmMilliseconds,
+                            ffmpegEngine.LastGlobalFrameIndexBuildMilliseconds)
+                        : "(unavailable)"),
                     "Full screen: " + (_isFullScreen ? "Yes" : "No"),
                     string.Format(CultureInfo.InvariantCulture, "Clock position: {0} / {1}", FormatTime(currentPosition), FormatTime(_mediaDuration)),
                     string.Format(CultureInfo.InvariantCulture, "Timecode: {0}", _isMediaLoaded ? FormatTimecode(currentFrameIndex) : "--:--:--:--"),
                     string.Format(
                         CultureInfo.InvariantCulture,
                         "Frame: {0}{1}",
-                        _isMediaLoaded ? (currentFrameIndex + 1L).ToString(CultureInfo.InvariantCulture) : "--",
-                        totalFrames >= 0 ? " / " + (totalFrames + 1L).ToString(CultureInfo.InvariantCulture) : string.Empty),
+                        displayedCurrentFrame,
+                        !string.IsNullOrWhiteSpace(displayedTotalFrame) ? " / " + displayedTotalFrame : string.Empty),
                     string.Format(CultureInfo.InvariantCulture, "Frame rate: {0:0.###} fps", _framesPerSecond),
                     "Frame step: " + FormatStepDuration(_positionStep),
                     "Last error: " + (string.IsNullOrWhiteSpace(_lastMediaErrorMessage) ? "(none)" : _lastMediaErrorMessage)
@@ -1300,7 +1835,16 @@ namespace FramePlayer
 
         private static string GetApplicationVersion()
         {
-            var version = Assembly.GetExecutingAssembly().GetName().Version;
+            var assembly = Assembly.GetExecutingAssembly();
+            var informationalVersion = assembly
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                ?.InformationalVersion;
+            if (!string.IsNullOrWhiteSpace(informationalVersion))
+            {
+                return informationalVersion;
+            }
+
+            var version = assembly.GetName().Version;
             return version != null
                 ? version.ToString()
                 : "unknown";
@@ -1364,6 +1908,49 @@ namespace FramePlayer
                 SanitizeSensitiveText(exception.Message)));
         }
 
+        private void LogSeekResult(string diagnosticSource, TimeSpan requestedTarget, TimeSpan clampedTarget)
+        {
+            var landedPosition = GetDisplayPosition();
+            var enginePosition = _videoReviewEngine.Position;
+            var frameText = "(unavailable)";
+            var frameIdentity = "unavailable";
+            if (enginePosition != null && enginePosition.FrameIndex.HasValue)
+            {
+                frameText = GetDisplayedFrameNumber(enginePosition.FrameIndex.Value).ToString(CultureInfo.InvariantCulture);
+                frameIdentity = enginePosition.IsFrameIndexAbsolute ? "absolute" : "segment-local";
+            }
+
+            LogInfo(string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}: requested {1}; committed {2}; engine landed {3}; engine frame {4}; identity {5}; displayed frame input {6}{7}.",
+                diagnosticSource,
+                FormatTime(ClampPosition(requestedTarget)),
+                FormatTime(clampedTarget),
+                FormatTime(landedPosition),
+                frameText,
+                frameIdentity,
+                string.IsNullOrWhiteSpace(FrameNumberTextBox.Text) ? "(blank)" : FrameNumberTextBox.Text,
+                GetSeekTimingDiagnosticSuffix()));
+        }
+
+        private string GetSeekTimingDiagnosticSuffix()
+        {
+            var ffmpegEngine = _videoReviewEngine as FfmpegReviewEngine;
+            if (ffmpegEngine == null)
+            {
+                return string.Empty;
+            }
+
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "; seek timing total {0:0.0} ms, index wait {1:0.0} ms, materialize {2:0.0} ms, forward warm {3:0.0} ms, mode {4}",
+                ffmpegEngine.LastSeekTotalMilliseconds,
+                ffmpegEngine.LastSeekIndexWaitMilliseconds,
+                ffmpegEngine.LastSeekMaterializeMilliseconds,
+                ffmpegEngine.LastSeekForwardCacheWarmMilliseconds,
+                string.IsNullOrWhiteSpace(ffmpegEngine.LastSeekMode) ? "(none)" : ffmpegEngine.LastSeekMode);
+        }
+
         private TimeSpan GetDisplayPosition()
         {
             if (!_isMediaLoaded)
@@ -1371,17 +1958,7 @@ namespace FramePlayer
                 return TimeSpan.Zero;
             }
 
-            return _isPlaying ? Media.Position : Media.FramePosition;
-        }
-
-        private TimeSpan GetFramePosition(long frameIndex)
-        {
-            if (frameIndex <= 0 || _positionStep <= TimeSpan.Zero)
-            {
-                return TimeSpan.Zero;
-            }
-
-            return TimeSpan.FromTicks(frameIndex * _positionStep.Ticks);
+            return _videoReviewEngine.Position.PresentationTime;
         }
 
         private void BeginHeldFrameStep(int direction)
