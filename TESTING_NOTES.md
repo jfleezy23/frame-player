@@ -1,6 +1,6 @@
 # Frame Player Custom FFmpeg Test Drop
 
-Checkpoint: `1.1.0-test1`
+Release: `1.1.0`
 
 ## What changed recently
 
@@ -30,7 +30,7 @@ Checkpoint: `1.1.0-test1`
 ## Build and shortcut
 
 - Test drop executable: `bin\TestDrop\FramePlayer.exe`
-- Test drop archive: `artifacts\FramePlayer-CustomFFmpeg-1.1.0-test1.zip`
+- Release archive: `artifacts\FramePlayer-CustomFFmpeg-1.1.0.zip`
 - Desktop shortcut name: `Frame Player - Custom FFmpeg`
 - Shortcut refresh script: `scripts\Create-Comparison-Shortcuts.ps1`
 

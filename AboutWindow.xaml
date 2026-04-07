@@ -54,7 +54,7 @@
                      Foreground="{StaticResource MutedBrush}"
                      FontFamily="Consolas"
                      FontSize="12"
-                     Text="Checkpoint 1.1.0-test1" />
+                     Text="Version 1.1.0" />
 
           <TextBlock Margin="0,16,0,0"
                      FontSize="16"
