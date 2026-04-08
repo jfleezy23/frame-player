@@ -4,12 +4,12 @@ Frame Player depends on third-party libraries and runtime components that are no
 
 ## Managed Dependencies
 
-### FFmpeg.AutoGen 7.1.1
+### FFmpeg.AutoGen 8.0.0.1
 
 - Project: <https://github.com/Ruslan-B/FFmpeg.AutoGen>
-- Package metadata source: `packages/ffmpeg.autogen/7.1.1/*.nuspec`
-- Package license file source: `packages/ffmpeg.autogen/7.1.1/LICENSE.txt`
-- License: GNU Lesser General Public License v3.0
+- Package metadata source: `packages/ffmpeg.autogen/8.0.0.1/*.nuspec`
+- Package license file source: `packages/ffmpeg.autogen/8.0.0.1/LICENSE.txt`
+- License: MIT
 
 ## Native Runtime
 
@@ -17,8 +17,9 @@ Frame Player depends on third-party libraries and runtime components that are no
 
 - Project: <https://ffmpeg.org/>
 - Legal guidance: <https://ffmpeg.org/legal.html>
-- Runtime version currently used by the packaged release assets: `n7.0.2-6-g7e69129d2f-20240831`
-- Runtime DLLs are downloaded locally through `scripts/Ensure-DevRuntime.ps1` and are distributed through this repository's GitHub release assets, not stored in git history
+- Runtime version currently used by the app: `n8.1-frameplayer-source`
+- Runtime provenance: built from the official FFmpeg source tag `n8.1` at commit `9047fa1b084f76b1b4d065af2d743df1b40dfb56`
+- Runtime DLLs are restored locally through `scripts/ffmpeg/Build-FFmpeg-8.1.ps1` and `scripts/Ensure-DevRuntime.ps1`, not stored in git history
 
 Important note:
 

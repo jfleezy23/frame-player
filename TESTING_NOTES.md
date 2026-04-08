@@ -1,18 +1,18 @@
 # Frame Player Custom FFmpeg Test Drop
 
-Release: `1.1.0`
+Release: `1.2.0`
 
 ## What changed recently
 
 - The app is now custom FFmpeg only; FFME has been removed from the active path and older FFME-era releases are legacy/deprecated.
-- Video playback, audio playback, basic A/V sync, seek-to-time, seek-to-frame, and exact zero-indexed frame stepping are implemented in the custom engine.
+- Video playback, audio playback, basic A/V sync, seek-to-time, seek-to-frame, and exact frame stepping are implemented in the custom engine.
 - The latest UI pass combined Play/Pause into one toggle, restored the normal visual tone, removed temporary custom-build banners, added a cache status indicator, and fixed arrow-key stepping immediately after frame entry.
-- The latest performance pass moves the full file-global frame index scan behind first-frame open and increases the decoded backward review cache to eight frames.
+- The latest performance pass keeps first-frame open landed-first, shifts the decoded review cache to a backward-heavy `10 back / 1 ahead` window, and avoids blocking open on eager forward warmup.
 
 ## Manual test checklist
 
-- Launch the app from `bin\TestDrop\FramePlayer.exe`.
-- Open a normal video file and verify the first displayed frame is frame `0`.
+- Launch the app from `bin\TestDrop\FramePlayer.exe` or the packaged `FramePlayer-CustomFFmpeg-1.2.0.zip` drop.
+- Open a normal video file and verify the first displayed frame is frame `1`.
 - Watch the status bar after open: it should distinguish index building/ready from the decoded review-cache window.
 - Press Play, confirm visible playback advances, then press Pause.
 - Seek by time and confirm playback/review state remains coherent.
@@ -26,13 +26,15 @@ Release: `1.1.0`
 - Playback is an MVP path: no audio device selection, volume controls, hardware acceleration, advanced drift correction, or frame dropping/catch-up behavior yet.
 - Cache/index status is intentionally coarse (`building` / `ready`) and may change quickly on short clips.
 - Large files still require a full-file frame index scan, but that work now happens in the background after the first frame is visible.
-- The pinned FFmpeg runtime is `n7.0.2-6-g7e69129d2f-20240831`, recorded in `Runtime\runtime-manifest.json`.
-- The manifest's runtime asset source tag is `v1.1.0`, matching the current app release line.
+- The pinned FFmpeg runtime is `n8.1-frameplayer-source`, recorded in `Runtime\runtime-manifest.json`.
+- The runtime was built from the official FFmpeg source tag `n8.1` and is restored locally from the self-built candidate/archive produced by `scripts\ffmpeg\Build-FFmpeg-8.1.ps1`.
+- The packaged runtime also requires `libwinpthread-1.dll`; it must ship beside `FramePlayer.exe` with the FFmpeg DLL set.
 
 ## Build and shortcut
 
 - Test drop executable: `bin\TestDrop\FramePlayer.exe`
-- Release archive: `artifacts\FramePlayer-CustomFFmpeg-1.1.0.zip`
+- Release archive: `artifacts\FramePlayer-CustomFFmpeg-1.2.0.zip`
+- Test-drop build script: `scripts\Build-TestDrop.ps1`
 - Desktop shortcut name: `Frame Player - Custom FFmpeg`
 - Shortcut refresh script: `scripts\Create-Comparison-Shortcuts.ps1`
 

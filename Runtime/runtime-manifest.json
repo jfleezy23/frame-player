@@ -1,17 +1,18 @@
 {
-  "tag": "v1.1.0",
-  "tagPurpose": "GitHub release tag that hosts the pinned FFmpeg runtime archive.",
-  "ffmpegVersion": "n7.0.2-6-g7e69129d2f-20240831",
-  "ffmpegVersionSource": "FileVersionInfo ProductVersion from avcodec-61.dll",
+  "runtimeSource": "Self-built FFmpeg runtime produced by scripts/ffmpeg/Build-FFmpeg-8.1.ps1",
+  "sourceRepository": "https://git.ffmpeg.org/ffmpeg.git",
+  "sourceTag": "n8.1",
+  "sourceCommit": "9047fa1b084f76b1b4d065af2d743df1b40dfb56",
+  "ffmpegVersion": "n8.1-frameplayer-source",
+  "ffmpegVersionSource": "FileVersionInfo ProductVersion from avcodec-62.dll built from the official FFmpeg n8.1 source tag",
   "assetName": "FramePlayer-ffmpeg-runtime-x64.zip",
-  "assetSha256": "12c02dd69ea72eed996af0c6473753c143341f314648adc67806e0bfce2c77a9",
+  "assetSha256": "36e37a373bb32ac2a65386fabfed38a6086f2425cffb69eef6e23ff21743e32a",
   "files": {
-    "avcodec-61.dll": "942cc1d3d3924ea29844e10c7d3807fab814e7ab40db2561fe8117e7080489b3",
-    "avdevice-61.dll": "2e66090c5c41287e3e2cd1d7a79f981b04fa0075ba8e55c921e3c1d05545f526",
-    "avfilter-10.dll": "b6c42c527de7113c1eeb26ef9aacab4bf125f981d974f1622f980a93b4195644",
-    "avformat-61.dll": "e7c65c9e6835460446ef9cd6e29cbcfaf1264878ec5a7c08c08ae1ab13e23791",
-    "avutil-59.dll": "16e510d28932daa34ca684bce5f22890c5cfaef522c7acd2fd7e592031854a5e",
-    "swresample-5.dll": "b74b627b9b2e381e2f3dd53087cfabbfeb1e9019fbf70cca0b8dfa96d1c9efc6",
-    "swscale-8.dll": "d9ce6021a2ac19cfdce2da1a8b981534c37ce09d17e5d268f6149e3b2986072e"
+    "avcodec-62.dll": "4405428ea34f2d278e52e72023cf5db926fcfd0dc7318ddf24aec7be0bc5a6ed",
+    "avformat-62.dll": "f9473633e88a87b52a6dba7637cd6c8187246ba9754a425daf712068c94f112a",
+    "avutil-60.dll": "c50d0f9b59fa1741aea10d735f25ba9c9a33acc42ce09c5bcd7b89c7f46be5d4",
+    "libwinpthread-1.dll": "67a8ebf011133c6413cc68e59eeeefa5860c416334b96fc527c7d2e6b86a98cf",
+    "swresample-6.dll": "e2a6908d31996ace4c75a43cfa8c49356875dec9d623901f5cd83c104d0b1480",
+    "swscale-9.dll": "1eb09201c10df755baa552666bbf839f530f89f2beba49e761ab631b0e1d7b3a"
   }
 }

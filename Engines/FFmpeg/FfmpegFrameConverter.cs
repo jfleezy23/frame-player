@@ -99,7 +99,7 @@ namespace FramePlayer.Engines.FFmpeg
                 sourceFrame->width,
                 sourceFrame->height,
                 OutputPixelFormat,
-                ffmpeg.SWS_BILINEAR,
+                (int)SwsFlags.SWS_BILINEAR,
                 null,
                 null,
                 null);

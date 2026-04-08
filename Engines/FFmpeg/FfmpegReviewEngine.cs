@@ -13,8 +13,8 @@ namespace FramePlayer.Engines.FFmpeg
 {
     public unsafe sealed class FfmpegReviewEngine : IVideoReviewEngine
     {
-        private const int CachedPreviousFrameCount = 8;
-        private const int CachedForwardFrameCount = 3;
+        private const int CachedPreviousFrameCount = 10;
+        private const int CachedForwardFrameCount = 1;
         private static readonly TimeSpan MinimumPlaybackDelay = TimeSpan.FromMilliseconds(1d);
 
         // Decoded display-order frame identity is the source of truth for this engine.
@@ -143,6 +143,17 @@ namespace FramePlayer.Engines.FFmpeg
             get { return _globalFrameIndex != null ? _globalFrameIndex.Count : 0L; }
         }
 
+        public TimeSpan LastIndexedFramePresentationTime
+        {
+            get
+            {
+                FfmpegGlobalFrameIndexEntry lastEntry;
+                return _globalFrameIndex != null && _globalFrameIndex.TryGetLastEntry(out lastEntry)
+                    ? lastEntry.PresentationTime
+                    : TimeSpan.Zero;
+            }
+        }
+
         public double LastOpenTotalMilliseconds { get; private set; }
 
         public double LastOpenContainerProbeMilliseconds { get; private set; }
@@ -168,6 +179,22 @@ namespace FramePlayer.Engines.FFmpeg
         public double LastSeekForwardCacheWarmMilliseconds { get; private set; }
 
         public string LastSeekMode { get; private set; } = string.Empty;
+
+        public double LastCacheRefillMilliseconds { get; private set; }
+
+        public string LastCacheRefillReason { get; private set; } = string.Empty;
+
+        public string LastCacheRefillMode { get; private set; } = string.Empty;
+
+        public bool LastCacheRefillWasSynchronous { get; private set; }
+
+        public bool LastCacheRefillAfterLanding { get; private set; }
+
+        public int LastCacheRefillStartingForwardCount { get; private set; }
+
+        public int LastCacheRefillCompletedForwardCount { get; private set; }
+
+        public int LastCacheRefillCompletedPreviousCount { get; private set; }
 
         public int MaxPreviousCachedFrameCount
         {
@@ -198,6 +225,11 @@ namespace FramePlayer.Engines.FFmpeg
         public int ForwardCachedFrameCount
         {
             get { return _frameCache.ForwardCount; }
+        }
+
+        public long ApproximateCachedFrameBytes
+        {
+            get { return _frameCache.ApproximatePixelBufferBytes; }
         }
 
         public string CurrentFilePath
@@ -287,9 +319,8 @@ namespace FramePlayer.Engines.FFmpeg
 
                 _frameCache.Reset(firstFrame);
                 SetCurrentFrame(firstFrame);
-                stepStopwatch.Restart();
-                PrimeForwardCache(cancellationToken);
-                LastOpenInitialCacheWarmMilliseconds = stepStopwatch.Elapsed.TotalMilliseconds;
+                RecordNoCacheRefill("open-landed-no-warm", afterLanding: false);
+                LastOpenInitialCacheWarmMilliseconds = 0d;
                 IsMediaOpen = true;
                 IsPlaying = false;
                 LastOperationUsedGlobalIndex = false;
@@ -398,6 +429,7 @@ namespace FramePlayer.Engines.FFmpeg
                 LastFrameAdvanceWasCacheHit = true;
                 IsPlaying = false;
                 SetCurrentFrame(nextFrame);
+                RecordNoCacheRefill("step-forward-cache-hit", afterLanding: true);
                 SetOperationInstrumentation(
                     IsGlobalFrameIndexAvailable && nextFrame.Descriptor.IsFrameIndexAbsolute,
                     "cache",
@@ -426,7 +458,7 @@ namespace FramePlayer.Engines.FFmpeg
             IsPlaying = false;
             _frameCache.AppendForwardAndAdvance(nextFrame);
             SetCurrentFrame(_frameCache.Current);
-            PrimeForwardCache(cancellationToken);
+            PrimeForwardCache(cancellationToken, "step-forward-decode", afterLanding: true);
             SetOperationInstrumentation(
                 IsGlobalFrameIndexAvailable && _currentFrame.Descriptor.IsFrameIndexAbsolute,
                 "decode-forward",
@@ -468,6 +500,7 @@ namespace FramePlayer.Engines.FFmpeg
                 LastFrameAdvanceWasCacheHit = true;
                 SetCurrentFrame(previousFrame);
                 IsPlaying = false;
+                RecordNoCacheRefill("step-backward-cache-hit", afterLanding: true);
                 SetOperationInstrumentation(
                     IsGlobalFrameIndexAvailable && previousFrame.Descriptor.IsFrameIndexAbsolute,
                     "cache",
@@ -506,6 +539,7 @@ namespace FramePlayer.Engines.FFmpeg
                         SetCurrentFrame(_frameCache.Current);
                         LastFrameAdvanceWasCacheHit = false;
                         IsPlaying = false;
+                        RecordNoCacheRefill("step-backward-indexed-window", afterLanding: true);
                         SetOperationInstrumentation(true, previousEntry.SeekAnchorStrategy, previousEntry.SeekAnchorFrameIndex);
                         OnStateChanged();
                         OnFramePresented(_currentFrame);
@@ -544,6 +578,7 @@ namespace FramePlayer.Engines.FFmpeg
             SetCurrentFrame(_frameCache.Current);
             LastFrameAdvanceWasCacheHit = false;
             IsPlaying = false;
+            RecordNoCacheRefill("step-backward-reconstruction", afterLanding: true);
             SetOperationInstrumentation(false, reconstructionSeekTimestamp > 0L ? "timestamp-backtrack" : "stream-start", null);
 
             if (!reconstruction.HasPreviousFrame)
@@ -597,6 +632,7 @@ namespace FramePlayer.Engines.FFmpeg
                     LastFrameAdvanceWasCacheHit = false;
                     LastFrameSeekWasCacheHit = false;
                     IsPlaying = false;
+                    RecordNoCacheRefill("seek-time-cache-hit", afterLanding: true);
                     SetOperationInstrumentation(true, "cache-absolute-frame", indexedTargetEntry.AbsoluteFrameIndex);
                     seekStopwatch.Stop();
                     LastSeekMode = "cache-absolute-frame";
@@ -617,6 +653,7 @@ namespace FramePlayer.Engines.FFmpeg
                     LastFrameAdvanceWasCacheHit = false;
                     LastFrameSeekWasCacheHit = false;
                     IsPlaying = false;
+                    RecordNoCacheRefill("seek-time-indexed-window", afterLanding: true);
                     SetOperationInstrumentation(true, indexedTargetEntry.SeekAnchorStrategy, indexedTargetEntry.SeekAnchorFrameIndex);
                     seekStopwatch.Stop();
                     LastSeekMode = "global-index-landed-no-forward-prime";
@@ -649,6 +686,7 @@ namespace FramePlayer.Engines.FFmpeg
             LastFrameAdvanceWasCacheHit = false;
             LastFrameSeekWasCacheHit = false;
             IsPlaying = false;
+            RecordNoCacheRefill("seek-time-pending-index", afterLanding: true);
             SetOperationInstrumentation(
                 false,
                 fallbackFrameIndexAbsolute
@@ -703,6 +741,7 @@ namespace FramePlayer.Engines.FFmpeg
                 LastFrameAdvanceWasCacheHit = false;
                 IsPlaying = false;
                 SetCurrentFrame(cachedFrame);
+                RecordNoCacheRefill("seek-frame-cache-hit", afterLanding: true);
                 SetOperationInstrumentation(
                     IsGlobalFrameIndexAvailable,
                     wasClampedToLastIndexedFrame ? "cache-absolute-frame-clamped" : "cache-absolute-frame",
@@ -728,6 +767,9 @@ namespace FramePlayer.Engines.FFmpeg
             LastFrameSeekWasCacheHit = false;
             LastFrameAdvanceWasCacheHit = false;
             IsPlaying = false;
+            RecordNoCacheRefill(
+                indexedTargetEntry != null ? "seek-frame-indexed-window" : "seek-frame-stream-start",
+                afterLanding: true);
             SetOperationInstrumentation(
                 indexedTargetEntry != null,
                 indexedTargetEntry != null
@@ -948,6 +990,7 @@ namespace FramePlayer.Engines.FFmpeg
             LastSeekMaterializeMilliseconds = 0d;
             LastSeekForwardCacheWarmMilliseconds = 0d;
             LastSeekMode = string.Empty;
+            ResetCacheRefillInstrumentation();
         }
 
         private void PlaybackLoop(
@@ -1234,6 +1277,7 @@ namespace FramePlayer.Engines.FFmpeg
             SetCurrentFrame(frameToPresent);
             LastFrameAdvanceWasCacheHit = wasCacheHit;
             LastFrameSeekWasCacheHit = false;
+            RecordNoCacheRefill(wasCacheHit ? "playback-cache-hit" : "playback-decode", afterLanding: true);
             SetOperationInstrumentation(
                 IsGlobalFrameIndexAvailable && frameToPresent.Descriptor.IsFrameIndexAbsolute,
                 wasCacheHit ? "playback-cache" : "playback-decode",
@@ -1325,7 +1369,7 @@ namespace FramePlayer.Engines.FFmpeg
         {
             var formatContext = _formatContext;
             FfmpegNativeHelpers.ThrowIfError(
-                ffmpeg.avformat_open_input(&formatContext, filePath, null, null),
+                FfmpegNativeHelpers.OpenInput(&formatContext, filePath, null, null),
                 "Open media container");
             _formatContext = formatContext;
             FfmpegNativeHelpers.ThrowIfError(
@@ -1501,8 +1545,10 @@ namespace FramePlayer.Engines.FFmpeg
             }
         }
 
-        private void PrimeForwardCache(CancellationToken cancellationToken)
+        private void PrimeForwardCache(CancellationToken cancellationToken, string reason, bool afterLanding)
         {
+            var startingForwardCount = _frameCache.ForwardCount;
+            var stopwatch = Stopwatch.StartNew();
             while (_frameCache.ForwardCount < CachedForwardFrameCount)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -1515,6 +1561,40 @@ namespace FramePlayer.Engines.FFmpeg
 
                 _frameCache.AppendForward(frame);
             }
+
+            stopwatch.Stop();
+            LastCacheRefillMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
+            LastCacheRefillReason = reason ?? string.Empty;
+            LastCacheRefillMode = LastCacheRefillMilliseconds > 0d ? "sync" : "none";
+            LastCacheRefillWasSynchronous = LastCacheRefillMilliseconds > 0d;
+            LastCacheRefillAfterLanding = afterLanding;
+            LastCacheRefillStartingForwardCount = startingForwardCount;
+            LastCacheRefillCompletedForwardCount = _frameCache.ForwardCount;
+            LastCacheRefillCompletedPreviousCount = _frameCache.PreviousCount;
+        }
+
+        private void ResetCacheRefillInstrumentation()
+        {
+            LastCacheRefillMilliseconds = 0d;
+            LastCacheRefillReason = string.Empty;
+            LastCacheRefillMode = string.Empty;
+            LastCacheRefillWasSynchronous = false;
+            LastCacheRefillAfterLanding = false;
+            LastCacheRefillStartingForwardCount = 0;
+            LastCacheRefillCompletedForwardCount = 0;
+            LastCacheRefillCompletedPreviousCount = 0;
+        }
+
+        private void RecordNoCacheRefill(string reason, bool afterLanding)
+        {
+            LastCacheRefillMilliseconds = 0d;
+            LastCacheRefillReason = reason ?? string.Empty;
+            LastCacheRefillMode = "none";
+            LastCacheRefillWasSynchronous = false;
+            LastCacheRefillAfterLanding = afterLanding;
+            LastCacheRefillStartingForwardCount = _frameCache.ForwardCount;
+            LastCacheRefillCompletedForwardCount = _frameCache.ForwardCount;
+            LastCacheRefillCompletedPreviousCount = _frameCache.PreviousCount;
         }
 
         private bool TryResolveIndexedSeekTarget(

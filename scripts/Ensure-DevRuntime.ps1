@@ -91,35 +91,77 @@ $manifest = Get-Content $resolvedManifestPath -Raw | ConvertFrom-Json
 $expectedFileHashes = Get-ManifestFileHashes -Manifest $manifest
 $runtimeRoot = Join-Path $repoRoot "Runtime"
 $runtimeDirectory = Join-Path $runtimeRoot "ffmpeg"
+$candidateRuntimeDirectory = Join-Path $runtimeRoot "ffmpeg-8.1-candidate"
+$artifactsRoot = Join-Path $repoRoot "artifacts"
 
 if ((Test-RuntimeDirectory -DirectoryPath $runtimeDirectory) -and (Test-RuntimeIntegrity -DirectoryPath $runtimeDirectory -ExpectedHashes $expectedFileHashes)) {
     Write-Host "FFmpeg runtime already present at '$runtimeDirectory'."
     exit 0
 }
 
-if ([string]::IsNullOrWhiteSpace($manifest.tag) -or [string]::IsNullOrWhiteSpace($manifest.assetName) -or [string]::IsNullOrWhiteSpace($manifest.assetSha256)) {
-    throw "Runtime manifest is missing the tag, assetName, or assetSha256 fields."
+if ((Test-RuntimeDirectory -DirectoryPath $candidateRuntimeDirectory) -and (Test-RuntimeIntegrity -DirectoryPath $candidateRuntimeDirectory -ExpectedHashes $expectedFileHashes)) {
+    Write-Host "Restoring FFmpeg runtime from local source-built candidate at '$candidateRuntimeDirectory'."
+    Remove-Item $runtimeDirectory -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path $runtimeDirectory | Out-Null
+    Copy-Item (Join-Path $candidateRuntimeDirectory "*.dll") -Destination $runtimeDirectory -Force
+
+    if (-not (Test-RuntimeIntegrity -DirectoryPath $runtimeDirectory -ExpectedHashes $expectedFileHashes)) {
+        throw "The local FFmpeg 8.1 candidate runtime failed integrity validation after restore."
+    }
+
+    Write-Host "Runtime ready at '$runtimeDirectory'."
+    exit 0
 }
 
-$downloadUrl = if (-not [string]::IsNullOrWhiteSpace($manifest.assetUrl)) {
-    [string]$manifest.assetUrl
+if ([string]::IsNullOrWhiteSpace($manifest.assetName)) {
+    throw "Runtime manifest is missing the assetName field."
 }
-else {
-    "https://github.com/jfleezy23/frame-player/releases/download/{0}/{1}" -f $manifest.tag, $manifest.assetName
+
+$archiveCandidatePaths = @()
+if (-not [string]::IsNullOrWhiteSpace($manifest.assetName)) {
+    $archiveCandidatePaths += (Join-Path $runtimeRoot $manifest.assetName)
+    $archiveCandidatePaths += (Join-Path $artifactsRoot $manifest.assetName)
 }
-$archivePath = Join-Path $env:TEMP $manifest.assetName
+$archiveCandidatePaths = $archiveCandidatePaths | Select-Object -Unique
+$archivePath = $archiveCandidatePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+$hasArchiveHash = -not [string]::IsNullOrWhiteSpace($manifest.assetSha256)
+$hasRemoteLocation = -not [string]::IsNullOrWhiteSpace($manifest.assetUrl) -or -not [string]::IsNullOrWhiteSpace($manifest.tag)
 $extractRoot = Join-Path $env:TEMP ("frameplayer-runtime-" + [Guid]::NewGuid().ToString("N"))
 
 New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $extractRoot | Out-Null
 
 try {
-    Write-Host "Downloading FFmpeg runtime from $downloadUrl"
-    Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath
+    if ($null -eq $archivePath) {
+        if (-not $hasRemoteLocation) {
+            throw "No valid local FFmpeg runtime candidate or archive was found. Run .\scripts\ffmpeg\Build-FFmpeg-8.1.ps1 first."
+        }
 
-    $archiveHash = Get-Sha256 -FilePath $archivePath
-    if ($archiveHash -ne $manifest.assetSha256.ToLowerInvariant()) {
-        throw "The downloaded runtime archive failed SHA256 validation."
+        if (-not $hasArchiveHash) {
+            throw "Runtime manifest is missing assetSha256 for the runtime archive download."
+        }
+
+        $downloadUrl = if (-not [string]::IsNullOrWhiteSpace($manifest.assetUrl)) {
+            [string]$manifest.assetUrl
+        }
+        else {
+            "https://github.com/jfleezy23/frame-player/releases/download/{0}/{1}" -f $manifest.tag, $manifest.assetName
+        }
+
+        $archivePath = Join-Path $env:TEMP $manifest.assetName
+        Write-Host "Downloading FFmpeg runtime from $downloadUrl"
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath
+    }
+    else {
+        Write-Host "Restoring FFmpeg runtime from local archive '$archivePath'."
+    }
+
+    if ($hasArchiveHash) {
+        $archiveHash = Get-Sha256 -FilePath $archivePath
+        if ($archiveHash -ne $manifest.assetSha256.ToLowerInvariant()) {
+            throw "The FFmpeg runtime archive failed SHA256 validation."
+        }
     }
 
     Write-Host "Extracting runtime archive"
@@ -150,5 +192,7 @@ try {
 }
 finally {
     Remove-Item $extractRoot -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item $archivePath -Force -ErrorAction SilentlyContinue
+    if ($archivePath -like (Join-Path $env:TEMP "*")) {
+        Remove-Item $archivePath -Force -ErrorAction SilentlyContinue
+    }
 }

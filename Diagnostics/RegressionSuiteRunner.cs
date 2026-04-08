@@ -1,0 +1,2785 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
+using System.IO;
+using System.IO.Compression;
+using System.Linq;
+using System.Reflection;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Threading;
+using FFmpeg.AutoGen;
+using FramePlayer.Core.Models;
+using FramePlayer.Engines.FFmpeg;
+
+namespace FramePlayer.Diagnostics
+{
+    public static class RegressionSuiteRunner
+    {
+        private static readonly StringComparer FilePathComparer = StringComparer.OrdinalIgnoreCase;
+        private static readonly TimeSpan IndexReadyTimeout = TimeSpan.FromSeconds(30d);
+        private static readonly TimeSpan UiSeekWarningThreshold = TimeSpan.FromMilliseconds(2000d);
+        private static readonly TimeSpan PlaybackDelay = TimeSpan.FromMilliseconds(500d);
+        private static readonly string[] StaleRuntimeFiles =
+        {
+            "avcodec-61.dll",
+            "avdevice-61.dll",
+            "avfilter-10.dll",
+            "avformat-61.dll",
+            "avutil-59.dll",
+            "swresample-5.dll",
+            "swscale-8.dll"
+        };
+
+        public static string DiagnosticTracePath { get; set; }
+
+        public static async Task<RegressionSuiteReport> RunAsync(
+            IEnumerable<string> filePaths,
+            string packagedOutputDirectory,
+            string packagedArtifactPath,
+            string runtimeManifestPath,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            if (filePaths == null)
+            {
+                throw new ArgumentNullException(nameof(filePaths));
+            }
+
+            var normalizedFilePaths = NormalizeFilePaths(filePaths).ToArray();
+            if (normalizedFilePaths.Length == 0)
+            {
+                throw new ArgumentException("At least one media file path is required.", nameof(filePaths));
+            }
+
+            if (string.IsNullOrWhiteSpace(packagedOutputDirectory))
+            {
+                throw new ArgumentException("A packaged output directory is required.", nameof(packagedOutputDirectory));
+            }
+
+            if (string.IsNullOrWhiteSpace(packagedArtifactPath))
+            {
+                throw new ArgumentException("A packaged artifact path is required.", nameof(packagedArtifactPath));
+            }
+
+            if (string.IsNullOrWhiteSpace(runtimeManifestPath))
+            {
+                throw new ArgumentException("A runtime manifest path is required.", nameof(runtimeManifestPath));
+            }
+
+            ffmpeg.RootPath = packagedOutputDirectory;
+            Trace("RegressionSuiteRunner.RunAsync starting.");
+
+            var packaging = PackagingRegressionValidator.Validate(
+                packagedOutputDirectory,
+                packagedArtifactPath,
+                runtimeManifestPath);
+            Trace("Packaging validation complete.");
+
+            var fileReports = new List<RegressionFileReport>(normalizedFilePaths.Length);
+            foreach (var filePath in normalizedFilePaths)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                Trace("Running file: " + filePath);
+                fileReports.Add(await RunFileAsync(filePath, cancellationToken).ConfigureAwait(false));
+                Trace("Completed file: " + filePath);
+            }
+
+            Trace("RegressionSuiteRunner.RunAsync completed.");
+            return new RegressionSuiteReport(
+                DateTimeOffset.UtcNow.ToString("o", CultureInfo.InvariantCulture),
+                packagedOutputDirectory,
+                packagedArtifactPath,
+                packaging,
+                fileReports.ToArray(),
+                BuildSummary(packaging, fileReports));
+        }
+
+        private static IEnumerable<string> NormalizeFilePaths(IEnumerable<string> filePaths)
+        {
+            var seen = new HashSet<string>(FilePathComparer);
+            foreach (var rawPath in filePaths)
+            {
+                if (string.IsNullOrWhiteSpace(rawPath))
+                {
+                    continue;
+                }
+
+                var fullPath = Path.GetFullPath(rawPath);
+                if (!File.Exists(fullPath))
+                {
+                    throw new FileNotFoundException("The requested media file was not found.", fullPath);
+                }
+
+                if (seen.Add(fullPath))
+                {
+                    yield return fullPath;
+                }
+            }
+        }
+
+        private static async Task<RegressionFileReport> RunFileAsync(string filePath, CancellationToken cancellationToken)
+        {
+            Trace("Engine checks starting: " + filePath);
+            var engineResult = await RunEngineChecksAsync(filePath, cancellationToken).ConfigureAwait(false);
+            Trace("Engine checks complete: " + filePath);
+            Trace("UI checks starting: " + filePath);
+            var uiResult = await MainWindowRegressionHarness.RunAsync(
+                    filePath,
+                    !engineResult.MediaProfile.HasAudioStream,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            Trace("UI checks complete: " + filePath);
+
+            return new RegressionFileReport(
+                filePath,
+                Path.GetFileName(filePath),
+                engineResult.MediaProfile,
+                engineResult.Checks.ToArray(),
+                uiResult.Checks.ToArray(),
+                engineResult.Metrics,
+                uiResult.Metrics,
+                engineResult.Notes.Concat(uiResult.Notes).ToArray());
+        }
+
+        private sealed class EngineRegressionResult
+        {
+            public EngineRegressionResult(
+                RegressionMediaProfile mediaProfile,
+                IEnumerable<RegressionCheckResult> checks,
+                IEnumerable<string> notes,
+                RegressionMetrics metrics)
+            {
+                MediaProfile = mediaProfile;
+                Checks = checks != null ? checks.ToArray() : new RegressionCheckResult[0];
+                Notes = notes != null ? notes.ToArray() : new string[0];
+                Metrics = metrics ?? new RegressionMetrics();
+            }
+
+            public RegressionMediaProfile MediaProfile { get; }
+
+            public RegressionCheckResult[] Checks { get; }
+
+            public string[] Notes { get; }
+
+            public RegressionMetrics Metrics { get; }
+        }
+
+        private sealed class IndexReadyResult
+        {
+            public IndexReadyResult(bool ready, double elapsedMilliseconds)
+            {
+                Ready = ready;
+                ElapsedMilliseconds = elapsedMilliseconds;
+            }
+
+            public bool Ready { get; }
+
+            public double ElapsedMilliseconds { get; }
+        }
+
+        private sealed class MeasuredOperation
+        {
+            public MeasuredOperation(TimeSpan elapsed)
+            {
+                Elapsed = elapsed;
+            }
+
+            public TimeSpan Elapsed { get; }
+        }
+
+        private sealed class MeasuredOperation<T>
+        {
+            public MeasuredOperation(T result, TimeSpan elapsed)
+            {
+                Result = result;
+                Elapsed = elapsed;
+            }
+
+            public T Result { get; }
+
+            public TimeSpan Elapsed { get; }
+        }
+
+        private static async Task<EngineRegressionResult> RunEngineChecksAsync(string filePath, CancellationToken cancellationToken)
+        {
+            var checks = new List<RegressionCheckResult>();
+            var notes = new List<string>();
+            var metrics = new RegressionMetrics();
+
+            using (var engine = new FfmpegReviewEngine())
+            {
+                try
+                {
+                    var openOperation = await MeasureAsync(
+                            async () => await engine.OpenAsync(filePath, cancellationToken).ConfigureAwait(false))
+                        .ConfigureAwait(false);
+                    metrics.OpenMilliseconds = openOperation.Elapsed.TotalMilliseconds;
+                    ObserveCacheMetrics(metrics, engine);
+                }
+                catch (Exception ex)
+                {
+                    checks.Add(Fail(
+                        filePath,
+                        "engine",
+                        "correctness",
+                        "open-first-frame",
+                        "Opening the file failed: " + ex.Message));
+
+                    return new EngineRegressionResult(
+                        BuildMediaProfile(engine.MediaInfo),
+                        checks,
+                        notes,
+                        metrics);
+                }
+
+                var initialPosition = engine.Position ?? ReviewPosition.Empty;
+                notes.Add(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Open timings: total {0:0.###} ms, probe {1:0.###} ms, stream {2:0.###} ms, first frame {3:0.###} ms, cache warm {4:0.###} ms. Index status: {5}.",
+                    engine.LastOpenTotalMilliseconds,
+                    engine.LastOpenContainerProbeMilliseconds,
+                    engine.LastOpenStreamDiscoveryMilliseconds,
+                    engine.LastOpenFirstFrameDecodeMilliseconds,
+                    engine.LastOpenInitialCacheWarmMilliseconds,
+                    engine.GlobalFrameIndexStatus));
+                notes.Add(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Open cache window: {0} back / {1} ahead, approx {2:0.0} MiB, refill {3} {4:0.###} ms ({5}->{6} ahead).",
+                    engine.PreviousCachedFrameCount,
+                    engine.ForwardCachedFrameCount,
+                    engine.ApproximateCachedFrameBytes / 1048576d,
+                    string.IsNullOrWhiteSpace(engine.LastCacheRefillReason) ? "(none)" : engine.LastCacheRefillReason,
+                    engine.LastCacheRefillMilliseconds,
+                    engine.LastCacheRefillStartingForwardCount,
+                    engine.LastCacheRefillCompletedForwardCount));
+
+                checks.Add(EvaluateExpectedFrame(
+                    filePath,
+                    "engine",
+                    "open-first-frame",
+                    0L,
+                    initialPosition,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Open landed at frame {0}. Absolute identity: {1}.",
+                        FormatFrameIndex(initialPosition.FrameIndex),
+                        initialPosition.IsFrameIndexAbsolute ? "yes" : "no"),
+                    metrics.OpenMilliseconds));
+
+                var preIndexSeekTarget = SelectQuarterDurationTarget(engine.MediaInfo.Duration, engine.MediaInfo.PositionStep);
+                if (preIndexSeekTarget > TimeSpan.Zero)
+                {
+                    try
+                    {
+                        var preIndexSeek = await MeasureAsync(
+                                async () => await engine.SeekToTimeAsync(preIndexSeekTarget, cancellationToken).ConfigureAwait(false))
+                            .ConfigureAwait(false);
+                        metrics.PreIndexSeekMilliseconds = preIndexSeek.Elapsed.TotalMilliseconds;
+                        ObserveCacheMetrics(metrics, engine);
+
+                        var preIndexPosition = engine.Position ?? ReviewPosition.Empty;
+                        notes.Add(string.Format(
+                            CultureInfo.InvariantCulture,
+                            "Pre-index seek cache: landed in {0:0.###} ms, refill {1} {2:0.###} ms ({3}), cache {4} back / {5} ahead, approx {6:0.0} MiB.",
+                            preIndexSeek.Elapsed.TotalMilliseconds,
+                            string.IsNullOrWhiteSpace(engine.LastCacheRefillReason) ? "(none)" : engine.LastCacheRefillReason,
+                            engine.LastCacheRefillMilliseconds,
+                            string.IsNullOrWhiteSpace(engine.LastCacheRefillMode) ? "none" : engine.LastCacheRefillMode,
+                            engine.PreviousCachedFrameCount,
+                            engine.ForwardCachedFrameCount,
+                            engine.ApproximateCachedFrameBytes / 1048576d));
+                        if (preIndexPosition.IsFrameIndexAbsolute)
+                        {
+                            checks.Add(Pass(
+                                filePath,
+                                "engine",
+                                "correctness",
+                                "seek-to-time-before-index-ready",
+                                string.Format(
+                                    CultureInfo.InvariantCulture,
+                                    "Pre-index seek to {0} landed on absolute frame {1} at {2}.",
+                                    FormatTime(preIndexSeekTarget),
+                                    FormatFrameIndex(preIndexPosition.FrameIndex),
+                                    FormatTime(preIndexPosition.PresentationTime)),
+                                actualFrameIndex: preIndexPosition.FrameIndex,
+                                actualTime: preIndexPosition.PresentationTime,
+                                elapsedMilliseconds: metrics.PreIndexSeekMilliseconds,
+                                indexReady: engine.IsGlobalFrameIndexAvailable,
+                                usedGlobalIndex: engine.LastOperationUsedGlobalIndex));
+                        }
+                        else
+                        {
+                            checks.Add(Warning(
+                                filePath,
+                                "engine",
+                                "correctness",
+                                "seek-to-time-before-index-ready",
+                                string.Format(
+                                    CultureInfo.InvariantCulture,
+                                    "Pre-index seek to {0} landed at {1} while the global index was still '{2}', so frame identity remained pending instead of absolute.",
+                                    FormatTime(preIndexSeekTarget),
+                                    FormatTime(preIndexPosition.PresentationTime),
+                                    engine.GlobalFrameIndexStatus),
+                                actualFrameIndex: preIndexPosition.FrameIndex,
+                                actualTime: preIndexPosition.PresentationTime,
+                                elapsedMilliseconds: metrics.PreIndexSeekMilliseconds,
+                                indexReady: engine.IsGlobalFrameIndexAvailable,
+                                usedGlobalIndex: engine.LastOperationUsedGlobalIndex));
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        checks.Add(Fail(
+                            filePath,
+                            "engine",
+                            "correctness",
+                            "seek-to-time-before-index-ready",
+                            "Pre-index seek-to-time failed: " + ex.Message));
+                    }
+                }
+
+                var indexReadyResult = await WaitForIndexReadyAsync(engine, IndexReadyTimeout, cancellationToken).ConfigureAwait(false);
+                metrics.IndexReadyMilliseconds = indexReadyResult.ElapsedMilliseconds;
+                if (indexReadyResult.Ready)
+                {
+                    checks.Add(Pass(
+                        filePath,
+                        "engine",
+                        "lifecycle",
+                        "background-index-ready",
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "Global index became ready with {0} frames in {1:0.###} ms.",
+                            engine.IndexedFrameCount,
+                            indexReadyResult.ElapsedMilliseconds),
+                        elapsedMilliseconds: indexReadyResult.ElapsedMilliseconds,
+                        indexReady: true));
+                }
+                else
+                {
+                    checks.Add(Warning(
+                        filePath,
+                        "engine",
+                        "lifecycle",
+                        "background-index-ready",
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "Global index was still '{0}' after waiting {1:0.###} ms, so exact last-frame checks may be skipped.",
+                            engine.GlobalFrameIndexStatus,
+                            indexReadyResult.ElapsedMilliseconds),
+                        elapsedMilliseconds: indexReadyResult.ElapsedMilliseconds,
+                        indexReady: false));
+                }
+
+                var totalFrames = engine.IsGlobalFrameIndexAvailable ? engine.IndexedFrameCount : -1L;
+                var midpointFrame = SelectMidpointFrameIndex(totalFrames);
+                if (midpointFrame >= 0L)
+                {
+                    await RunExactFrameSeekChecksAsync(filePath, engine, midpointFrame, "midpoint-frame-seek", metrics, checks, cancellationToken).ConfigureAwait(false);
+
+                    var repeatedStepWindow = SelectRepeatedStepWindow(midpointFrame, totalFrames);
+                    if (repeatedStepWindow > 0)
+                    {
+                        await RunRepeatedStepChecksAsync(
+                                filePath,
+                                engine,
+                                midpointFrame,
+                                repeatedStepWindow,
+                                metrics,
+                                checks,
+                                cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        checks.Add(Warning(
+                            filePath,
+                            "engine",
+                            "correctness",
+                            "repeated-step-window",
+                            "The indexed midpoint did not leave enough headroom for a repeated stepping window."));
+                    }
+                }
+                else
+                {
+                    checks.Add(Warning(
+                        filePath,
+                        "engine",
+                        "correctness",
+                        "midpoint-frame-seek",
+                        "The global index never became available, so exact midpoint frame-seek checks were skipped."));
+                }
+
+                try
+                {
+                    var playbackStartFrame = engine.Position != null ? engine.Position.FrameIndex : null;
+                    var playback = await MeasureAsync(
+                            async () =>
+                            {
+                                await engine.PlayAsync().ConfigureAwait(false);
+                                await Task.Delay(PlaybackDelay, cancellationToken).ConfigureAwait(false);
+                                await engine.PauseAsync().ConfigureAwait(false);
+                            })
+                        .ConfigureAwait(false);
+                    metrics.PlaybackMilliseconds = playback.Elapsed.TotalMilliseconds;
+                    ObserveCacheMetrics(metrics, engine);
+                    var playbackPosition = engine.Position ?? ReviewPosition.Empty;
+                    var playbackAdvanced = playbackStartFrame.HasValue &&
+                        playbackPosition.FrameIndex.HasValue &&
+                        playbackPosition.FrameIndex.Value > playbackStartFrame.Value;
+
+                    checks.Add(playbackAdvanced
+                        ? Pass(
+                            filePath,
+                            "engine",
+                            "lifecycle",
+                            "playback-pause-progress",
+                            string.Format(
+                                CultureInfo.InvariantCulture,
+                                "Playback advanced from frame {0} to frame {1}, then paused cleanly.",
+                                playbackStartFrame.Value,
+                                playbackPosition.FrameIndex.HasValue ? playbackPosition.FrameIndex.Value.ToString(CultureInfo.InvariantCulture) : "(none)"),
+                            actualFrameIndex: playbackPosition.FrameIndex,
+                            actualTime: playbackPosition.PresentationTime,
+                            elapsedMilliseconds: metrics.PlaybackMilliseconds)
+                        : Fail(
+                            filePath,
+                            "engine",
+                            "lifecycle",
+                            "playback-pause-progress",
+                            string.Format(
+                                CultureInfo.InvariantCulture,
+                                "Playback did not advance a decoded frame before pause. Start frame {0}, landed frame {1}.",
+                                FormatFrameIndex(playbackStartFrame),
+                                FormatFrameIndex(playbackPosition.FrameIndex)),
+                            actualFrameIndex: playbackPosition.FrameIndex,
+                            actualTime: playbackPosition.PresentationTime,
+                            elapsedMilliseconds: metrics.PlaybackMilliseconds));
+
+                    if (engine.HasAudioStream)
+                    {
+                        var audioHealthy = engine.AudioStreamInfo.DecoderAvailable &&
+                            engine.LastAudioSubmittedBytes > 0L &&
+                            engine.LastPlaybackUsedAudioClock;
+                        checks.Add(audioHealthy
+                            ? Pass(
+                                filePath,
+                                "engine",
+                                "correctness",
+                                "audio-playback-path",
+                                string.Format(
+                                    CultureInfo.InvariantCulture,
+                                    "Audio playback initialized with codec {0}, submitted {1} bytes, and used the audio clock.",
+                                    string.IsNullOrWhiteSpace(engine.AudioStreamInfo.CodecName) ? "(unknown)" : engine.AudioStreamInfo.CodecName,
+                                    engine.LastAudioSubmittedBytes))
+                            : Fail(
+                                filePath,
+                                "engine",
+                                "correctness",
+                                "audio-playback-path",
+                                string.Format(
+                                    CultureInfo.InvariantCulture,
+                                    "Audio stream was present but playback diagnostics were unhealthy. Decoder available: {0}; submitted bytes: {1}; audio clock used: {2}; error: {3}",
+                                    engine.AudioStreamInfo.DecoderAvailable ? "yes" : "no",
+                                    engine.LastAudioSubmittedBytes,
+                                    engine.LastPlaybackUsedAudioClock ? "yes" : "no",
+                                    string.IsNullOrWhiteSpace(engine.LastAudioErrorMessage) ? "(none)" : engine.LastAudioErrorMessage)));
+                    }
+                    else
+                    {
+                        checks.Add(Pass(
+                            filePath,
+                            "engine",
+                            "lifecycle",
+                            "video-only-playback-path",
+                            "No audio stream was present, and playback correctly ran video-only."));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    checks.Add(Fail(
+                        filePath,
+                        "engine",
+                        "lifecycle",
+                        "playback-pause-progress",
+                        "Playback/pause regression sequence failed: " + ex.Message));
+                }
+
+                if (midpointFrame >= 0L)
+                {
+                    var postPlaybackFrame = Math.Max(0L, midpointFrame / 2L);
+                    await RunExactFrameSeekChecksAsync(
+                            filePath,
+                            engine,
+                            postPlaybackFrame,
+                            "post-playback-seek-step",
+                            metrics,
+                            checks,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                if (preIndexSeekTarget > TimeSpan.Zero)
+                {
+                    try
+                    {
+                        var indexedSeek = await MeasureAsync(
+                                async () => await engine.SeekToTimeAsync(preIndexSeekTarget, cancellationToken).ConfigureAwait(false))
+                            .ConfigureAwait(false);
+                        metrics.IndexedSeekMilliseconds = indexedSeek.Elapsed.TotalMilliseconds;
+                        ObserveCacheMetrics(metrics, engine);
+                        var indexedSeekPosition = engine.Position ?? ReviewPosition.Empty;
+                        notes.Add(string.Format(
+                            CultureInfo.InvariantCulture,
+                            "Indexed seek cache: landed in {0:0.###} ms, refill {1} {2:0.###} ms ({3}), cache {4} back / {5} ahead, approx {6:0.0} MiB.",
+                            indexedSeek.Elapsed.TotalMilliseconds,
+                            string.IsNullOrWhiteSpace(engine.LastCacheRefillReason) ? "(none)" : engine.LastCacheRefillReason,
+                            engine.LastCacheRefillMilliseconds,
+                            string.IsNullOrWhiteSpace(engine.LastCacheRefillMode) ? "none" : engine.LastCacheRefillMode,
+                            engine.PreviousCachedFrameCount,
+                            engine.ForwardCachedFrameCount,
+                            engine.ApproximateCachedFrameBytes / 1048576d));
+                        var indexedSeekValid = indexedSeekPosition.IsFrameIndexAbsolute &&
+                            engine.LastSeekLandedAtOrAfterTarget;
+                        checks.Add(indexedSeekValid
+                            ? Pass(
+                                filePath,
+                                "engine",
+                                "correctness",
+                                "seek-to-time-after-index-ready",
+                                string.Format(
+                                    CultureInfo.InvariantCulture,
+                                    "Indexed seek to {0} landed on absolute frame {1} at {2}.",
+                                    FormatTime(preIndexSeekTarget),
+                                    FormatFrameIndex(indexedSeekPosition.FrameIndex),
+                                    FormatTime(indexedSeekPosition.PresentationTime)),
+                                actualFrameIndex: indexedSeekPosition.FrameIndex,
+                                actualTime: indexedSeekPosition.PresentationTime,
+                                elapsedMilliseconds: metrics.IndexedSeekMilliseconds,
+                                indexReady: engine.IsGlobalFrameIndexAvailable,
+                                usedGlobalIndex: engine.LastOperationUsedGlobalIndex)
+                            : Fail(
+                                filePath,
+                                "engine",
+                                "correctness",
+                                "seek-to-time-after-index-ready",
+                                string.Format(
+                                    CultureInfo.InvariantCulture,
+                                    "Indexed seek to {0} did not preserve truthful absolute landing. Absolute: {1}; landed-on-or-after-target: {2}; actual frame: {3}; actual time: {4}.",
+                                    FormatTime(preIndexSeekTarget),
+                                    indexedSeekPosition.IsFrameIndexAbsolute ? "yes" : "no",
+                                    engine.LastSeekLandedAtOrAfterTarget ? "yes" : "no",
+                                    FormatFrameIndex(indexedSeekPosition.FrameIndex),
+                                    FormatTime(indexedSeekPosition.PresentationTime)),
+                                actualFrameIndex: indexedSeekPosition.FrameIndex,
+                                actualTime: indexedSeekPosition.PresentationTime,
+                                elapsedMilliseconds: metrics.IndexedSeekMilliseconds,
+                                indexReady: engine.IsGlobalFrameIndexAvailable,
+                                usedGlobalIndex: engine.LastOperationUsedGlobalIndex));
+                    }
+                    catch (Exception ex)
+                    {
+                        checks.Add(Fail(
+                            filePath,
+                            "engine",
+                            "correctness",
+                            "seek-to-time-after-index-ready",
+                            "Indexed seek-to-time failed: " + ex.Message));
+                    }
+                }
+
+                if (totalFrames > 0L)
+                {
+                    var lastFrameIndex = totalFrames - 1L;
+                    await RunExactFrameSeekChecksAsync(
+                            filePath,
+                            engine,
+                            lastFrameIndex,
+                            "last-frame-end-of-video",
+                            metrics,
+                            checks,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    checks.Add(Warning(
+                        filePath,
+                        "engine",
+                        "correctness",
+                        "last-frame-end-of-video",
+                        "The global index was unavailable, so exact last-frame regression checks were skipped."));
+                }
+
+                try
+                {
+                    var reopen = await MeasureAsync(
+                            async () =>
+                            {
+                                await engine.CloseAsync().ConfigureAwait(false);
+                                await engine.OpenAsync(filePath, cancellationToken).ConfigureAwait(false);
+                            })
+                        .ConfigureAwait(false);
+                    metrics.ReopenMilliseconds = reopen.Elapsed.TotalMilliseconds;
+                    ObserveCacheMetrics(metrics, engine);
+                    checks.Add(EvaluateExpectedFrame(
+                        filePath,
+                        "engine",
+                        "close-reopen-first-frame",
+                        0L,
+                        engine.Position,
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "Close/reopen completed in {0:0.###} ms.",
+                            metrics.ReopenMilliseconds),
+                        metrics.ReopenMilliseconds));
+                }
+                catch (Exception ex)
+                {
+                    checks.Add(Fail(
+                        filePath,
+                        "engine",
+                        "lifecycle",
+                        "close-reopen-first-frame",
+                        "Close/reopen failed: " + ex.Message));
+                }
+
+                return new EngineRegressionResult(
+                    BuildMediaProfile(engine.MediaInfo),
+                    checks,
+                    notes,
+                    metrics);
+            }
+        }
+
+        private static async Task RunExactFrameSeekChecksAsync(
+            string filePath,
+            FfmpegReviewEngine engine,
+            long targetFrameIndex,
+            string checkPrefix,
+            RegressionMetrics metrics,
+            ICollection<RegressionCheckResult> checks,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                var seek = await MeasureAsync(
+                        async () => await engine.SeekToFrameAsync(targetFrameIndex, cancellationToken).ConfigureAwait(false))
+                    .ConfigureAwait(false);
+                ObserveCacheMetrics(metrics, engine);
+                checks.Add(EvaluateExpectedFrame(
+                    filePath,
+                    "engine",
+                    checkPrefix + "-seek",
+                    targetFrameIndex,
+                    engine.Position,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Seek-to-frame target {0} completed via {1}.",
+                        targetFrameIndex,
+                        string.IsNullOrWhiteSpace(engine.LastAnchorStrategy) ? "(no anchor)" : engine.LastAnchorStrategy),
+                    seek.Elapsed.TotalMilliseconds,
+                    engine.IsGlobalFrameIndexAvailable,
+                    engine.LastOperationUsedGlobalIndex));
+            }
+            catch (Exception ex)
+            {
+                checks.Add(Fail(
+                    filePath,
+                    "engine",
+                    "correctness",
+                    checkPrefix + "-seek",
+                    "Seek-to-frame failed: " + ex.Message,
+                    expectedFrameIndex: targetFrameIndex));
+                return;
+            }
+
+            if (targetFrameIndex <= 0L)
+            {
+                return;
+            }
+
+            try
+            {
+                var backward = await MeasureAsync(
+                        async () => await engine.StepBackwardAsync(cancellationToken).ConfigureAwait(false))
+                    .ConfigureAwait(false);
+                ObserveCacheMetrics(metrics, engine);
+                checks.Add(EvaluateExpectedStep(
+                    filePath,
+                    "engine",
+                    checkPrefix + "-step-backward",
+                    targetFrameIndex - 1L,
+                    backward.Result,
+                    backward.Elapsed.TotalMilliseconds));
+            }
+            catch (Exception ex)
+            {
+                checks.Add(Fail(
+                    filePath,
+                    "engine",
+                    "correctness",
+                    checkPrefix + "-step-backward",
+                    "Backward step failed: " + ex.Message,
+                    expectedFrameIndex: targetFrameIndex - 1L));
+                return;
+            }
+
+            try
+            {
+                var forward = await MeasureAsync(
+                        async () => await engine.StepForwardAsync(cancellationToken).ConfigureAwait(false))
+                    .ConfigureAwait(false);
+                ObserveCacheMetrics(metrics, engine);
+                checks.Add(EvaluateExpectedStep(
+                    filePath,
+                    "engine",
+                    checkPrefix + "-step-forward",
+                    targetFrameIndex,
+                    forward.Result,
+                    forward.Elapsed.TotalMilliseconds));
+            }
+            catch (Exception ex)
+            {
+                checks.Add(Fail(
+                    filePath,
+                    "engine",
+                    "correctness",
+                    checkPrefix + "-step-forward",
+                    "Forward step failed: " + ex.Message,
+                    expectedFrameIndex: targetFrameIndex));
+            }
+        }
+
+        private static async Task RunRepeatedStepChecksAsync(
+            string filePath,
+            FfmpegReviewEngine engine,
+            long startFrameIndex,
+            int stepWindow,
+            RegressionMetrics metrics,
+            ICollection<RegressionCheckResult> checks,
+            CancellationToken cancellationToken)
+        {
+            await engine.SeekToFrameAsync(startFrameIndex, cancellationToken).ConfigureAwait(false);
+            ObserveCacheMetrics(metrics, engine);
+
+            var backwardCacheHits = 0;
+            var backwardReconstructs = 0;
+            for (var i = 1; i <= stepWindow; i++)
+            {
+                var backward = await engine.StepBackwardAsync(cancellationToken).ConfigureAwait(false);
+                var expectedFrame = startFrameIndex - i;
+                if (!backward.Success ||
+                    backward.Position == null ||
+                    !backward.Position.IsFrameIndexAbsolute ||
+                    !backward.Position.FrameIndex.HasValue ||
+                    backward.Position.FrameIndex.Value != expectedFrame)
+                {
+                    checks.Add(Fail(
+                        filePath,
+                        "engine",
+                        "correctness",
+                        "repeated-backward-steps",
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "Backward step {0} expected frame {1} but landed on {2}.",
+                            i,
+                            expectedFrame,
+                            backward.Position != null && backward.Position.FrameIndex.HasValue
+                                ? backward.Position.FrameIndex.Value.ToString(CultureInfo.InvariantCulture)
+                                : "(none)"),
+                        expectedFrameIndex: expectedFrame,
+                        actualFrameIndex: backward.Position != null ? backward.Position.FrameIndex : null,
+                        actualTime: backward.Position != null ? (TimeSpan?)backward.Position.PresentationTime : null,
+                        cacheHit: backward.WasCacheHit,
+                        requiredReconstruction: backward.RequiredReconstruction));
+                    return;
+                }
+
+                if (backward.WasCacheHit)
+                {
+                    backwardCacheHits++;
+                }
+
+                if (backward.RequiredReconstruction)
+                {
+                    backwardReconstructs++;
+                }
+
+                ObserveCacheMetrics(metrics, engine);
+            }
+
+            var forwardCacheHits = 0;
+            var forwardReconstructs = 0;
+            for (var i = 1; i <= stepWindow; i++)
+            {
+                var forward = await engine.StepForwardAsync(cancellationToken).ConfigureAwait(false);
+                var expectedFrame = (startFrameIndex - stepWindow) + i;
+                if (!forward.Success ||
+                    forward.Position == null ||
+                    !forward.Position.IsFrameIndexAbsolute ||
+                    !forward.Position.FrameIndex.HasValue ||
+                    forward.Position.FrameIndex.Value != expectedFrame)
+                {
+                    checks.Add(Fail(
+                        filePath,
+                        "engine",
+                        "correctness",
+                        "repeated-forward-steps",
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "Forward step {0} expected frame {1} but landed on {2}.",
+                            i,
+                            expectedFrame,
+                            forward.Position != null && forward.Position.FrameIndex.HasValue
+                                ? forward.Position.FrameIndex.Value.ToString(CultureInfo.InvariantCulture)
+                                : "(none)"),
+                        expectedFrameIndex: expectedFrame,
+                        actualFrameIndex: forward.Position != null ? forward.Position.FrameIndex : null,
+                        actualTime: forward.Position != null ? (TimeSpan?)forward.Position.PresentationTime : null,
+                        cacheHit: forward.WasCacheHit,
+                        requiredReconstruction: forward.RequiredReconstruction));
+                    return;
+                }
+
+                if (forward.WasCacheHit)
+                {
+                    forwardCacheHits++;
+                }
+
+                if (forward.RequiredReconstruction)
+                {
+                    forwardReconstructs++;
+                }
+
+                ObserveCacheMetrics(metrics, engine);
+            }
+
+            metrics.BackwardStepCacheHits += backwardCacheHits;
+            metrics.BackwardStepReconstructionCount += backwardReconstructs;
+            metrics.ForwardStepCacheHits += forwardCacheHits;
+            metrics.ForwardStepReconstructionCount += forwardReconstructs;
+
+            checks.Add(Pass(
+                filePath,
+                "engine",
+                "correctness",
+                "repeated-step-roundtrip",
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Repeated stepping stayed exact across {0} backward and {0} forward steps. Back cache hits: {1}; back reconstructions: {2}; forward cache hits: {3}; forward reconstructions: {4}.",
+                    stepWindow,
+                    backwardCacheHits,
+                    backwardReconstructs,
+                    forwardCacheHits,
+                    forwardReconstructs),
+                expectedFrameIndex: startFrameIndex,
+                actualFrameIndex: engine.Position != null ? engine.Position.FrameIndex : null,
+                actualTime: engine.Position != null ? (TimeSpan?)engine.Position.PresentationTime : null));
+        }
+
+        private static void ObserveCacheMetrics(RegressionMetrics metrics, FfmpegReviewEngine engine)
+        {
+            if (metrics == null || engine == null)
+            {
+                return;
+            }
+
+            metrics.MaxObservedPreviousCachedFrames = Math.Max(metrics.MaxObservedPreviousCachedFrames, engine.PreviousCachedFrameCount);
+            metrics.MaxObservedForwardCachedFrames = Math.Max(metrics.MaxObservedForwardCachedFrames, engine.ForwardCachedFrameCount);
+            metrics.MaxObservedApproximateCacheBytes = Math.Max(metrics.MaxObservedApproximateCacheBytes, engine.ApproximateCachedFrameBytes);
+            metrics.LastObservedCacheRefillMilliseconds = engine.LastCacheRefillMilliseconds;
+            metrics.LastObservedCacheRefillReason = string.IsNullOrWhiteSpace(engine.LastCacheRefillReason)
+                ? string.Empty
+                : engine.LastCacheRefillReason;
+            metrics.LastObservedCacheRefillMode = string.IsNullOrWhiteSpace(engine.LastCacheRefillMode)
+                ? string.Empty
+                : engine.LastCacheRefillMode;
+        }
+
+        private static RegressionMediaProfile BuildMediaProfile(VideoMediaInfo mediaInfo)
+        {
+            mediaInfo = mediaInfo ?? VideoMediaInfo.Empty;
+            return new RegressionMediaProfile(
+                mediaInfo.VideoCodecName,
+                mediaInfo.PixelWidth,
+                mediaInfo.PixelHeight,
+                FormatTime(mediaInfo.Duration),
+                mediaInfo.FramesPerSecond,
+                mediaInfo.HasAudioStream,
+                mediaInfo.IsAudioPlaybackAvailable,
+                mediaInfo.AudioCodecName,
+                mediaInfo.AudioSampleRate,
+                mediaInfo.AudioChannelCount);
+        }
+
+        private static long SelectMidpointFrameIndex(long totalFrames)
+        {
+            if (totalFrames <= 0L)
+            {
+                return -1L;
+            }
+
+            if (totalFrames == 1L)
+            {
+                return 0L;
+            }
+
+            var midpoint = totalFrames / 2L;
+            return midpoint >= totalFrames ? totalFrames - 1L : midpoint;
+        }
+
+        private static int SelectRepeatedStepWindow(long startFrameIndex, long totalFrames)
+        {
+            if (startFrameIndex <= 0L || totalFrames <= 1L)
+            {
+                return 0;
+            }
+
+            var forwardHeadroom = Math.Max(0L, totalFrames - startFrameIndex - 1L);
+            var backwardHeadroom = startFrameIndex;
+            var window = (int)Math.Min(10L, Math.Min(backwardHeadroom, forwardHeadroom));
+            return Math.Max(0, window);
+        }
+
+        private static TimeSpan SelectQuarterDurationTarget(TimeSpan duration, TimeSpan positionStep)
+        {
+            if (duration <= TimeSpan.Zero)
+            {
+                return TimeSpan.Zero;
+            }
+
+            var margin = positionStep > TimeSpan.Zero ? positionStep : TimeSpan.FromMilliseconds(100d);
+            if (duration <= margin)
+            {
+                return TimeSpan.Zero;
+            }
+
+            var target = TimeSpan.FromTicks(duration.Ticks / 4L);
+            if (target < margin)
+            {
+                target = margin;
+            }
+
+            var maxTarget = duration - margin;
+            return target > maxTarget ? maxTarget : target;
+        }
+
+        private static async Task<IndexReadyResult> WaitForIndexReadyAsync(
+            FfmpegReviewEngine engine,
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            while (stopwatch.Elapsed < timeout)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (engine.IsGlobalFrameIndexAvailable)
+                {
+                    stopwatch.Stop();
+                    return new IndexReadyResult(true, stopwatch.Elapsed.TotalMilliseconds);
+                }
+
+                await Task.Delay(50, cancellationToken).ConfigureAwait(false);
+            }
+
+            stopwatch.Stop();
+            return new IndexReadyResult(engine.IsGlobalFrameIndexAvailable, stopwatch.Elapsed.TotalMilliseconds);
+        }
+
+        private static RegressionCheckResult EvaluateExpectedFrame(
+            string filePath,
+            string scope,
+            string name,
+            long expectedFrameIndex,
+            ReviewPosition actualPosition,
+            string message,
+            double? elapsedMilliseconds = null,
+            bool? indexReady = null,
+            bool? usedGlobalIndex = null)
+        {
+            actualPosition = actualPosition ?? ReviewPosition.Empty;
+            var success = actualPosition.IsFrameIndexAbsolute &&
+                actualPosition.FrameIndex.HasValue &&
+                actualPosition.FrameIndex.Value == expectedFrameIndex;
+
+            return success
+                ? Pass(
+                    filePath,
+                    scope,
+                    "correctness",
+                    name,
+                    message,
+                    expectedFrameIndex,
+                    actualPosition.FrameIndex,
+                    actualTime: actualPosition.PresentationTime,
+                    elapsedMilliseconds: elapsedMilliseconds,
+                    indexReady: indexReady,
+                    usedGlobalIndex: usedGlobalIndex)
+                : Fail(
+                    filePath,
+                    scope,
+                    "correctness",
+                    name,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "{0} Expected frame {1} but landed on {2}. Absolute identity: {3}.",
+                        message,
+                        expectedFrameIndex,
+                        FormatFrameIndex(actualPosition.FrameIndex),
+                        actualPosition.IsFrameIndexAbsolute ? "yes" : "no"),
+                    expectedFrameIndex,
+                    actualPosition.FrameIndex,
+                    actualTime: actualPosition.PresentationTime,
+                    elapsedMilliseconds: elapsedMilliseconds,
+                    indexReady: indexReady,
+                    usedGlobalIndex: usedGlobalIndex);
+        }
+
+        private static RegressionCheckResult EvaluateExpectedStep(
+            string filePath,
+            string scope,
+            string name,
+            long expectedFrameIndex,
+            FrameStepResult stepResult,
+            double elapsedMilliseconds)
+        {
+            if (stepResult == null)
+            {
+                return Fail(
+                    filePath,
+                    scope,
+                    "correctness",
+                    name,
+                    "No step result was returned.",
+                    expectedFrameIndex: expectedFrameIndex,
+                    elapsedMilliseconds: elapsedMilliseconds);
+            }
+
+            var position = stepResult.Position ?? ReviewPosition.Empty;
+            var success = stepResult.Success &&
+                position.IsFrameIndexAbsolute &&
+                position.FrameIndex.HasValue &&
+                position.FrameIndex.Value == expectedFrameIndex;
+
+            return success
+                ? Pass(
+                    filePath,
+                    scope,
+                    "correctness",
+                    name,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Step landed on exact frame {0}. Cache hit: {1}. Reconstruction: {2}.",
+                        expectedFrameIndex,
+                        stepResult.WasCacheHit ? "yes" : "no",
+                        stepResult.RequiredReconstruction ? "yes" : "no"),
+                    expectedFrameIndex,
+                    position.FrameIndex,
+                    actualTime: position.PresentationTime,
+                    elapsedMilliseconds: elapsedMilliseconds,
+                    cacheHit: stepResult.WasCacheHit,
+                    requiredReconstruction: stepResult.RequiredReconstruction)
+                : Fail(
+                    filePath,
+                    scope,
+                    "correctness",
+                    name,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Step expected frame {0} but landed on {1}. Success: {2}. Message: {3}",
+                        expectedFrameIndex,
+                        FormatFrameIndex(position.FrameIndex),
+                        stepResult.Success ? "yes" : "no",
+                        string.IsNullOrWhiteSpace(stepResult.Message) ? "(none)" : stepResult.Message),
+                    expectedFrameIndex,
+                    position.FrameIndex,
+                    actualTime: position.PresentationTime,
+                    elapsedMilliseconds: elapsedMilliseconds,
+                    cacheHit: stepResult.WasCacheHit,
+                    requiredReconstruction: stepResult.RequiredReconstruction);
+        }
+
+        private static RegressionCheckResult Pass(
+            string filePath,
+            string scope,
+            string category,
+            string name,
+            string message,
+            long? expectedFrameIndex = null,
+            long? actualFrameIndex = null,
+            long? expectedDisplayedFrame = null,
+            long? actualDisplayedFrame = null,
+            TimeSpan? requestedTime = null,
+            TimeSpan? actualTime = null,
+            double? sliderValueSeconds = null,
+            double? sliderMaximumSeconds = null,
+            double? elapsedMilliseconds = null,
+            bool? indexReady = null,
+            bool? usedGlobalIndex = null,
+            bool? cacheHit = null,
+            bool? requiredReconstruction = null)
+        {
+            return new RegressionCheckResult(
+                filePath,
+                scope,
+                category,
+                name,
+                "pass",
+                message,
+                expectedFrameIndex,
+                actualFrameIndex,
+                expectedDisplayedFrame,
+                actualDisplayedFrame,
+                requestedTime.HasValue ? FormatTime(requestedTime.Value) : string.Empty,
+                actualTime.HasValue ? FormatTime(actualTime.Value) : string.Empty,
+                sliderValueSeconds,
+                sliderMaximumSeconds,
+                elapsedMilliseconds,
+                indexReady,
+                usedGlobalIndex,
+                cacheHit,
+                requiredReconstruction);
+        }
+
+        private static RegressionCheckResult Warning(
+            string filePath,
+            string scope,
+            string category,
+            string name,
+            string message,
+            long? expectedFrameIndex = null,
+            long? actualFrameIndex = null,
+            long? expectedDisplayedFrame = null,
+            long? actualDisplayedFrame = null,
+            TimeSpan? requestedTime = null,
+            TimeSpan? actualTime = null,
+            double? sliderValueSeconds = null,
+            double? sliderMaximumSeconds = null,
+            double? elapsedMilliseconds = null,
+            bool? indexReady = null,
+            bool? usedGlobalIndex = null,
+            bool? cacheHit = null,
+            bool? requiredReconstruction = null)
+        {
+            return new RegressionCheckResult(
+                filePath,
+                scope,
+                category,
+                name,
+                "warning",
+                message,
+                expectedFrameIndex,
+                actualFrameIndex,
+                expectedDisplayedFrame,
+                actualDisplayedFrame,
+                requestedTime.HasValue ? FormatTime(requestedTime.Value) : string.Empty,
+                actualTime.HasValue ? FormatTime(actualTime.Value) : string.Empty,
+                sliderValueSeconds,
+                sliderMaximumSeconds,
+                elapsedMilliseconds,
+                indexReady,
+                usedGlobalIndex,
+                cacheHit,
+                requiredReconstruction);
+        }
+
+        private static RegressionCheckResult Fail(
+            string filePath,
+            string scope,
+            string category,
+            string name,
+            string message,
+            long? expectedFrameIndex = null,
+            long? actualFrameIndex = null,
+            long? expectedDisplayedFrame = null,
+            long? actualDisplayedFrame = null,
+            TimeSpan? requestedTime = null,
+            TimeSpan? actualTime = null,
+            double? sliderValueSeconds = null,
+            double? sliderMaximumSeconds = null,
+            double? elapsedMilliseconds = null,
+            bool? indexReady = null,
+            bool? usedGlobalIndex = null,
+            bool? cacheHit = null,
+            bool? requiredReconstruction = null)
+        {
+            return new RegressionCheckResult(
+                filePath,
+                scope,
+                category,
+                name,
+                "fail",
+                message,
+                expectedFrameIndex,
+                actualFrameIndex,
+                expectedDisplayedFrame,
+                actualDisplayedFrame,
+                requestedTime.HasValue ? FormatTime(requestedTime.Value) : string.Empty,
+                actualTime.HasValue ? FormatTime(actualTime.Value) : string.Empty,
+                sliderValueSeconds,
+                sliderMaximumSeconds,
+                elapsedMilliseconds,
+                indexReady,
+                usedGlobalIndex,
+                cacheHit,
+                requiredReconstruction);
+        }
+
+        private static async Task<MeasuredOperation> MeasureAsync(Func<Task> operation)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            await operation().ConfigureAwait(false);
+            stopwatch.Stop();
+            return new MeasuredOperation(stopwatch.Elapsed);
+        }
+
+        private static async Task<MeasuredOperation<T>> MeasureAsync<T>(Func<Task<T>> operation)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            var result = await operation().ConfigureAwait(false);
+            stopwatch.Stop();
+            return new MeasuredOperation<T>(result, stopwatch.Elapsed);
+        }
+
+        private static RegressionSummary BuildSummary(
+            RegressionPackagingReport packaging,
+            IReadOnlyCollection<RegressionFileReport> fileReports)
+        {
+            var checks = new List<RegressionCheckResult>();
+            if (packaging != null && packaging.Checks != null)
+            {
+                checks.AddRange(packaging.Checks);
+            }
+
+            foreach (var fileReport in fileReports.Where(report => report != null))
+            {
+                if (fileReport.EngineChecks != null)
+                {
+                    checks.AddRange(fileReport.EngineChecks);
+                }
+
+                if (fileReport.UiChecks != null)
+                {
+                    checks.AddRange(fileReport.UiChecks);
+                }
+            }
+
+            return new RegressionSummary(
+                fileReports.Count,
+                checks.Count,
+                checks.Count(check => string.Equals(check.Classification, "pass", StringComparison.OrdinalIgnoreCase)),
+                checks.Count(check => string.Equals(check.Classification, "warning", StringComparison.OrdinalIgnoreCase)),
+                checks.Count(check => string.Equals(check.Classification, "fail", StringComparison.OrdinalIgnoreCase)));
+        }
+
+        private static string FormatTime(TimeSpan value)
+        {
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "{0:00}:{1:00}:{2:00}.{3:000}",
+                (int)value.TotalHours,
+                value.Minutes,
+                value.Seconds,
+                value.Milliseconds);
+        }
+
+        private static string FormatFrameIndex(long? frameIndex)
+        {
+            return frameIndex.HasValue
+                ? frameIndex.Value.ToString(CultureInfo.InvariantCulture)
+                : "(none)";
+        }
+
+        private static void Trace(string message)
+        {
+            var tracePath = DiagnosticTracePath;
+            if (string.IsNullOrWhiteSpace(tracePath))
+            {
+                return;
+            }
+
+            try
+            {
+                File.AppendAllText(
+                    tracePath,
+                    DateTimeOffset.Now.ToString("o", CultureInfo.InvariantCulture) + " " + message + Environment.NewLine);
+            }
+            catch
+            {
+            }
+        }
+
+        private static class PackagingRegressionValidator
+        {
+            public static RegressionPackagingReport Validate(
+                string packagedOutputDirectory,
+                string packagedArtifactPath,
+                string runtimeManifestPath)
+            {
+                var checks = new List<RegressionCheckResult>();
+                var manifest = LoadManifest(runtimeManifestPath);
+
+                if (!Directory.Exists(packagedOutputDirectory))
+                {
+                    checks.Add(Fail(
+                        "(packaging)",
+                        "packaging",
+                        "packaging",
+                        "output-directory-exists",
+                        "Packaged output directory was not found: " + packagedOutputDirectory));
+                    return new RegressionPackagingReport(
+                        packagedOutputDirectory,
+                        packagedArtifactPath,
+                        new string[0],
+                        new string[0],
+                        new string[0],
+                        StaleRuntimeFiles,
+                        checks.ToArray(),
+                        "fail");
+                }
+
+                var expectedFiles = manifest != null && manifest.Files != null
+                    ? manifest.Files.Keys.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray()
+                    : new string[0];
+                var presentRuntimeFiles = Directory.GetFiles(packagedOutputDirectory, "*.dll")
+                    .Select(Path.GetFileName)
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+                var missingFiles = new List<string>();
+                var hashMismatches = new List<string>();
+                foreach (var file in expectedFiles)
+                {
+                    var filePath = Path.Combine(packagedOutputDirectory, file);
+                    if (!File.Exists(filePath))
+                    {
+                        missingFiles.Add(file);
+                        continue;
+                    }
+
+                    var actualHash = ComputeSha256(filePath);
+                    var expectedHash = manifest.Files[file];
+                    if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
+                    {
+                        hashMismatches.Add(file);
+                    }
+                }
+
+                checks.Add(missingFiles.Count == 0
+                    ? Pass(
+                        "(packaging)",
+                        "packaging",
+                        "packaging",
+                        "runtime-files-present",
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "Packaged output contains all {0} expected runtime files.",
+                            expectedFiles.Length))
+                    : Fail(
+                        "(packaging)",
+                        "packaging",
+                        "packaging",
+                        "runtime-files-present",
+                        "Packaged output is missing runtime files: " + string.Join(", ", missingFiles)));
+
+                checks.Add(hashMismatches.Count == 0
+                    ? Pass(
+                        "(packaging)",
+                        "packaging",
+                        "packaging",
+                        "runtime-hashes-match-manifest",
+                        "Packaged output runtime hashes match the active runtime manifest.")
+                    : Fail(
+                        "(packaging)",
+                        "packaging",
+                        "packaging",
+                        "runtime-hashes-match-manifest",
+                        "Packaged output runtime hashes do not match the manifest for: " + string.Join(", ", hashMismatches)));
+
+                var staleFiles = StaleRuntimeFiles
+                    .Where(file => File.Exists(Path.Combine(packagedOutputDirectory, file)))
+                    .OrderBy(file => file, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+                checks.Add(staleFiles.Length == 0
+                    ? Pass(
+                        "(packaging)",
+                        "packaging",
+                        "packaging",
+                        "no-stale-runtime-dlls",
+                        "Packaged output contains no stale FFmpeg 7-era runtime DLLs.")
+                    : Fail(
+                        "(packaging)",
+                        "packaging",
+                        "packaging",
+                        "no-stale-runtime-dlls",
+                        "Packaged output still contains stale runtime DLLs: " + string.Join(", ", staleFiles)));
+
+                var executablePath = Path.Combine(packagedOutputDirectory, "FramePlayer.exe");
+                checks.Add(File.Exists(executablePath)
+                    ? Pass(
+                        "(packaging)",
+                        "packaging",
+                        "packaging",
+                        "packaged-executable-present",
+                        "Packaged executable is present.")
+                    : Fail(
+                        "(packaging)",
+                        "packaging",
+                        "packaging",
+                        "packaged-executable-present",
+                        "Packaged executable is missing from the output directory."));
+
+                ValidateZip(packagedArtifactPath, expectedFiles, manifest, checks);
+
+                var classification = checks.Any(check => string.Equals(check.Classification, "fail", StringComparison.OrdinalIgnoreCase))
+                    ? "fail"
+                    : checks.Any(check => string.Equals(check.Classification, "warning", StringComparison.OrdinalIgnoreCase))
+                        ? "warning"
+                        : "pass";
+
+                return new RegressionPackagingReport(
+                    packagedOutputDirectory,
+                    packagedArtifactPath,
+                    expectedFiles,
+                    presentRuntimeFiles,
+                    missingFiles.ToArray(),
+                    staleFiles,
+                    checks.ToArray(),
+                    classification);
+            }
+
+            private static void ValidateZip(
+                string packagedArtifactPath,
+                string[] expectedFiles,
+                PackagingManifest manifest,
+                ICollection<RegressionCheckResult> checks)
+            {
+                if (!File.Exists(packagedArtifactPath))
+                {
+                    checks.Add(Fail(
+                        "(packaging)",
+                        "packaging",
+                        "packaging",
+                        "artifact-zip-present",
+                        "Packaged zip artifact was not found: " + packagedArtifactPath));
+                    return;
+                }
+
+                checks.Add(Pass(
+                    "(packaging)",
+                    "packaging",
+                    "packaging",
+                    "artifact-zip-present",
+                    "Packaged zip artifact is present."));
+
+                using (var archive = ZipFile.OpenRead(packagedArtifactPath))
+                {
+                    var entryLookup = archive.Entries
+                        .GroupBy(entry => entry.FullName, StringComparer.OrdinalIgnoreCase)
+                        .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+
+                    var missingEntries = expectedFiles
+                        .Where(file => !entryLookup.ContainsKey(file))
+                        .OrderBy(file => file, StringComparer.OrdinalIgnoreCase)
+                        .ToArray();
+                    checks.Add(missingEntries.Length == 0
+                        ? Pass(
+                            "(packaging)",
+                            "packaging",
+                            "packaging",
+                            "artifact-zip-runtime-files",
+                            "Packaged zip contains the expected runtime DLL set.")
+                        : Fail(
+                            "(packaging)",
+                            "packaging",
+                            "packaging",
+                            "artifact-zip-runtime-files",
+                            "Packaged zip is missing runtime files: " + string.Join(", ", missingEntries)));
+
+                    if (manifest != null && manifest.Files != null)
+                    {
+                        var zipHashMismatches = new List<string>();
+                        foreach (var pair in manifest.Files)
+                        {
+                            ZipArchiveEntry entry;
+                            if (!entryLookup.TryGetValue(pair.Key, out entry))
+                            {
+                                continue;
+                            }
+
+                            using (var stream = entry.Open())
+                            {
+                                var actualHash = ComputeSha256(stream);
+                                if (!string.Equals(actualHash, pair.Value, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    zipHashMismatches.Add(pair.Key);
+                                }
+                            }
+                        }
+
+                        checks.Add(zipHashMismatches.Count == 0
+                            ? Pass(
+                                "(packaging)",
+                                "packaging",
+                                "packaging",
+                                "artifact-zip-hashes-match-manifest",
+                                "Packaged zip runtime hashes match the active runtime manifest.")
+                            : Fail(
+                                "(packaging)",
+                                "packaging",
+                                "packaging",
+                                "artifact-zip-hashes-match-manifest",
+                                "Packaged zip runtime hashes do not match the manifest for: " + string.Join(", ", zipHashMismatches)));
+                    }
+
+                    var staleEntries = archive.Entries
+                        .Select(entry => Path.GetFileName(entry.FullName))
+                        .Where(name => StaleRuntimeFiles.Contains(name, StringComparer.OrdinalIgnoreCase))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                        .ToArray();
+                    checks.Add(staleEntries.Length == 0
+                        ? Pass(
+                            "(packaging)",
+                            "packaging",
+                            "packaging",
+                            "artifact-zip-no-stale-runtime-dlls",
+                            "Packaged zip contains no stale FFmpeg 7-era runtime DLLs.")
+                        : Fail(
+                            "(packaging)",
+                            "packaging",
+                            "packaging",
+                            "artifact-zip-no-stale-runtime-dlls",
+                            "Packaged zip still contains stale runtime DLLs: " + string.Join(", ", staleEntries)));
+                }
+            }
+
+            private static PackagingManifest LoadManifest(string manifestPath)
+            {
+                using (var stream = File.OpenRead(manifestPath))
+                {
+                    var serializer = new DataContractJsonSerializer(
+                        typeof(PackagingManifest),
+                        new DataContractJsonSerializerSettings
+                        {
+                            UseSimpleDictionaryFormat = true
+                        });
+                    return serializer.ReadObject(stream) as PackagingManifest;
+                }
+            }
+
+            private static string ComputeSha256(string filePath)
+            {
+                using (var stream = File.OpenRead(filePath))
+                {
+                    return ComputeSha256(stream);
+                }
+            }
+
+            private static string ComputeSha256(Stream stream)
+            {
+                using (var hash = System.Security.Cryptography.SHA256.Create())
+                {
+                    var bytes = hash.ComputeHash(stream);
+                    return string.Concat(bytes.Select(value => value.ToString("x2", CultureInfo.InvariantCulture)));
+                }
+            }
+        }
+
+        [DataContract]
+        private sealed class PackagingManifest
+        {
+            [DataMember(Name = "files")]
+            public Dictionary<string, string> Files { get; set; }
+        }
+
+        private static class MainWindowRegressionHarness
+        {
+            internal static Task<UiRegressionResult> RunAsync(
+                string filePath,
+                bool runPlaybackLifecycleChecks,
+                CancellationToken cancellationToken)
+            {
+                var currentApplication = Application.Current;
+                if (currentApplication != null)
+                {
+                    var dispatcher = currentApplication.Dispatcher;
+                    if (dispatcher.CheckAccess())
+                    {
+                        return RunOnUiThreadAsync(filePath, runPlaybackLifecycleChecks, cancellationToken);
+                    }
+
+                    return dispatcher.InvokeAsync(
+                        () => RunOnUiThreadAsync(filePath, runPlaybackLifecycleChecks, cancellationToken),
+                        DispatcherPriority.Normal).Task.Unwrap();
+                }
+
+                var completion = new TaskCompletionSource<UiRegressionResult>();
+                var thread = new Thread(() =>
+                {
+                    try
+                    {
+                        SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
+                        if (Application.Current == null)
+                        {
+                            new Application
+                            {
+                                ShutdownMode = ShutdownMode.OnExplicitShutdown
+                            };
+                        }
+
+                        RunOnUiThreadAsync(filePath, runPlaybackLifecycleChecks, cancellationToken).ContinueWith(
+                            task =>
+                            {
+                                if (task.IsFaulted)
+                                {
+                                    completion.TrySetException(task.Exception.InnerExceptions);
+                                }
+                                else if (task.IsCanceled)
+                                {
+                                    completion.TrySetCanceled();
+                                }
+                                else
+                                {
+                                    completion.TrySetResult(task.Result);
+                                }
+
+                                Dispatcher.CurrentDispatcher.BeginInvokeShutdown(DispatcherPriority.Background);
+                            },
+                            CancellationToken.None,
+                            TaskContinuationOptions.None,
+                            TaskScheduler.FromCurrentSynchronizationContext());
+
+                        Dispatcher.Run();
+                    }
+                    catch (Exception ex)
+                    {
+                        completion.TrySetException(ex);
+                    }
+                })
+                {
+                    IsBackground = true,
+                    Name = "FramePlayerRegressionUI"
+                };
+
+                thread.SetApartmentState(ApartmentState.STA);
+                thread.Start();
+                return completion.Task;
+            }
+
+            private static async Task<UiRegressionResult> RunOnUiThreadAsync(
+                string filePath,
+                bool runPlaybackLifecycleChecks,
+                CancellationToken cancellationToken)
+            {
+                var checks = new List<RegressionCheckResult>();
+                var notes = new List<string>();
+                var metrics = new RegressionMetrics();
+
+                MainWindow window = null;
+                MainWindowController controller = null;
+
+                try
+                {
+                    Trace("UI harness creating window: " + filePath);
+                    window = new MainWindow
+                    {
+                        ShowInTaskbar = false,
+                        WindowStartupLocation = WindowStartupLocation.Manual,
+                        Left = -20000,
+                        Top = -20000,
+                        Width = 1280,
+                        Height = 800
+                    };
+                    window.Show();
+                    await WaitForUiIdleAsync(window.Dispatcher).ConfigureAwait(true);
+                    Trace("UI harness window shown: " + filePath);
+
+                    controller = new MainWindowController(window);
+                    Trace("UI harness opening media: " + filePath);
+                    var open = await MeasureAsync(async () => await controller.OpenAsync(filePath).ConfigureAwait(true)).ConfigureAwait(true);
+                    metrics.UiOpenMilliseconds = open.Elapsed.TotalMilliseconds;
+                    Trace("UI harness media open complete: " + filePath);
+
+                    var initial = controller.CaptureSnapshot();
+                    checks.Add(EvaluateUiSnapshot(
+                        filePath,
+                        "ui-first-frame",
+                        initial,
+                        0L,
+                        1L,
+                        false,
+                        metrics.UiOpenMilliseconds));
+
+                    var immediateSliderTarget = controller.GetQuarterDurationTarget();
+                    if (immediateSliderTarget > TimeSpan.Zero)
+                    {
+                        Trace("UI harness pre-index click seek: " + filePath);
+                        var preIndexClick = await controller.CommitSliderSeekAsync("click", immediateSliderTarget).ConfigureAwait(true);
+                        metrics.UiPreIndexClickMilliseconds = preIndexClick.ElapsedMilliseconds;
+                        checks.Add(EvaluateUiFrameTruth(
+                            filePath,
+                            "ui-pre-index-click-seek",
+                            preIndexClick,
+                            immediateSliderTarget,
+                            true,
+                            preIndexClick.ElapsedMilliseconds));
+                    }
+
+                    var indexReady = await controller.WaitForIndexReadyAsync(IndexReadyTimeout, cancellationToken).ConfigureAwait(true);
+                    metrics.UiIndexReadyMilliseconds = indexReady.ElapsedMilliseconds;
+                    Trace("UI harness index-ready wait complete: " + filePath + " ready=" + indexReady.Ready.ToString());
+                    if (indexReady.Ready)
+                    {
+                        checks.Add(Pass(
+                            filePath,
+                            "ui",
+                            "lifecycle",
+                            "ui-background-index-ready",
+                            string.Format(
+                                CultureInfo.InvariantCulture,
+                                "UI observed the global index becoming ready with {0} frames in {1:0.###} ms.",
+                                indexReady.IndexedFrameCount,
+                                indexReady.ElapsedMilliseconds),
+                            elapsedMilliseconds: indexReady.ElapsedMilliseconds,
+                            indexReady: true));
+                    }
+                    else
+                    {
+                        checks.Add(Warning(
+                            filePath,
+                            "ui",
+                            "lifecycle",
+                            "ui-background-index-ready",
+                            string.Format(
+                                CultureInfo.InvariantCulture,
+                                "UI never observed a ready global index before timeout ({0:0.###} ms).",
+                                indexReady.ElapsedMilliseconds),
+                            elapsedMilliseconds: indexReady.ElapsedMilliseconds,
+                            indexReady: false));
+                    }
+
+                    if (indexReady.Ready && indexReady.IndexedFrameCount > 0L)
+                    {
+                        var clickTarget = controller.GetSliderTargetFromRatio(0.35d);
+                        Trace("UI harness indexed click seek: " + filePath);
+                        var clickSeek = await controller.CommitSliderSeekAsync("click", clickTarget).ConfigureAwait(true);
+                        metrics.UiClickSeekMilliseconds = clickSeek.ElapsedMilliseconds;
+                        checks.Add(EvaluateUiFrameTruth(
+                            filePath,
+                            "ui-click-slider-seek",
+                            clickSeek,
+                            clickTarget,
+                            false,
+                            clickSeek.ElapsedMilliseconds));
+                        checks.AddRange(await controller.RunUiStepRoundTripAsync(filePath, "ui-click-slider-seek", cancellationToken).ConfigureAwait(true));
+
+                        var dragTarget = controller.GetSliderTargetFromRatio(0.72d);
+                        Trace("UI harness indexed drag seek: " + filePath);
+                        var dragSeek = await controller.DragSliderSeekAsync(dragTarget).ConfigureAwait(true);
+                        metrics.UiDragSeekMilliseconds = dragSeek.ElapsedMilliseconds;
+                        checks.Add(EvaluateUiFrameTruth(
+                            filePath,
+                            "ui-drag-slider-seek",
+                            dragSeek,
+                            dragTarget,
+                            false,
+                            dragSeek.ElapsedMilliseconds));
+                        checks.AddRange(await controller.RunUiStepRoundTripAsync(filePath, "ui-drag-slider-seek", cancellationToken).ConfigureAwait(true));
+
+                        if (runPlaybackLifecycleChecks)
+                        {
+                            var playbackStart = controller.CaptureSnapshot();
+                            Trace("UI harness playback start: " + filePath);
+                            await controller.StartPlaybackAsync().ConfigureAwait(true);
+                            await Task.Delay(PlaybackDelay, cancellationToken).ConfigureAwait(true);
+                            await controller.PausePlaybackAsync().ConfigureAwait(true);
+                            Trace("UI harness playback pause: " + filePath);
+                            var playbackPaused = controller.CaptureSnapshot();
+                            var playbackAdvanced = playbackStart.EngineFrameIndex.HasValue &&
+                                playbackPaused.EngineFrameIndex.HasValue &&
+                                playbackPaused.EngineFrameIndex.Value > playbackStart.EngineFrameIndex.Value;
+                            checks.Add(playbackAdvanced
+                                ? Pass(
+                                    filePath,
+                                    "ui",
+                                    "lifecycle",
+                                    "ui-playback-pause-progress",
+                                    string.Format(
+                                        CultureInfo.InvariantCulture,
+                                        "UI playback advanced from frame {0} to frame {1} before pause.",
+                                        playbackStart.EngineFrameIndex.Value,
+                                        playbackPaused.EngineFrameIndex.Value))
+                                : Fail(
+                                    filePath,
+                                    "ui",
+                                    "lifecycle",
+                                    "ui-playback-pause-progress",
+                                    string.Format(
+                                        CultureInfo.InvariantCulture,
+                                        "UI playback did not advance before pause. Start frame {0}, paused frame {1}.",
+                                        FormatFrameIndex(playbackStart.EngineFrameIndex),
+                                        FormatFrameIndex(playbackPaused.EngineFrameIndex)),
+                                    actualFrameIndex: playbackPaused.EngineFrameIndex));
+
+                            var postPlaybackTarget = controller.GetSliderTargetFromRatio(0.5d);
+                            Trace("UI harness post-playback seek: " + filePath);
+                            var postPlaybackSeek = await controller.CommitSliderSeekAsync("click", postPlaybackTarget).ConfigureAwait(true);
+                            checks.Add(EvaluateUiFrameTruth(
+                                filePath,
+                                "ui-post-playback-slider-seek",
+                                postPlaybackSeek,
+                                postPlaybackTarget,
+                                false,
+                                postPlaybackSeek.ElapsedMilliseconds));
+                            checks.AddRange(await controller.RunUiStepRoundTripAsync(filePath, "ui-post-playback-slider-seek", cancellationToken).ConfigureAwait(true));
+                        }
+                        else
+                        {
+                            checks.Add(Warning(
+                                filePath,
+                                "ui",
+                                "coverage",
+                                "ui-playback-lifecycle-skipped",
+                                "Timed playback was skipped in the hidden-window UI harness for this audio-bearing corpus file. Engine-level playback and audio checks still ran."));
+                        }
+
+                        Trace("UI harness end seek: " + filePath);
+                        var endSeek = await controller.CommitSliderSeekAsync("click", TimeSpan.FromSeconds(controller.SliderMaximumSeconds)).ConfigureAwait(true);
+                        metrics.UiEndSeekMilliseconds = endSeek.ElapsedMilliseconds;
+                        var expectedLastFrame = indexReady.IndexedFrameCount - 1L;
+                        checks.Add(EvaluateUiSnapshot(
+                            filePath,
+                            "ui-end-of-video-slider-agreement",
+                            endSeek,
+                            expectedLastFrame,
+                            expectedLastFrame + 1L,
+                            true,
+                            endSeek.ElapsedMilliseconds));
+                        checks.AddRange(await controller.RunUiStepRoundTripAsync(filePath, "ui-end-of-video-slider-agreement", cancellationToken).ConfigureAwait(true));
+                    }
+                    else
+                    {
+                        checks.Add(Warning(
+                            filePath,
+                            "ui",
+                            "correctness",
+                            "ui-index-dependent-slider-checks",
+                            "Slider correctness checks that require the indexed last-frame boundary were skipped because the global index never became ready."));
+                    }
+
+                    WarnForSlowUiSeek(filePath, "ui-click-slider-seek-latency", metrics.UiClickSeekMilliseconds, checks);
+                    WarnForSlowUiSeek(filePath, "ui-drag-slider-seek-latency", metrics.UiDragSeekMilliseconds, checks);
+                    Trace("UI harness complete: " + filePath);
+
+                    return new UiRegressionResult(checks, notes, metrics);
+                }
+                catch (Exception ex)
+                {
+                    Trace("UI harness exception: " + filePath + " :: " + ex);
+                    checks.Add(Fail(
+                        filePath,
+                        "ui",
+                        "lifecycle",
+                        "ui-regression-harness",
+                        "UI regression harness failed: " + ex.Message));
+                    return new UiRegressionResult(checks, notes, metrics);
+                }
+                finally
+                {
+                    if (controller != null)
+                    {
+                        try
+                        {
+                            await controller.CloseAsync().ConfigureAwait(true);
+                        }
+                        catch
+                        {
+                        }
+                    }
+
+                    if (window != null)
+                    {
+                        window.Close();
+                    }
+                }
+            }
+
+            private static void WarnForSlowUiSeek(
+                string filePath,
+                string name,
+                double elapsedMilliseconds,
+                ICollection<RegressionCheckResult> checks)
+            {
+                if (elapsedMilliseconds <= 0d)
+                {
+                    return;
+                }
+
+                if (elapsedMilliseconds > UiSeekWarningThreshold.TotalMilliseconds)
+                {
+                    checks.Add(Warning(
+                        filePath,
+                        "ui",
+                        "responsiveness",
+                        name,
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "Seek took {0:0.###} ms, which is slow enough to inspect manually even though correctness still held.",
+                            elapsedMilliseconds),
+                        elapsedMilliseconds: elapsedMilliseconds));
+                }
+            }
+
+            private static RegressionCheckResult EvaluateUiFrameTruth(
+                string filePath,
+                string name,
+                UiSnapshot snapshot,
+                TimeSpan requestedTarget,
+                bool allowPendingIdentity,
+                double elapsedMilliseconds)
+            {
+                snapshot = snapshot ?? UiSnapshot.Empty;
+
+                if (!snapshot.EngineFrameAbsolute)
+                {
+                    if (allowPendingIdentity &&
+                        (snapshot.CurrentFrameText ?? string.Empty).IndexOf("--", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                        !snapshot.DisplayedFrameNumber.HasValue)
+                    {
+                        return Warning(
+                            filePath,
+                            "ui",
+                            "correctness",
+                            name,
+                            string.Format(
+                                CultureInfo.InvariantCulture,
+                                "Seek to {0} completed before absolute frame identity was ready, and the UI correctly withheld a numeric frame claim.",
+                                FormatTime(requestedTarget)),
+                            requestedTime: requestedTarget,
+                            actualTime: snapshot.EnginePresentationTime,
+                            sliderValueSeconds: snapshot.SliderValueSeconds,
+                            sliderMaximumSeconds: snapshot.SliderMaximumSeconds,
+                            elapsedMilliseconds: elapsedMilliseconds,
+                            indexReady: snapshot.IndexReady,
+                            usedGlobalIndex: snapshot.UsedGlobalIndex);
+                    }
+
+                    return Fail(
+                        filePath,
+                        "ui",
+                        "correctness",
+                        name,
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "UI seek to {0} completed without absolute engine frame identity, and the visible frame display remained '{1}' / textbox '{2}'.",
+                            FormatTime(requestedTarget),
+                            snapshot.CurrentFrameText,
+                            snapshot.FrameNumberText),
+                        requestedTime: requestedTarget,
+                        actualTime: snapshot.EnginePresentationTime,
+                        sliderValueSeconds: snapshot.SliderValueSeconds,
+                        sliderMaximumSeconds: snapshot.SliderMaximumSeconds,
+                        elapsedMilliseconds: elapsedMilliseconds,
+                        indexReady: snapshot.IndexReady,
+                        usedGlobalIndex: snapshot.UsedGlobalIndex);
+                }
+
+                var expectedDisplayedFrame = snapshot.EngineFrameIndex.Value + 1L;
+                var frameMatches = snapshot.DisplayedFrameNumber.HasValue &&
+                    snapshot.DisplayedFrameNumber.Value == expectedDisplayedFrame;
+                var timeMatches = string.Equals(snapshot.CurrentPositionText, FormatTime(snapshot.EnginePresentationTime), StringComparison.Ordinal);
+                var sliderExpected = Math.Min(snapshot.EnginePresentationTime.TotalSeconds, snapshot.SliderMaximumSeconds);
+                var sliderMatches = Math.Abs(snapshot.SliderValueSeconds - sliderExpected) <= Math.Max(0.001d, snapshot.PositionStepSeconds / 10d);
+
+                if (frameMatches && timeMatches && sliderMatches)
+                {
+                    return Pass(
+                        filePath,
+                        "ui",
+                        "correctness",
+                        name,
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "UI seek to {0} agreed with engine frame {1} / displayed frame {2}. Slider {3:0.###}/{4:0.###}.",
+                            FormatTime(requestedTarget),
+                            snapshot.EngineFrameIndex.Value,
+                            expectedDisplayedFrame,
+                            snapshot.SliderValueSeconds,
+                            snapshot.SliderMaximumSeconds),
+                        actualFrameIndex: snapshot.EngineFrameIndex,
+                        expectedDisplayedFrame: expectedDisplayedFrame,
+                        actualDisplayedFrame: snapshot.DisplayedFrameNumber,
+                        requestedTime: requestedTarget,
+                        actualTime: snapshot.EnginePresentationTime,
+                        sliderValueSeconds: snapshot.SliderValueSeconds,
+                        sliderMaximumSeconds: snapshot.SliderMaximumSeconds,
+                        elapsedMilliseconds: elapsedMilliseconds,
+                        indexReady: snapshot.IndexReady,
+                        usedGlobalIndex: snapshot.UsedGlobalIndex);
+                }
+
+                return Fail(
+                    filePath,
+                    "ui",
+                    "correctness",
+                    name,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "UI seek to {0} drifted from engine truth. Engine frame {1}, displayed frame {2}, current-position text '{3}', slider {4:0.###}/{5:0.###}.",
+                        FormatTime(requestedTarget),
+                        snapshot.EngineFrameIndex.Value,
+                        snapshot.DisplayedFrameNumber.HasValue
+                            ? snapshot.DisplayedFrameNumber.Value.ToString(CultureInfo.InvariantCulture)
+                            : "(none)",
+                        snapshot.CurrentPositionText,
+                        snapshot.SliderValueSeconds,
+                        snapshot.SliderMaximumSeconds),
+                    actualFrameIndex: snapshot.EngineFrameIndex,
+                    expectedDisplayedFrame: expectedDisplayedFrame,
+                    actualDisplayedFrame: snapshot.DisplayedFrameNumber,
+                    requestedTime: requestedTarget,
+                    actualTime: snapshot.EnginePresentationTime,
+                    sliderValueSeconds: snapshot.SliderValueSeconds,
+                    sliderMaximumSeconds: snapshot.SliderMaximumSeconds,
+                    elapsedMilliseconds: elapsedMilliseconds,
+                    indexReady: snapshot.IndexReady,
+                    usedGlobalIndex: snapshot.UsedGlobalIndex);
+            }
+
+            private static RegressionCheckResult EvaluateUiSnapshot(
+                string filePath,
+                string name,
+                UiSnapshot snapshot,
+                long expectedFrameIndex,
+                long expectedDisplayedFrame,
+                bool requireSliderMaximumAgreement,
+                double elapsedMilliseconds)
+            {
+                snapshot = snapshot ?? UiSnapshot.Empty;
+                var frameMatches = snapshot.EngineFrameAbsolute &&
+                    snapshot.EngineFrameIndex.HasValue &&
+                    snapshot.EngineFrameIndex.Value == expectedFrameIndex &&
+                    snapshot.DisplayedFrameNumber.HasValue &&
+                    snapshot.DisplayedFrameNumber.Value == expectedDisplayedFrame;
+                var timeMatches = string.Equals(snapshot.CurrentPositionText, FormatTime(snapshot.EnginePresentationTime), StringComparison.Ordinal);
+                var sliderMatches = !requireSliderMaximumAgreement
+                    ? Math.Abs(snapshot.SliderValueSeconds - Math.Min(snapshot.EnginePresentationTime.TotalSeconds, snapshot.SliderMaximumSeconds)) <= Math.Max(0.001d, snapshot.PositionStepSeconds / 10d)
+                    : Math.Abs(snapshot.SliderValueSeconds - snapshot.SliderMaximumSeconds) <= Math.Max(0.001d, snapshot.PositionStepSeconds / 10d);
+
+                return frameMatches && timeMatches && sliderMatches
+                    ? Pass(
+                        filePath,
+                        "ui",
+                        "correctness",
+                        name,
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "UI state agreed with engine frame {0} / displayed frame {1}. Slider {2:0.###}/{3:0.###}.",
+                            expectedFrameIndex,
+                            expectedDisplayedFrame,
+                            snapshot.SliderValueSeconds,
+                            snapshot.SliderMaximumSeconds),
+                        expectedFrameIndex: expectedFrameIndex,
+                        actualFrameIndex: snapshot.EngineFrameIndex,
+                        expectedDisplayedFrame: expectedDisplayedFrame,
+                        actualDisplayedFrame: snapshot.DisplayedFrameNumber,
+                        actualTime: snapshot.EnginePresentationTime,
+                        sliderValueSeconds: snapshot.SliderValueSeconds,
+                        sliderMaximumSeconds: snapshot.SliderMaximumSeconds,
+                        elapsedMilliseconds: elapsedMilliseconds,
+                        indexReady: snapshot.IndexReady,
+                        usedGlobalIndex: snapshot.UsedGlobalIndex)
+                    : Fail(
+                        filePath,
+                        "ui",
+                        "correctness",
+                        name,
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "UI state did not agree with engine truth. Engine frame {0}, displayed frame {1}, slider {2:0.###}/{3:0.###}, current-position '{4}'.",
+                            FormatFrameIndex(snapshot.EngineFrameIndex),
+                            snapshot.DisplayedFrameNumber.HasValue
+                                ? snapshot.DisplayedFrameNumber.Value.ToString(CultureInfo.InvariantCulture)
+                                : "(none)",
+                            snapshot.SliderValueSeconds,
+                            snapshot.SliderMaximumSeconds,
+                            snapshot.CurrentPositionText),
+                        expectedFrameIndex: expectedFrameIndex,
+                        actualFrameIndex: snapshot.EngineFrameIndex,
+                        expectedDisplayedFrame: expectedDisplayedFrame,
+                        actualDisplayedFrame: snapshot.DisplayedFrameNumber,
+                        actualTime: snapshot.EnginePresentationTime,
+                        sliderValueSeconds: snapshot.SliderValueSeconds,
+                        sliderMaximumSeconds: snapshot.SliderMaximumSeconds,
+                        elapsedMilliseconds: elapsedMilliseconds,
+                        indexReady: snapshot.IndexReady,
+                        usedGlobalIndex: snapshot.UsedGlobalIndex);
+            }
+
+            private static async Task WaitForUiIdleAsync(Dispatcher dispatcher)
+            {
+                await dispatcher.InvokeAsync(
+                    () => { },
+                    DispatcherPriority.ApplicationIdle).Task;
+            }
+
+            private sealed class MainWindowController
+            {
+                private readonly MainWindow _window;
+                private readonly MethodInfo _openMediaAsyncMethod;
+                private readonly MethodInfo _closeMediaAsyncMethod;
+                private readonly MethodInfo _commitSliderSeekAsyncMethod;
+                private readonly MethodInfo _stepFrameAsyncMethod;
+                private readonly MethodInfo _startPlaybackAsyncMethod;
+                private readonly MethodInfo _pausePlaybackAsyncMethod;
+                private readonly FieldInfo _videoReviewEngineField;
+                private readonly FieldInfo _isSliderDragActiveField;
+
+                public MainWindowController(MainWindow window)
+                {
+                    _window = window ?? throw new ArgumentNullException(nameof(window));
+                    var windowType = typeof(MainWindow);
+                    _openMediaAsyncMethod = RequireMethod(windowType, "OpenMediaAsync", typeof(string));
+                    _closeMediaAsyncMethod = RequireMethod(windowType, "CloseMediaAsync");
+                    _commitSliderSeekAsyncMethod = RequireMethod(windowType, "CommitSliderSeekAsync", typeof(string), typeof(TimeSpan));
+                    _stepFrameAsyncMethod = RequireMethod(windowType, "StepFrameAsync", typeof(int));
+                    _startPlaybackAsyncMethod = RequireMethod(windowType, "StartPlaybackAsync");
+                    _pausePlaybackAsyncMethod = RequireMethod(windowType, "PausePlaybackAsync", typeof(bool));
+                    _videoReviewEngineField = RequireField(windowType, "_videoReviewEngine");
+                    _isSliderDragActiveField = RequireField(windowType, "_isSliderDragActive");
+                }
+
+                public double SliderMaximumSeconds
+                {
+                    get { return GetPositionSlider().Maximum; }
+                }
+
+                public TimeSpan GetQuarterDurationTarget()
+                {
+                    var engine = GetEngine();
+                    return SelectQuarterDurationTarget(engine.MediaInfo.Duration, engine.MediaInfo.PositionStep);
+                }
+
+                public TimeSpan GetSliderTargetFromRatio(double ratio)
+                {
+                    ratio = Math.Max(0d, Math.Min(1d, ratio));
+                    return TimeSpan.FromSeconds(SliderMaximumSeconds * ratio);
+                }
+
+                public async Task OpenAsync(string filePath)
+                {
+                    await InvokeTaskAsync(_openMediaAsyncMethod, filePath).ConfigureAwait(true);
+                    await WaitForUiIdleAsync(_window.Dispatcher).ConfigureAwait(true);
+                }
+
+                public async Task CloseAsync()
+                {
+                    await InvokeTaskAsync(_closeMediaAsyncMethod).ConfigureAwait(true);
+                    await WaitForUiIdleAsync(_window.Dispatcher).ConfigureAwait(true);
+                }
+
+                public async Task StartPlaybackAsync()
+                {
+                    await InvokeTaskAsync(_startPlaybackAsyncMethod).ConfigureAwait(true);
+                    await WaitForUiIdleAsync(_window.Dispatcher).ConfigureAwait(true);
+                }
+
+                public async Task PausePlaybackAsync()
+                {
+                    await InvokeTaskAsync(_pausePlaybackAsyncMethod, true).ConfigureAwait(true);
+                    await WaitForUiIdleAsync(_window.Dispatcher).ConfigureAwait(true);
+                }
+
+                public async Task<UiSnapshot> CommitSliderSeekAsync(string interactionName, TimeSpan target)
+                {
+                    var measured = await MeasureAsync(
+                            async () => await InvokeTaskAsync(_commitSliderSeekAsyncMethod, interactionName, target).ConfigureAwait(true))
+                        .ConfigureAwait(true);
+                    var snapshot = CaptureSnapshot();
+                    snapshot.ElapsedMilliseconds = measured.Elapsed.TotalMilliseconds;
+                    return snapshot;
+                }
+
+                public async Task<UiSnapshot> DragSliderSeekAsync(TimeSpan target)
+                {
+                    var slider = GetPositionSlider();
+                    _isSliderDragActiveField.SetValue(_window, true);
+                    slider.Value = Math.Max(slider.Minimum, Math.Min(slider.Maximum, target.TotalSeconds));
+                    await WaitForUiIdleAsync(_window.Dispatcher).ConfigureAwait(true);
+                    _isSliderDragActiveField.SetValue(_window, false);
+                    return await CommitSliderSeekAsync("drag", TimeSpan.FromSeconds(slider.Value)).ConfigureAwait(true);
+                }
+
+                public async Task<IndexReadyUiResult> WaitForIndexReadyAsync(TimeSpan timeout, CancellationToken cancellationToken)
+                {
+                    var stopwatch = Stopwatch.StartNew();
+                    while (stopwatch.Elapsed < timeout)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var engine = GetEngine();
+                        if (engine.IsGlobalFrameIndexAvailable)
+                        {
+                            stopwatch.Stop();
+                            return new IndexReadyUiResult(true, stopwatch.Elapsed.TotalMilliseconds, engine.IndexedFrameCount);
+                        }
+
+                        await Task.Delay(50, cancellationToken).ConfigureAwait(true);
+                    }
+
+                    stopwatch.Stop();
+                    var finalEngine = GetEngine();
+                    return new IndexReadyUiResult(finalEngine.IsGlobalFrameIndexAvailable, stopwatch.Elapsed.TotalMilliseconds, finalEngine.IndexedFrameCount);
+                }
+
+                public async Task<IReadOnlyCollection<RegressionCheckResult>> RunUiStepRoundTripAsync(
+                    string filePath,
+                    string prefix,
+                    CancellationToken cancellationToken)
+                {
+                    var checks = new List<RegressionCheckResult>();
+                    var before = CaptureSnapshot();
+                    if (!before.EngineFrameAbsolute || !before.EngineFrameIndex.HasValue)
+                    {
+                        checks.Add(Fail(
+                            filePath,
+                            "ui",
+                            "correctness",
+                            prefix + "-step-roundtrip",
+                            "UI step roundtrip started without an absolute engine frame."));
+                        return checks;
+                    }
+
+                    var startFrame = before.EngineFrameIndex.Value;
+                    if (startFrame <= 0L)
+                    {
+                        checks.Add(Warning(
+                            filePath,
+                            "ui",
+                            "correctness",
+                            prefix + "-step-roundtrip",
+                            "UI step roundtrip skipped because the current frame was already at the start boundary."));
+                        return checks;
+                    }
+
+                    var backward = await MeasureAsync(async () => await InvokeTaskAsync(_stepFrameAsyncMethod, -1).ConfigureAwait(true)).ConfigureAwait(true);
+                    var backwardSnapshot = CaptureSnapshot();
+                    checks.Add(EvaluateUiSnapshot(
+                        filePath,
+                        prefix + "-step-backward",
+                        backwardSnapshot,
+                        startFrame - 1L,
+                        startFrame,
+                        false,
+                        backward.Elapsed.TotalMilliseconds));
+
+                    var forward = await MeasureAsync(async () => await InvokeTaskAsync(_stepFrameAsyncMethod, 1).ConfigureAwait(true)).ConfigureAwait(true);
+                    var forwardSnapshot = CaptureSnapshot();
+                    checks.Add(EvaluateUiSnapshot(
+                        filePath,
+                        prefix + "-step-forward",
+                        forwardSnapshot,
+                        startFrame,
+                        startFrame + 1L,
+                        false,
+                        forward.Elapsed.TotalMilliseconds));
+
+                    return checks;
+                }
+
+                public UiSnapshot CaptureSnapshot()
+                {
+                    var engine = GetEngine();
+                    var frameNumberTextBox = GetFrameNumberTextBox();
+                    var currentFrameText = GetTextBlock("CurrentFrameTextBlock").Text ?? string.Empty;
+                    var currentPositionText = GetTextBlock("CurrentPositionTextBlock").Text ?? string.Empty;
+                    var durationText = GetTextBlock("DurationTextBlock").Text ?? string.Empty;
+                    var playbackStateText = GetTextBlock("PlaybackStateTextBlock").Text ?? string.Empty;
+                    var cacheStatusText = GetTextBlock("CacheStatusTextBlock").Text ?? string.Empty;
+                    var mediaSummaryText = GetTextBlock("MediaSummaryTextBlock").Text ?? string.Empty;
+                    var slider = GetPositionSlider();
+
+                    long displayedFrameNumber;
+                    long? parsedDisplayedFrame = long.TryParse(frameNumberTextBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out displayedFrameNumber)
+                        ? (long?)displayedFrameNumber
+                        : null;
+
+                    var position = engine.Position ?? ReviewPosition.Empty;
+
+                    return new UiSnapshot
+                    {
+                        CurrentFrameText = currentFrameText,
+                        FrameNumberText = frameNumberTextBox.Text ?? string.Empty,
+                        DisplayedFrameNumber = parsedDisplayedFrame,
+                        CurrentPositionText = currentPositionText,
+                        DurationText = durationText,
+                        PlaybackStateText = playbackStateText,
+                        CacheStatusText = cacheStatusText,
+                        MediaSummaryText = mediaSummaryText,
+                        SliderValueSeconds = slider.Value,
+                        SliderMaximumSeconds = slider.Maximum,
+                        EngineFrameIndex = position.FrameIndex,
+                        EngineFrameAbsolute = position.IsFrameIndexAbsolute,
+                        EnginePresentationTime = position.PresentationTime,
+                        IndexReady = engine.IsGlobalFrameIndexAvailable,
+                        IndexedFrameCount = engine.IndexedFrameCount,
+                        UsedGlobalIndex = engine.LastOperationUsedGlobalIndex,
+                        PositionStepSeconds = engine.MediaInfo.PositionStep > TimeSpan.Zero
+                            ? engine.MediaInfo.PositionStep.TotalSeconds
+                            : (engine.MediaInfo.FramesPerSecond > 0d ? 1d / engine.MediaInfo.FramesPerSecond : 0.033333333d)
+                    };
+                }
+
+                private FfmpegReviewEngine GetEngine()
+                {
+                    return (FfmpegReviewEngine)_videoReviewEngineField.GetValue(_window);
+                }
+
+                private TextBox GetFrameNumberTextBox()
+                {
+                    return (TextBox)_window.FindName("FrameNumberTextBox");
+                }
+
+                private TextBlock GetTextBlock(string name)
+                {
+                    return (TextBlock)_window.FindName(name);
+                }
+
+                private Slider GetPositionSlider()
+                {
+                    return (Slider)_window.FindName("PositionSlider");
+                }
+
+                private async Task InvokeTaskAsync(MethodInfo method, params object[] arguments)
+                {
+                    var result = method.Invoke(_window, arguments);
+                    var task = result as Task;
+                    if (task != null)
+                    {
+                        await task.ConfigureAwait(true);
+                    }
+
+                    await WaitForUiIdleAsync(_window.Dispatcher).ConfigureAwait(true);
+                }
+
+                private static MethodInfo RequireMethod(Type type, string name, params Type[] parameterTypes)
+                {
+                    var method = type.GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic, null, parameterTypes, null);
+                    if (method == null)
+                    {
+                        throw new MissingMethodException(type.FullName, name);
+                    }
+
+                    return method;
+                }
+
+                private static FieldInfo RequireField(Type type, string name)
+                {
+                    var field = type.GetField(name, BindingFlags.Instance | BindingFlags.NonPublic);
+                    if (field == null)
+                    {
+                        throw new MissingFieldException(type.FullName, name);
+                    }
+
+                    return field;
+                }
+            }
+
+            private sealed class IndexReadyUiResult
+            {
+                public IndexReadyUiResult(bool ready, double elapsedMilliseconds, long indexedFrameCount)
+                {
+                    Ready = ready;
+                    ElapsedMilliseconds = elapsedMilliseconds;
+                    IndexedFrameCount = indexedFrameCount;
+                }
+
+                public bool Ready { get; }
+
+                public double ElapsedMilliseconds { get; }
+
+                public long IndexedFrameCount { get; }
+            }
+
+            internal sealed class UiRegressionResult
+            {
+                public UiRegressionResult(
+                    IEnumerable<RegressionCheckResult> checks,
+                    IEnumerable<string> notes,
+                    RegressionMetrics metrics)
+                {
+                    Checks = checks != null ? checks.ToArray() : new RegressionCheckResult[0];
+                    Notes = notes != null ? notes.ToArray() : new string[0];
+                    Metrics = metrics ?? new RegressionMetrics();
+                }
+
+                public RegressionCheckResult[] Checks { get; }
+
+                public string[] Notes { get; }
+
+                public RegressionMetrics Metrics { get; }
+            }
+
+            private sealed class UiSnapshot
+            {
+                public static UiSnapshot Empty { get; } = new UiSnapshot();
+
+                public string CurrentFrameText { get; set; }
+
+                public string FrameNumberText { get; set; }
+
+                public long? DisplayedFrameNumber { get; set; }
+
+                public string CurrentPositionText { get; set; }
+
+                public string DurationText { get; set; }
+
+                public string PlaybackStateText { get; set; }
+
+                public string CacheStatusText { get; set; }
+
+                public string MediaSummaryText { get; set; }
+
+                public double SliderValueSeconds { get; set; }
+
+                public double SliderMaximumSeconds { get; set; }
+
+                public long? EngineFrameIndex { get; set; }
+
+                public bool EngineFrameAbsolute { get; set; }
+
+                public TimeSpan EnginePresentationTime { get; set; }
+
+                public bool IndexReady { get; set; }
+
+                public long IndexedFrameCount { get; set; }
+
+                public bool UsedGlobalIndex { get; set; }
+
+                public double PositionStepSeconds { get; set; }
+
+                public double ElapsedMilliseconds { get; set; }
+            }
+        }
+    }
+
+    public sealed class RegressionSuiteReport
+    {
+        public RegressionSuiteReport(
+            string generatedAtUtc,
+            string packagedOutputDirectory,
+            string packagedArtifactPath,
+            RegressionPackagingReport packaging,
+            RegressionFileReport[] fileResults,
+            RegressionSummary summary)
+        {
+            GeneratedAtUtc = generatedAtUtc ?? string.Empty;
+            PackagedOutputDirectory = packagedOutputDirectory ?? string.Empty;
+            PackagedArtifactPath = packagedArtifactPath ?? string.Empty;
+            Packaging = packaging;
+            FileResults = fileResults ?? new RegressionFileReport[0];
+            Summary = summary ?? new RegressionSummary(0, 0, 0, 0, 0);
+        }
+
+        public string GeneratedAtUtc { get; }
+
+        public string PackagedOutputDirectory { get; }
+
+        public string PackagedArtifactPath { get; }
+
+        public RegressionPackagingReport Packaging { get; }
+
+        public RegressionFileReport[] FileResults { get; }
+
+        public RegressionSummary Summary { get; }
+    }
+
+    public sealed class RegressionPackagingReport
+    {
+        public RegressionPackagingReport(
+            string outputDirectory,
+            string artifactPath,
+            string[] expectedRuntimeFiles,
+            string[] presentRuntimeFiles,
+            string[] missingRuntimeFiles,
+            string[] staleRuntimeFiles,
+            RegressionCheckResult[] checks,
+            string classification)
+        {
+            OutputDirectory = outputDirectory ?? string.Empty;
+            ArtifactPath = artifactPath ?? string.Empty;
+            ExpectedRuntimeFiles = expectedRuntimeFiles ?? new string[0];
+            PresentRuntimeFiles = presentRuntimeFiles ?? new string[0];
+            MissingRuntimeFiles = missingRuntimeFiles ?? new string[0];
+            StaleRuntimeFiles = staleRuntimeFiles ?? new string[0];
+            Checks = checks ?? new RegressionCheckResult[0];
+            Classification = classification ?? string.Empty;
+        }
+
+        public string OutputDirectory { get; }
+
+        public string ArtifactPath { get; }
+
+        public string[] ExpectedRuntimeFiles { get; }
+
+        public string[] PresentRuntimeFiles { get; }
+
+        public string[] MissingRuntimeFiles { get; }
+
+        public string[] StaleRuntimeFiles { get; }
+
+        public RegressionCheckResult[] Checks { get; }
+
+        public string Classification { get; }
+    }
+
+    public sealed class RegressionFileReport
+    {
+        public RegressionFileReport(
+            string filePath,
+            string fileName,
+            RegressionMediaProfile mediaProfile,
+            RegressionCheckResult[] engineChecks,
+            RegressionCheckResult[] uiChecks,
+            RegressionMetrics engineMetrics,
+            RegressionMetrics uiMetrics,
+            string[] notes)
+        {
+            FilePath = filePath ?? string.Empty;
+            FileName = fileName ?? string.Empty;
+            MediaProfile = mediaProfile ?? new RegressionMediaProfile(string.Empty, 0, 0, string.Empty, 0d, false, false, string.Empty, 0, 0);
+            EngineChecks = engineChecks ?? new RegressionCheckResult[0];
+            UiChecks = uiChecks ?? new RegressionCheckResult[0];
+            EngineMetrics = engineMetrics ?? new RegressionMetrics();
+            UiMetrics = uiMetrics ?? new RegressionMetrics();
+            Notes = notes ?? new string[0];
+        }
+
+        public string FilePath { get; }
+
+        public string FileName { get; }
+
+        public RegressionMediaProfile MediaProfile { get; }
+
+        public RegressionCheckResult[] EngineChecks { get; }
+
+        public RegressionCheckResult[] UiChecks { get; }
+
+        public RegressionMetrics EngineMetrics { get; }
+
+        public RegressionMetrics UiMetrics { get; }
+
+        public string[] Notes { get; }
+    }
+
+    public sealed class RegressionMediaProfile
+    {
+        public RegressionMediaProfile(
+            string videoCodecName,
+            int pixelWidth,
+            int pixelHeight,
+            string duration,
+            double framesPerSecond,
+            bool hasAudioStream,
+            bool isAudioPlaybackAvailable,
+            string audioCodecName,
+            int audioSampleRate,
+            int audioChannelCount)
+        {
+            VideoCodecName = videoCodecName ?? string.Empty;
+            PixelWidth = pixelWidth;
+            PixelHeight = pixelHeight;
+            Duration = duration ?? string.Empty;
+            FramesPerSecond = framesPerSecond;
+            HasAudioStream = hasAudioStream;
+            IsAudioPlaybackAvailable = isAudioPlaybackAvailable;
+            AudioCodecName = audioCodecName ?? string.Empty;
+            AudioSampleRate = audioSampleRate;
+            AudioChannelCount = audioChannelCount;
+        }
+
+        public string VideoCodecName { get; }
+
+        public int PixelWidth { get; }
+
+        public int PixelHeight { get; }
+
+        public string Duration { get; }
+
+        public double FramesPerSecond { get; }
+
+        public bool HasAudioStream { get; }
+
+        public bool IsAudioPlaybackAvailable { get; }
+
+        public string AudioCodecName { get; }
+
+        public int AudioSampleRate { get; }
+
+        public int AudioChannelCount { get; }
+    }
+
+    public sealed class RegressionMetrics
+    {
+        public double OpenMilliseconds { get; set; }
+
+        public double PreIndexSeekMilliseconds { get; set; }
+
+        public double IndexReadyMilliseconds { get; set; }
+
+        public double IndexedSeekMilliseconds { get; set; }
+
+        public double PlaybackMilliseconds { get; set; }
+
+        public double ReopenMilliseconds { get; set; }
+
+        public double UiOpenMilliseconds { get; set; }
+
+        public double UiPreIndexClickMilliseconds { get; set; }
+
+        public double UiClickSeekMilliseconds { get; set; }
+
+        public double UiDragSeekMilliseconds { get; set; }
+
+        public double UiEndSeekMilliseconds { get; set; }
+
+        public double UiIndexReadyMilliseconds { get; set; }
+
+        public int MaxObservedPreviousCachedFrames { get; set; }
+
+        public int MaxObservedForwardCachedFrames { get; set; }
+
+        public long MaxObservedApproximateCacheBytes { get; set; }
+
+        public int BackwardStepCacheHits { get; set; }
+
+        public int BackwardStepReconstructionCount { get; set; }
+
+        public int ForwardStepCacheHits { get; set; }
+
+        public int ForwardStepReconstructionCount { get; set; }
+
+        public double LastObservedCacheRefillMilliseconds { get; set; }
+
+        public string LastObservedCacheRefillReason { get; set; }
+
+        public string LastObservedCacheRefillMode { get; set; }
+    }
+
+    public sealed class RegressionCheckResult
+    {
+        public RegressionCheckResult(
+            string filePath,
+            string scope,
+            string category,
+            string name,
+            string classification,
+            string message,
+            long? expectedFrameIndex,
+            long? actualFrameIndex,
+            long? expectedDisplayedFrame,
+            long? actualDisplayedFrame,
+            string requestedTime,
+            string actualTime,
+            double? sliderValueSeconds,
+            double? sliderMaximumSeconds,
+            double? elapsedMilliseconds,
+            bool? indexReady,
+            bool? usedGlobalIndex,
+            bool? cacheHit,
+            bool? requiredReconstruction)
+        {
+            FilePath = filePath ?? string.Empty;
+            Scope = scope ?? string.Empty;
+            Category = category ?? string.Empty;
+            Name = name ?? string.Empty;
+            Classification = classification ?? string.Empty;
+            Message = message ?? string.Empty;
+            ExpectedFrameIndex = expectedFrameIndex;
+            ActualFrameIndex = actualFrameIndex;
+            ExpectedDisplayedFrame = expectedDisplayedFrame;
+            ActualDisplayedFrame = actualDisplayedFrame;
+            RequestedTime = requestedTime ?? string.Empty;
+            ActualTime = actualTime ?? string.Empty;
+            SliderValueSeconds = sliderValueSeconds;
+            SliderMaximumSeconds = sliderMaximumSeconds;
+            ElapsedMilliseconds = elapsedMilliseconds;
+            IndexReady = indexReady;
+            UsedGlobalIndex = usedGlobalIndex;
+            CacheHit = cacheHit;
+            RequiredReconstruction = requiredReconstruction;
+        }
+
+        public string FilePath { get; }
+
+        public string Scope { get; }
+
+        public string Category { get; }
+
+        public string Name { get; }
+
+        public string Classification { get; }
+
+        public string Message { get; }
+
+        public long? ExpectedFrameIndex { get; }
+
+        public long? ActualFrameIndex { get; }
+
+        public long? ExpectedDisplayedFrame { get; }
+
+        public long? ActualDisplayedFrame { get; }
+
+        public string RequestedTime { get; }
+
+        public string ActualTime { get; }
+
+        public double? SliderValueSeconds { get; }
+
+        public double? SliderMaximumSeconds { get; }
+
+        public double? ElapsedMilliseconds { get; }
+
+        public bool? IndexReady { get; }
+
+        public bool? UsedGlobalIndex { get; }
+
+        public bool? CacheHit { get; }
+
+        public bool? RequiredReconstruction { get; }
+    }
+
+    public sealed class RegressionSummary
+    {
+        public RegressionSummary(
+            int filesTested,
+            int checksRun,
+            int passCount,
+            int warningCount,
+            int failCount)
+        {
+            FilesTested = filesTested;
+            ChecksRun = checksRun;
+            PassCount = passCount;
+            WarningCount = warningCount;
+            FailCount = failCount;
+        }
+
+        public int FilesTested { get; }
+
+        public int ChecksRun { get; }
+
+        public int PassCount { get; }
+
+        public int WarningCount { get; }
+
+        public int FailCount { get; }
+    }
+}

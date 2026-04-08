@@ -420,11 +420,13 @@
                      VerticalAlignment="Center"
                      FontFamily="Consolas"
                      FontSize="13"
+                     Width="96"
+                     TextAlignment="Left"
                      Text="00:00:00.000" />
 
           <Slider x:Name="PositionSlider"
                   Grid.Column="1"
-                  Margin="12,0"
+                  Margin="8,0"
                   Minimum="0"
                   Maximum="1"
                   IsMoveToPointEnabled="False"
@@ -435,6 +437,8 @@
                      VerticalAlignment="Center"
                      FontFamily="Consolas"
                      FontSize="13"
+                     Width="96"
+                     TextAlignment="Right"
                      Text="00:00:00.000" />
         </Grid>
 
@@ -508,25 +512,6 @@
                      FontFamily="Consolas"
                      GotKeyboardFocus="FrameNumberTextBox_GotKeyboardFocus"
                      KeyDown="FrameNumberTextBox_KeyDown" />
-            <TextBlock VerticalAlignment="Center"
-                       Margin="8,0,0,0"
-                       Foreground="{StaticResource MutedBrush}"
-                       FontFamily="Consolas"
-                       FontSize="12"
-                       Text="/" />
-            <TextBlock x:Name="TotalFramesTextBlock"
-                       VerticalAlignment="Center"
-                       Margin="6,0,0,0"
-                       MinWidth="52"
-                       Foreground="{StaticResource MutedBrush}"
-                       FontFamily="Consolas"
-                       FontSize="12"
-                       Text="--" />
-            <Button x:Name="JumpToFrameButton"
-                    Margin="8,0,0,0"
-                    Padding="10,6"
-                    Content="Go"
-                    Click="JumpToFrameButton_Click" />
           </DockPanel>
         </Grid>
       </Grid>
@@ -543,6 +528,7 @@
       <StatusBarItem>
         <TextBlock x:Name="PlaybackStateTextBlock"
                    FontSize="12"
+                   Width="240"
                    TextTrimming="CharacterEllipsis"
                    Text="Idle. Open a video to begin." />
       </StatusBarItem>
@@ -552,6 +538,8 @@
                    Foreground="{StaticResource MutedBrush}"
                    FontFamily="Consolas"
                    FontSize="12"
+                   Width="220"
+                   TextTrimming="CharacterEllipsis"
                    Text="Cache: idle" />
       </StatusBarItem>
       <Separator />
@@ -560,9 +548,9 @@
                    Foreground="{StaticResource MutedBrush}"
                    FontFamily="Consolas"
                    FontSize="12"
-                   MaxWidth="360"
+                   Width="260"
                    TextTrimming="CharacterEllipsis"
-                   Text="AVI | MOV | M4V | MP4" />
+                   Text="Sample rate -- fps | Interval --" />
       </StatusBarItem>
       <Separator />
       <StatusBarItem>
@@ -570,9 +558,9 @@
                    Foreground="{StaticResource MutedBrush}"
                    FontFamily="Consolas"
                    FontSize="12"
-                   MaxWidth="280"
+                   Width="320"
                    TextTrimming="CharacterEllipsis"
-                   Text="TC --:--:--:-- | --:--:--.---" />
+                   Text="Timestamp --:--:--.--- | Duration --:--:--.---" />
       </StatusBarItem>
       <Separator />
       <StatusBarItem>
@@ -580,6 +568,7 @@
                    Foreground="{StaticResource MutedBrush}"
                    FontFamily="Consolas"
                    FontSize="12"
+                   Width="160"
                    Text="Frame --" />
       </StatusBarItem>
     </StatusBar>

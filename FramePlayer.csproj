@@ -85,6 +85,8 @@
     <Compile Include="Core\Models\VideoMediaInfo.cs" />
     <Compile Include="Diagnostics\ReviewEngineComparisonRunner.cs" />
     <Compile Include="Diagnostics\ReviewEngineManualTestRunner.cs" />
+    <Compile Include="Diagnostics\RegressionSuiteCli.cs" />
+    <Compile Include="Diagnostics\RegressionSuiteRunner.cs" />
     <Compile Include="Engines\FFmpeg\FfmpegAudioPlaybackSession.cs" />
     <Compile Include="Engines\FFmpeg\FfmpegAudioStreamInfo.cs" />
     <Compile Include="Engines\FFmpeg\FfmpegDecodedFrameCache.cs" />
@@ -115,7 +117,7 @@
     </Page>
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="FFmpeg.AutoGen" Version="7.1.1" />
+    <PackageReference Include="FFmpeg.AutoGen" Version="8.0.0.1" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Services\RuntimeManifestService.cs" />
@@ -126,6 +128,7 @@
     <None Include="scripts\Create-Comparison-Shortcuts.ps1" />
     <None Include="scripts\Ensure-DevRuntime.ps1" />
     <None Include="scripts\Run-ReviewEngine-ManualTests.ps1" />
+    <None Include="scripts\Run-RegressionSuite.ps1" />
     <None Include="LICENSE">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
@@ -139,19 +142,19 @@
     <EmbeddedResource Include="Runtime\runtime-manifest.json" />
   </ItemGroup>
   <Target Name="EnsureBundledRuntime" BeforeTargets="PrepareForBuild"
-          Condition="'$(OS)' == 'Windows_NT' and !Exists('Runtime\\ffmpeg\\avcodec-61.dll')">
+          Condition="'$(OS)' == 'Windows_NT' and !Exists('Runtime\\ffmpeg\\avcodec-62.dll')">
     <Message Importance="high"
              Text="FFmpeg runtime DLLs are missing. Downloading the pinned runtime for this build..." />
     <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\scripts\Ensure-DevRuntime.ps1&quot;"
           WorkingDirectory="$(MSBuildProjectDirectory)" />
   </Target>
   <Target Name="WarnIfBundledRuntimeMissing" BeforeTargets="Build"
-          Condition="!Exists('Runtime\\ffmpeg\\avcodec-61.dll')">
+          Condition="!Exists('Runtime\\ffmpeg\\avcodec-62.dll')">
     <Message Importance="high"
              Text="FFmpeg runtime DLLs are not present in Runtime\\ffmpeg. Frame Player attempted to bootstrap them automatically. If the download failed, run .\\scripts\\Ensure-DevRuntime.ps1 manually and rebuild." />
   </Target>
   <Target Name="CopyBundledRuntimeToOutput" AfterTargets="Build"
-          Condition="Exists('Runtime\\ffmpeg\\avcodec-61.dll')">
+          Condition="Exists('Runtime\\ffmpeg\\avcodec-62.dll')">
     <ItemGroup>
       <BundledRuntimeFiles Include="$(MSBuildProjectDirectory)\Runtime\ffmpeg\*.dll" />
     </ItemGroup>

@@ -130,7 +130,7 @@ namespace FramePlayer.Engines.FFmpeg
             AVCodec* decoder = null;
             var formatContext = _formatContext;
             FfmpegNativeHelpers.ThrowIfError(
-                ffmpeg.avformat_open_input(&formatContext, _filePath, null, null),
+                FfmpegNativeHelpers.OpenInput(&formatContext, _filePath, null, null),
                 "Open audio media container");
             _formatContext = formatContext;
 

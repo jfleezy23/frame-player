@@ -1,6 +1,8 @@
 using System;
+using System.IO;
 using System.Windows;
 using FFmpeg.AutoGen;
+using FramePlayer.Diagnostics;
 using FramePlayer.Services;
 
 namespace FramePlayer
@@ -15,8 +17,36 @@ namespace FramePlayer
             get { return !string.IsNullOrWhiteSpace(RuntimeDirectory); }
         }
 
-        protected override void OnStartup(StartupEventArgs e)
+        protected override async void OnStartup(StartupEventArgs e)
         {
+            string regressionSuiteRequestPath;
+            if (RegressionSuiteCli.TryGetRequestPath(e.Args, out regressionSuiteRequestPath))
+            {
+                var startupLogPath = Path.Combine(Path.GetTempPath(), "frameplayer-regression-startup.log");
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                AppendRegressionStartupLog(startupLogPath, "Regression startup requested.");
+                AppendRegressionStartupLog(startupLogPath, "Request path: " + regressionSuiteRequestPath);
+                ConfigureBundledRuntime();
+                AppendRegressionStartupLog(startupLogPath, "Runtime configured. Root=" + (RuntimeDirectory ?? string.Empty));
+
+                try
+                {
+                    AppendRegressionStartupLog(startupLogPath, "RegressionSuiteCli.RunAsync starting.");
+                    var exitCode = await RegressionSuiteCli.RunAsync(regressionSuiteRequestPath, default(System.Threading.CancellationToken));
+                    AppendRegressionStartupLog(startupLogPath, "RegressionSuiteCli.RunAsync completed with exit code " + exitCode.ToString());
+                    Shutdown(exitCode);
+                }
+                catch (Exception ex)
+                {
+                    AppendRegressionStartupLog(startupLogPath, "RegressionSuiteCli.RunAsync failed: " + ex);
+                    RegressionSuiteCli.TryWriteFailure(regressionSuiteRequestPath, ex);
+                    System.Diagnostics.Trace.WriteLine("Regression suite execution failed: " + ex);
+                    Shutdown(1);
+                }
+
+                return;
+            }
+
             base.OnStartup(e);
             ConfigureBundledRuntime();
         }
@@ -37,6 +67,19 @@ namespace FramePlayer
             RuntimeDirectory = baseDirectory;
             RuntimeValidationMessage = string.Empty;
             ffmpeg.RootPath = baseDirectory;
+        }
+
+        private static void AppendRegressionStartupLog(string logPath, string message)
+        {
+            try
+            {
+                File.AppendAllText(
+                    logPath,
+                    DateTimeOffset.Now.ToString("o") + " " + message + Environment.NewLine);
+            }
+            catch
+            {
+            }
         }
     }
 }

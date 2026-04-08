@@ -1,6 +1,6 @@
 # Frame Player
 
-Frame Player is a frames-first WPF review tool built on a custom FFmpeg engine with a bundled in-process FFmpeg runtime. It treats decoded display-order frame identity as the source of truth for exact zero-indexed frame stepping, frame seeks, and review state, prioritizing deterministic review behavior over generic consumer media-player parity.
+Frame Player is a frames-first WPF review tool built on a custom FFmpeg engine with a bundled in-process FFmpeg runtime. It treats decoded display-order frame identity as the source of truth for exact frame stepping, frame seeks, and review state, prioritizing deterministic review behavior over generic consumer media-player parity.
 
 ## What It Does
 
@@ -10,7 +10,7 @@ Frame Player is a frames-first WPF review tool built on a custom FFmpeg engine w
 - Supports play, pause, rewind 5 seconds, fast forward 5 seconds, previous frame, and next frame
 - Plays decoded audio when a supported audio stream is present, with video-only fallback for silent clips or unsupported audio
 - Lets you jump directly to a frame number
-- Shows the frame jump field as `current / total`
+- Uses 1-based frame numbers in the UI and shows current / total in the status bar
 - Supports full screen playback controls
 - Keeps Left and Right for single-frame stepping while paused, and supports hold-to-repeat stepping
 - Shows playback state, FPS, frame-step size, duration, frame number, and a frame-derived timecode readout
@@ -43,9 +43,10 @@ Frame Player is a frames-first WPF review tool built on a custom FFmpeg engine w
 
 The shipped app is packaged with the FFmpeg runtime DLLs next to `FramePlayer.exe`.
 
-- Current app release line: `v1.1.0`
-- Pinned FFmpeg runtime version: `n7.0.2-6-g7e69129d2f-20240831`
-- Runtime asset source tag: `v1.1.0` in `Runtime\\runtime-manifest.json`; the pinned runtime archive is hosted on the current public app release
+- Current app release line: `v1.2.0`
+- Pinned FFmpeg runtime version: `n8.1-frameplayer-source`
+- Runtime provenance: built from the official FFmpeg source tag `n8.1` at commit `9047fa1b084f76b1b4d065af2d743df1b40dfb56`
+- Runtime hashes and source-build metadata are recorded in `Runtime\\runtime-manifest.json` and `docs\\ffmpeg-8.1-build-notes.md`
 - There is no FFmpeg folder picker in the UI
 - The app does not call `ffmpeg.exe` or `ffprobe.exe`
 - Playback and frame stepping run through the custom FFmpeg engine and the bundled FFmpeg DLLs loaded in-process
@@ -69,12 +70,12 @@ If you just want a working local build without thinking about dependencies:
 
 That script:
 
-1. Downloads the pinned FFmpeg runtime from this repository's GitHub release assets
+1. Restores the pinned FFmpeg runtime from the local source-built candidate or local runtime archive when available
 2. Verifies the runtime archive SHA256 and the extracted DLL hashes
 3. Restores NuGet packages
 4. Builds the app in `Release|x64`
 
-Regular Visual Studio and MSBuild builds now try to bootstrap the pinned runtime automatically if `Runtime\ffmpeg` is missing.
+If the self-built runtime has not been staged yet, run `.\scripts\ffmpeg\Build-FFmpeg-8.1.ps1` first. Regular Visual Studio and MSBuild builds then bootstrap `Runtime\ffmpeg` automatically if it is missing.
 
 ## Requirements
 
@@ -91,7 +92,7 @@ For most machines, use the helper script:
 .\scripts\Build-FramePlayer.ps1
 ```
 
-If the build machine blocks the automatic runtime download, run `.\scripts\Ensure-DevRuntime.ps1` once and rebuild.
+If the active runtime directory is missing, run `.\scripts\ffmpeg\Build-FFmpeg-8.1.ps1` once, then `.\scripts\Ensure-DevRuntime.ps1`, and rebuild.
 
 If you need to call MSBuild directly, use a Visual Studio Developer PowerShell or a machine with Visual Studio Build Tools installed:
 
@@ -116,9 +117,11 @@ powershell -ExecutionPolicy Bypass -File .\Packaging\MSIX\build-msix.ps1 -Signin
 
 - Frame stepping uses decoded display-order frame identity instead of timestamp math
 - Timecode is frame-derived and uses nominal whole-frame buckets for fractional frame rates like `23.976` -> `24`
-- The build output is in `bin\Release`
-- The packaged app folder used for testing is `dist\Frame Player`
+- The standard build output is in `bin\Release`
+- The packaged test-drop output used for release verification is `bin\TestDrop`
+- The portable release archive is written to `artifacts\FramePlayer-CustomFFmpeg-1.2.0.zip`
 - The runtime bootstrap is pinned through `Runtime\runtime-manifest.json`
+- The active runtime is the self-built FFmpeg 8.1 line staged by `scripts\ffmpeg\Build-FFmpeg-8.1.ps1`
 
 ## License
 

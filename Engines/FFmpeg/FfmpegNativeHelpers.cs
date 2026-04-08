@@ -1,17 +1,29 @@
 using System;
 using System.Globalization;
+using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using FFmpeg.AutoGen;
 
 namespace FramePlayer.Engines.FFmpeg
 {
     internal static unsafe class FfmpegNativeHelpers
     {
+        private const string AvformatLibraryName = "avformat-62.dll";
         private static readonly AVRational AvTimeBaseRational = new AVRational
         {
             num = 1,
             den = ffmpeg.AV_TIME_BASE
         };
+        private static readonly Lazy<avformat_open_input_utf8_delegate> AvformatOpenInputUtf8 =
+            new Lazy<avformat_open_input_utf8_delegate>(LoadAvformatOpenInputUtf8);
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate int avformat_open_input_utf8_delegate(
+            AVFormatContext** ps,
+            byte* url,
+            AVInputFormat* fmt,
+            AVDictionary** options);
 
         internal static void ThrowIfError(int errorCode, string operation)
         {
@@ -56,6 +68,20 @@ namespace FramePlayer.Engines.FFmpeg
             return string.IsNullOrWhiteSpace(name)
                 ? pixelFormat.ToString()
                 : name;
+        }
+
+        internal static int OpenInput(AVFormatContext** formatContext, string filePath, AVInputFormat* inputFormat, AVDictionary** options)
+        {
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                throw new ArgumentException("A media file path is required.", nameof(filePath));
+            }
+
+            var encodedPath = Encoding.UTF8.GetBytes(filePath + "\0");
+            fixed (byte* encodedPathPointer = encodedPath)
+            {
+                return AvformatOpenInputUtf8.Value(formatContext, encodedPathPointer, inputFormat, options);
+            }
         }
 
         internal static bool IsValid(AVRational rational)
@@ -199,5 +225,71 @@ namespace FramePlayer.Engines.FFmpeg
                 ? (long?)null
                 : timestamp;
         }
+
+        private static avformat_open_input_utf8_delegate LoadAvformatOpenInputUtf8()
+        {
+            var runtimeDirectory = ffmpeg.RootPath;
+            if (string.IsNullOrWhiteSpace(runtimeDirectory))
+            {
+                throw new InvalidOperationException("FFmpeg RootPath is not configured.");
+            }
+
+            var dependencies = new[]
+            {
+                "libwinpthread-1.dll",
+                "avutil-60.dll",
+                "swresample-6.dll",
+                "swscale-9.dll",
+                "avcodec-62.dll",
+                AvformatLibraryName
+            };
+
+            foreach (var dependency in dependencies)
+            {
+                var dependencyPath = Path.Combine(runtimeDirectory, dependency);
+                if (!File.Exists(dependencyPath))
+                {
+                    if (string.Equals(dependency, "libwinpthread-1.dll", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    throw new InvalidOperationException("Could not find required FFmpeg runtime library " + dependency + ".");
+                }
+
+                if (GetModuleHandle(dependency) == IntPtr.Zero && LoadLibrary(dependencyPath) == IntPtr.Zero)
+                {
+                    throw new InvalidOperationException(
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "Could not load {0} from the configured FFmpeg runtime path. Win32 error: {1}.",
+                            dependency,
+                            Marshal.GetLastWin32Error()));
+                }
+            }
+
+            var moduleHandle = GetModuleHandle(AvformatLibraryName);
+            if (moduleHandle == IntPtr.Zero)
+            {
+                throw new InvalidOperationException("Could not load avformat-62.dll from the configured FFmpeg runtime path.");
+            }
+
+            var exportAddress = GetProcAddress(moduleHandle, "avformat_open_input");
+            if (exportAddress == IntPtr.Zero)
+            {
+                throw new InvalidOperationException("Could not resolve avformat_open_input from avformat-62.dll.");
+            }
+
+            return Marshal.GetDelegateForFunctionPointer<avformat_open_input_utf8_delegate>(exportAddress);
+        }
+
+        [DllImport("kernel32", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr LoadLibrary(string lpFileName);
+
+        [DllImport("kernel32", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr GetModuleHandle(string lpModuleName);
+
+        [DllImport("kernel32", CharSet = CharSet.Ansi, ExactSpelling = true, SetLastError = true)]
+        private static extern IntPtr GetProcAddress(IntPtr hModule, string procName);
     }
 }

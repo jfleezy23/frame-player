@@ -209,11 +209,6 @@ namespace FramePlayer
             await StepFrameAsync(1);
         }
 
-        private async void JumpToFrameButton_Click(object sender, RoutedEventArgs e)
-        {
-            await JumpToFrameFromInputAsync();
-        }
-
         private async void FrameNumberTextBox_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Enter)
@@ -938,7 +933,6 @@ namespace FramePlayer
             CloseVideoMenuItem.IsEnabled = canControl;
             PositionSlider.IsEnabled = canControl;
             FrameNumberTextBox.IsEnabled = canControl;
-            JumpToFrameButton.IsEnabled = canControl;
             ToggleFullScreenButton.IsEnabled = canControl;
             OverlayToggleFullScreenButton.IsEnabled = canControl;
             FullscreenControlBar.IsEnabled = canControl;
@@ -961,10 +955,8 @@ namespace FramePlayer
                     : _lastMediaErrorMessage);
                 CurrentFrameTextBlock.Text = "Frame --";
                 CurrentFrameTextBlock.ToolTip = null;
-                TimecodeTextBlock.Text = "TC --:--:--:-- | --:--:--.---";
+                TimecodeTextBlock.Text = "Timestamp --:--:--.--- | Duration --:--:--.---";
                 TimecodeTextBlock.ToolTip = null;
-                TotalFramesTextBlock.Text = "--";
-                TotalFramesTextBlock.ToolTip = null;
                 FrameNumberTextBox.Text = string.Empty;
                 FrameNumberTextBox.ToolTip = GetFrameNumberInputToolTip();
                 KeyboardHintTextBlock.Text = _buildVariant.SupportsTimedPlayback
@@ -992,16 +984,13 @@ namespace FramePlayer
 
             SetMediaSummary(string.Format(
                 CultureInfo.InvariantCulture,
-                "{0} | FPS: {1:0.###} | Step: {2} | Duration: {3} | Audio: {4}",
-                "FRAME PLAYER",
+                "Sample rate {0:0.###} fps | Interval {1}",
                 _framesPerSecond,
-                FormatStepDuration(_positionStep),
-                FormatTime(_mediaDuration),
-                GetAudioSummaryText(_videoReviewEngine.MediaInfo)));
+                FormatStepDuration(_positionStep)));
             MediaSummaryTextBlock.ToolTip = string.Format(
                 CultureInfo.InvariantCulture,
                 "{0}. Frame rate {1:0.###} fps, frame step {2}, duration {3}. Audio: {4}.",
-                "Frame Player",
+                "Media summary",
                 _framesPerSecond,
                 FormatStepDuration(_positionStep),
                 FormatTime(_mediaDuration),
@@ -1035,7 +1024,8 @@ namespace FramePlayer
             _suppressSliderUpdate = true;
             try
             {
-                PositionSlider.Maximum = _mediaDuration > TimeSpan.Zero ? _mediaDuration.TotalSeconds : 1.0;
+                var sliderMaximum = GetSliderMaximumPosition();
+                PositionSlider.Maximum = sliderMaximum > TimeSpan.Zero ? sliderMaximum.TotalSeconds : 1.0;
                 PositionSlider.Value = Math.Min(currentPosition.TotalSeconds, PositionSlider.Maximum);
             }
             finally
@@ -1063,10 +1053,8 @@ namespace FramePlayer
             {
                 CurrentFrameTextBlock.Text = "Frame --";
                 CurrentFrameTextBlock.ToolTip = null;
-                TimecodeTextBlock.Text = "TC --:--:--:-- | --:--:--.---";
+                TimecodeTextBlock.Text = "Timestamp --:--:--.--- | Duration --:--:--.---";
                 TimecodeTextBlock.ToolTip = null;
-                TotalFramesTextBlock.Text = "--";
-                TotalFramesTextBlock.ToolTip = null;
                 FrameNumberTextBox.ToolTip = GetFrameNumberInputToolTip();
                 return;
             }
@@ -1077,12 +1065,14 @@ namespace FramePlayer
             {
                 CurrentFrameTextBlock.Text = "Frame --";
                 CurrentFrameTextBlock.ToolTip = "No decoded frame identity is currently available from the engine.";
-                TotalFramesTextBlock.Text = GetTotalFrameCount() > 0
-                    ? GetDisplayedTotalFrameValue(GetTotalFrameCount()).ToString(CultureInfo.InvariantCulture)
-                    : "--";
-                TimecodeTextBlock.Text = string.Format(CultureInfo.InvariantCulture, "TC --:--:--:-- | {0}", FormatTime(currentPosition));
+                TimecodeTextBlock.Text = string.Format(CultureInfo.InvariantCulture, "Timestamp {0} | Duration {1}", FormatTime(currentPosition), FormatTime(_mediaDuration));
                 TimecodeTextBlock.ToolTip = "Timeline time is available, but frame identity is not.";
-                FrameNumberTextBox.ToolTip = GetFrameNumberInputToolTip();
+                if (!FrameNumberTextBox.IsKeyboardFocusWithin)
+                {
+                    FrameNumberTextBox.Text = string.Empty;
+                }
+
+                FrameNumberTextBox.ToolTip = "Frame identity is not available yet. Wait for the current frame to resolve, or type a frame number and press Enter.";
                 return;
             }
 
@@ -1133,18 +1123,6 @@ namespace FramePlayer
                     : string.Format(CultureInfo.InvariantCulture, "Current frame {0}.", currentFrame);
             }
 
-            TotalFramesTextBlock.Text = totalFrames > 0
-                ? totalFrameDisplay.ToString(frameFormat, CultureInfo.InvariantCulture)
-                : "--";
-            TotalFramesTextBlock.ToolTip = totalFrames > 0
-                ? _buildVariant.UsesZeroIndexedFrameDisplay
-                    ? string.Format(
-                        CultureInfo.InvariantCulture,
-                        "Last zero-indexed frame: {0}. Total decoded frames: {1}.",
-                        totalFrameDisplay,
-                        totalFrames)
-                    : string.Format(CultureInfo.InvariantCulture, "Total available frames: {0}.", totalFrames)
-                : "Total available frames are not known.";
             FrameNumberTextBox.ToolTip = totalFrames > 0
                 ? _buildVariant.UsesZeroIndexedFrameDisplay
                     ? string.Format(
@@ -1163,12 +1141,13 @@ namespace FramePlayer
 
             TimecodeTextBlock.Text = string.Format(
                 CultureInfo.InvariantCulture,
-                "TC {0} | {1}",
-                timecode,
-                FormatTime(currentPosition));
+                "Timestamp {0} | Duration {1}",
+                FormatTime(currentPosition),
+                FormatTime(_mediaDuration));
             TimecodeTextBlock.ToolTip = string.Format(
                 CultureInfo.InvariantCulture,
-                "Frame-derived timecode using the engine's current decoded frame identity and nominal {0} fps buckets for {1:0.###} fps media.",
+                "Current frame timestamp from the engine. Frame-derived timecode {0} uses nominal {1} fps buckets for {2:0.###} fps media.",
+                timecode,
                 GetNominalTimecodeFramesPerSecond(),
                 _framesPerSecond);
         }
@@ -1300,6 +1279,19 @@ namespace FramePlayer
             }
 
             return target;
+        }
+
+        private TimeSpan GetSliderMaximumPosition()
+        {
+            var ffmpegEngine = _videoReviewEngine as FfmpegReviewEngine;
+            if (ffmpegEngine != null &&
+                ffmpegEngine.IsGlobalFrameIndexAvailable &&
+                ffmpegEngine.LastIndexedFramePresentationTime > TimeSpan.Zero)
+            {
+                return ffmpegEngine.LastIndexedFramePresentationTime;
+            }
+
+            return _mediaDuration;
         }
 
         private long GetMaxFrameIndex()
@@ -1673,27 +1665,28 @@ namespace FramePlayer
 
             var forwardCount = Math.Max(0, ffmpegEngine.ForwardCachedFrameCount);
             var previousCount = Math.Max(0, ffmpegEngine.PreviousCachedFrameCount);
-            var indexStatus = ffmpegEngine.IsGlobalFrameIndexBuildInProgress
-                ? "Index: building"
-                : ffmpegEngine.IsGlobalFrameIndexAvailable
-                    ? string.Format(CultureInfo.InvariantCulture, "Index: ready ({0} frames)", ffmpegEngine.IndexedFrameCount)
-                    : "Index: not ready";
+            var approximateCacheMegabytes = ffmpegEngine.ApproximateCachedFrameBytes / 1048576d;
             var positionIdentity = _videoReviewEngine.Position != null && _videoReviewEngine.Position.IsFrameIndexAbsolute
                 ? "absolute frame ready"
                 : "frame number pending index";
             var message = string.Format(
                 CultureInfo.InvariantCulture,
-                "{0} | {1} | Cache: ready ({2} back / {3} ahead)",
-                indexStatus,
-                positionIdentity,
+                ffmpegEngine.IsGlobalFrameIndexBuildInProgress
+                    ? "Cache: indexing ({0} back / {1} ahead)"
+                    : "Cache: ready ({0} back / {1} ahead)",
                 previousCount,
                 forwardCount);
             var tooltip = string.Format(
                 CultureInfo.InvariantCulture,
-                "Index status: {0}. Review cache holds up to {1} prior and {2} forward decoded frames. Timeline seeks show the landed frame first; user-visible frame numbers are shown only when the engine has absolute frame identity.",
+                "Index: {0}. Frame identity: {1}. Review cache holds up to {2} prior and {3} forward decoded frames and is currently using about {4:0.0} MiB. Last refill: {5} ({6:0.0} ms, {7}). Timeline seeks show the landed frame first.",
                 ffmpegEngine.GlobalFrameIndexStatus,
+                positionIdentity,
                 ffmpegEngine.MaxPreviousCachedFrameCount,
-                ffmpegEngine.MaxForwardCachedFrameCount);
+                ffmpegEngine.MaxForwardCachedFrameCount,
+                approximateCacheMegabytes,
+                string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason) ? "(none)" : ffmpegEngine.LastCacheRefillReason,
+                ffmpegEngine.LastCacheRefillMilliseconds,
+                string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillMode) ? "none" : ffmpegEngine.LastCacheRefillMode);
             SetCacheStatus(message, tooltip, false);
         }
 
@@ -1765,7 +1758,7 @@ namespace FramePlayer
                     "Build variant: " + _buildVariant.BuildDisplayName,
                     "Forced backend: " + _buildVariant.ForcedBackend,
                     "Timed playback supported: " + (_buildVariant.SupportsTimedPlayback ? "Yes" : "No"),
-                    "Frame display mode: " + (_buildVariant.UsesZeroIndexedFrameDisplay ? "Zero-indexed" : "Baseline display numbering"),
+                    "Frame display mode: " + (_buildVariant.UsesZeroIndexedFrameDisplay ? "Zero-indexed" : "1-based"),
                     "Version: " + GetApplicationVersion(),
                     "OS: " + Environment.OSVersion,
                     ".NET: " + Environment.Version,
@@ -1785,11 +1778,23 @@ namespace FramePlayer
                     "Review cache window: " + (ffmpegEngine != null
                         ? string.Format(
                             CultureInfo.InvariantCulture,
-                            "{0} back / {1} ahead cached, max {2} back / {3} ahead",
+                            "{0} back / {1} ahead cached, max {2} back / {3} ahead, approx {4:0.0} MiB",
                             ffmpegEngine.PreviousCachedFrameCount,
                             ffmpegEngine.ForwardCachedFrameCount,
                             ffmpegEngine.MaxPreviousCachedFrameCount,
-                            ffmpegEngine.MaxForwardCachedFrameCount)
+                            ffmpegEngine.MaxForwardCachedFrameCount,
+                            ffmpegEngine.ApproximateCachedFrameBytes / 1048576d)
+                        : "(unavailable)"),
+                    "Last cache refill: " + (ffmpegEngine != null
+                        ? string.Format(
+                            CultureInfo.InvariantCulture,
+                            "{0}, {1:0.0} ms, mode {2}, after landing {3}, forward {4}->{5}",
+                            string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason) ? "(none)" : ffmpegEngine.LastCacheRefillReason,
+                            ffmpegEngine.LastCacheRefillMilliseconds,
+                            string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillMode) ? "none" : ffmpegEngine.LastCacheRefillMode,
+                            ffmpegEngine.LastCacheRefillAfterLanding ? "yes" : "no",
+                            ffmpegEngine.LastCacheRefillStartingForwardCount,
+                            ffmpegEngine.LastCacheRefillCompletedForwardCount)
                         : "(unavailable)"),
                     "Open timing: " + (ffmpegEngine != null
                         ? string.Format(
@@ -1943,12 +1948,17 @@ namespace FramePlayer
 
             return string.Format(
                 CultureInfo.InvariantCulture,
-                "; seek timing total {0:0.0} ms, index wait {1:0.0} ms, materialize {2:0.0} ms, forward warm {3:0.0} ms, mode {4}",
+                "; seek timing total {0:0.0} ms, index wait {1:0.0} ms, materialize {2:0.0} ms, forward warm {3:0.0} ms, mode {4}; cache refill {5} {6:0.0} ms ({7}, forward {8}->{9})",
                 ffmpegEngine.LastSeekTotalMilliseconds,
                 ffmpegEngine.LastSeekIndexWaitMilliseconds,
                 ffmpegEngine.LastSeekMaterializeMilliseconds,
                 ffmpegEngine.LastSeekForwardCacheWarmMilliseconds,
-                string.IsNullOrWhiteSpace(ffmpegEngine.LastSeekMode) ? "(none)" : ffmpegEngine.LastSeekMode);
+                string.IsNullOrWhiteSpace(ffmpegEngine.LastSeekMode) ? "(none)" : ffmpegEngine.LastSeekMode,
+                string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason) ? "(none)" : ffmpegEngine.LastCacheRefillReason,
+                ffmpegEngine.LastCacheRefillMilliseconds,
+                string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillMode) ? "none" : ffmpegEngine.LastCacheRefillMode,
+                ffmpegEngine.LastCacheRefillStartingForwardCount,
+                ffmpegEngine.LastCacheRefillCompletedForwardCount);
         }
 
         private TimeSpan GetDisplayPosition()

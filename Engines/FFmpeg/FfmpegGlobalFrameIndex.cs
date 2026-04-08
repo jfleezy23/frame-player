@@ -59,7 +59,7 @@ namespace FramePlayer.Engines.FFmpeg
             try
             {
                 FfmpegNativeHelpers.ThrowIfError(
-                    ffmpeg.avformat_open_input(&formatContext, filePath, null, null),
+                    FfmpegNativeHelpers.OpenInput(&formatContext, filePath, null, null),
                     "Open media container for frame index");
                 FfmpegNativeHelpers.ThrowIfError(
                     ffmpeg.avformat_find_stream_info(formatContext, null),

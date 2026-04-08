@@ -9,8 +9,10 @@ obj/
 *.msix
 *.pfx
 *.cer
+artifacts/
 dist/
 downloads/
 AppData/
 packages/
 Runtime/ffmpeg/
+Runtime/ffmpeg-8.1-candidate/

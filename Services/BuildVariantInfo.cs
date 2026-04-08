@@ -59,7 +59,7 @@ namespace FramePlayer.Services
 
         public bool UsesZeroIndexedFrameDisplay
         {
-            get { return true; }
+            get { return false; }
         }
 
         private static BuildVariantInfo CreateCurrent()

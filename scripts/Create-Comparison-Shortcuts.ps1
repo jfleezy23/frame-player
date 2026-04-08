@@ -30,7 +30,7 @@ if (Test-Path -LiteralPath $legacyFfmeShortcutPath)
 
 if (-not (Test-Path -LiteralPath $ExecutablePath))
 {
-    throw ("Build output not found for Frame Player - Custom FFmpeg: {0}. Build the test drop first." -f $ExecutablePath)
+    throw ("Build output not found for Frame Player - Custom FFmpeg: {0}. Run .\\scripts\\Build-TestDrop.ps1 first." -f $ExecutablePath)
 }
 
 $shortcutName = "Frame Player - Custom FFmpeg"

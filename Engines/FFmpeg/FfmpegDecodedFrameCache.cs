@@ -37,6 +37,26 @@ namespace FramePlayer.Engines.FFmpeg
             get { return _currentIndex >= 0 && _currentIndex < _frames.Count; }
         }
 
+        public long ApproximatePixelBufferBytes
+        {
+            get
+            {
+                long totalBytes = 0L;
+                for (var index = 0; index < _frames.Count; index++)
+                {
+                    var pixelBuffer = _frames[index] != null ? _frames[index].PixelBuffer : null;
+                    if (pixelBuffer == null)
+                    {
+                        continue;
+                    }
+
+                    totalBytes += pixelBuffer.LongLength;
+                }
+
+                return totalBytes;
+            }
+        }
+
         public DecodedVideoFrame Current
         {
             get { return HasCurrent ? _frames[_currentIndex] : null; }
