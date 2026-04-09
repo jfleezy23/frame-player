@@ -1,0 +1,23 @@
+name: Windows CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup NuGet
+        uses: nuget/setup-nuget@v2
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Restore and build
+        shell: pwsh
+        run: msbuild .\FramePlayer.csproj /t:Restore,Build /p:Configuration=Release /p:Platform=x64
