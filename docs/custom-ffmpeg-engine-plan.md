@@ -119,7 +119,7 @@
 - `MainWindow.xaml` no longer contains the legacy media element.
 - `App.xaml.cs` configures `FFmpeg.AutoGen` runtime loading directly.
 - The FFME adapter file, FFME package reference, and standalone backend comparison script have been removed.
-- The current release line is the custom-FFmpeg-only `1.2.0` build; older FFME-era releases are legacy/deprecated and should only be used for historical comparison.
+- The current release line is the custom-FFmpeg-only `1.3.0` build; older FFME-era releases are legacy/deprecated and should only be used for historical comparison.
 - The current test-drop output is expected under `bin\TestDrop\`.
 
 ## What Still Remains Stubbed

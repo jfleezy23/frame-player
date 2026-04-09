@@ -1,6 +1,6 @@
 # Frame Player Custom FFmpeg Test Drop
 
-Release: `1.2.0`
+Release: `1.3.0`
 
 ## What changed recently
 
@@ -11,7 +11,7 @@ Release: `1.2.0`
 
 ## Manual test checklist
 
-- Launch the app from `bin\TestDrop\FramePlayer.exe` or the packaged `FramePlayer-CustomFFmpeg-1.2.0.zip` drop.
+- Launch the app from `bin\TestDrop\FramePlayer.exe` or the packaged `FramePlayer-CustomFFmpeg-1.3.0.zip` drop.
 - Open a normal video file and verify the first displayed frame is frame `1`.
 - Watch the status bar after open: it should distinguish index building/ready from the decoded review-cache window.
 - Press Play, confirm visible playback advances, then press Pause.
@@ -33,7 +33,7 @@ Release: `1.2.0`
 ## Build and shortcut
 
 - Test drop executable: `bin\TestDrop\FramePlayer.exe`
-- Release archive: `artifacts\FramePlayer-CustomFFmpeg-1.2.0.zip`
+- Release archive: `artifacts\FramePlayer-CustomFFmpeg-1.3.0.zip`
 - Test-drop build script: `scripts\Build-TestDrop.ps1`
 - Desktop shortcut name: `Frame Player - Custom FFmpeg`
 - Shortcut refresh script: `scripts\Create-Comparison-Shortcuts.ps1`

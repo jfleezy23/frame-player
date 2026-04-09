@@ -202,7 +202,7 @@ if (Test-Path -LiteralPath $testingNotesPath) {
 
 $artifactVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exePath).ProductVersion
 if ([string]::IsNullOrWhiteSpace($artifactVersion)) {
-    $artifactVersion = "1.2.0"
+    $artifactVersion = "1.3.0"
 }
 
 $resolvedArtifactPath = if ([string]::IsNullOrWhiteSpace($ArtifactPath)) {

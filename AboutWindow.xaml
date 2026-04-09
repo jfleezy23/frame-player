@@ -54,7 +54,7 @@
                      Foreground="{StaticResource MutedBrush}"
                      FontFamily="Consolas"
                      FontSize="12"
-                     Text="Version 1.2.0" />
+                     Text="Version 1.3.0" />
 
           <TextBlock Margin="0,16,0,0"
                      FontSize="16"

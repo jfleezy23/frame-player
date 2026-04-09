@@ -43,7 +43,7 @@ Frame Player is a frames-first WPF review tool built on a custom FFmpeg engine w
 
 The shipped app is packaged with the FFmpeg runtime DLLs next to `FramePlayer.exe`.
 
-- Current app release line: `v1.2.0`
+- Current app release line: `v1.3.0`
 - Pinned FFmpeg runtime version: `n8.1-frameplayer-source`
 - Runtime provenance: built from the official FFmpeg source tag `n8.1` at commit `9047fa1b084f76b1b4d065af2d743df1b40dfb56`
 - Runtime hashes and source-build metadata are recorded in `Runtime\\runtime-manifest.json` and `docs\\ffmpeg-8.1-build-notes.md`
@@ -119,7 +119,7 @@ powershell -ExecutionPolicy Bypass -File .\Packaging\MSIX\build-msix.ps1 -Signin
 - Timecode is frame-derived and uses nominal whole-frame buckets for fractional frame rates like `23.976` -> `24`
 - The standard build output is in `bin\Release`
 - The packaged test-drop output used for release verification is `bin\TestDrop`
-- The portable release archive is written to `artifacts\FramePlayer-CustomFFmpeg-1.2.0.zip`
+- The portable release archive is written to `artifacts\FramePlayer-CustomFFmpeg-1.3.0.zip`
 - The runtime bootstrap is pinned through `Runtime\runtime-manifest.json`
 - The active runtime is the self-built FFmpeg 8.1 line staged by `scripts\ffmpeg\Build-FFmpeg-8.1.ps1`
 
