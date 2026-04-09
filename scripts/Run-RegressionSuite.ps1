@@ -475,13 +475,13 @@ function New-RegressionSummary
     }
 }
 
-$resolvedFiles = Resolve-RegressionInputFiles `
+$resolvedFiles = @(Resolve-RegressionInputFiles `
     -InputPaths $Path `
     -ProjectRoot $projectRoot `
     -DefaultCorpusPath $CorpusPath `
     -Extensions $normalizedExtensions `
     -IncludeSubdirectories:$Recurse `
-    -CorpusFileLimit $MaxCorpusFiles
+    -CorpusFileLimit $MaxCorpusFiles)
 
 if ($resolvedFiles.Count -eq 0)
 {

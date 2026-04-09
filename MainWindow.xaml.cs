@@ -12,6 +12,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using FramePlayer.Core.Abstractions;
+using FramePlayer.Core.Coordination;
 using FramePlayer.Core.Events;
 using FramePlayer.Core.Models;
 using FramePlayer.Engines.FFmpeg;
@@ -23,6 +24,11 @@ namespace FramePlayer
     public partial class MainWindow : Window
     {
         private const double DefaultFramesPerSecond = 30.0;
+        private const string PrimaryPaneId = "pane-primary";
+        private const string ComparePaneId = "pane-compare-a";
+        private const string CompareSessionId = "compare-a";
+        private const string DefaultCompareAlignmentStatus = "Last align: none";
+        private const double CompareModePreferredMinWindowWidth = 1180d;
         private static readonly TimeSpan SeekJump = TimeSpan.FromSeconds(5);
         private static readonly TimeSpan FrameStepInitialDelay = TimeSpan.FromMilliseconds(550);
         private static readonly TimeSpan FrameStepRepeatInterval = TimeSpan.FromMilliseconds(60);
@@ -32,7 +38,11 @@ namespace FramePlayer
         private readonly BuildVariantInfo _buildVariant;
         private readonly DiagnosticLogService _diagnosticLogService;
         private readonly RecentFilesService _recentFilesService;
+        private readonly ReviewSessionCoordinator _sessionCoordinator;
+        private readonly ReviewWorkspaceCoordinator _workspaceCoordinator;
         private readonly IVideoReviewEngine _videoReviewEngine;
+        private IVideoReviewEngine _compareVideoReviewEngine;
+        private ReviewSessionCoordinator _compareSessionCoordinator;
 
         private WindowState _restoreWindowState;
         private WindowStyle _restoreWindowStyle;
@@ -51,6 +61,7 @@ namespace FramePlayer
         private string _currentFilePath;
         private string _lastMediaErrorMessage;
         private bool _isCacheStatusActive;
+        private string _lastCompareAlignmentStatus = DefaultCompareAlignmentStatus;
 
         public MainWindow()
         {
@@ -71,13 +82,13 @@ namespace FramePlayer
             _diagnosticLogService = new DiagnosticLogService();
             _recentFilesService = new RecentFilesService();
             _videoReviewEngine = CreateVideoReviewEngine();
-            _videoReviewEngine.StateChanged += VideoReviewEngine_StateChanged;
+            _sessionCoordinator = new ReviewSessionCoordinator(_videoReviewEngine);
+            _workspaceCoordinator = new ReviewWorkspaceCoordinator(_videoReviewEngine, _sessionCoordinator);
+            _workspaceCoordinator.WorkspaceChanged += ReviewWorkspaceCoordinator_WorkspaceChanged;
+            _workspaceCoordinator.PreparationStateChanged += ReviewWorkspaceCoordinator_PreparationStateChanged;
             _videoReviewEngine.FramePresented += VideoReviewEngine_FramePresented;
-            _framesPerSecond = DefaultFramesPerSecond;
-            _positionStep = TimeSpan.FromSeconds(1d / DefaultFramesPerSecond);
-            _mediaDuration = TimeSpan.Zero;
-            _currentFilePath = string.Empty;
             _lastMediaErrorMessage = string.Empty;
+            ApplySessionSnapshot(_workspaceCoordinator.CurrentSession);
 
             _positionTimer = new DispatcherTimer
             {
@@ -93,10 +104,12 @@ namespace FramePlayer
             _frameStepRepeatTimer.Tick += FrameStepRepeatTimer_Tick;
 
             RefreshRecentFilesMenu();
+            UpdateCompareModeVisualState();
             UpdateHeader();
             UpdatePositionDisplay(TimeSpan.Zero);
             UpdateFullScreenVisualState();
             UpdateTransportState();
+            UpdateWorkspacePanePresentation();
 
             LogInfo(string.Format(
                 CultureInfo.InvariantCulture,
@@ -117,6 +130,13 @@ namespace FramePlayer
 
         private void FocusPreferredVideoSurface()
         {
+            var snapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
+            if (IsCompareModeEnabled && string.Equals(snapshot.FocusedPaneId, ComparePaneId, StringComparison.Ordinal))
+            {
+                Keyboard.Focus(CompareVideoSurfaceHost);
+                return;
+            }
+
             Keyboard.Focus(CustomVideoSurfaceHost);
         }
 
@@ -130,23 +150,640 @@ namespace FramePlayer
             return "Supported Video Files|*.avi;*.mov;*.m4v;*.mp4;*.mkv;*.wmv;*.ts|AVI Files|*.avi|MOV Files|*.mov|M4V Files|*.m4v|MP4 Files|*.mp4|MKV Files|*.mkv|WMV Files|*.wmv|TS Files|*.ts|All Files|*.*";
         }
 
-        private async void OpenFileButton_Click(object sender, RoutedEventArgs e)
+        private bool IsCompareModeEnabled
         {
-            if (!EnsureRuntimeAvailable())
+            get { return CompareModeCheckBox != null && CompareModeCheckBox.IsChecked == true; }
+        }
+
+        private bool IsAllPaneTransportEnabled
+        {
+            get { return IsCompareModeEnabled && AllPanesCheckBox != null && AllPanesCheckBox.IsChecked == true; }
+        }
+
+        private SynchronizedOperationScope GetRequestedOperationScope()
+        {
+            if (!IsAllPaneTransportEnabled)
+            {
+                return SynchronizedOperationScope.FocusedPane;
+            }
+
+            var snapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
+            var loadedPaneCount = snapshot.Panes.Count(PaneHasLoadedMedia);
+            return loadedPaneCount > 1
+                ? SynchronizedOperationScope.AllPanes
+                : SynchronizedOperationScope.FocusedPane;
+        }
+
+        private static string GetPaneIdFromSender(object sender)
+        {
+            return (sender as FrameworkElement)?.Tag as string;
+        }
+
+        private IVideoReviewEngine GetEngineForPane(string paneId)
+        {
+            if (string.Equals(paneId, ComparePaneId, StringComparison.Ordinal) && _compareVideoReviewEngine != null)
+            {
+                return _compareVideoReviewEngine;
+            }
+
+            return _videoReviewEngine;
+        }
+
+        private IVideoReviewEngine GetFocusedPaneEngine()
+        {
+            var snapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
+            return GetEngineForPane(
+                string.IsNullOrWhiteSpace(snapshot.FocusedPaneId)
+                    ? PrimaryPaneId
+                    : snapshot.FocusedPaneId);
+        }
+
+        private FfmpegReviewEngine GetFocusedFfmpegEngine()
+        {
+            return GetFocusedPaneEngine() as FfmpegReviewEngine;
+        }
+
+        private string GetFocusedPaneId()
+        {
+            var snapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
+            return string.IsNullOrWhiteSpace(snapshot.FocusedPaneId)
+                ? PrimaryPaneId
+                : snapshot.FocusedPaneId;
+        }
+
+        private static bool PaneHasLoadedMedia(ReviewWorkspacePaneSnapshot paneSnapshot)
+        {
+            return paneSnapshot != null &&
+                   paneSnapshot.PlaybackState != ReviewPlaybackState.Closed &&
+                   !string.IsNullOrWhiteSpace(paneSnapshot.CurrentFilePath);
+        }
+
+        private static bool CanRunCompareActions(
+            ReviewWorkspacePaneSnapshot primaryPaneSnapshot,
+            ReviewWorkspacePaneSnapshot comparePaneSnapshot)
+        {
+            return PaneHasLoadedMedia(primaryPaneSnapshot) &&
+                   PaneHasLoadedMedia(comparePaneSnapshot);
+        }
+
+        private void ResetCompareAlignmentStatus()
+        {
+            _lastCompareAlignmentStatus = DefaultCompareAlignmentStatus;
+        }
+
+        private void EnsureComparePaneInitialized()
+        {
+            if (_compareSessionCoordinator != null && _compareVideoReviewEngine != null)
             {
                 return;
             }
 
-            var dialog = new OpenFileDialog
-            {
-                Title = "Open Video File",
-                Filter = GetOpenFileFilter()
-            };
+            _compareVideoReviewEngine = CreateVideoReviewEngine();
+            _compareSessionCoordinator = new ReviewSessionCoordinator(
+                _compareVideoReviewEngine,
+                CompareSessionId,
+                "Compare A");
+            _compareVideoReviewEngine.FramePresented += VideoReviewEngine_FramePresented;
+            _workspaceCoordinator.TryBindPane(
+                ComparePaneId,
+                _compareSessionCoordinator,
+                displayLabel: "Compare A");
+        }
 
-            if (dialog.ShowDialog(this) == true)
+        private void UpdateCompareModeVisualState()
+        {
+            var compareVisible = IsCompareModeEnabled;
+            ComparePaneColumn.Width = compareVisible
+                ? new GridLength(1d, GridUnitType.Star)
+                : new GridLength(0d);
+            ComparePaneBorder.Visibility = compareVisible
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            CompareToolbarBorder.Visibility = compareVisible
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            PrimaryPaneHeaderBorder.Visibility = compareVisible
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            ComparePaneHeaderBorder.Visibility = compareVisible
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            PrimaryPaneFooterBorder.Visibility = compareVisible
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            ComparePaneFooterBorder.Visibility = compareVisible
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            PrimaryPaneControlsPanel.Visibility = compareVisible
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            ComparePaneControlsPanel.Visibility = compareVisible
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            if (!compareVisible)
             {
-                await OpenMediaAsync(dialog.FileName);
+                CompareStatusTextBlock.Text = string.Empty;
+                CompareStatusTextBlock.ToolTip = null;
             }
+        }
+
+        private void UpdateWorkspacePanePresentation()
+        {
+            var snapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
+            UpdatePanePresentation(
+                snapshot,
+                PrimaryPaneId,
+                PrimaryPaneBorder,
+                PrimaryPaneHeaderBorder,
+                PrimaryPaneFooterBorder,
+                PrimaryPaneTitleTextBlock,
+                PrimaryPaneStateTextBlock,
+                PrimaryPaneFileTextBlock,
+                PrimaryEmptyStateOverlay,
+                PrimaryEmptyStateTitleTextBlock,
+                PrimaryEmptyStateBodyTextBlock);
+            UpdatePanePresentation(
+                snapshot,
+                ComparePaneId,
+                ComparePaneBorder,
+                ComparePaneHeaderBorder,
+                ComparePaneFooterBorder,
+                ComparePaneTitleTextBlock,
+                ComparePaneStateTextBlock,
+                ComparePaneFileTextBlock,
+                CompareEmptyStateOverlay,
+                CompareEmptyStateTitleTextBlock,
+                CompareEmptyStateBodyTextBlock);
+            UpdateCompareControlState(snapshot);
+        }
+
+        private void UpdateCompareControlState(ReviewWorkspaceSnapshot workspaceSnapshot)
+        {
+            ReviewWorkspacePaneSnapshot primaryPaneSnapshot = null;
+            var hasPrimaryPane = workspaceSnapshot != null &&
+                                 workspaceSnapshot.TryGetPane(PrimaryPaneId, out primaryPaneSnapshot);
+            ReviewWorkspacePaneSnapshot comparePaneSnapshot = null;
+            var hasComparePane = workspaceSnapshot != null &&
+                                 workspaceSnapshot.TryGetPane(ComparePaneId, out comparePaneSnapshot);
+            var canRunCompareActions = IsCompareModeEnabled &&
+                                       hasPrimaryPane &&
+                                       hasComparePane &&
+                                       CanRunCompareActions(primaryPaneSnapshot, comparePaneSnapshot);
+
+            UpdatePaneControlState(
+                PrimaryPanePlayButton,
+                PrimaryPanePauseButton,
+                PrimaryPaneStepBackButton,
+                PrimaryPaneStepForwardButton,
+                hasPrimaryPane ? primaryPaneSnapshot : null);
+            UpdatePaneControlState(
+                ComparePanePlayButton,
+                ComparePanePauseButton,
+                ComparePaneStepBackButton,
+                ComparePaneStepForwardButton,
+                hasComparePane ? comparePaneSnapshot : null);
+
+            var canAlign = canRunCompareActions;
+            AlignRightToLeftButton.IsEnabled = canAlign;
+            AlignLeftToRightButton.IsEnabled = canAlign;
+            AlignRightToLeftButton.ToolTip = canAlign
+                ? "Frame first: aligns the right pane to the left pane with exact frame identity when available."
+                : "Load videos in both panes before aligning them.";
+            AlignLeftToRightButton.ToolTip = canAlign
+                ? "Frame first: aligns the left pane to the right pane with exact frame identity when available."
+                : "Load videos in both panes before aligning them.";
+
+            AllPanesCheckBox.IsEnabled = canRunCompareActions;
+            AllPanesCheckBox.ToolTip = canRunCompareActions
+                ? "The main playback, seek, and frame-step controls apply to both loaded panes."
+                : "Load videos in both panes before controlling both panes together.";
+            if (!canRunCompareActions)
+            {
+                ResetCompareAlignmentStatus();
+                if (AllPanesCheckBox.IsChecked == true)
+                {
+                    AllPanesCheckBox.IsChecked = false;
+                }
+            }
+
+            var compareStatusText = BuildCompareStatusText(
+                hasPrimaryPane ? primaryPaneSnapshot : null,
+                hasComparePane ? comparePaneSnapshot : null);
+            CompareStatusTextBlock.Text = compareStatusText;
+            CompareStatusTextBlock.ToolTip = compareStatusText;
+        }
+
+        private void UpdatePaneControlState(
+            Button playButton,
+            Button pauseButton,
+            Button stepBackButton,
+            Button stepForwardButton,
+            ReviewWorkspacePaneSnapshot paneSnapshot)
+        {
+            var canControl = PaneHasLoadedMedia(paneSnapshot);
+            var canPlay = canControl && _buildVariant.SupportsTimedPlayback;
+            playButton.IsEnabled = canPlay;
+            pauseButton.IsEnabled = canPlay;
+            stepBackButton.IsEnabled = canControl;
+            stepForwardButton.IsEnabled = canControl;
+        }
+
+        private void UpdatePanePresentation(
+            ReviewWorkspaceSnapshot workspaceSnapshot,
+            string paneId,
+            Border paneBorder,
+            Border paneHeaderBorder,
+            Border paneFooterBorder,
+            TextBlock titleTextBlock,
+            TextBlock stateTextBlock,
+            TextBlock fileTextBlock,
+            Border emptyOverlay,
+            TextBlock emptyTitleTextBlock,
+            TextBlock emptyBodyTextBlock)
+        {
+            ReviewWorkspacePaneSnapshot paneSnapshot;
+            if (workspaceSnapshot == null || !workspaceSnapshot.TryGetPane(paneId, out paneSnapshot))
+            {
+                paneSnapshot = new ReviewWorkspacePaneSnapshot(
+                    paneId,
+                    string.Empty,
+                    string.Equals(paneId, ComparePaneId, StringComparison.Ordinal) ? "Compare A" : "Primary",
+                    false,
+                    string.Equals(paneId, PrimaryPaneId, StringComparison.Ordinal),
+                    false,
+                    false,
+                    TimeSpan.Zero,
+                    ReviewPlaybackState.Closed,
+                    string.Empty,
+                    ReviewPosition.Empty);
+            }
+
+            titleTextBlock.Text = BuildPaneTitleText(paneSnapshot);
+            stateTextBlock.Text = BuildPaneStateText(paneSnapshot);
+            stateTextBlock.ToolTip = stateTextBlock.Text;
+
+            var fileLabel = PaneHasLoadedMedia(paneSnapshot)
+                ? Path.GetFileName(paneSnapshot.CurrentFilePath)
+                : string.Empty;
+            fileTextBlock.Text = fileLabel;
+            fileTextBlock.Visibility = string.IsNullOrWhiteSpace(fileLabel)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+            fileTextBlock.ToolTip = string.IsNullOrWhiteSpace(paneSnapshot.CurrentFilePath)
+                ? null
+                : paneSnapshot.CurrentFilePath;
+
+            var highlightPaneSelection = IsCompareModeEnabled;
+            var paneBorderBrush = FindResource(
+                highlightPaneSelection && paneSnapshot.IsFocused
+                    ? "PaneSelectedBorderBrush"
+                    : "PanelBorderBrush") as Brush;
+            if (paneBorderBrush != null)
+            {
+                paneBorder.BorderBrush = paneBorderBrush;
+            }
+
+            paneBorder.BorderThickness = highlightPaneSelection && paneSnapshot.IsFocused
+                ? new Thickness(2d)
+                : new Thickness(1d);
+
+            var chromeBackground = FindResource(
+                highlightPaneSelection && paneSnapshot.IsFocused
+                    ? "PaneSelectedBrush"
+                    : "PaneChromeBrush") as Brush;
+            var chromeBorderBrush = FindResource(
+                highlightPaneSelection && paneSnapshot.IsFocused
+                    ? "PaneSelectedBorderBrush"
+                    : "PaneChromeBorderBrush") as Brush;
+            if (chromeBackground != null)
+            {
+                paneHeaderBorder.Background = chromeBackground;
+                paneFooterBorder.Background = chromeBackground;
+            }
+
+            if (chromeBorderBrush != null)
+            {
+                paneHeaderBorder.BorderBrush = chromeBorderBrush;
+                paneFooterBorder.BorderBrush = chromeBorderBrush;
+            }
+
+            var paneHasLoadedMedia = PaneHasLoadedMedia(paneSnapshot);
+            emptyOverlay.Visibility = paneHasLoadedMedia
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+            if (string.Equals(paneId, ComparePaneId, StringComparison.Ordinal))
+            {
+                emptyTitleTextBlock.Text = "Add a compare video";
+                emptyBodyTextBlock.Text = string.IsNullOrWhiteSpace(_lastMediaErrorMessage) || !paneSnapshot.IsFocused
+                    ? "Load a second video to compare against the left pane"
+                    : _lastMediaErrorMessage;
+                return;
+            }
+
+            if (!App.HasBundledFfmpegRuntime)
+            {
+                emptyTitleTextBlock.Text = "Playback runtime missing";
+                emptyBodyTextBlock.Text = GetRuntimeStatusMessage();
+                return;
+            }
+
+            emptyTitleTextBlock.Text = "Drop a video here";
+            emptyBodyTextBlock.Text = !string.IsNullOrWhiteSpace(_lastMediaErrorMessage) && paneSnapshot.IsFocused
+                ? _lastMediaErrorMessage
+                : "Or open a video to begin";
+        }
+
+        private string BuildPaneTitleText(ReviewWorkspacePaneSnapshot paneSnapshot)
+        {
+            if (string.Equals(paneSnapshot.PaneId, ComparePaneId, StringComparison.Ordinal))
+            {
+                return "Compare";
+            }
+
+            return "Primary";
+        }
+
+        private string BuildPaneStateText(ReviewWorkspacePaneSnapshot paneSnapshot)
+        {
+            if (!PaneHasLoadedMedia(paneSnapshot))
+            {
+                return string.Equals(paneSnapshot.PaneId, ComparePaneId, StringComparison.Ordinal)
+                    ? "Empty"
+                    : "Ready";
+            }
+
+            var frameText = paneSnapshot.HasAbsoluteFrameIdentity && paneSnapshot.FrameIndex.HasValue
+                ? "Frame " + GetDisplayedFrameNumber(paneSnapshot.FrameIndex.Value).ToString(CultureInfo.InvariantCulture)
+                : "Frame pending";
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} \u00b7 {1} \u00b7 {2}",
+                paneSnapshot.PlaybackState,
+                frameText,
+                FormatTime(paneSnapshot.PresentationTime));
+        }
+
+        private string BuildCompareStatusText(
+            ReviewWorkspacePaneSnapshot primaryPaneSnapshot,
+            ReviewWorkspacePaneSnapshot comparePaneSnapshot)
+        {
+            if (!IsCompareModeEnabled)
+            {
+                return string.Empty;
+            }
+
+            var relationshipText = BuildCompareRelationshipText(primaryPaneSnapshot, comparePaneSnapshot);
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} | {1}",
+                relationshipText,
+                _lastCompareAlignmentStatus);
+        }
+
+        private string BuildCompareRelationshipText(
+            ReviewWorkspacePaneSnapshot primaryPaneSnapshot,
+            ReviewWorkspacePaneSnapshot comparePaneSnapshot)
+        {
+            if (!PaneHasLoadedMedia(primaryPaneSnapshot) || !PaneHasLoadedMedia(comparePaneSnapshot))
+            {
+                return "Compare: Load two videos";
+            }
+
+            if (primaryPaneSnapshot.HasAbsoluteFrameIdentity &&
+                primaryPaneSnapshot.FrameIndex.HasValue &&
+                comparePaneSnapshot.HasAbsoluteFrameIdentity &&
+                comparePaneSnapshot.FrameIndex.HasValue)
+            {
+                var frameDelta = comparePaneSnapshot.FrameIndex.Value - primaryPaneSnapshot.FrameIndex.Value;
+                if (frameDelta == 0)
+                {
+                    return "Compare: Same frame";
+                }
+
+                var direction = frameDelta > 0 ? "Right" : "Left";
+                return string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Compare: {0} +{1} {2}",
+                    direction,
+                    Math.Abs(frameDelta),
+                    Math.Abs(frameDelta) == 1 ? "frame" : "frames");
+            }
+
+            return "Compare: Time-based only";
+        }
+
+        private string BuildComparePanePositionText(ReviewWorkspacePaneSnapshot paneSnapshot)
+        {
+            if (paneSnapshot != null &&
+                paneSnapshot.HasAbsoluteFrameIdentity &&
+                paneSnapshot.FrameIndex.HasValue)
+            {
+                return string.Format(
+                    CultureInfo.InvariantCulture,
+                    "frame {0}",
+                    GetDisplayedFrameNumber(paneSnapshot.FrameIndex.Value));
+            }
+
+            return "time " + FormatTime(paneSnapshot != null
+                ? paneSnapshot.PresentationTime
+                : TimeSpan.Zero);
+        }
+
+        private static string BuildCompareFrameAvailabilityText(
+            ReviewWorkspacePaneSnapshot primaryPaneSnapshot,
+            ReviewWorkspacePaneSnapshot comparePaneSnapshot)
+        {
+            var leftHasFrameIdentity = primaryPaneSnapshot != null && primaryPaneSnapshot.HasAbsoluteFrameIdentity;
+            var rightHasFrameIdentity = comparePaneSnapshot != null && comparePaneSnapshot.HasAbsoluteFrameIdentity;
+            if (!leftHasFrameIdentity && !rightHasFrameIdentity)
+            {
+                return "Frame identity unavailable on both panes.";
+            }
+
+            if (!leftHasFrameIdentity)
+            {
+                return "Frame identity unavailable on the left pane.";
+            }
+
+            if (!rightHasFrameIdentity)
+            {
+                return "Frame identity unavailable on the right pane.";
+            }
+
+            return "Frame identity unavailable.";
+        }
+
+        private static string FormatSignedFrameDelta(long frameDelta)
+        {
+            if (frameDelta > 0)
+            {
+                return "+" + frameDelta.ToString(CultureInfo.InvariantCulture);
+            }
+
+            return frameDelta.ToString(CultureInfo.InvariantCulture);
+        }
+
+        private static string GetComparePaneSideLabel(string paneId)
+        {
+            if (string.Equals(paneId, ComparePaneId, StringComparison.Ordinal))
+            {
+                return "Right";
+            }
+
+            return "Left";
+        }
+
+        private bool TrySelectPaneForShell(string paneId)
+        {
+            if (string.IsNullOrWhiteSpace(paneId))
+            {
+                return false;
+            }
+
+            if (string.Equals(paneId, ComparePaneId, StringComparison.Ordinal))
+            {
+                EnsureComparePaneInitialized();
+            }
+
+            return _workspaceCoordinator.TrySelectPane(paneId, WorkspacePaneSelectionMode.ActiveAndFocused);
+        }
+
+        private bool TrySelectPaneForPaneCommand(string paneId)
+        {
+            if (!TrySelectPaneForShell(paneId))
+            {
+                SetPlaybackMessage("The selected compare pane is not available.");
+                return false;
+            }
+
+            return true;
+        }
+
+        private async Task RunFocusedPaneActionAsync(string paneId, Func<Task> action)
+        {
+            if (action == null)
+            {
+                throw new ArgumentNullException(nameof(action));
+            }
+
+            if (!TrySelectPaneForPaneCommand(paneId))
+            {
+                return;
+            }
+
+            await action();
+            FocusPreferredVideoSurface();
+        }
+
+        private async void OpenFileButton_Click(object sender, RoutedEventArgs e)
+        {
+            await OpenPaneWithDialogAsync(GetFocusedPaneId());
+        }
+
+        private async void OpenPaneButton_Click(object sender, RoutedEventArgs e)
+        {
+            var paneId = (sender as FrameworkElement)?.Tag as string;
+            await OpenPaneWithDialogAsync(paneId);
+        }
+
+        private async void CompareModeCheckBox_Checked(object sender, RoutedEventArgs e)
+        {
+            EnsureComparePaneInitialized();
+            if (WindowState == WindowState.Normal && Width < CompareModePreferredMinWindowWidth)
+            {
+                Width = CompareModePreferredMinWindowWidth;
+            }
+
+            UpdateCompareModeVisualState();
+            UpdateWorkspacePanePresentation();
+            await Dispatcher.Yield(DispatcherPriority.Background);
+        }
+
+        private async void CompareModeCheckBox_Unchecked(object sender, RoutedEventArgs e)
+        {
+            if (AllPanesCheckBox != null)
+            {
+                AllPanesCheckBox.IsChecked = false;
+            }
+
+            ResetCompareAlignmentStatus();
+
+            if (_compareVideoReviewEngine != null && _compareVideoReviewEngine.IsPlaying)
+            {
+                var previousFocusedPaneId = GetFocusedPaneId();
+                if (_workspaceCoordinator.TrySetActiveAndFocusedPane(ComparePaneId))
+                {
+                    await _workspaceCoordinator.PauseAsync();
+                }
+
+                _workspaceCoordinator.TrySetActiveAndFocusedPane(
+                    string.IsNullOrWhiteSpace(previousFocusedPaneId)
+                        ? PrimaryPaneId
+                        : previousFocusedPaneId);
+            }
+
+            _workspaceCoordinator.TrySetActiveAndFocusedPane(PrimaryPaneId);
+            UpdateCompareModeVisualState();
+            UpdateWorkspacePanePresentation();
+            FocusPreferredVideoSurface();
+        }
+
+        private void AllPanesCheckBox_Checked(object sender, RoutedEventArgs e)
+        {
+            if (AllPanesCheckBox != null && !AllPanesCheckBox.IsEnabled)
+            {
+                AllPanesCheckBox.IsChecked = false;
+                SetPlaybackMessage("Load videos in both panes to control both together.");
+                return;
+            }
+
+            SetPlaybackMessage("Controlling both loaded panes.");
+        }
+
+        private void AllPanesCheckBox_Unchecked(object sender, RoutedEventArgs e)
+        {
+            if (_isMediaLoaded)
+            {
+                UpdateTransportState();
+            }
+        }
+
+        private async void PanePlayButton_Click(object sender, RoutedEventArgs e)
+        {
+            await RunFocusedPaneActionAsync(
+                GetPaneIdFromSender(sender),
+                () => StartPlaybackAsync(SynchronizedOperationScope.FocusedPane));
+        }
+
+        private async void PanePauseButton_Click(object sender, RoutedEventArgs e)
+        {
+            await RunFocusedPaneActionAsync(
+                GetPaneIdFromSender(sender),
+                () => PausePlaybackAsync(logAction: true, operationScope: SynchronizedOperationScope.FocusedPane));
+        }
+
+        private async void PaneStepBackButton_Click(object sender, RoutedEventArgs e)
+        {
+            await RunFocusedPaneActionAsync(
+                GetPaneIdFromSender(sender),
+                () => StepFrameAsync(-1, SynchronizedOperationScope.FocusedPane));
+        }
+
+        private async void PaneStepForwardButton_Click(object sender, RoutedEventArgs e)
+        {
+            await RunFocusedPaneActionAsync(
+                GetPaneIdFromSender(sender),
+                () => StepFrameAsync(1, SynchronizedOperationScope.FocusedPane));
+        }
+
+        private async void AlignRightToLeftButton_Click(object sender, RoutedEventArgs e)
+        {
+            await AlignPaneAsync(PrimaryPaneId, ComparePaneId);
+        }
+
+        private async void AlignLeftToRightButton_Click(object sender, RoutedEventArgs e)
+        {
+            await AlignPaneAsync(ComparePaneId, PrimaryPaneId);
         }
 
         private void ExitMenuItem_Click(object sender, RoutedEventArgs e)
@@ -471,9 +1108,18 @@ namespace FramePlayer
             LogInfo("Session ended.");
             _positionTimer.Stop();
             _frameStepRepeatTimer.Stop();
-            _videoReviewEngine.StateChanged -= VideoReviewEngine_StateChanged;
+            _workspaceCoordinator.WorkspaceChanged -= ReviewWorkspaceCoordinator_WorkspaceChanged;
+            _workspaceCoordinator.PreparationStateChanged -= ReviewWorkspaceCoordinator_PreparationStateChanged;
+            _workspaceCoordinator.Dispose();
+            _sessionCoordinator.Dispose();
             _videoReviewEngine.FramePresented -= VideoReviewEngine_FramePresented;
             _videoReviewEngine.Dispose();
+            if (_compareVideoReviewEngine != null)
+            {
+                _compareVideoReviewEngine.FramePresented -= VideoReviewEngine_FramePresented;
+                _compareSessionCoordinator?.Dispose();
+                _compareVideoReviewEngine.Dispose();
+            }
         }
 
         private async Task OpenMediaAsync(string filePath)
@@ -499,29 +1145,23 @@ namespace FramePlayer
 
             try
             {
+                var targetEngine = GetFocusedPaneEngine();
                 Mouse.OverrideCursor = Cursors.Wait;
                 _lastMediaErrorMessage = string.Empty;
+                if (IsCompareModeEnabled)
+                {
+                    ResetCompareAlignmentStatus();
+                }
                 SetPlaybackMessage("Opening media...");
                 LogInfo("Opening media: " + GetSafeFileDisplay(filePath));
 
                 if (_isMediaLoaded)
                 {
                     LogInfo("Closing current media before opening the new file.");
-                    await _videoReviewEngine.CloseAsync();
                 }
 
-                await RunWithCacheStatusAsync(
-                    "Cache: indexing and warming...",
-                    () => _videoReviewEngine.OpenAsync(filePath));
-                _currentFilePath = filePath;
-                _isMediaLoaded = _videoReviewEngine.IsMediaOpen;
-                _isPlaying = _videoReviewEngine.IsPlaying;
-
-                await _videoReviewEngine.PauseAsync();
-                RefreshMediaMetricsFromEngine();
-                await RunWithCacheStatusAsync(
-                    "Cache: warming first frame...",
-                    () => _videoReviewEngine.SeekToTimeAsync(TimeSpan.Zero));
+                await _workspaceCoordinator.OpenAsync(filePath);
+                ApplySessionSnapshot(_workspaceCoordinator.RefreshFromEngine());
 
                 _recentFilesService.Add(filePath);
                 RefreshRecentFilesMenu();
@@ -539,7 +1179,7 @@ namespace FramePlayer
                     _framesPerSecond,
                     FormatStepDuration(_positionStep),
                     FormatTime(_mediaDuration)));
-                var ffmpegEngine = _videoReviewEngine as FfmpegReviewEngine;
+                var ffmpegEngine = targetEngine as FfmpegReviewEngine;
                 if (ffmpegEngine != null)
                 {
                     LogInfo(string.Format(
@@ -557,8 +1197,9 @@ namespace FramePlayer
             }
             catch (Exception ex)
             {
-                _lastMediaErrorMessage = !string.IsNullOrWhiteSpace(_videoReviewEngine.LastErrorMessage)
-                    ? SanitizeSensitiveText(_videoReviewEngine.LastErrorMessage)
+                var targetEngine = GetFocusedPaneEngine();
+                _lastMediaErrorMessage = targetEngine != null && !string.IsNullOrWhiteSpace(targetEngine.LastErrorMessage)
+                    ? SanitizeSensitiveText(targetEngine.LastErrorMessage)
                     : SanitizeSensitiveText(ex.Message);
                 ResetMediaState(clearFilePath: true, clearErrorMessage: false);
                 SetPlaybackMessage("Could not open the selected media.");
@@ -589,7 +1230,33 @@ namespace FramePlayer
             return false;
         }
 
-        private async Task TogglePlaybackAsync()
+        private async Task OpenPaneWithDialogAsync(string paneId)
+        {
+            if (!EnsureRuntimeAvailable())
+            {
+                return;
+            }
+
+            TrySelectPaneForShell(string.IsNullOrWhiteSpace(paneId) ? GetFocusedPaneId() : paneId);
+
+            var dialog = new OpenFileDialog
+            {
+                Title = "Open Video File",
+                Filter = GetOpenFileFilter()
+            };
+
+            if (dialog.ShowDialog(this) == true)
+            {
+                await OpenMediaAsync(dialog.FileName);
+            }
+        }
+
+        private Task TogglePlaybackAsync()
+        {
+            return TogglePlaybackAsync((SynchronizedOperationScope?)null);
+        }
+
+        private async Task TogglePlaybackAsync(SynchronizedOperationScope? operationScope)
         {
             EndHeldFrameStep();
 
@@ -602,11 +1269,11 @@ namespace FramePlayer
 
             if (_isPlaying)
             {
-                await PausePlaybackAsync();
+                await PausePlaybackAsync(operationScope: operationScope);
                 return;
             }
 
-            await StartPlaybackAsync();
+            await StartPlaybackAsync(operationScope);
         }
 
         private async Task CloseMediaAsync()
@@ -616,13 +1283,25 @@ namespace FramePlayer
             if (_isMediaLoaded)
             {
                 LogInfo("Closing media: " + GetSafeFileDisplay(_currentFilePath));
-                await _videoReviewEngine.CloseAsync();
+                await _workspaceCoordinator.CloseAsync();
             }
 
             ResetMediaState(clearFilePath: true, clearErrorMessage: true);
         }
 
-        private async Task PausePlaybackAsync(bool logAction = true)
+        private Task PausePlaybackAsync()
+        {
+            return PausePlaybackAsync(true);
+        }
+
+        private Task PausePlaybackAsync(bool logAction)
+        {
+            return PausePlaybackAsync(logAction, (SynchronizedOperationScope?)null);
+        }
+
+        private async Task PausePlaybackAsync(
+            bool logAction = true,
+            SynchronizedOperationScope? operationScope = null)
         {
             if (!_isMediaLoaded)
             {
@@ -631,8 +1310,8 @@ namespace FramePlayer
 
             var positionBeforePause = GetDisplayPosition();
             var wasPlaying = _isPlaying;
-            await _videoReviewEngine.PauseAsync();
-            _isPlaying = _videoReviewEngine.IsPlaying;
+            await _workspaceCoordinator.PauseAsync(operationScope ?? GetRequestedOperationScope());
+            ApplySessionSnapshot(_workspaceCoordinator.RefreshFromEngine());
             UpdateTransportState();
 
             if (logAction && wasPlaying)
@@ -641,7 +1320,12 @@ namespace FramePlayer
             }
         }
 
-        private async Task StartPlaybackAsync()
+        private Task StartPlaybackAsync()
+        {
+            return StartPlaybackAsync((SynchronizedOperationScope?)null);
+        }
+
+        private async Task StartPlaybackAsync(SynchronizedOperationScope? operationScope)
         {
             if (!_isMediaLoaded)
             {
@@ -656,12 +1340,13 @@ namespace FramePlayer
                 return;
             }
 
-            await _videoReviewEngine.PlayAsync();
-            _isPlaying = _videoReviewEngine.IsPlaying;
+            var targetEngine = GetFocusedPaneEngine();
+            await _workspaceCoordinator.PlayAsync(operationScope ?? GetRequestedOperationScope());
+            ApplySessionSnapshot(_workspaceCoordinator.RefreshFromEngine());
             if (!_isPlaying)
             {
-                _lastMediaErrorMessage = !string.IsNullOrWhiteSpace(_videoReviewEngine.LastErrorMessage)
-                    ? SanitizeSensitiveText(_videoReviewEngine.LastErrorMessage)
+                _lastMediaErrorMessage = targetEngine != null && !string.IsNullOrWhiteSpace(targetEngine.LastErrorMessage)
+                    ? SanitizeSensitiveText(targetEngine.LastErrorMessage)
                     : "Playback did not start.";
                 SetMediaSummary(_lastMediaErrorMessage);
                 LogWarning("Playback did not start.");
@@ -674,7 +1359,12 @@ namespace FramePlayer
             UpdateTransportState();
         }
 
-        private async Task SeekRelativeAsync(TimeSpan offset)
+        private Task SeekRelativeAsync(TimeSpan offset)
+        {
+            return SeekRelativeAsync(offset, (SynchronizedOperationScope?)null);
+        }
+
+        private async Task SeekRelativeAsync(TimeSpan offset, SynchronizedOperationScope? operationScope)
         {
             EndHeldFrameStep();
 
@@ -686,7 +1376,7 @@ namespace FramePlayer
             var target = ClampPosition(GetDisplayPosition() + offset);
             await RunWithCacheStatusAsync(
                 "Cache: seeking and warming...",
-                () => _videoReviewEngine.SeekToTimeAsync(target));
+                () => _workspaceCoordinator.SeekToTimeAsync(target, operationScope ?? GetRequestedOperationScope()));
             UpdatePositionDisplay(GetDisplayPosition());
             LogInfo(string.Format(
                 CultureInfo.InvariantCulture,
@@ -697,7 +1387,12 @@ namespace FramePlayer
                 FormatTime(GetDisplayPosition())));
         }
 
-        private async Task StepFrameAsync(int delta)
+        private Task StepFrameAsync(int delta)
+        {
+            return StepFrameAsync(delta, (SynchronizedOperationScope?)null);
+        }
+
+        private async Task StepFrameAsync(int delta, SynchronizedOperationScope? operationScope)
         {
             if (!_isMediaLoaded || _isFrameStepInProgress)
             {
@@ -708,7 +1403,7 @@ namespace FramePlayer
 
             try
             {
-                await PausePlaybackAsync(logAction: false);
+                await PausePlaybackAsync(logAction: false, operationScope: operationScope);
 
                 FrameStepResult stepResult = null;
                 await RunWithCacheStatusAsync(
@@ -716,8 +1411,8 @@ namespace FramePlayer
                     async () =>
                     {
                         stepResult = delta < 0
-                            ? await _videoReviewEngine.StepBackwardAsync()
-                            : await _videoReviewEngine.StepForwardAsync();
+                            ? await _workspaceCoordinator.StepBackwardAsync(operationScope ?? GetRequestedOperationScope())
+                            : await _workspaceCoordinator.StepForwardAsync(operationScope ?? GetRequestedOperationScope());
                     });
 
                 if (!stepResult.Success)
@@ -746,7 +1441,15 @@ namespace FramePlayer
             FocusPreferredVideoSurface();
         }
 
-        private async Task SeekToAsync(TimeSpan target, string diagnosticSource = null)
+        private Task SeekToAsync(TimeSpan target, string diagnosticSource = null)
+        {
+            return SeekToAsync(target, diagnosticSource, (SynchronizedOperationScope?)null);
+        }
+
+        private async Task SeekToAsync(
+            TimeSpan target,
+            string diagnosticSource = null,
+            SynchronizedOperationScope? operationScope = null)
         {
             EndHeldFrameStep();
 
@@ -758,13 +1461,121 @@ namespace FramePlayer
             var clampedTarget = ClampPosition(target);
             await RunWithCacheStatusAsync(
                 "Cache: seeking...",
-                () => _videoReviewEngine.SeekToTimeAsync(clampedTarget));
+                () => _workspaceCoordinator.SeekToTimeAsync(clampedTarget, operationScope ?? GetRequestedOperationScope()));
             UpdatePositionDisplay(GetDisplayPosition());
 
             if (!string.IsNullOrWhiteSpace(diagnosticSource))
             {
                 LogSeekResult(diagnosticSource, target, clampedTarget);
             }
+        }
+
+        private async Task AlignPaneAsync(string sourcePaneId, string targetPaneId)
+        {
+            if (!IsCompareModeEnabled)
+            {
+                return;
+            }
+
+            ReviewWorkspacePaneSnapshot sourcePaneSnapshot;
+            ReviewWorkspacePaneSnapshot targetPaneSnapshot;
+            var workspaceSnapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
+            if (workspaceSnapshot == null ||
+                !workspaceSnapshot.TryGetPane(sourcePaneId, out sourcePaneSnapshot) ||
+                !workspaceSnapshot.TryGetPane(targetPaneId, out targetPaneSnapshot) ||
+                !PaneHasLoadedMedia(sourcePaneSnapshot) ||
+                !PaneHasLoadedMedia(targetPaneSnapshot))
+            {
+                SetPlaybackMessage("Load media into both compare panes before aligning them.");
+                return;
+            }
+
+            await PausePlaybackAsync(logAction: false, operationScope: SynchronizedOperationScope.AllPanes);
+            workspaceSnapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
+            if (workspaceSnapshot == null ||
+                !workspaceSnapshot.TryGetPane(sourcePaneId, out sourcePaneSnapshot))
+            {
+                SetPlaybackMessage("The source compare pane is no longer available.");
+                return;
+            }
+
+            if (!TrySelectPaneForPaneCommand(targetPaneId))
+            {
+                return;
+            }
+
+            var sourceSide = GetComparePaneSideLabel(sourcePaneId);
+            var targetSide = GetComparePaneSideLabel(targetPaneId);
+            if (sourcePaneSnapshot.HasAbsoluteFrameIdentity && sourcePaneSnapshot.FrameIndex.HasValue)
+            {
+                var sourceFrameIndex = sourcePaneSnapshot.FrameIndex.Value;
+                var sourceFrameNumber = GetDisplayedFrameNumber(sourceFrameIndex);
+                try
+                {
+                    await RunWithCacheStatusAsync(
+                        "Cache: aligning exact frame...",
+                        () => _workspaceCoordinator.SeekToFrameAsync(sourceFrameIndex));
+                    UpdatePositionDisplay(GetDisplayPosition());
+                    _lastCompareAlignmentStatus = "Last align: exact frame";
+                    SetPlaybackMessage(string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Aligned the {0} pane to the {1} pane using exact frame {2}.",
+                        targetSide.ToLowerInvariant(),
+                        sourceSide.ToLowerInvariant(),
+                        sourceFrameNumber));
+                    LogInfo(string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Aligned compare pane {0} to {1} using exact frame {2}.",
+                        targetPaneId,
+                        sourcePaneId,
+                        sourceFrameNumber));
+                    UpdateWorkspacePanePresentation();
+                    FocusPreferredVideoSurface();
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    var failureDetail = SanitizeSensitiveText(ex.Message);
+                    LogWarning(string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Exact-frame align for {0} <- {1} failed. Falling back to presentation time.{2}",
+                        targetSide,
+                        sourceSide,
+                        string.IsNullOrWhiteSpace(failureDetail)
+                            ? string.Empty
+                            : " " + failureDetail));
+                }
+            }
+
+            var targetTime = sourcePaneSnapshot.PresentationTime;
+            await SeekToAsync(
+                targetTime,
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "align {0} -> {1}",
+                    sourcePaneId,
+                    targetPaneId),
+                SynchronizedOperationScope.FocusedPane);
+            var fallbackReason = sourcePaneSnapshot.HasAbsoluteFrameIdentity && sourcePaneSnapshot.FrameIndex.HasValue
+                ? "exact frame seek unavailable"
+                : "frame identity unavailable";
+            _lastCompareAlignmentStatus = "Last align: time fallback";
+            SetPlaybackMessage(string.Format(
+                CultureInfo.InvariantCulture,
+                "Aligned the {0} pane to the {1} pane using presentation time {2} ({3}).",
+                targetSide.ToLowerInvariant(),
+                sourceSide.ToLowerInvariant(),
+                FormatTime(targetTime),
+                fallbackReason));
+            LogInfo(string.Format(
+                CultureInfo.InvariantCulture,
+                "Aligned compare pane {0} to {1} using presentation time {2} ({3}).",
+                targetPaneId,
+                sourcePaneId,
+                FormatTime(targetTime),
+                fallbackReason));
+            UpdateWorkspacePanePresentation();
+            FocusPreferredVideoSurface();
         }
 
         private async Task JumpToFrameFromInputAsync()
@@ -793,7 +1604,7 @@ namespace FramePlayer
             await PausePlaybackAsync();
             await RunWithCacheStatusAsync(
                 "Cache: seeking frame...",
-                () => _videoReviewEngine.SeekToFrameAsync(targetFrameIndex));
+                () => _workspaceCoordinator.SeekToFrameAsync(targetFrameIndex));
             FocusPreferredVideoSurface();
             UpdatePositionDisplay(GetDisplayPosition());
             LogInfo(string.Format(
@@ -885,9 +1696,15 @@ namespace FramePlayer
             RecentFilesMenuItem.Items.Add(clearItem);
         }
 
-        private void RefreshMediaMetricsFromEngine()
+        private void ApplySessionSnapshot(ReviewSessionSnapshot session)
         {
-            var mediaInfo = _videoReviewEngine.MediaInfo;
+            var mediaInfo = session != null
+                ? session.MediaInfo
+                : VideoMediaInfo.Empty;
+
+            _isMediaLoaded = session != null && session.IsMediaOpen;
+            _isPlaying = session != null && session.PlaybackState == ReviewPlaybackState.Playing;
+            _currentFilePath = session != null ? session.CurrentFilePath ?? string.Empty : string.Empty;
             _positionStep = mediaInfo.PositionStep > TimeSpan.Zero
                 ? mediaInfo.PositionStep
                 : TimeSpan.FromSeconds(1d / DefaultFramesPerSecond);
@@ -937,8 +1754,7 @@ namespace FramePlayer
             OverlayToggleFullScreenButton.IsEnabled = canControl;
             FullscreenControlBar.IsEnabled = canControl;
             UpdatePlayPauseToggleVisuals();
-            EmptyStateOverlay.Visibility = canControl ? Visibility.Collapsed : Visibility.Visible;
-            UpdateEmptyState();
+            UpdateWorkspacePanePresentation();
 
             if (!_isMediaLoaded)
             {
@@ -946,40 +1762,32 @@ namespace FramePlayer
                     !string.IsNullOrWhiteSpace(_lastMediaErrorMessage)
                         ? "The last action did not complete."
                         : App.HasBundledFfmpegRuntime
-                            ? _buildVariant.IsComparisonBuild
-                                ? _buildVariant.StatusText
-                                : "Ready. Open a video to begin."
+                            ? _buildVariant.StatusText
                             : "Bundled playback runtime is missing.");
                 SetMediaSummary(string.IsNullOrWhiteSpace(_lastMediaErrorMessage)
-                    ? GetSupportedVideoExtensionsDescription().Replace(", ", " | ")
+                    ? string.Empty
                     : _lastMediaErrorMessage);
                 CurrentFrameTextBlock.Text = "Frame --";
                 CurrentFrameTextBlock.ToolTip = null;
-                TimecodeTextBlock.Text = "Timestamp --:--:--.--- | Duration --:--:--.---";
+                TimecodeTextBlock.Text = "--:--:--.--- / --:--:--.---";
                 TimecodeTextBlock.ToolTip = null;
                 FrameNumberTextBox.Text = string.Empty;
                 FrameNumberTextBox.ToolTip = GetFrameNumberInputToolTip();
-                KeyboardHintTextBlock.Text = _buildVariant.SupportsTimedPlayback
-                    ? "Ctrl+O open   drag and drop supported   F11 full screen"
-                    : "Ctrl+O open   seek and frame-step ready   F11 full screen";
                 UpdateCacheStatusFromEngine();
                 UpdateFullScreenButtonIcon();
+                UpdateWorkspacePanePresentation();
                 return;
             }
 
             if (_buildVariant.SupportsTimedPlayback)
             {
                 SetPlaybackMessage(_isPlaying
-                    ? "Playing. Pause to use Left or Right for frame stepping."
-                    : "Paused. Press Play or Space to begin. Left and Right step a single frame.");
-                KeyboardHintTextBlock.Text = _isPlaying
-                    ? "Space pause   J/L seek   F11 full screen"
-                    : "Left/Right frame step or hold   J/L seek   Space play   F11 full screen";
+                    ? "Playing"
+                    : "Paused");
             }
             else
             {
                 SetPlaybackMessage(_buildVariant.PlaybackCapabilityText);
-                KeyboardHintTextBlock.Text = "Left/Right frame step or hold   J/L seek   F11 full screen";
             }
 
             SetMediaSummary(string.Format(
@@ -994,11 +1802,12 @@ namespace FramePlayer
                 _framesPerSecond,
                 FormatStepDuration(_positionStep),
                 FormatTime(_mediaDuration),
-                GetAudioTooltipText(_videoReviewEngine.MediaInfo));
+                GetAudioTooltipText(_workspaceCoordinator.CurrentSession.MediaInfo));
 
             UpdateCurrentFrameDisplay(GetDisplayPosition());
             UpdateCacheStatusFromEngine();
             UpdateFullScreenButtonIcon();
+            UpdateWorkspacePanePresentation();
         }
 
         private void UpdatePlayPauseToggleVisuals()
@@ -1053,7 +1862,7 @@ namespace FramePlayer
             {
                 CurrentFrameTextBlock.Text = "Frame --";
                 CurrentFrameTextBlock.ToolTip = null;
-                TimecodeTextBlock.Text = "Timestamp --:--:--.--- | Duration --:--:--.---";
+                TimecodeTextBlock.Text = "--:--:--.--- / --:--:--.---";
                 TimecodeTextBlock.ToolTip = null;
                 FrameNumberTextBox.ToolTip = GetFrameNumberInputToolTip();
                 return;
@@ -1065,7 +1874,7 @@ namespace FramePlayer
             {
                 CurrentFrameTextBlock.Text = "Frame --";
                 CurrentFrameTextBlock.ToolTip = "No decoded frame identity is currently available from the engine.";
-                TimecodeTextBlock.Text = string.Format(CultureInfo.InvariantCulture, "Timestamp {0} | Duration {1}", FormatTime(currentPosition), FormatTime(_mediaDuration));
+                TimecodeTextBlock.Text = string.Format(CultureInfo.InvariantCulture, "{0} / {1}", FormatTime(currentPosition), FormatTime(_mediaDuration));
                 TimecodeTextBlock.ToolTip = "Timeline time is available, but frame identity is not.";
                 if (!FrameNumberTextBox.IsKeyboardFocusWithin)
                 {
@@ -1141,7 +1950,7 @@ namespace FramePlayer
 
             TimecodeTextBlock.Text = string.Format(
                 CultureInfo.InvariantCulture,
-                "Timestamp {0} | Duration {1}",
+                "{0} / {1}",
                 FormatTime(currentPosition),
                 FormatTime(_mediaDuration));
             TimecodeTextBlock.ToolTip = string.Format(
@@ -1169,7 +1978,7 @@ namespace FramePlayer
             frameIndex = 0L;
             isAbsoluteFrameIndex = false;
 
-            var enginePosition = _videoReviewEngine.Position;
+            var enginePosition = _workspaceCoordinator.CurrentSession.Position;
             if (enginePosition == null || !enginePosition.FrameIndex.HasValue)
             {
                 return false;
@@ -1257,7 +2066,7 @@ namespace FramePlayer
 
         private long GetTotalFrameCount()
         {
-            var ffmpegEngine = _videoReviewEngine as FfmpegReviewEngine;
+            var ffmpegEngine = GetFocusedFfmpegEngine();
             if (ffmpegEngine != null && ffmpegEngine.IsGlobalFrameIndexAvailable && ffmpegEngine.IndexedFrameCount > 0L)
             {
                 return ffmpegEngine.IndexedFrameCount;
@@ -1283,7 +2092,7 @@ namespace FramePlayer
 
         private TimeSpan GetSliderMaximumPosition()
         {
-            var ffmpegEngine = _videoReviewEngine as FfmpegReviewEngine;
+            var ffmpegEngine = GetFocusedFfmpegEngine();
             if (ffmpegEngine != null &&
                 ffmpegEngine.IsGlobalFrameIndexAvailable &&
                 ffmpegEngine.LastIndexedFramePresentationTime > TimeSpan.Zero)
@@ -1296,7 +2105,7 @@ namespace FramePlayer
 
         private long GetMaxFrameIndex()
         {
-            var ffmpegEngine = _videoReviewEngine as FfmpegReviewEngine;
+            var ffmpegEngine = GetFocusedFfmpegEngine();
             if (ffmpegEngine != null && ffmpegEngine.IsGlobalFrameIndexAvailable && ffmpegEngine.IndexedFrameCount > 0L)
             {
                 return ffmpegEngine.IndexedFrameCount - 1L;
@@ -1389,20 +2198,40 @@ namespace FramePlayer
                 frames);
         }
 
-        private void VideoReviewEngine_StateChanged(object sender, VideoReviewEngineStateChangedEventArgs e)
+        private void ReviewWorkspaceCoordinator_WorkspaceChanged(object sender, ReviewWorkspaceChangedEventArgs e)
         {
             if (!Dispatcher.CheckAccess())
             {
-                Dispatcher.BeginInvoke(new Action<object, VideoReviewEngineStateChangedEventArgs>(VideoReviewEngine_StateChanged), sender, e);
+                Dispatcher.BeginInvoke(new Action<object, ReviewWorkspaceChangedEventArgs>(ReviewWorkspaceCoordinator_WorkspaceChanged), sender, e);
                 return;
             }
 
-            var wasMediaLoaded = _isMediaLoaded;
-            if (!string.IsNullOrWhiteSpace(e.LastErrorMessage) && !e.IsMediaOpen)
+            var previousSession = e != null ? e.PreviousWorkspace.FocusedSession : ReviewSessionSnapshot.Empty;
+            var currentSession = e != null ? e.CurrentWorkspace.FocusedSession : ReviewSessionSnapshot.Empty;
+            var wasMediaLoaded = previousSession.IsMediaOpen;
+            ApplySessionSnapshot(currentSession);
+            UpdateWorkspacePanePresentation();
+
+            var focusedEngine = GetFocusedPaneEngine();
+            var engineErrorMessage = !_isMediaLoaded && focusedEngine != null
+                ? SanitizeSensitiveText(focusedEngine.LastErrorMessage)
+                : string.Empty;
+            if (!string.IsNullOrWhiteSpace(engineErrorMessage) && !_isMediaLoaded)
             {
                 EndHeldFrameStep();
-                _lastMediaErrorMessage = SanitizeSensitiveText(e.LastErrorMessage);
-                ResetMediaState(clearFilePath: false, clearErrorMessage: false);
+                _lastMediaErrorMessage = engineErrorMessage;
+                ApplySessionSnapshot(
+                    new ReviewSessionSnapshot(
+                        currentSession.SessionId,
+                        currentSession.DisplayLabel,
+                        ReviewPlaybackState.Closed,
+                        currentSession.CurrentFilePath,
+                        VideoMediaInfo.Empty,
+                        ReviewPosition.Empty));
+                ClearPaneSurface(GetFocusedPaneId());
+                UpdateHeader();
+                UpdatePositionDisplay(TimeSpan.Zero);
+                UpdateTransportState();
                 SetPlaybackMessage("Playback failed.");
                 SetMediaSummary(_lastMediaErrorMessage);
                 if (wasMediaLoaded)
@@ -1412,9 +2241,6 @@ namespace FramePlayer
                 return;
             }
 
-            _isMediaLoaded = e.IsMediaOpen;
-            _isPlaying = e.IsPlaying;
-
             if (_isPlaying)
             {
                 EndHeldFrameStep();
@@ -1422,21 +2248,37 @@ namespace FramePlayer
 
             if (!_isMediaLoaded)
             {
+                UpdateHeader();
                 UpdateTransportState();
                 return;
             }
 
-            _currentFilePath = e.CurrentFilePath;
             _lastMediaErrorMessage = string.Empty;
-            RefreshMediaMetricsFromEngine();
-            UpdatePositionDisplay(e.Position.PresentationTime);
-                UpdateTransportState();
+            UpdateHeader();
+            UpdatePositionDisplay(currentSession.Position.PresentationTime);
+            UpdateTransportState();
 
             if (!wasMediaLoaded)
             {
                 Activate();
                 FocusPreferredVideoSurface();
             }
+        }
+
+        private void ReviewWorkspaceCoordinator_PreparationStateChanged(object sender, ReviewWorkspacePreparationChangedEventArgs e)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(
+                    new Action<object, ReviewWorkspacePreparationChangedEventArgs>(ReviewWorkspaceCoordinator_PreparationStateChanged),
+                    sender,
+                    e);
+                return;
+            }
+
+            ApplyWorkspacePreparationState(e != null
+                ? e.CurrentState
+                : _workspaceCoordinator.CurrentPreparationState);
         }
 
         private void VideoReviewEngine_FramePresented(object sender, FramePresentedEventArgs e)
@@ -1447,11 +2289,26 @@ namespace FramePlayer
                 return;
             }
 
-            CustomVideoSurface.Source = e != null && e.Frame != null ? e.Frame.BitmapSource : null;
+            var imageSource = e != null && e.Frame != null ? e.Frame.BitmapSource : null;
+            if (ReferenceEquals(sender, _compareVideoReviewEngine))
+            {
+                CompareVideoSurface.Source = imageSource;
+                return;
+            }
+
+            CustomVideoSurface.Source = imageSource;
         }
 
-        private void CustomVideoSurfaceHost_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        private void VideoPane_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
+            var paneId = (sender as FrameworkElement)?.Tag as string;
+            if (!string.IsNullOrWhiteSpace(paneId))
+            {
+                TrySelectPaneForShell(paneId);
+                UpdateWorkspacePanePresentation();
+                FocusPreferredVideoSurface();
+            }
+
             if (e.ClickCount >= 2 && _isMediaLoaded)
             {
                 ToggleFullScreen();
@@ -1549,48 +2406,27 @@ namespace FramePlayer
             OverlayToggleFullScreenButton.ToolTip = toolTip;
         }
 
-        private void UpdateEmptyState()
+        private void ClearPaneSurface(string paneId)
         {
-            if (_isMediaLoaded)
+            if (string.Equals(paneId, ComparePaneId, StringComparison.Ordinal))
             {
-                EmptyStateTitleTextBlock.Text = string.Empty;
-                EmptyStateBodyTextBlock.Text = string.Empty;
+                CompareVideoSurface.Source = null;
                 return;
             }
 
-            if (!App.HasBundledFfmpegRuntime)
-            {
-                EmptyStateTitleTextBlock.Text = "Playback runtime missing";
-                EmptyStateBodyTextBlock.Text = GetRuntimeStatusMessage();
-                return;
-            }
-
-            EmptyStateTitleTextBlock.Text = "Drop a video here";
-            EmptyStateBodyTextBlock.Text = string.IsNullOrWhiteSpace(_lastMediaErrorMessage)
-                ? _buildVariant.SupportsTimedPlayback
-                    ? "Open a supported video file, or press Ctrl+O. When paused, Left and Right step one frame at a time."
-                    : "Open a supported video file, or press Ctrl+O. Seek and frame stepping are available, but timed playback is not."
-                : _lastMediaErrorMessage;
+            CustomVideoSurface.Source = null;
         }
 
         private void ResetMediaState(bool clearFilePath, bool clearErrorMessage)
         {
-            _isMediaLoaded = false;
-            _isPlaying = false;
             _isFrameStepInProgress = false;
             _isCacheStatusActive = false;
             _heldFrameStepDirection = 0;
             _frameStepRepeatTimer.Stop();
             _isSliderDragActive = false;
-            _framesPerSecond = DefaultFramesPerSecond;
-            _positionStep = TimeSpan.FromSeconds(1d / DefaultFramesPerSecond);
-            _mediaDuration = TimeSpan.Zero;
-            CustomVideoSurface.Source = null;
-
-            if (clearFilePath)
-            {
-                _currentFilePath = string.Empty;
-            }
+            ResetCompareAlignmentStatus();
+            ClearPaneSurface(GetFocusedPaneId());
+            ApplySessionSnapshot(_workspaceCoordinator.Reset(clearFilePath ? string.Empty : _currentFilePath));
 
             if (clearErrorMessage)
             {
@@ -1600,6 +2436,7 @@ namespace FramePlayer
             UpdateHeader();
             UpdatePositionDisplay(TimeSpan.Zero);
             UpdateTransportState();
+            UpdateWorkspacePanePresentation();
         }
 
         private void SetPlaybackMessage(string message)
@@ -1643,6 +2480,27 @@ namespace FramePlayer
                 true);
         }
 
+        private void ApplyWorkspacePreparationState(ReviewWorkspacePreparationState state)
+        {
+            var currentState = state ?? ReviewWorkspacePreparationState.Idle;
+            switch (currentState.Phase)
+            {
+                case ReviewWorkspacePreparationPhase.Opening:
+                    BeginCacheStatus("Cache: indexing and warming...");
+                    return;
+                case ReviewWorkspacePreparationPhase.PreparingFirstFrame:
+                    BeginCacheStatus("Cache: warming first frame...");
+                    return;
+                case ReviewWorkspacePreparationPhase.Idle:
+                case ReviewWorkspacePreparationPhase.Ready:
+                case ReviewWorkspacePreparationPhase.Failed:
+                default:
+                    _isCacheStatusActive = false;
+                    UpdateCacheStatusFromEngine();
+                    return;
+            }
+        }
+
         private void UpdateCacheStatusFromEngine()
         {
             if (_isCacheStatusActive)
@@ -1656,7 +2514,8 @@ namespace FramePlayer
                 return;
             }
 
-            var ffmpegEngine = _videoReviewEngine as FfmpegReviewEngine;
+            var focusedEngine = GetFocusedPaneEngine();
+            var ffmpegEngine = focusedEngine as FfmpegReviewEngine;
             if (ffmpegEngine == null)
             {
                 SetCacheStatus("Cache: unavailable", "Cache details are not available for this engine.", false);
@@ -1666,7 +2525,9 @@ namespace FramePlayer
             var forwardCount = Math.Max(0, ffmpegEngine.ForwardCachedFrameCount);
             var previousCount = Math.Max(0, ffmpegEngine.PreviousCachedFrameCount);
             var approximateCacheMegabytes = ffmpegEngine.ApproximateCachedFrameBytes / 1048576d;
-            var positionIdentity = _videoReviewEngine.Position != null && _videoReviewEngine.Position.IsFrameIndexAbsolute
+            var positionIdentity = focusedEngine != null &&
+                                   focusedEngine.Position != null &&
+                                   focusedEngine.Position.IsFrameIndexAbsolute
                 ? "absolute frame ready"
                 : "frame number pending index";
             var message = string.Format(
@@ -1748,7 +2609,8 @@ namespace FramePlayer
                 var displayedTotalFrame = totalFrames > 0
                     ? GetDisplayedTotalFrameValue(totalFrames).ToString(CultureInfo.InvariantCulture)
                     : string.Empty;
-                var ffmpegEngine = _videoReviewEngine as FfmpegReviewEngine;
+                var focusedEngine = GetFocusedPaneEngine();
+                var ffmpegEngine = focusedEngine as FfmpegReviewEngine;
 
                 var report = _diagnosticLogService.BuildReport(new[]
                 {
@@ -1768,10 +2630,10 @@ namespace FramePlayer
                     "Current file: " + GetSafeFileDisplay(_currentFilePath),
                     "Media loaded: " + (_isMediaLoaded ? "Yes" : "No"),
                     "Playback state: " + (_isPlaying ? "Playing" : "Paused/Idle"),
-                    "Audio stream: " + (_videoReviewEngine.MediaInfo.HasAudioStream ? "Yes" : "No"),
-                    "Audio playback available: " + (_videoReviewEngine.MediaInfo.IsAudioPlaybackAvailable ? "Yes" : "No"),
-                    "Audio codec: " + (string.IsNullOrWhiteSpace(_videoReviewEngine.MediaInfo.AudioCodecName) ? "(none)" : _videoReviewEngine.MediaInfo.AudioCodecName),
-                    "Audio details: " + GetAudioTooltipText(_videoReviewEngine.MediaInfo),
+                    "Audio stream: " + (focusedEngine != null && focusedEngine.MediaInfo.HasAudioStream ? "Yes" : "No"),
+                    "Audio playback available: " + (focusedEngine != null && focusedEngine.MediaInfo.IsAudioPlaybackAvailable ? "Yes" : "No"),
+                    "Audio codec: " + (focusedEngine == null || string.IsNullOrWhiteSpace(focusedEngine.MediaInfo.AudioCodecName) ? "(none)" : focusedEngine.MediaInfo.AudioCodecName),
+                    "Audio details: " + GetAudioTooltipText(focusedEngine != null ? focusedEngine.MediaInfo : VideoMediaInfo.Empty),
                     "Frame index status: " + (ffmpegEngine != null ? ffmpegEngine.GlobalFrameIndexStatus : "(unavailable)"),
                     "Frame index available: " + (ffmpegEngine != null && ffmpegEngine.IsGlobalFrameIndexAvailable ? "Yes" : "No"),
                     "Indexed frame count: " + (ffmpegEngine != null ? ffmpegEngine.IndexedFrameCount.ToString(CultureInfo.InvariantCulture) : "(unavailable)"),
@@ -1916,7 +2778,8 @@ namespace FramePlayer
         private void LogSeekResult(string diagnosticSource, TimeSpan requestedTarget, TimeSpan clampedTarget)
         {
             var landedPosition = GetDisplayPosition();
-            var enginePosition = _videoReviewEngine.Position;
+            var focusedEngine = GetFocusedPaneEngine();
+            var enginePosition = focusedEngine != null ? focusedEngine.Position : null;
             var frameText = "(unavailable)";
             var frameIdentity = "unavailable";
             if (enginePosition != null && enginePosition.FrameIndex.HasValue)
@@ -1940,7 +2803,7 @@ namespace FramePlayer
 
         private string GetSeekTimingDiagnosticSuffix()
         {
-            var ffmpegEngine = _videoReviewEngine as FfmpegReviewEngine;
+            var ffmpegEngine = GetFocusedFfmpegEngine();
             if (ffmpegEngine == null)
             {
                 return string.Empty;
@@ -1968,7 +2831,7 @@ namespace FramePlayer
                 return TimeSpan.Zero;
             }
 
-            return _videoReviewEngine.Position.PresentationTime;
+            return _workspaceCoordinator.CurrentSession.Position.PresentationTime;
         }
 
         private void BeginHeldFrameStep(int direction)

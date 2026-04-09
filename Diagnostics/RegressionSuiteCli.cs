@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -107,10 +108,22 @@ namespace FramePlayer.Diagnostics
                 throw new FileNotFoundException("The regression suite request file was not found.", requestPath);
             }
 
+            string json;
             using (var stream = File.OpenRead(requestPath))
+            using (var reader = new StreamReader(stream, Encoding.UTF8, true))
+            {
+                json = reader.ReadToEnd();
+            }
+
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return null;
+            }
+
+            using (var jsonStream = new MemoryStream(Encoding.UTF8.GetBytes(json.TrimStart('\uFEFF'))))
             {
                 var serializer = new DataContractJsonSerializer(typeof(RegressionSuiteRequest));
-                return serializer.ReadObject(stream) as RegressionSuiteRequest;
+                return serializer.ReadObject(jsonStream) as RegressionSuiteRequest;
             }
         }
 
