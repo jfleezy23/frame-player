@@ -89,6 +89,21 @@ if (-not (Test-Path $resolvedManifestPath)) {
 
 $manifest = Get-Content $resolvedManifestPath -Raw | ConvertFrom-Json
 $expectedFileHashes = Get-ManifestFileHashes -Manifest $manifest
+
+$requiredRuntimeFiles = @(
+    "avcodec-62.dll",
+    "avformat-62.dll",
+    "avutil-60.dll",
+    "swresample-6.dll",
+    "swscale-9.dll",
+    "libwinpthread-1.dll"
+)
+
+$missingRequiredManifestFiles = $requiredRuntimeFiles | Where-Object { -not $expectedFileHashes.ContainsKey($_) }
+if ($missingRequiredManifestFiles.Count -gt 0) {
+    throw "Runtime manifest appears stale or mismatched for the FFmpeg 8.1 runtime. Missing required file hash entries: $($missingRequiredManifestFiles -join ', '). Update Runtime\\runtime-manifest.json to the current FFmpeg 8.1 runtime metadata."
+}
+
 $runtimeRoot = Join-Path $repoRoot "Runtime"
 $runtimeDirectory = Join-Path $runtimeRoot "ffmpeg"
 $candidateRuntimeDirectory = Join-Path $runtimeRoot "ffmpeg-8.1-candidate"
@@ -117,6 +132,11 @@ if ([string]::IsNullOrWhiteSpace($manifest.assetName)) {
     throw "Runtime manifest is missing the assetName field."
 }
 
+$hasRemoteLocation = -not [string]::IsNullOrWhiteSpace($manifest.assetUrl) -or -not [string]::IsNullOrWhiteSpace($manifest.tag)
+if (-not $hasRemoteLocation) {
+    throw "Runtime manifest is missing both tag and assetUrl. CI/bootstrap cannot download the pinned FFmpeg 8.1 runtime archive when local runtime artifacts are absent."
+}
+
 $archiveCandidatePaths = @()
 if (-not [string]::IsNullOrWhiteSpace($manifest.assetName)) {
     $archiveCandidatePaths += (Join-Path $runtimeRoot $manifest.assetName)
@@ -126,7 +146,6 @@ $archiveCandidatePaths = $archiveCandidatePaths | Select-Object -Unique
 $archivePath = $archiveCandidatePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
 
 $hasArchiveHash = -not [string]::IsNullOrWhiteSpace($manifest.assetSha256)
-$hasRemoteLocation = -not [string]::IsNullOrWhiteSpace($manifest.assetUrl) -or -not [string]::IsNullOrWhiteSpace($manifest.tag)
 $extractRoot = Join-Path $env:TEMP ("frameplayer-runtime-" + [Guid]::NewGuid().ToString("N"))
 
 New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null

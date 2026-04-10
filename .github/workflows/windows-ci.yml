@@ -4,20 +4,23 @@ on:
   push:
   pull_request:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: windows-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup NuGet
-        uses: nuget/setup-nuget@v2
+        uses: NuGet/setup-nuget@v3
 
       - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v2
+        uses: microsoft/setup-msbuild@v3
 
       - name: Restore and build
         shell: pwsh
-        run: msbuild .\FramePlayer.csproj /t:Restore,Build /p:Configuration=Release /p:Platform=x64
+        run: msbuild .\FramePlayer.csproj /t:Restore,Build /p:Configuration=Release /p:Platform=x64 /p:SkipRuntimeBootstrap=true

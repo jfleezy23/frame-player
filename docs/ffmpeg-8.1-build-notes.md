@@ -58,3 +58,26 @@ artifacts\FramePlayer-ffmpeg-runtime-x64.zip
 ```
 
 Both paths are intentionally ignored by git. `scripts\Ensure-DevRuntime.ps1` restores the active `Runtime\ffmpeg\` directory from this self-built candidate or archive instead of a third-party prebuilt bundle.
+
+## Current Restore Model
+
+- `Runtime\runtime-manifest.json` records the expected FFmpeg 8.1 DLL hashes, archive filename, archive SHA256, and source-build provenance.
+- `scripts\Ensure-DevRuntime.ps1` restores `Runtime\ffmpeg\` from `Runtime\ffmpeg-8.1-candidate\` or `artifacts\FramePlayer-ffmpeg-runtime-x64.zip` before attempting any remote download path.
+- If neither local source exists, the script now fails fast when the manifest does not provide a verified remote `tag` or `assetUrl` for the pinned FFmpeg 8.1 runtime.
+
+## Windows CI
+
+GitHub Actions Windows CI now runs compile validation only on clean runners:
+
+```powershell
+msbuild .\FramePlayer.csproj /t:Restore,Build /p:Configuration=Release /p:Platform=x64 /p:SkipRuntimeBootstrap=true
+```
+
+This is intentional. Clean GitHub runners do not have the staged local FFmpeg runtime artifacts, and the current manifest does not yet identify a verified published FFmpeg 8.1 restore source.
+
+## Still Needed For Clean-Runner Restore
+
+- Publish the exact FFmpeg 8.1 runtime archive that matches the current manifest hashes.
+- Update `Runtime\runtime-manifest.json` with a verified release `tag` or explicit `assetUrl` for that archive.
+- Keep `assetSha256` and the per-DLL SHA256 entries aligned with the published archive before re-enabling bootstrap on clean runners.
+- Do not point the manifest at any published archive unless the archive SHA256 and extracted DLL hashes are proven to match the current FFmpeg 8.1 runtime.

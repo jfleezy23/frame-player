@@ -163,14 +163,14 @@
     <EmbeddedResource Include="Runtime\runtime-manifest.json" />
   </ItemGroup>
   <Target Name="EnsureBundledRuntime" BeforeTargets="PrepareForBuild"
-          Condition="'$(OS)' == 'Windows_NT' and !Exists('Runtime\\ffmpeg\\avcodec-62.dll')">
+          Condition="'$(OS)' == 'Windows_NT' and '$(SkipRuntimeBootstrap)' != 'true' and !Exists('Runtime\\ffmpeg\\avcodec-62.dll')">
     <Message Importance="high"
              Text="FFmpeg runtime DLLs are missing. Downloading the pinned runtime for this build..." />
     <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\scripts\Ensure-DevRuntime.ps1&quot;"
           WorkingDirectory="$(MSBuildProjectDirectory)" />
   </Target>
   <Target Name="WarnIfBundledRuntimeMissing" BeforeTargets="Build"
-          Condition="!Exists('Runtime\\ffmpeg\\avcodec-62.dll')">
+          Condition="'$(SkipRuntimeBootstrap)' != 'true' and !Exists('Runtime\\ffmpeg\\avcodec-62.dll')">
     <Message Importance="high"
              Text="FFmpeg runtime DLLs are not present in Runtime\\ffmpeg. Frame Player attempted to bootstrap them automatically. If the download failed, run .\\scripts\\Ensure-DevRuntime.ps1 manually and rebuild." />
   </Target>

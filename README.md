@@ -57,8 +57,9 @@ The shipped app is packaged with the FFmpeg runtime DLLs next to `FramePlayer.ex
 - Diagnostics and UI error messages redact absolute file paths where practical
 - A signed local MSIX can be built with `Packaging\\MSIX\\build-msix.ps1`
 - The generated MSIX artifacts are written to `dist\\MSIX`
-- The FFmpeg development runtime is downloaded on demand instead of being stored in git
-- The pinned runtime archive, human-readable FFmpeg version, and DLL hashes are recorded in `Runtime\\runtime-manifest.json`
+- The FFmpeg development runtime is not stored in git; local restore comes from the self-built candidate folder or local runtime archive staged by `scripts\ffmpeg\Build-FFmpeg-8.1.ps1`
+- The runtime manifest records the expected archive filename, archive SHA256, human-readable FFmpeg version, DLL hashes, and source-build metadata
+- The current manifest does not yet declare a verified published FFmpeg 8.1 restore `tag` or `assetUrl` for clean-runner bootstrap
 
 ## Quick Start
 
@@ -75,7 +76,7 @@ That script:
 3. Restores NuGet packages
 4. Builds the app in `Release|x64`
 
-If the self-built runtime has not been staged yet, run `.\scripts\ffmpeg\Build-FFmpeg-8.1.ps1` first. Regular Visual Studio and MSBuild builds then bootstrap `Runtime\ffmpeg` automatically if it is missing.
+If the self-built runtime has not been staged yet, run `.\scripts\ffmpeg\Build-FFmpeg-8.1.ps1` first. Regular Visual Studio and MSBuild builds still bootstrap `Runtime\ffmpeg` automatically when it is missing, but today that flow assumes the FFmpeg 8.1 runtime has already been staged locally.
 
 ## Requirements
 
@@ -112,6 +113,10 @@ To build the MSIX package with an organization's trusted signing certificate:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\Packaging\MSIX\build-msix.ps1 -SigningPfxPath "C:\path\to\signing-cert.pfx" -SigningPfxPassword "YourPfxPassword" -TimestampUrl "https://your-approved-timestamp-service"
 ```
+
+## Windows CI
+
+GitHub Actions Windows CI is compile validation on a clean runner. The workflow builds with `/p:SkipRuntimeBootstrap=true`, so it intentionally skips runtime bootstrap in CI while local/dev builds continue to use the default bootstrap path. This stays in place until the manifest has a verified published FFmpeg 8.1 restore source for clean-runner acquisition.
 
 ## Notes
 
