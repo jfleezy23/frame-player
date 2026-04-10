@@ -1583,7 +1583,6 @@ namespace FramePlayer.Engines.FFmpeg
 
             if (_codecContext != null)
             {
-                _codecContext->get_format = default(AVCodecContext_get_format_func);
                 if (_codecContext->hw_device_ctx != null)
                 {
                     var deviceContext = _codecContext->hw_device_ctx;
