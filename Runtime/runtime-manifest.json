@@ -5,14 +5,19 @@
   "sourceCommit": "9047fa1b084f76b1b4d065af2d743df1b40dfb56",
   "ffmpegVersion": "n8.1-frameplayer-source",
   "ffmpegVersionSource": "FileVersionInfo ProductVersion from avcodec-62.dll built from the official FFmpeg n8.1 source tag",
+  "runtimeFeatures": {
+    "vulkanHwDeviceEnabled": true,
+    "systemVulkanLoaderRequired": true,
+    "systemVulkanLoaderNotes": "GPU acceleration depends on a system Vulkan loader/driver at runtime. The FFmpeg runtime archive itself only bundles the FFmpeg-built DLL set."
+  },
   "assetName": "FramePlayer-ffmpeg-runtime-x64.zip",
-  "assetSha256": "36e37a373bb32ac2a65386fabfed38a6086f2425cffb69eef6e23ff21743e32a",
+  "assetSha256": "391a79bf6f3f91e8c064db842420435702570ab0691adce897eefc647bdbdfb7",
   "files": {
-    "avcodec-62.dll": "4405428ea34f2d278e52e72023cf5db926fcfd0dc7318ddf24aec7be0bc5a6ed",
-    "avformat-62.dll": "f9473633e88a87b52a6dba7637cd6c8187246ba9754a425daf712068c94f112a",
-    "avutil-60.dll": "c50d0f9b59fa1741aea10d735f25ba9c9a33acc42ce09c5bcd7b89c7f46be5d4",
+    "avcodec-62.dll": "7f936eadaf5214d62e2ac8ae475bdde66d126692ef27eb79ca5103f8f581a29d",
+    "avformat-62.dll": "fe3a84b35478dc75d243602be286dc2942e34ef095553b7ec9575316be80ffce",
+    "avutil-60.dll": "8b9533de1d4c3fb680a9d3eb8f10e8cba0904888b29bed48c890a43286b87196",
     "libwinpthread-1.dll": "67a8ebf011133c6413cc68e59eeeefa5860c416334b96fc527c7d2e6b86a98cf",
-    "swresample-6.dll": "e2a6908d31996ace4c75a43cfa8c49356875dec9d623901f5cd83c104d0b1480",
-    "swscale-9.dll": "1eb09201c10df755baa552666bbf839f530f89f2beba49e761ab631b0e1d7b3a"
+    "swresample-6.dll": "c66168f94a8d5ec7141a48196485f7db1566f22c67195d78b25c544ccc3aa437",
+    "swscale-9.dll": "3848abde20814b9770bebd33cafc5fadc86ec3d90dd521336f4767e71375737b"
   }
 }

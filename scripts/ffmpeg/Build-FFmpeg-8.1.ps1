@@ -68,6 +68,11 @@ for tool in git gcc make pkgconf nasm; do
     command -v "`$tool" >/dev/null || { echo "Missing required tool: `$tool" >&2; exit 2; }
 done
 
+if [ ! -f /mingw64/include/vulkan/vulkan.h ]; then
+    echo "Missing Vulkan headers in the MSYS2 MinGW-w64 x64 environment. Install the Vulkan development files before building the GPU-capable runtime." >&2
+    exit 2
+fi
+
 if [ "`$clean" = "1" ]; then
     rm -rf "`$source_dir" "`$build_dir" "`$install_dir"
 fi
@@ -105,10 +110,23 @@ configure_flags=(
     --disable-autodetect
     --disable-encoders
     --disable-muxers
+    --enable-vulkan
     --extra-version=frameplayer-source
 )
 
 "`$source_dir/configure" "`${configure_flags[@]}"
+
+grep -q "^#define CONFIG_VULKAN 1$" config.h || {
+    echo "FFmpeg configure did not enable expected Vulkan symbol: CONFIG_VULKAN" >&2
+    exit 4
+}
+
+for symbol in CONFIG_H264_VULKAN_HWACCEL CONFIG_HEVC_VULKAN_HWACCEL CONFIG_AV1_VULKAN_HWACCEL; do
+    grep -q "^#define `$symbol 1$" config_components.h || {
+        echo "FFmpeg configure did not enable expected Vulkan hwaccel: `$symbol" >&2
+        exit 4
+    }
+done
 
 make -j"`$jobs"
 make install
@@ -127,7 +145,18 @@ fi
     echo "GCC: `$(gcc --version | head -1)"
     echo "Make: `$(make --version | head -1)"
     echo "pkgconf: `$(pkgconf --version)"
+    if pkgconf --exists vulkan; then
+        echo "Vulkan pkgconf version: `$(pkgconf --modversion vulkan)"
+    else
+        echo "Vulkan pkgconf version: (not available; configure used header detection)"
+    fi
     echo "NASM: `$(nasm -v)"
+    echo "Enabled Vulkan symbols:"
+    grep "^#define CONFIG_VULKAN " config.h
+    grep "^#define CONFIG_VULKAN_1_4 " config.h || true
+    for symbol in CONFIG_H264_VULKAN_HWACCEL CONFIG_HEVC_VULKAN_HWACCEL CONFIG_AV1_VULKAN_HWACCEL CONFIG_VP9_VULKAN_HWACCEL; do
+        grep "^#define `$symbol " config_components.h
+    done
     echo "Configure flags:"
     printf '  %q' "`$source_dir/configure" "`${configure_flags[@]}"
     printf '\n'

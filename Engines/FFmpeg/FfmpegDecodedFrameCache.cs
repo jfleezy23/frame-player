@@ -6,15 +6,23 @@ namespace FramePlayer.Engines.FFmpeg
 {
     internal sealed class FfmpegDecodedFrameCache
     {
-        private readonly List<DecodedVideoFrame> _frames = new List<DecodedVideoFrame>();
-        private readonly int _maxPreviousFrames;
-        private readonly int _maxForwardFrames;
+        private readonly List<DecodedFrameBuffer> _frames = new List<DecodedFrameBuffer>();
+        private int _maxPreviousFrames;
+        private int _maxForwardFrames;
         private int _currentIndex = -1;
 
         public FfmpegDecodedFrameCache(int maxPreviousFrames, int maxForwardFrames)
         {
             _maxPreviousFrames = Math.Max(0, maxPreviousFrames);
             _maxForwardFrames = Math.Max(0, maxForwardFrames);
+        }
+
+        public void UpdateLimits(int maxPreviousFrames, int maxForwardFrames)
+        {
+            _maxPreviousFrames = Math.Max(0, maxPreviousFrames);
+            _maxForwardFrames = Math.Max(0, maxForwardFrames);
+            TrimPreviousFrames();
+            TrimForwardFrames();
         }
 
         public int Count
@@ -57,7 +65,7 @@ namespace FramePlayer.Engines.FFmpeg
             }
         }
 
-        public DecodedVideoFrame Current
+        public DecodedFrameBuffer Current
         {
             get { return HasCurrent ? _frames[_currentIndex] : null; }
         }
@@ -68,7 +76,7 @@ namespace FramePlayer.Engines.FFmpeg
             _currentIndex = -1;
         }
 
-        public void Reset(DecodedVideoFrame currentFrame)
+        public void Reset(DecodedFrameBuffer currentFrame)
         {
             if (currentFrame == null)
             {
@@ -80,7 +88,7 @@ namespace FramePlayer.Engines.FFmpeg
             _currentIndex = 0;
         }
 
-        public void LoadWindow(IList<DecodedVideoFrame> frames, int currentIndex)
+        public void LoadWindow(IList<DecodedFrameBuffer> frames, int currentIndex)
         {
             if (frames == null)
             {
@@ -102,7 +110,7 @@ namespace FramePlayer.Engines.FFmpeg
             _currentIndex = currentIndex;
         }
 
-        public void AppendForward(DecodedVideoFrame frame)
+        public void AppendForward(DecodedFrameBuffer frame)
         {
             if (frame == null)
             {
@@ -113,19 +121,35 @@ namespace FramePlayer.Engines.FFmpeg
             TrimForwardFrames();
         }
 
-        public DecodedVideoFrame AppendForwardAndAdvance(DecodedVideoFrame frame)
+        public DecodedFrameBuffer AppendForwardAndAdvance(DecodedFrameBuffer frame)
         {
-            AppendForward(frame);
-            DecodedVideoFrame currentFrame;
-            if (!TryMoveNext(out currentFrame))
+            if (frame == null)
+            {
+                throw new ArgumentNullException(nameof(frame));
+            }
+
+            _frames.Add(frame);
+            if (!HasCurrent)
+            {
+                _currentIndex = _frames.Count - 1;
+            }
+            else
+            {
+                _currentIndex = Math.Min(_frames.Count - 1, _currentIndex + 1);
+            }
+
+            TrimPreviousFrames();
+            TrimForwardFrames();
+
+            if (!HasCurrent)
             {
                 throw new InvalidOperationException("The decoded frame cache could not advance to the appended frame.");
             }
 
-            return currentFrame;
+            return _frames[_currentIndex];
         }
 
-        public bool TryMoveNext(out DecodedVideoFrame frame)
+        public bool TryMoveNext(out DecodedFrameBuffer frame)
         {
             if (!HasCurrent || _currentIndex + 1 >= _frames.Count)
             {
@@ -139,7 +163,7 @@ namespace FramePlayer.Engines.FFmpeg
             return true;
         }
 
-        public bool TryPeekNext(out DecodedVideoFrame frame)
+        public bool TryPeekNext(out DecodedFrameBuffer frame)
         {
             if (!HasCurrent || _currentIndex + 1 >= _frames.Count)
             {
@@ -151,7 +175,7 @@ namespace FramePlayer.Engines.FFmpeg
             return true;
         }
 
-        public bool TryMovePrevious(out DecodedVideoFrame frame)
+        public bool TryMovePrevious(out DecodedFrameBuffer frame)
         {
             if (!HasCurrent || _currentIndex <= 0)
             {
@@ -164,7 +188,7 @@ namespace FramePlayer.Engines.FFmpeg
             return true;
         }
 
-        public bool TryMoveToAbsoluteFrameIndex(long frameIndex, out DecodedVideoFrame frame)
+        public bool TryMoveToAbsoluteFrameIndex(long frameIndex, out DecodedFrameBuffer frame)
         {
             if (frameIndex < 0)
             {
@@ -194,7 +218,7 @@ namespace FramePlayer.Engines.FFmpeg
             return false;
         }
 
-        public bool ReplaceFrames(Func<DecodedVideoFrame, DecodedVideoFrame> replaceFrame)
+        public bool ReplaceFrames(Func<DecodedFrameBuffer, DecodedFrameBuffer> replaceFrame)
         {
             if (replaceFrame == null)
             {

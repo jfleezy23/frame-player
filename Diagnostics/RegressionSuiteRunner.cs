@@ -16,6 +16,7 @@ using System.Windows.Threading;
 using FFmpeg.AutoGen;
 using FramePlayer.Core.Models;
 using FramePlayer.Engines.FFmpeg;
+using FramePlayer.Services;
 
 namespace FramePlayer.Diagnostics
 {
@@ -211,7 +212,7 @@ namespace FramePlayer.Diagnostics
             var notes = new List<string>();
             var metrics = new RegressionMetrics();
 
-            using (var engine = new FfmpegReviewEngine())
+            using (var engine = CreateFfmpegReviewEngine())
             {
                 try
                 {
@@ -240,19 +241,25 @@ namespace FramePlayer.Diagnostics
                 var initialPosition = engine.Position ?? ReviewPosition.Empty;
                 notes.Add(string.Format(
                     CultureInfo.InvariantCulture,
-                    "Open timings: total {0:0.###} ms, probe {1:0.###} ms, stream {2:0.###} ms, first frame {3:0.###} ms, cache warm {4:0.###} ms. Index status: {5}.",
+                    "Open timings: total {0:0.###} ms, probe {1:0.###} ms, stream {2:0.###} ms, first frame {3:0.###} ms, cache warm {4:0.###} ms. Index status: {5}. Decode backend: {6}. GPU active: {7}. GPU status: {8}. Fallback: {9}. Queue depth: {10}.",
                     engine.LastOpenTotalMilliseconds,
                     engine.LastOpenContainerProbeMilliseconds,
                     engine.LastOpenStreamDiscoveryMilliseconds,
                     engine.LastOpenFirstFrameDecodeMilliseconds,
                     engine.LastOpenInitialCacheWarmMilliseconds,
-                    engine.GlobalFrameIndexStatus));
+                    engine.GlobalFrameIndexStatus,
+                    string.IsNullOrWhiteSpace(engine.ActiveDecodeBackend) ? "(unknown)" : engine.ActiveDecodeBackend,
+                    engine.IsGpuActive ? "yes" : "no",
+                    string.IsNullOrWhiteSpace(engine.GpuCapabilityStatus) ? "(none)" : engine.GpuCapabilityStatus,
+                    string.IsNullOrWhiteSpace(engine.GpuFallbackReason) ? "(none)" : engine.GpuFallbackReason,
+                    engine.OperationalQueueDepth));
                 notes.Add(string.Format(
                     CultureInfo.InvariantCulture,
-                    "Open cache window: {0} back / {1} ahead, approx {2:0.0} MiB, refill {3} {4:0.###} ms ({5}->{6} ahead).",
+                    "Open cache window: {0} back / {1} ahead, approx {2:0.0} MiB of {3:0.0} MiB budget, refill {4} {5:0.###} ms ({6}->{7} ahead).",
                     engine.PreviousCachedFrameCount,
                     engine.ForwardCachedFrameCount,
                     engine.ApproximateCachedFrameBytes / 1048576d,
+                    engine.DecodedFrameCacheBudgetBytes / 1048576d,
                     string.IsNullOrWhiteSpace(engine.LastCacheRefillReason) ? "(none)" : engine.LastCacheRefillReason,
                     engine.LastCacheRefillMilliseconds,
                     engine.LastCacheRefillStartingForwardCount,
@@ -285,14 +292,18 @@ namespace FramePlayer.Diagnostics
                         var preIndexPosition = engine.Position ?? ReviewPosition.Empty;
                         notes.Add(string.Format(
                             CultureInfo.InvariantCulture,
-                            "Pre-index seek cache: landed in {0:0.###} ms, refill {1} {2:0.###} ms ({3}), cache {4} back / {5} ahead, approx {6:0.0} MiB.",
+                            "Pre-index seek cache: landed in {0:0.###} ms, refill {1} {2:0.###} ms ({3}), cache {4} back / {5} ahead, approx {6:0.0} MiB of {7:0.0} MiB budget. Backend {8}, GPU {9}, status {10}.",
                             preIndexSeek.Elapsed.TotalMilliseconds,
                             string.IsNullOrWhiteSpace(engine.LastCacheRefillReason) ? "(none)" : engine.LastCacheRefillReason,
                             engine.LastCacheRefillMilliseconds,
                             string.IsNullOrWhiteSpace(engine.LastCacheRefillMode) ? "none" : engine.LastCacheRefillMode,
                             engine.PreviousCachedFrameCount,
                             engine.ForwardCachedFrameCount,
-                            engine.ApproximateCachedFrameBytes / 1048576d));
+                            engine.ApproximateCachedFrameBytes / 1048576d,
+                            engine.DecodedFrameCacheBudgetBytes / 1048576d,
+                            string.IsNullOrWhiteSpace(engine.ActiveDecodeBackend) ? "(unknown)" : engine.ActiveDecodeBackend,
+                            engine.IsGpuActive ? "active" : "inactive",
+                            string.IsNullOrWhiteSpace(engine.GpuCapabilityStatus) ? "(none)" : engine.GpuCapabilityStatus));
                         if (preIndexPosition.IsFrameIndexAbsolute)
                         {
                             checks.Add(Pass(
@@ -655,6 +666,13 @@ namespace FramePlayer.Diagnostics
                     notes,
                     metrics);
             }
+        }
+
+        private static FfmpegReviewEngine CreateFfmpegReviewEngine()
+        {
+            return new FfmpegReviewEngine(
+                new FfmpegReviewEngineOptionsProvider(
+                    new AppPreferencesService()));
         }
 
         private static async Task RunExactFrameSeekChecksAsync(

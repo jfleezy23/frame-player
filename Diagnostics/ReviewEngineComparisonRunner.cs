@@ -7,6 +7,7 @@ using FFmpeg.AutoGen;
 using FramePlayer.Core.Abstractions;
 using FramePlayer.Core.Models;
 using FramePlayer.Engines.FFmpeg;
+using FramePlayer.Services;
 
 namespace FramePlayer.Diagnostics
 {
@@ -49,7 +50,7 @@ namespace FramePlayer.Diagnostics
         {
             return RunScenarioAsync(
                 "custom-ffmpeg",
-                new FfmpegReviewEngine(),
+                CreateFfmpegReviewEngine(),
                 filePath,
                 seekTime,
                 seekFrameIndex,
@@ -429,7 +430,7 @@ namespace FramePlayer.Diagnostics
 
             return string.Format(
                 System.Globalization.CultureInfo.InvariantCulture,
-                "Custom FFmpeg open made the first frame available while the file-global frame index status is '{0}' with {1} indexed frames. Absolute frame identity available: {2}. Open timings: total {3:0.0} ms, container/probe {4:0.0} ms, stream {5:0.0} ms, audio probe {6:0.0} ms, first frame {7:0.0} ms, cache warm {8:0.0} ms, index build {9:0.0} ms.",
+                "Custom FFmpeg open made the first frame available while the file-global frame index status is '{0}' with {1} indexed frames. Absolute frame identity available: {2}. Open timings: total {3:0.0} ms, container/probe {4:0.0} ms, stream {5:0.0} ms, audio probe {6:0.0} ms, first frame {7:0.0} ms, cache warm {8:0.0} ms, index build {9:0.0} ms. Decode backend: {10}. GPU active: {11}. GPU status: {12}. Fallback: {13}. Cache budget: {14:0.0} MiB. Queue depth: {15}.",
                 ffmpegEngine.GlobalFrameIndexStatus,
                 ffmpegEngine.IndexedFrameCount,
                 engine.Position.IsFrameIndexAbsolute ? "yes" : "no",
@@ -439,7 +440,20 @@ namespace FramePlayer.Diagnostics
                 ffmpegEngine.LastOpenAudioProbeMilliseconds,
                 ffmpegEngine.LastOpenFirstFrameDecodeMilliseconds,
                 ffmpegEngine.LastOpenInitialCacheWarmMilliseconds,
-                ffmpegEngine.LastGlobalFrameIndexBuildMilliseconds);
+                ffmpegEngine.LastGlobalFrameIndexBuildMilliseconds,
+                string.IsNullOrWhiteSpace(ffmpegEngine.ActiveDecodeBackend) ? "(unknown)" : ffmpegEngine.ActiveDecodeBackend,
+                ffmpegEngine.IsGpuActive ? "yes" : "no",
+                string.IsNullOrWhiteSpace(ffmpegEngine.GpuCapabilityStatus) ? "(none)" : ffmpegEngine.GpuCapabilityStatus,
+                string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? "(none)" : ffmpegEngine.GpuFallbackReason,
+                ffmpegEngine.DecodedFrameCacheBudgetBytes / 1048576d,
+                ffmpegEngine.OperationalQueueDepth);
+        }
+
+        private static FfmpegReviewEngine CreateFfmpegReviewEngine()
+        {
+            return new FfmpegReviewEngine(
+                new FfmpegReviewEngineOptionsProvider(
+                    new AppPreferencesService()));
         }
 
         private static void EnsureRuntimePathsConfigured()

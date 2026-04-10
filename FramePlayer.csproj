@@ -96,7 +96,6 @@
     <Compile Include="Core\Coordination\TimelineSynchronizationMode.cs" />
     <Compile Include="Core\Coordination\WorkspacePaneSelectionMode.cs" />
     <Compile Include="Core\Models\DecodedFrameBuffer.cs" />
-    <Compile Include="Core\Models\DecodedVideoFrame.cs" />
     <Compile Include="Core\Models\FrameDescriptor.cs" />
     <Compile Include="Core\Models\FrameStepResult.cs" />
     <Compile Include="Core\Models\ReviewPlaybackState.cs" />
@@ -114,16 +113,23 @@
     <Compile Include="Engines\FFmpeg\FfmpegFrameConverter.cs" />
     <Compile Include="Engines\FFmpeg\FfmpegGlobalFrameIndex.cs" />
     <Compile Include="Engines\FFmpeg\FfmpegNativeHelpers.cs" />
+    <Compile Include="Engines\FFmpeg\FfmpegReviewEngineOptions.cs" />
     <Compile Include="Engines\FFmpeg\FfmpegReviewEngine.cs" />
+    <Compile Include="Engines\FFmpeg\GpuBackendPreference.cs" />
     <Compile Include="Engines\FFmpeg\WinMmAudioOutput.cs" />
     <Compile Include="MainWindow.xaml.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Services\AppPreferences.cs" />
+    <Compile Include="Services\AppPreferencesService.cs" />
     <Compile Include="Services\BuildVariantInfo.cs" />
     <Compile Include="Services\DiagnosticLogService.cs" />
+    <Compile Include="Services\FfmpegReviewEngineOptionsProvider.cs" />
     <Compile Include="Services\RecentFilesService.cs" />
+    <Compile Include="Services\VideoReviewEngineFactory.cs" />
+    <Compile Include="Services\WpfFrameBufferPresenter.cs" />
     <Page Include="AboutWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>

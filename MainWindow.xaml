@@ -272,6 +272,12 @@
           <MenuItem Header="Previous _Frame" InputGestureText="Left" Click="PreviousFrameButton_Click" />
           <MenuItem Header="_Next Frame" InputGestureText="Right" Click="NextFrameButton_Click" />
           <Separator />
+          <MenuItem x:Name="UseGpuAccelerationMenuItem"
+                    Header="Use _GPU Acceleration"
+                    IsCheckable="True"
+                    Checked="UseGpuAccelerationMenuItem_Checked"
+                    Unchecked="UseGpuAccelerationMenuItem_Unchecked" />
+          <Separator />
           <MenuItem Header="_Toggle Full Screen" InputGestureText="F11" Click="ToggleFullScreenMenuItem_Click" />
         </MenuItem>
         <MenuItem Header="_Help">
