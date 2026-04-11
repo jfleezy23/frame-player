@@ -9,6 +9,7 @@ Frame Player is a frames-first WPF review tool built on a custom FFmpeg engine w
 - Supports drag and drop for supported files
 - Supports play, pause, rewind 5 seconds, fast forward 5 seconds, previous frame, and next frame
 - Plays decoded audio when a supported audio stream is present, with video-only fallback for silent clips or unsupported audio
+- Supports two-pane compare review on the current WPF host
 - Lets you jump directly to a frame number
 - Uses 1-based frame numbers in the UI and shows current / total in the status bar
 - Supports full screen playback controls
@@ -26,6 +27,7 @@ Frame Player is a frames-first WPF review tool built on a custom FFmpeg engine w
 - Decoded display-order frame identity is the source of truth; frame stepping is not derived from slider position, timestamp math, nominal FPS, or wall-clock playback time.
 - A file-global frame index maps zero-based absolute frame indices to stream timestamps and decode anchors so seeks can materialize the real target frame through FFmpeg seek/decode-forward work.
 - A decoded review cache keeps a hardware-aware local window around the cursor for responsive frame review; GPU sessions avoid a forward review cache and spend budget on exact/backward resilience instead.
+- Compare mode now uses a pane-aware decoded-frame budget so mixed CPU/GPU sessions split one session budget while still favoring reverse-history stability over speculative forward caching.
 - Playback uses the audio clock when audio output is active, otherwise video presentation timing, while pause/seek/step operations continue to preserve exact frame identity.
 
 ## Shortcuts
@@ -45,7 +47,7 @@ Frame Player is a frames-first WPF review tool built on a custom FFmpeg engine w
 
 The shipped app is packaged with the FFmpeg runtime DLLs next to `FramePlayer.exe`.
 
-- Latest published release: `v1.3.0`
+- Current release target: `v1.4.0`
 - Pinned FFmpeg runtime version: `n8.1-frameplayer-source`
 - Runtime provenance: built from the official FFmpeg source tag `n8.1` at commit `9047fa1b084f76b1b4d065af2d743df1b40dfb56`
 - Runtime hashes and source-build metadata are recorded in `Runtime\\runtime-manifest.json` and `docs\\ffmpeg-8.1-build-notes.md`
@@ -131,9 +133,10 @@ GitHub Actions Windows CI is compile validation on a clean runner. The workflow 
 - Timecode is frame-derived and uses nominal whole-frame buckets for fractional frame rates like `23.976` -> `24`
 - The standard build output is in `bin\Release`
 - The packaged test-drop output used for release verification is `bin\TestDrop`
-- The portable release archive is written to `artifacts\FramePlayer-CustomFFmpeg-1.3.0.zip`
+- The portable release archive is written to `artifacts\FramePlayer-CustomFFmpeg-<product-version>.zip`
 - The runtime bootstrap is pinned through `Runtime\runtime-manifest.json`
 - The active runtime is the self-built FFmpeg 8.1 line staged by `scripts\ffmpeg\Build-FFmpeg-8.1.ps1`
+- The current `v1.4.0` release-candidate note is `docs\gpu-vulkan-phase1-release.md`
 
 ## License
 
