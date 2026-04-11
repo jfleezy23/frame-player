@@ -88,7 +88,7 @@ namespace FramePlayer
             _recentFilesService = new RecentFilesService();
             _videoReviewEngineFactory = new VideoReviewEngineFactory(_ffmpegReviewEngineOptionsProvider);
             UseGpuAccelerationMenuItem.IsChecked = _ffmpegReviewEngineOptionsProvider.UseGpuAcceleration;
-            _videoReviewEngine = CreateVideoReviewEngine();
+            _videoReviewEngine = CreateVideoReviewEngine(PrimaryPaneId);
             _sessionCoordinator = new ReviewSessionCoordinator(_videoReviewEngine);
             _workspaceCoordinator = new ReviewWorkspaceCoordinator(_videoReviewEngine, _sessionCoordinator);
             _workspaceCoordinator.WorkspaceChanged += ReviewWorkspaceCoordinator_WorkspaceChanged;
@@ -130,9 +130,9 @@ namespace FramePlayer
                     : GetRuntimeStatusMessage()));
         }
 
-        private IVideoReviewEngine CreateVideoReviewEngine()
+        private IVideoReviewEngine CreateVideoReviewEngine(string paneId)
         {
-            return _videoReviewEngineFactory.Create();
+            return _videoReviewEngineFactory.Create(paneId);
         }
 
         private void FocusPreferredVideoSurface()
@@ -149,12 +149,12 @@ namespace FramePlayer
 
         private static string GetSupportedVideoExtensionsDescription()
         {
-            return "AVI, MOV, M4V, MP4, MKV, WMV, TS";
+            return "AVI, MOV, M4V, MP4, MKV, WMV";
         }
 
         private static string GetOpenFileFilter()
         {
-            return "Supported Video Files|*.avi;*.mov;*.m4v;*.mp4;*.mkv;*.wmv;*.ts|AVI Files|*.avi|MOV Files|*.mov|M4V Files|*.m4v|MP4 Files|*.mp4|MKV Files|*.mkv|WMV Files|*.wmv|TS Files|*.ts|All Files|*.*";
+            return "Supported Video Files|*.avi;*.mov;*.m4v;*.mp4;*.mkv;*.wmv|AVI Files|*.avi|MOV Files|*.mov|M4V Files|*.m4v|MP4 Files|*.mp4|MKV Files|*.mkv|WMV Files|*.wmv|All Files|*.*";
         }
 
         private bool IsCompareModeEnabled
@@ -245,7 +245,7 @@ namespace FramePlayer
                 return;
             }
 
-            _compareVideoReviewEngine = CreateVideoReviewEngine();
+            _compareVideoReviewEngine = CreateVideoReviewEngine(ComparePaneId);
             _compareSessionCoordinator = new ReviewSessionCoordinator(
                 _compareVideoReviewEngine,
                 CompareSessionId,
@@ -2148,8 +2148,7 @@ namespace FramePlayer
                 || extension.Equals(".m4v", StringComparison.OrdinalIgnoreCase)
                 || extension.Equals(".mp4", StringComparison.OrdinalIgnoreCase)
                 || extension.Equals(".mkv", StringComparison.OrdinalIgnoreCase)
-                || extension.Equals(".wmv", StringComparison.OrdinalIgnoreCase)
-                || extension.Equals(".ts", StringComparison.OrdinalIgnoreCase);
+                || extension.Equals(".wmv", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string FormatTime(TimeSpan value)

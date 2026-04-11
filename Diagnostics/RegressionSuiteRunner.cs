@@ -140,6 +140,7 @@ namespace FramePlayer.Diagnostics
                 filePath,
                 Path.GetFileName(filePath),
                 engineResult.MediaProfile,
+                engineResult.DecodeProfile,
                 engineResult.Checks.ToArray(),
                 uiResult.Checks.ToArray(),
                 engineResult.Metrics,
@@ -151,17 +152,21 @@ namespace FramePlayer.Diagnostics
         {
             public EngineRegressionResult(
                 RegressionMediaProfile mediaProfile,
+                RegressionDecodeProfile decodeProfile,
                 IEnumerable<RegressionCheckResult> checks,
                 IEnumerable<string> notes,
                 RegressionMetrics metrics)
             {
                 MediaProfile = mediaProfile;
+                DecodeProfile = decodeProfile ?? RegressionDecodeProfile.Empty;
                 Checks = checks != null ? checks.ToArray() : new RegressionCheckResult[0];
                 Notes = notes != null ? notes.ToArray() : new string[0];
                 Metrics = metrics ?? new RegressionMetrics();
             }
 
             public RegressionMediaProfile MediaProfile { get; }
+
+            public RegressionDecodeProfile DecodeProfile { get; }
 
             public RegressionCheckResult[] Checks { get; }
 
@@ -233,6 +238,7 @@ namespace FramePlayer.Diagnostics
 
                     return new EngineRegressionResult(
                         BuildMediaProfile(engine.MediaInfo),
+                        BuildDecodeProfile(engine, metrics),
                         checks,
                         notes,
                         metrics);
@@ -241,7 +247,7 @@ namespace FramePlayer.Diagnostics
                 var initialPosition = engine.Position ?? ReviewPosition.Empty;
                 notes.Add(string.Format(
                     CultureInfo.InvariantCulture,
-                    "Open timings: total {0:0.###} ms, probe {1:0.###} ms, stream {2:0.###} ms, first frame {3:0.###} ms, cache warm {4:0.###} ms. Index status: {5}. Decode backend: {6}. GPU active: {7}. GPU status: {8}. Fallback: {9}. Queue depth: {10}.",
+                    "Open timings: total {0:0.###} ms, probe {1:0.###} ms, stream {2:0.###} ms, first frame {3:0.###} ms, cache warm {4:0.###} ms. Index status: {5}. Decode backend: {6}. GPU active: {7}. GPU status: {8}. Fallback: {9}. Queue depth: {10}. Budget band: {11}. Host class: {12}. Session budget: {13:0.0} MiB. Pane budget: {14:0.0} MiB. HW transfer: {15:0.###} ms. BGRA convert: {16:0.###} ms.",
                     engine.LastOpenTotalMilliseconds,
                     engine.LastOpenContainerProbeMilliseconds,
                     engine.LastOpenStreamDiscoveryMilliseconds,
@@ -252,14 +258,21 @@ namespace FramePlayer.Diagnostics
                     engine.IsGpuActive ? "yes" : "no",
                     string.IsNullOrWhiteSpace(engine.GpuCapabilityStatus) ? "(none)" : engine.GpuCapabilityStatus,
                     string.IsNullOrWhiteSpace(engine.GpuFallbackReason) ? "(none)" : engine.GpuFallbackReason,
-                    engine.OperationalQueueDepth));
+                    engine.OperationalQueueDepth,
+                    string.IsNullOrWhiteSpace(engine.BudgetBand) ? "(none)" : engine.BudgetBand,
+                    string.IsNullOrWhiteSpace(engine.HostResourceClass) ? "(none)" : engine.HostResourceClass,
+                    engine.SessionDecodedFrameCacheBudgetBytes / 1048576d,
+                    engine.DecodedFrameCacheBudgetBytes / 1048576d,
+                    engine.LastHardwareFrameTransferMilliseconds,
+                    engine.LastBgraConversionMilliseconds));
                 notes.Add(string.Format(
                     CultureInfo.InvariantCulture,
-                    "Open cache window: {0} back / {1} ahead, approx {2:0.0} MiB of {3:0.0} MiB budget, refill {4} {5:0.###} ms ({6}->{7} ahead).",
+                    "Open cache window: {0} back / {1} ahead, approx {2:0.0} MiB of {3:0.0} MiB pane budget ({4:0.0} MiB session), refill {5} {6:0.###} ms ({7}->{8} ahead).",
                     engine.PreviousCachedFrameCount,
                     engine.ForwardCachedFrameCount,
                     engine.ApproximateCachedFrameBytes / 1048576d,
                     engine.DecodedFrameCacheBudgetBytes / 1048576d,
+                    engine.SessionDecodedFrameCacheBudgetBytes / 1048576d,
                     string.IsNullOrWhiteSpace(engine.LastCacheRefillReason) ? "(none)" : engine.LastCacheRefillReason,
                     engine.LastCacheRefillMilliseconds,
                     engine.LastCacheRefillStartingForwardCount,
@@ -396,6 +409,16 @@ namespace FramePlayer.Diagnostics
                     var repeatedStepWindow = SelectRepeatedStepWindow(midpointFrame, totalFrames);
                     if (repeatedStepWindow > 0)
                     {
+                        await RunForwardOnlyStepProofAsync(
+                                filePath,
+                                engine,
+                                midpointFrame,
+                                repeatedStepWindow,
+                                metrics,
+                                checks,
+                                cancellationToken)
+                            .ConfigureAwait(false);
+
                         await RunRepeatedStepChecksAsync(
                                 filePath,
                                 engine,
@@ -662,6 +685,7 @@ namespace FramePlayer.Diagnostics
 
                 return new EngineRegressionResult(
                     BuildMediaProfile(engine.MediaInfo),
+                    BuildDecodeProfile(engine, metrics),
                     checks,
                     notes,
                     metrics);
@@ -772,6 +796,125 @@ namespace FramePlayer.Diagnostics
                     "Forward step failed: " + ex.Message,
                     expectedFrameIndex: targetFrameIndex));
             }
+        }
+
+        private static async Task RunForwardOnlyStepProofAsync(
+            string filePath,
+            FfmpegReviewEngine engine,
+            long startFrameIndex,
+            int stepWindow,
+            RegressionMetrics metrics,
+            ICollection<RegressionCheckResult> checks,
+            CancellationToken cancellationToken)
+        {
+            await engine.SeekToFrameAsync(startFrameIndex, cancellationToken).ConfigureAwait(false);
+            ObserveCacheMetrics(metrics, engine);
+
+            var startingForwardCount = engine.ForwardCachedFrameCount;
+            var forwardCacheHits = 0;
+            var forwardReconstructs = 0;
+
+            for (var i = 1; i <= stepWindow; i++)
+            {
+                var forward = await engine.StepForwardAsync(cancellationToken).ConfigureAwait(false);
+                var expectedFrame = startFrameIndex + i;
+                if (!forward.Success ||
+                    forward.Position == null ||
+                    !forward.Position.IsFrameIndexAbsolute ||
+                    !forward.Position.FrameIndex.HasValue ||
+                    forward.Position.FrameIndex.Value != expectedFrame)
+                {
+                    checks.Add(Fail(
+                        filePath,
+                        "engine",
+                        "correctness",
+                        "forward-only-step-proof",
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "Forward-only step {0} expected frame {1} but landed on {2}.",
+                            i,
+                            expectedFrame,
+                            forward.Position != null && forward.Position.FrameIndex.HasValue
+                                ? forward.Position.FrameIndex.Value.ToString(CultureInfo.InvariantCulture)
+                                : "(none)"),
+                        expectedFrameIndex: expectedFrame,
+                        actualFrameIndex: forward.Position != null ? forward.Position.FrameIndex : null,
+                        actualTime: forward.Position != null ? (TimeSpan?)forward.Position.PresentationTime : null,
+                        cacheHit: forward.WasCacheHit,
+                        requiredReconstruction: forward.RequiredReconstruction));
+                    return;
+                }
+
+                if (forward.WasCacheHit)
+                {
+                    forwardCacheHits++;
+                }
+
+                if (forward.RequiredReconstruction)
+                {
+                    forwardReconstructs++;
+                }
+
+                ObserveCacheMetrics(metrics, engine);
+            }
+
+            if (engine.MaxForwardCachedFrameCount == 0)
+            {
+                if (startingForwardCount == 0 && forwardCacheHits == 0)
+                {
+                    checks.Add(Pass(
+                        filePath,
+                        "engine",
+                        "behavior",
+                        "forward-only-step-proof",
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "Fresh-seek forward stepping stayed exact across {0} steps with no proactive forward cache. Starting forward cache: {1}; forward cache hits: {2}; forward reconstructions: {3}.",
+                            stepWindow,
+                            startingForwardCount,
+                            forwardCacheHits,
+                            forwardReconstructs),
+                        expectedFrameIndex: startFrameIndex + stepWindow,
+                        actualFrameIndex: engine.Position != null ? engine.Position.FrameIndex : null,
+                        actualTime: engine.Position != null ? (TimeSpan?)engine.Position.PresentationTime : null));
+                }
+                else
+                {
+                    checks.Add(Fail(
+                        filePath,
+                        "engine",
+                        "behavior",
+                        "forward-only-step-proof",
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "Configured forward cache is 0, but fresh-seek forward stepping started with {0} forward frames and observed {1} forward cache hits across {2} steps.",
+                            startingForwardCount,
+                            forwardCacheHits,
+                            stepWindow),
+                        expectedFrameIndex: startFrameIndex + stepWindow,
+                        actualFrameIndex: engine.Position != null ? engine.Position.FrameIndex : null,
+                        actualTime: engine.Position != null ? (TimeSpan?)engine.Position.PresentationTime : null));
+                }
+
+                return;
+            }
+
+            checks.Add(Pass(
+                filePath,
+                "engine",
+                "behavior",
+                "forward-only-step-proof",
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Fresh-seek forward stepping stayed exact across {0} steps. Starting forward cache: {1}; configured forward cache: {2}; forward cache hits: {3}; forward reconstructions: {4}.",
+                    stepWindow,
+                    startingForwardCount,
+                    engine.MaxForwardCachedFrameCount,
+                    forwardCacheHits,
+                    forwardReconstructs),
+                expectedFrameIndex: startFrameIndex + stepWindow,
+                actualFrameIndex: engine.Position != null ? engine.Position.FrameIndex : null,
+                actualTime: engine.Position != null ? (TimeSpan?)engine.Position.PresentationTime : null));
         }
 
         private static async Task RunRepeatedStepChecksAsync(
@@ -934,6 +1077,49 @@ namespace FramePlayer.Diagnostics
                 mediaInfo.AudioCodecName,
                 mediaInfo.AudioSampleRate,
                 mediaInfo.AudioChannelCount);
+        }
+
+        private static RegressionDecodeProfile BuildDecodeProfile(
+            FfmpegReviewEngine engine,
+            RegressionMetrics metrics)
+        {
+            if (engine == null)
+            {
+                return RegressionDecodeProfile.Empty;
+            }
+
+            metrics = metrics ?? new RegressionMetrics();
+            var forwardStepAttempts = metrics.ForwardStepCacheHits + metrics.ForwardStepReconstructionCount;
+            return new RegressionDecodeProfile(
+                string.IsNullOrWhiteSpace(engine.ActiveDecodeBackend) ? string.Empty : engine.ActiveDecodeBackend,
+                string.IsNullOrWhiteSpace(engine.ActualBackendUsed) ? string.Empty : engine.ActualBackendUsed,
+                engine.IsGpuActive,
+                string.IsNullOrWhiteSpace(engine.GpuCapabilityStatus) ? string.Empty : engine.GpuCapabilityStatus,
+                string.IsNullOrWhiteSpace(engine.GpuFallbackReason) ? string.Empty : engine.GpuFallbackReason,
+                string.IsNullOrWhiteSpace(engine.BudgetBand) ? string.Empty : engine.BudgetBand,
+                string.IsNullOrWhiteSpace(engine.HostResourceClass) ? string.Empty : engine.HostResourceClass,
+                engine.OperationalQueueDepth,
+                engine.SessionDecodedFrameCacheBudgetBytes,
+                engine.DecodedFrameCacheBudgetBytes,
+                engine.MaxPreviousCachedFrameCount,
+                engine.MaxForwardCachedFrameCount,
+                metrics.MaxObservedPreviousCachedFrames,
+                metrics.MaxObservedForwardCachedFrames,
+                metrics.MaxObservedApproximateCacheBytes,
+                metrics.BackwardStepCacheHits,
+                metrics.BackwardStepReconstructionCount,
+                metrics.ForwardStepCacheHits,
+                metrics.ForwardStepReconstructionCount,
+                forwardStepAttempts > 0
+                    ? metrics.ForwardStepCacheHits / (double)forwardStepAttempts
+                    : 0d,
+                engine.LastHardwareFrameTransferMilliseconds,
+                engine.LastBgraConversionMilliseconds,
+                string.IsNullOrWhiteSpace(engine.GlobalFrameIndexStatus) ? string.Empty : engine.GlobalFrameIndexStatus,
+                engine.IsGlobalFrameIndexAvailable,
+                string.IsNullOrWhiteSpace(metrics.LastObservedCacheRefillReason) ? string.Empty : metrics.LastObservedCacheRefillReason,
+                string.IsNullOrWhiteSpace(metrics.LastObservedCacheRefillMode) ? string.Empty : metrics.LastObservedCacheRefillMode,
+                metrics.LastObservedCacheRefillMilliseconds);
         }
 
         private static long SelectMidpointFrameIndex(long totalFrames)
@@ -2564,6 +2750,7 @@ namespace FramePlayer.Diagnostics
             string filePath,
             string fileName,
             RegressionMediaProfile mediaProfile,
+            RegressionDecodeProfile decodeProfile,
             RegressionCheckResult[] engineChecks,
             RegressionCheckResult[] uiChecks,
             RegressionMetrics engineMetrics,
@@ -2573,6 +2760,7 @@ namespace FramePlayer.Diagnostics
             FilePath = filePath ?? string.Empty;
             FileName = fileName ?? string.Empty;
             MediaProfile = mediaProfile ?? new RegressionMediaProfile(string.Empty, 0, 0, string.Empty, 0d, false, false, string.Empty, 0, 0);
+            DecodeProfile = decodeProfile ?? RegressionDecodeProfile.Empty;
             EngineChecks = engineChecks ?? new RegressionCheckResult[0];
             UiChecks = uiChecks ?? new RegressionCheckResult[0];
             EngineMetrics = engineMetrics ?? new RegressionMetrics();
@@ -2586,6 +2774,8 @@ namespace FramePlayer.Diagnostics
 
         public RegressionMediaProfile MediaProfile { get; }
 
+        public RegressionDecodeProfile DecodeProfile { get; }
+
         public RegressionCheckResult[] EngineChecks { get; }
 
         public RegressionCheckResult[] UiChecks { get; }
@@ -2595,6 +2785,151 @@ namespace FramePlayer.Diagnostics
         public RegressionMetrics UiMetrics { get; }
 
         public string[] Notes { get; }
+    }
+
+    public sealed class RegressionDecodeProfile
+    {
+        public static RegressionDecodeProfile Empty { get; } =
+            new RegressionDecodeProfile(
+                string.Empty,
+                string.Empty,
+                false,
+                string.Empty,
+                string.Empty,
+                string.Empty,
+                string.Empty,
+                0,
+                0L,
+                0L,
+                0,
+                0,
+                0,
+                0,
+                0L,
+                0,
+                0,
+                0,
+                0,
+                0d,
+                0d,
+                0d,
+                string.Empty,
+                false,
+                string.Empty,
+                string.Empty,
+                0d);
+
+        public RegressionDecodeProfile(
+            string activeDecodeBackend,
+            string actualBackendUsed,
+            bool isGpuActive,
+            string gpuCapabilityStatus,
+            string gpuFallbackReason,
+            string budgetBand,
+            string hostResourceClass,
+            int operationalQueueDepth,
+            long sessionDecodedFrameCacheBudgetBytes,
+            long decodedFrameCacheBudgetBytes,
+            int configuredPreviousCachedFrames,
+            int configuredForwardCachedFrames,
+            int observedPreviousCachedFrames,
+            int observedForwardCachedFrames,
+            long observedApproximateCacheBytes,
+            int backwardStepCacheHits,
+            int backwardStepReconstructionCount,
+            int forwardStepCacheHits,
+            int forwardStepReconstructionCount,
+            double forwardStepCacheHitRate,
+            double hardwareFrameTransferMilliseconds,
+            double bgraConversionMilliseconds,
+            string globalFrameIndexStatus,
+            bool isGlobalFrameIndexAvailable,
+            string lastObservedCacheRefillReason,
+            string lastObservedCacheRefillMode,
+            double lastObservedCacheRefillMilliseconds)
+        {
+            ActiveDecodeBackend = activeDecodeBackend ?? string.Empty;
+            ActualBackendUsed = actualBackendUsed ?? string.Empty;
+            IsGpuActive = isGpuActive;
+            GpuCapabilityStatus = gpuCapabilityStatus ?? string.Empty;
+            GpuFallbackReason = gpuFallbackReason ?? string.Empty;
+            BudgetBand = budgetBand ?? string.Empty;
+            HostResourceClass = hostResourceClass ?? string.Empty;
+            OperationalQueueDepth = operationalQueueDepth;
+            SessionDecodedFrameCacheBudgetBytes = sessionDecodedFrameCacheBudgetBytes;
+            DecodedFrameCacheBudgetBytes = decodedFrameCacheBudgetBytes;
+            ConfiguredPreviousCachedFrames = configuredPreviousCachedFrames;
+            ConfiguredForwardCachedFrames = configuredForwardCachedFrames;
+            ObservedPreviousCachedFrames = observedPreviousCachedFrames;
+            ObservedForwardCachedFrames = observedForwardCachedFrames;
+            ObservedApproximateCacheBytes = observedApproximateCacheBytes;
+            BackwardStepCacheHits = backwardStepCacheHits;
+            BackwardStepReconstructionCount = backwardStepReconstructionCount;
+            ForwardStepCacheHits = forwardStepCacheHits;
+            ForwardStepReconstructionCount = forwardStepReconstructionCount;
+            ForwardStepCacheHitRate = forwardStepCacheHitRate;
+            HardwareFrameTransferMilliseconds = hardwareFrameTransferMilliseconds;
+            BgraConversionMilliseconds = bgraConversionMilliseconds;
+            GlobalFrameIndexStatus = globalFrameIndexStatus ?? string.Empty;
+            IsGlobalFrameIndexAvailable = isGlobalFrameIndexAvailable;
+            LastObservedCacheRefillReason = lastObservedCacheRefillReason ?? string.Empty;
+            LastObservedCacheRefillMode = lastObservedCacheRefillMode ?? string.Empty;
+            LastObservedCacheRefillMilliseconds = lastObservedCacheRefillMilliseconds;
+        }
+
+        public string ActiveDecodeBackend { get; }
+
+        public string ActualBackendUsed { get; }
+
+        public bool IsGpuActive { get; }
+
+        public string GpuCapabilityStatus { get; }
+
+        public string GpuFallbackReason { get; }
+
+        public string BudgetBand { get; }
+
+        public string HostResourceClass { get; }
+
+        public int OperationalQueueDepth { get; }
+
+        public long SessionDecodedFrameCacheBudgetBytes { get; }
+
+        public long DecodedFrameCacheBudgetBytes { get; }
+
+        public int ConfiguredPreviousCachedFrames { get; }
+
+        public int ConfiguredForwardCachedFrames { get; }
+
+        public int ObservedPreviousCachedFrames { get; }
+
+        public int ObservedForwardCachedFrames { get; }
+
+        public long ObservedApproximateCacheBytes { get; }
+
+        public int BackwardStepCacheHits { get; }
+
+        public int BackwardStepReconstructionCount { get; }
+
+        public int ForwardStepCacheHits { get; }
+
+        public int ForwardStepReconstructionCount { get; }
+
+        public double ForwardStepCacheHitRate { get; }
+
+        public double HardwareFrameTransferMilliseconds { get; }
+
+        public double BgraConversionMilliseconds { get; }
+
+        public string GlobalFrameIndexStatus { get; }
+
+        public bool IsGlobalFrameIndexAvailable { get; }
+
+        public string LastObservedCacheRefillReason { get; }
+
+        public string LastObservedCacheRefillMode { get; }
+
+        public double LastObservedCacheRefillMilliseconds { get; }
     }
 
     public sealed class RegressionMediaProfile

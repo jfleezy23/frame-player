@@ -228,9 +228,8 @@ namespace FramePlayer.Engines.FFmpeg
 
         internal static bool TryGetAvailablePhysicalMemoryBytes(out long availablePhysicalMemoryBytes)
         {
-            var memoryStatus = new MemoryStatusEx();
-            memoryStatus.dwLength = (uint)Marshal.SizeOf(typeof(MemoryStatusEx));
-            if (!GlobalMemoryStatusEx(ref memoryStatus))
+            MemoryStatusEx memoryStatus;
+            if (!TryGetMemoryStatus(out memoryStatus))
             {
                 availablePhysicalMemoryBytes = 0L;
                 return false;
@@ -238,6 +237,26 @@ namespace FramePlayer.Engines.FFmpeg
 
             availablePhysicalMemoryBytes = (long)Math.Min(long.MaxValue, (double)memoryStatus.ullAvailPhys);
             return true;
+        }
+
+        internal static bool TryGetTotalPhysicalMemoryBytes(out long totalPhysicalMemoryBytes)
+        {
+            MemoryStatusEx memoryStatus;
+            if (!TryGetMemoryStatus(out memoryStatus))
+            {
+                totalPhysicalMemoryBytes = 0L;
+                return false;
+            }
+
+            totalPhysicalMemoryBytes = (long)Math.Min(long.MaxValue, (double)memoryStatus.ullTotalPhys);
+            return true;
+        }
+
+        private static bool TryGetMemoryStatus(out MemoryStatusEx memoryStatus)
+        {
+            memoryStatus = new MemoryStatusEx();
+            memoryStatus.dwLength = (uint)Marshal.SizeOf(typeof(MemoryStatusEx));
+            return GlobalMemoryStatusEx(ref memoryStatus);
         }
 
         private static avformat_open_input_utf8_delegate LoadAvformatOpenInputUtf8()

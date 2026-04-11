@@ -12,7 +12,7 @@ param(
     [string]$Configuration = "Debug",
 
     [Parameter(Mandatory = $false)]
-    [string[]]$IncludeExtensions = @(".mp4", ".mov", ".mkv", ".avi", ".wmv", ".m4v", ".ts")
+    [string[]]$IncludeExtensions = @(".mp4", ".mov", ".mkv", ".avi", ".wmv", ".m4v")
 )
 
 $ErrorActionPreference = "Stop"
@@ -107,6 +107,59 @@ function Get-ScenarioReportForBackend
     return $FileResult.ComparisonReport.CustomFfmpeg
 }
 
+function Convert-ToDecodeSnapshot
+{
+    param(
+        $Snapshot
+    )
+
+    if ($null -eq $Snapshot)
+    {
+        return $null
+    }
+
+    return [pscustomobject]@{
+        DecodeBackend = $Snapshot.ActiveDecodeBackend
+        ActualBackendUsed = $Snapshot.ActualBackendUsed
+        GpuActive = $Snapshot.IsGpuActive
+        GpuStatus = $Snapshot.GpuCapabilityStatus
+        GpuFallbackReason = $Snapshot.GpuFallbackReason
+        BudgetBand = $Snapshot.BudgetBand
+        HostResourceClass = $Snapshot.HostResourceClass
+        QueueDepth = $Snapshot.OperationalQueueDepth
+        SessionCacheBudgetMiB = if ($Snapshot.SessionDecodedFrameCacheBudgetBytes -ne $null)
+        {
+            [math]::Round(($Snapshot.SessionDecodedFrameCacheBudgetBytes / 1MB), 3)
+        }
+        else
+        {
+            $null
+        }
+        CacheBudgetMiB = if ($Snapshot.DecodedFrameCacheBudgetBytes -ne $null)
+        {
+            [math]::Round(($Snapshot.DecodedFrameCacheBudgetBytes / 1MB), 3)
+        }
+        else
+        {
+            $null
+        }
+        CacheBack = $Snapshot.PreviousCachedFrameCount
+        CacheAhead = $Snapshot.ForwardCachedFrameCount
+        MaxCacheBack = $Snapshot.MaxPreviousCachedFrameCount
+        MaxCacheAhead = $Snapshot.MaxForwardCachedFrameCount
+        ApproximateCacheMiB = if ($Snapshot.ApproximateCachedFrameBytes -ne $null)
+        {
+            [math]::Round(($Snapshot.ApproximateCachedFrameBytes / 1MB), 3)
+        }
+        else
+        {
+            $null
+        }
+        HwTransferMilliseconds = $Snapshot.HardwareFrameTransferMilliseconds
+        BgraConversionMilliseconds = $Snapshot.BgraConversionMilliseconds
+    }
+}
+
 function Convert-ToBackendOutput
 {
     param(
@@ -154,6 +207,7 @@ function Convert-ToBackendOutput
             AnchorFrameIndex = $scenario.OpenResult.AnchorFrameIndex
             PositionFrameIndex = $scenario.OpenResult.Position.FrameIndex
             PositionAbsolute = $scenario.OpenResult.Position.IsFrameIndexAbsolute
+            Decode = Convert-ToDecodeSnapshot -Snapshot $scenario.OpenResult
         }
         Playback = [pscustomobject]@{
             Succeeded = $scenario.PlaybackResult.Succeeded
@@ -169,6 +223,7 @@ function Convert-ToBackendOutput
             LastAudioSubmittedBytes = $scenario.PlaybackResult.LastAudioSubmittedBytes
             AudioCodecName = $scenario.PlaybackResult.AudioCodecName
             AudioErrorMessage = $scenario.PlaybackResult.AudioErrorMessage
+            Decode = Convert-ToDecodeSnapshot -Snapshot $scenario.PlaybackResult
         }
         SeekToTime = [pscustomobject]@{
             Succeeded = $scenario.SeekToTimeResult.Succeeded
@@ -183,6 +238,7 @@ function Convert-ToBackendOutput
             AnchorFrameIndex = $scenario.SeekToTimeResult.AnchorFrameIndex
             LastPlaybackUsedAudioClock = $scenario.SeekToTimeResult.LastPlaybackUsedAudioClock
             LastAudioSubmittedBytes = $scenario.SeekToTimeResult.LastAudioSubmittedBytes
+            Decode = Convert-ToDecodeSnapshot -Snapshot $scenario.SeekToTimeResult
         }
         SeekToFrame = [pscustomobject]@{
             Succeeded = $scenario.SeekToFrameResult.Succeeded
@@ -197,6 +253,7 @@ function Convert-ToBackendOutput
             AnchorFrameIndex = $scenario.SeekToFrameResult.AnchorFrameIndex
             LastPlaybackUsedAudioClock = $scenario.SeekToFrameResult.LastPlaybackUsedAudioClock
             LastAudioSubmittedBytes = $scenario.SeekToFrameResult.LastAudioSubmittedBytes
+            Decode = Convert-ToDecodeSnapshot -Snapshot $scenario.SeekToFrameResult
         }
         StepBackward = [pscustomobject]@{
             Succeeded = $scenario.BackwardStepResult.StepResult.Success
@@ -211,6 +268,7 @@ function Convert-ToBackendOutput
             AnchorFrameIndex = $scenario.BackwardStepResult.AnchorFrameIndex
             LastPlaybackUsedAudioClock = $scenario.BackwardStepResult.LastPlaybackUsedAudioClock
             LastAudioSubmittedBytes = $scenario.BackwardStepResult.LastAudioSubmittedBytes
+            Decode = Convert-ToDecodeSnapshot -Snapshot $scenario.BackwardStepResult
         }
         StepForward = [pscustomobject]@{
             Succeeded = $scenario.ForwardStepResult.StepResult.Success
@@ -225,6 +283,7 @@ function Convert-ToBackendOutput
             AnchorFrameIndex = $scenario.ForwardStepResult.AnchorFrameIndex
             LastPlaybackUsedAudioClock = $scenario.ForwardStepResult.LastPlaybackUsedAudioClock
             LastAudioSubmittedBytes = $scenario.ForwardStepResult.LastAudioSubmittedBytes
+            Decode = Convert-ToDecodeSnapshot -Snapshot $scenario.ForwardStepResult
         }
         ScenarioError = $scenario.ScenarioError
     }
@@ -259,6 +318,22 @@ function Convert-ToCsvRow
         Height = $BackendOutput.Open.Height
         Duration = $BackendOutput.Open.Duration
         NominalFps = $BackendOutput.Open.NominalFps
+        OpenDecodeBackend = $BackendOutput.Open.Decode.DecodeBackend
+        OpenGpuActive = $BackendOutput.Open.Decode.GpuActive
+        OpenGpuStatus = $BackendOutput.Open.Decode.GpuStatus
+        OpenGpuFallbackReason = $BackendOutput.Open.Decode.GpuFallbackReason
+        OpenQueueDepth = $BackendOutput.Open.Decode.QueueDepth
+        OpenCacheBudgetMiB = $BackendOutput.Open.Decode.CacheBudgetMiB
+        OpenSessionCacheBudgetMiB = $BackendOutput.Open.Decode.SessionCacheBudgetMiB
+        OpenBudgetBand = $BackendOutput.Open.Decode.BudgetBand
+        OpenHostResourceClass = $BackendOutput.Open.Decode.HostResourceClass
+        OpenCacheBack = $BackendOutput.Open.Decode.CacheBack
+        OpenCacheAhead = $BackendOutput.Open.Decode.CacheAhead
+        OpenMaxCacheBack = $BackendOutput.Open.Decode.MaxCacheBack
+        OpenMaxCacheAhead = $BackendOutput.Open.Decode.MaxCacheAhead
+        OpenApproximateCacheMiB = $BackendOutput.Open.Decode.ApproximateCacheMiB
+        OpenHwTransferMilliseconds = $BackendOutput.Open.Decode.HwTransferMilliseconds
+        OpenBgraConversionMilliseconds = $BackendOutput.Open.Decode.BgraConversionMilliseconds
         HasAudioStream = $BackendOutput.Open.HasAudioStream
         AudioPlaybackAvailable = $BackendOutput.Open.AudioPlaybackAvailable
         AudioCodecName = $BackendOutput.Open.AudioCodecName
@@ -267,6 +342,8 @@ function Convert-ToCsvRow
         LastAudioSubmittedBytes = $BackendOutput.Open.LastAudioSubmittedBytes
         PlaybackUsedAudioClock = $BackendOutput.Playback.LastPlaybackUsedAudioClock
         PlaybackAudioSubmittedBytes = $BackendOutput.Playback.LastAudioSubmittedBytes
+        PlaybackDecodeBackend = $BackendOutput.Playback.Decode.DecodeBackend
+        PlaybackGpuActive = $BackendOutput.Playback.Decode.GpuActive
         SeekToTimeSucceeded = $BackendOutput.SeekToTime.Succeeded
         SeekToTimeElapsedMilliseconds = $BackendOutput.SeekToTime.ElapsedMilliseconds
         SeekToTimeFrameIndex = $BackendOutput.SeekToTime.FrameIndex
@@ -274,6 +351,9 @@ function Convert-ToCsvRow
         SeekToTimeUsedGlobalIndex = $BackendOutput.SeekToTime.UsedGlobalIndex
         SeekToTimeAnchorStrategy = $BackendOutput.SeekToTime.AnchorStrategy
         SeekToTimeAnchorFrameIndex = $BackendOutput.SeekToTime.AnchorFrameIndex
+        SeekToTimeDecodeBackend = $BackendOutput.SeekToTime.Decode.DecodeBackend
+        SeekToTimeCacheBack = $BackendOutput.SeekToTime.Decode.CacheBack
+        SeekToTimeCacheAhead = $BackendOutput.SeekToTime.Decode.CacheAhead
         SeekToFrameSucceeded = $BackendOutput.SeekToFrame.Succeeded
         SeekToFrameElapsedMilliseconds = $BackendOutput.SeekToFrame.ElapsedMilliseconds
         SeekToFrameFrameIndex = $BackendOutput.SeekToFrame.FrameIndex
@@ -281,6 +361,9 @@ function Convert-ToCsvRow
         SeekToFrameUsedGlobalIndex = $BackendOutput.SeekToFrame.UsedGlobalIndex
         SeekToFrameAnchorStrategy = $BackendOutput.SeekToFrame.AnchorStrategy
         SeekToFrameAnchorFrameIndex = $BackendOutput.SeekToFrame.AnchorFrameIndex
+        SeekToFrameDecodeBackend = $BackendOutput.SeekToFrame.Decode.DecodeBackend
+        SeekToFrameCacheBack = $BackendOutput.SeekToFrame.Decode.CacheBack
+        SeekToFrameCacheAhead = $BackendOutput.SeekToFrame.Decode.CacheAhead
         BackwardStepSucceeded = $BackendOutput.StepBackward.Succeeded
         BackwardStepElapsedMilliseconds = $BackendOutput.StepBackward.ElapsedMilliseconds
         BackwardFrameIndex = $BackendOutput.StepBackward.FrameIndex
@@ -290,6 +373,9 @@ function Convert-ToCsvRow
         BackwardUsedGlobalIndex = $BackendOutput.StepBackward.UsedGlobalIndex
         BackwardAnchorStrategy = $BackendOutput.StepBackward.AnchorStrategy
         BackwardAnchorFrameIndex = $BackendOutput.StepBackward.AnchorFrameIndex
+        BackwardDecodeBackend = $BackendOutput.StepBackward.Decode.DecodeBackend
+        BackwardCacheBack = $BackendOutput.StepBackward.Decode.CacheBack
+        BackwardCacheAhead = $BackendOutput.StepBackward.Decode.CacheAhead
         ForwardStepSucceeded = $BackendOutput.StepForward.Succeeded
         ForwardStepElapsedMilliseconds = $BackendOutput.StepForward.ElapsedMilliseconds
         ForwardFrameIndex = $BackendOutput.StepForward.FrameIndex
@@ -299,6 +385,11 @@ function Convert-ToCsvRow
         ForwardUsedGlobalIndex = $BackendOutput.StepForward.UsedGlobalIndex
         ForwardAnchorStrategy = $BackendOutput.StepForward.AnchorStrategy
         ForwardAnchorFrameIndex = $BackendOutput.StepForward.AnchorFrameIndex
+        ForwardDecodeBackend = $BackendOutput.StepForward.Decode.DecodeBackend
+        ForwardGpuActive = $BackendOutput.StepForward.Decode.GpuActive
+        ForwardCacheBack = $BackendOutput.StepForward.Decode.CacheBack
+        ForwardCacheAhead = $BackendOutput.StepForward.Decode.CacheAhead
+        ForwardMaxCacheAhead = $BackendOutput.StepForward.Decode.MaxCacheAhead
         Warnings = [string]::Join(" | ", @($BackendOutput.Warnings))
         Failures = [string]::Join(" | ", @($BackendOutput.Failures))
         ScenarioError = $BackendOutput.ScenarioError
@@ -339,8 +430,8 @@ function New-MarkdownSummary
     [void]$lines.Add("")
     [void]$lines.Add("## Per-File Results")
     [void]$lines.Add("")
-    [void]$lines.Add("| File | Custom FFmpeg | Highlights |")
-    [void]$lines.Add("| --- | --- | --- |")
+    [void]$lines.Add("| File | Custom FFmpeg | Backend | GPU | Open Cache | Forward Step | Highlights |")
+    [void]$lines.Add("| --- | --- | --- | --- | --- | --- | --- |")
     foreach ($fileOutput in $FileOutputs)
     {
         $custom = $fileOutput.Backends | Where-Object { $_.BackendName -eq "custom-ffmpeg" } | Select-Object -First 1
@@ -353,7 +444,48 @@ function New-MarkdownSummary
             "None"
         }
 
-        [void]$lines.Add("| $($fileOutput.FileName) | $($custom.Classification) | $highlights |")
+        $backendText = if ($custom -and $custom.Open -and $custom.Open.Decode)
+        {
+            $custom.Open.Decode.DecodeBackend
+        }
+        else
+        {
+            "(unknown)"
+        }
+        $gpuText = if ($custom -and $custom.Open -and $custom.Open.Decode)
+        {
+            if ($custom.Open.Decode.GpuActive) { "active" } else { "inactive" }
+        }
+        else
+        {
+            "(unknown)"
+        }
+        $openCacheText = if ($custom -and $custom.Open -and $custom.Open.Decode)
+        {
+            "{0} back / {1} ahead (max {2}/{3})" -f `
+                $custom.Open.Decode.CacheBack, `
+                $custom.Open.Decode.CacheAhead, `
+                $custom.Open.Decode.MaxCacheBack, `
+                $custom.Open.Decode.MaxCacheAhead
+        }
+        else
+        {
+            "(unavailable)"
+        }
+        $forwardStepText = if ($custom -and $custom.StepForward)
+        {
+            "cache-hit={0}; reconstruct={1}; cache={2}/{3}" -f `
+                $custom.StepForward.WasCacheHit, `
+                $custom.StepForward.RequiredReconstruction, `
+                $custom.StepForward.Decode.CacheBack, `
+                $custom.StepForward.Decode.CacheAhead
+        }
+        else
+        {
+            "(unavailable)"
+        }
+
+        [void]$lines.Add("| $($fileOutput.FileName) | $($custom.Classification) | $backendText | $gpuText | $openCacheText | $forwardStepText | $highlights |")
     }
 
     $issues = @(
