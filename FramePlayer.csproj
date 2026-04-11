@@ -104,11 +104,6 @@
     <Compile Include="Core\Models\VideoMediaInfo.cs" />
     <Compile Include="Diagnostics\ReviewEngineComparisonRunner.cs" />
     <Compile Include="Diagnostics\ReviewEngineManualTestRunner.cs" />
-    <Compile Include="Diagnostics\DecodedFrameBudgetCoordinatorProbe.cs" />
-    <Compile Include="Diagnostics\DecodedFrameBudgetCoordinatorProbeCli.cs" />
-    <Compile Include="Diagnostics\DualPaneBudgetHarnessModels.cs" />
-    <Compile Include="Diagnostics\DualPaneBudgetHarnessRunner.cs" />
-    <Compile Include="Diagnostics\DualPaneBudgetHarnessCli.cs" />
     <Compile Include="Diagnostics\RegressionSuiteCli.cs" />
     <Compile Include="Diagnostics\RegressionSuiteRunner.cs" />
     <Compile Include="Diagnostics\WorkspaceCoordinatorProbe.cs" />
@@ -163,7 +158,6 @@
     <None Include="scripts\Ensure-DevRuntime.ps1" />
     <None Include="scripts\Run-ReviewEngine-ManualTests.ps1" />
     <None Include="scripts\Run-RegressionSuite.ps1" />
-    <None Include="scripts\Run-DualPaneBudgetHarness.ps1" />
     <None Include="LICENSE">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
