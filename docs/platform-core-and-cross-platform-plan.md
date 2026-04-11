@@ -34,7 +34,7 @@ The current WPF shell still owns responsibilities that should not be the long-te
 - `DispatcherTimer` usage for UI refresh and hold-to-repeat stepping
 - `BitmapSource` presentation and `Image.Source` updates
 
-There is also one important platform leak inside `Core`: `DecodedVideoFrame` currently carries `BitmapSource` and `PixelFormat`, which ties the current frame presentation contract to WPF.
+The main engine-to-shell frame handoff is now `DecodedFrameBuffer`, so `BitmapSource` creation stays in the WPF host instead of the core decode path.
 
 ## New Seams Added In This Pass
 
@@ -56,7 +56,7 @@ The scaffolding added here is intentionally small:
 - `Core\Coordination\SynchronizedOperationScope`
   - focused-pane vs all-pane operations
 
-These types are scaffolding only. They do not yet change the current WPF app flow.
+These types started as scaffolding. The decoded-frame buffer seam is now active in the current WPF host, which keeps the GPU phase from deepening the old WPF-specific frame contract.
 
 ## Current Extraction Status
 
@@ -103,15 +103,13 @@ The intended future model is a synchronized workspace rather than a pile of inde
 - Absolute frame identity remains per session. A synchronized workspace should not pretend that multiple files share one literal frame number unless they actually do.
 - Index/cache readiness also remains per session. A multi-video UI must surface when one pane is ready and another is still warming or indexing.
 
-## Why Vulkan Is Not First
+## GPU Phase Note
 
-Vulkan is not the next architectural step because the current blocker is not graphics API choice.
+That earlier warning about "Vulkan is not first" was intentionally resolved by landing the neutral decoded-frame buffer seam before starting GPU work.
 
-- The current code still mixes review/session state and WPF shell behavior in `MainWindow.xaml.cs`.
-- The current decoded-frame handoff is WPF-specific.
-- Multi-video coordination needs a neutral state model before any GPU-specific presentation work is worth the risk.
-
-Changing rendering APIs before those seams exist would increase complexity without solving the actual migration problem.
+- The current phase still keeps the WPF UI and CPU readback presentation path.
+- FFmpeg/Vulkan decode can now be explored without making the core frame contract more WPF-specific.
+- Multi-video coordination and a future Avalonia shell still matter, but they no longer block a correctness-first GPU decode phase.
 
 ## Why Avalonia Is The Likely Next UI Path
 

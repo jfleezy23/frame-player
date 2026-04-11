@@ -4,7 +4,7 @@ Frame Player is a frames-first WPF review tool built on a custom FFmpeg engine w
 
 ## What It Does
 
-- Opens `.avi`, `.mov`, `.m4v`, `.mp4`, `.mkv`, `.wmv`, and `.ts`
+- Opens `.avi`, `.mov`, `.m4v`, `.mp4`, `.mkv`, and `.wmv`
 - Uses a standard desktop UI with `Open Video`, `Open Recent`, and `Close Video`
 - Supports drag and drop for supported files
 - Supports play, pause, rewind 5 seconds, fast forward 5 seconds, previous frame, and next frame
@@ -15,15 +15,17 @@ Frame Player is a frames-first WPF review tool built on a custom FFmpeg engine w
 - Keeps Left and Right for single-frame stepping while paused, and supports hold-to-repeat stepping
 - Shows playback state, FPS, frame-step size, duration, frame number, and a frame-derived timecode readout
 - Shows decoded-frame cache status so it is clear when seek/step operations are warming or rebuilding the local cache
+- Auto-enables Vulkan-backed FFmpeg decode when the current runtime, driver, codec, and device path are verified, with CPU fallback everywhere else
+- Persists a visible `Playback > Use GPU Acceleration` preference for newly opened media
 - Can export a diagnostic session log for external testers
 - Includes `Help` and `About` dialogs in the menu bar
 
 ## Review Architecture
 
-- The custom FFmpeg engine decodes video frames directly through `FFmpeg.AutoGen` and presents converted BGRA frames to the WPF surface.
+- The custom FFmpeg engine decodes video frames directly through `FFmpeg.AutoGen`, treats neutral BGRA frame buffers as the engine-to-shell contract, and only creates WPF `BitmapSource` objects at presentation time.
 - Decoded display-order frame identity is the source of truth; frame stepping is not derived from slider position, timestamp math, nominal FPS, or wall-clock playback time.
 - A file-global frame index maps zero-based absolute frame indices to stream timestamps and decode anchors so seeks can materialize the real target frame through FFmpeg seek/decode-forward work.
-- A decoded review cache keeps a small local window around the cursor for responsive frame review; this cache is separate from the file-global index.
+- A decoded review cache keeps a hardware-aware local window around the cursor for responsive frame review; GPU sessions avoid a forward review cache and spend budget on exact/backward resilience instead.
 - Playback uses the audio clock when audio output is active, otherwise video presentation timing, while pause/seek/step operations continue to preserve exact frame identity.
 
 ## Shortcuts
@@ -47,6 +49,7 @@ The shipped app is packaged with the FFmpeg runtime DLLs next to `FramePlayer.ex
 - Pinned FFmpeg runtime version: `n8.1-frameplayer-source`
 - Runtime provenance: built from the official FFmpeg source tag `n8.1` at commit `9047fa1b084f76b1b4d065af2d743df1b40dfb56`
 - Runtime hashes and source-build metadata are recorded in `Runtime\\runtime-manifest.json` and `docs\\ffmpeg-8.1-build-notes.md`
+- The current source-build path enables FFmpeg's Vulkan hardware-device support, but actual GPU acceleration still depends on a system Vulkan loader/driver at runtime
 - There is no FFmpeg folder picker in the UI
 - The app does not call `ffmpeg.exe` or `ffprobe.exe`
 - Playback and frame stepping run through the custom FFmpeg engine and the bundled FFmpeg DLLs loaded in-process
@@ -78,12 +81,16 @@ That script:
 
 If the self-built runtime has not been staged yet, run `.\scripts\ffmpeg\Build-FFmpeg-8.1.ps1` first. Regular Visual Studio and MSBuild builds still bootstrap `Runtime\ffmpeg` automatically when it is missing, but today that flow assumes the FFmpeg 8.1 runtime has already been staged locally.
 
+For phase-1 GPU validation, keep the default `Playback > Use GPU Acceleration` setting enabled and test on a machine with a working Vulkan loader/driver. Unsupported systems and unsupported codec/device combinations stay on CPU decode automatically.
+
 ## Requirements
 
 - Windows 10 or later
 - Visual Studio 2022 Build Tools or Visual Studio 2022 with `.NET desktop development`
 - `.NET Framework 4.8 Developer Pack`
 - PowerShell 5.1 or later
+
+For Vulkan-backed GPU decode testing, the local machine also needs a working Vulkan loader/driver. CPU decode remains the default fallback when Vulkan is unavailable or unsupported.
 
 ## Build From Source
 

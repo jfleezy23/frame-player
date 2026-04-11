@@ -3,6 +3,7 @@ using System.IO;
 using System.Windows;
 using FFmpeg.AutoGen;
 using FramePlayer.Diagnostics;
+using FramePlayer.Engines.FFmpeg;
 using FramePlayer.Services;
 
 namespace FramePlayer
@@ -67,6 +68,19 @@ namespace FramePlayer
             RuntimeDirectory = baseDirectory;
             RuntimeValidationMessage = string.Empty;
             ffmpeg.RootPath = baseDirectory;
+            StartGpuWarmupIfEnabled();
+        }
+
+        private static void StartGpuWarmupIfEnabled()
+        {
+            var optionsProvider = new FfmpegReviewEngineOptionsProvider(new AppPreferencesService());
+            var options = optionsProvider.GetCurrent();
+            if (options.GpuBackendPreference == GpuBackendPreference.Disabled)
+            {
+                return;
+            }
+
+            FfmpegHardwareDeviceCache.StartVulkanWarmup();
         }
 
         private static void AppendRegressionStartupLog(string logPath, string message)

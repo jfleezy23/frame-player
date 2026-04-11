@@ -226,6 +226,39 @@ namespace FramePlayer.Engines.FFmpeg
                 : timestamp;
         }
 
+        internal static bool TryGetAvailablePhysicalMemoryBytes(out long availablePhysicalMemoryBytes)
+        {
+            MemoryStatusEx memoryStatus;
+            if (!TryGetMemoryStatus(out memoryStatus))
+            {
+                availablePhysicalMemoryBytes = 0L;
+                return false;
+            }
+
+            availablePhysicalMemoryBytes = (long)Math.Min(long.MaxValue, (double)memoryStatus.ullAvailPhys);
+            return true;
+        }
+
+        internal static bool TryGetTotalPhysicalMemoryBytes(out long totalPhysicalMemoryBytes)
+        {
+            MemoryStatusEx memoryStatus;
+            if (!TryGetMemoryStatus(out memoryStatus))
+            {
+                totalPhysicalMemoryBytes = 0L;
+                return false;
+            }
+
+            totalPhysicalMemoryBytes = (long)Math.Min(long.MaxValue, (double)memoryStatus.ullTotalPhys);
+            return true;
+        }
+
+        private static bool TryGetMemoryStatus(out MemoryStatusEx memoryStatus)
+        {
+            memoryStatus = new MemoryStatusEx();
+            memoryStatus.dwLength = (uint)Marshal.SizeOf(typeof(MemoryStatusEx));
+            return GlobalMemoryStatusEx(ref memoryStatus);
+        }
+
         private static avformat_open_input_utf8_delegate LoadAvformatOpenInputUtf8()
         {
             var runtimeDirectory = ffmpeg.RootPath;
@@ -291,5 +324,23 @@ namespace FramePlayer.Engines.FFmpeg
 
         [DllImport("kernel32", CharSet = CharSet.Ansi, ExactSpelling = true, SetLastError = true)]
         private static extern IntPtr GetProcAddress(IntPtr hModule, string procName);
+
+        [DllImport("kernel32", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GlobalMemoryStatusEx(ref MemoryStatusEx lpBuffer);
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+        private struct MemoryStatusEx
+        {
+            public uint dwLength;
+            public uint dwMemoryLoad;
+            public ulong ullTotalPhys;
+            public ulong ullAvailPhys;
+            public ulong ullTotalPageFile;
+            public ulong ullAvailPageFile;
+            public ulong ullTotalVirtual;
+            public ulong ullAvailVirtual;
+            public ulong ullAvailExtendedVirtual;
+        }
     }
 }

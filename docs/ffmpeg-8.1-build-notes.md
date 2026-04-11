@@ -22,6 +22,7 @@ The default source/build scratch path is `%TEMP%\frameplayer-ffmpeg-8.1-source-b
 - Windows x64
 - MSYS2 MinGW-w64 x64 environment
 - Required packages: `git`, `make`, `pkgconf`, `diffutils`, `mingw-w64-x86_64-gcc`, `mingw-w64-x86_64-nasm`, `mingw-w64-x86_64-pkgconf`
+- For the FFmpeg Vulkan decode path, the MinGW-w64 environment also needs Vulkan headers available to `configure`, which in practice means installing `mingw-w64-x86_64-vulkan-headers`. Installing `mingw-w64-x86_64-vulkan-loader` alongside it is also recommended so the MinGW toolchain has the matching loader import library and `vulkan.pc` metadata.
 
 ## Configure Scope
 
@@ -42,6 +43,13 @@ The initial candidate build is intentionally app-focused:
 This should produce the libraries Frame Player directly uses today: `avcodec`, `avformat`, `avutil`, `swresample`, and `swscale`, with broad native demuxer/decoder coverage but without FFmpeg CLI programs, muxers, encoders, network protocols, filters, or devices. If corpus validation later shows demuxer/decoder coverage gaps, widen the source build configuration in a separate pass.
 
 The MinGW-w64 build can also require `libwinpthread-1.dll` at runtime. The build script stages that toolchain runtime DLL if the built FFmpeg DLLs require it. It is not an FFmpeg prebuilt binary.
+
+## Vulkan Decode Enablement
+
+- The source-build script now configures FFmpeg with `--enable-vulkan` so the runtime can expose FFmpeg's Vulkan hardware-device path to the app.
+- The source-build script verifies that FFmpeg `configure` actually enabled `CONFIG_VULKAN`, `CONFIG_H264_VULKAN_HWACCEL`, `CONFIG_HEVC_VULKAN_HWACCEL`, and `CONFIG_AV1_VULKAN_HWACCEL` before compiling the runtime.
+- Frame Player phase 1 still uses GPU decode plus CPU readback into the existing WPF presentation path. The runtime archive does not bundle a verified Vulkan loader.
+- Actual GPU acceleration therefore depends on a working system Vulkan loader/driver on the target machine. Unsupported hardware, unsupported codecs, or failed Vulkan device creation must fall back to CPU decode.
 
 ## Candidate Output
 
@@ -64,6 +72,7 @@ Both paths are intentionally ignored by git. `scripts\Ensure-DevRuntime.ps1` res
 - `Runtime\runtime-manifest.json` records the expected FFmpeg 8.1 DLL hashes, archive filename, archive SHA256, and source-build provenance.
 - `scripts\Ensure-DevRuntime.ps1` restores `Runtime\ffmpeg\` from `Runtime\ffmpeg-8.1-candidate\` or `artifacts\FramePlayer-ffmpeg-runtime-x64.zip` before attempting any remote download path.
 - If neither local source exists, the script now fails fast when the manifest does not provide a verified remote `tag` or `assetUrl` for the pinned FFmpeg 8.1 runtime.
+- `Runtime\runtime-manifest.json` now also records that the current source-built runtime targets FFmpeg Vulkan hardware-device support while still requiring a system Vulkan loader at runtime.
 
 ## Windows CI
 

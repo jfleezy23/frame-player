@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using FramePlayer.Engines.FFmpeg;
+using FramePlayer.Services;
 
 namespace FramePlayer.Diagnostics
 {
@@ -103,7 +104,7 @@ namespace FramePlayer.Diagnostics
             var indexAvailable = false;
             var preflightError = string.Empty;
 
-            using (var engine = new FfmpegReviewEngine())
+            using (var engine = CreateFfmpegReviewEngine())
             {
                 try
                 {
@@ -338,6 +339,13 @@ namespace FramePlayer.Diagnostics
                 classification,
                 warnings.Distinct(StringComparer.Ordinal).ToArray(),
                 failures.Distinct(StringComparer.Ordinal).ToArray());
+        }
+
+        private static FfmpegReviewEngine CreateFfmpegReviewEngine()
+        {
+            return new FfmpegReviewEngine(
+                new FfmpegReviewEngineOptionsProvider(
+                    new AppPreferencesService()));
         }
 
         private static void EvaluateOperation(

@@ -34,5 +34,14 @@ namespace FramePlayer.Core.Models
         {
             get { return PixelBuffer.Length; }
         }
+
+        public DecodedFrameBuffer WithDescriptor(FrameDescriptor descriptor)
+        {
+            return new DecodedFrameBuffer(
+                descriptor ?? throw new ArgumentNullException(nameof(descriptor)),
+                PixelBuffer,
+                Stride,
+                PixelFormatName);
+        }
     }
 }

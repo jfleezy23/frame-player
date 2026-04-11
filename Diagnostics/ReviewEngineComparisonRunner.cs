@@ -7,6 +7,7 @@ using FFmpeg.AutoGen;
 using FramePlayer.Core.Abstractions;
 using FramePlayer.Core.Models;
 using FramePlayer.Engines.FFmpeg;
+using FramePlayer.Services;
 
 namespace FramePlayer.Diagnostics
 {
@@ -49,7 +50,7 @@ namespace FramePlayer.Diagnostics
         {
             return RunScenarioAsync(
                 "custom-ffmpeg",
-                new FfmpegReviewEngine(),
+                CreateFfmpegReviewEngine(),
                 filePath,
                 seekTime,
                 seekFrameIndex,
@@ -255,6 +256,23 @@ namespace FramePlayer.Diagnostics
                 diagnostics.UsedGlobalIndex,
                 diagnostics.AnchorStrategy,
                 diagnostics.AnchorFrameIndex,
+                diagnostics.ActiveDecodeBackend,
+                diagnostics.IsGpuActive,
+                diagnostics.GpuCapabilityStatus,
+                diagnostics.GpuFallbackReason,
+                diagnostics.OperationalQueueDepth,
+                diagnostics.SessionDecodedFrameCacheBudgetBytes,
+                diagnostics.DecodedFrameCacheBudgetBytes,
+                diagnostics.BudgetBand,
+                diagnostics.HostResourceClass,
+                diagnostics.ActualBackendUsed,
+                diagnostics.PreviousCachedFrameCount,
+                diagnostics.ForwardCachedFrameCount,
+                diagnostics.MaxPreviousCachedFrameCount,
+                diagnostics.MaxForwardCachedFrameCount,
+                diagnostics.ApproximateCachedFrameBytes,
+                diagnostics.HardwareFrameTransferMilliseconds,
+                diagnostics.BgraConversionMilliseconds,
                 diagnostics.HasAudioStream,
                 diagnostics.AudioPlaybackAvailable,
                 diagnostics.AudioPlaybackActive,
@@ -285,6 +303,23 @@ namespace FramePlayer.Diagnostics
                 diagnostics.UsedGlobalIndex,
                 diagnostics.AnchorStrategy,
                 diagnostics.AnchorFrameIndex,
+                diagnostics.ActiveDecodeBackend,
+                diagnostics.IsGpuActive,
+                diagnostics.GpuCapabilityStatus,
+                diagnostics.GpuFallbackReason,
+                diagnostics.OperationalQueueDepth,
+                diagnostics.SessionDecodedFrameCacheBudgetBytes,
+                diagnostics.DecodedFrameCacheBudgetBytes,
+                diagnostics.BudgetBand,
+                diagnostics.HostResourceClass,
+                diagnostics.ActualBackendUsed,
+                diagnostics.PreviousCachedFrameCount,
+                diagnostics.ForwardCachedFrameCount,
+                diagnostics.MaxPreviousCachedFrameCount,
+                diagnostics.MaxForwardCachedFrameCount,
+                diagnostics.ApproximateCachedFrameBytes,
+                diagnostics.HardwareFrameTransferMilliseconds,
+                diagnostics.BgraConversionMilliseconds,
                 diagnostics.HasAudioStream,
                 diagnostics.AudioPlaybackAvailable,
                 diagnostics.AudioPlaybackActive,
@@ -313,6 +348,23 @@ namespace FramePlayer.Diagnostics
                 diagnostics.UsedGlobalIndex,
                 diagnostics.AnchorStrategy,
                 diagnostics.AnchorFrameIndex,
+                diagnostics.ActiveDecodeBackend,
+                diagnostics.IsGpuActive,
+                diagnostics.GpuCapabilityStatus,
+                diagnostics.GpuFallbackReason,
+                diagnostics.OperationalQueueDepth,
+                diagnostics.SessionDecodedFrameCacheBudgetBytes,
+                diagnostics.DecodedFrameCacheBudgetBytes,
+                diagnostics.BudgetBand,
+                diagnostics.HostResourceClass,
+                diagnostics.ActualBackendUsed,
+                diagnostics.PreviousCachedFrameCount,
+                diagnostics.ForwardCachedFrameCount,
+                diagnostics.MaxPreviousCachedFrameCount,
+                diagnostics.MaxForwardCachedFrameCount,
+                diagnostics.ApproximateCachedFrameBytes,
+                diagnostics.HardwareFrameTransferMilliseconds,
+                diagnostics.BgraConversionMilliseconds,
                 diagnostics.HasAudioStream,
                 diagnostics.AudioPlaybackAvailable,
                 diagnostics.AudioPlaybackActive,
@@ -341,6 +393,23 @@ namespace FramePlayer.Diagnostics
                 diagnostics.UsedGlobalIndex,
                 diagnostics.AnchorStrategy,
                 diagnostics.AnchorFrameIndex,
+                diagnostics.ActiveDecodeBackend,
+                diagnostics.IsGpuActive,
+                diagnostics.GpuCapabilityStatus,
+                diagnostics.GpuFallbackReason,
+                diagnostics.OperationalQueueDepth,
+                diagnostics.SessionDecodedFrameCacheBudgetBytes,
+                diagnostics.DecodedFrameCacheBudgetBytes,
+                diagnostics.BudgetBand,
+                diagnostics.HostResourceClass,
+                diagnostics.ActualBackendUsed,
+                diagnostics.PreviousCachedFrameCount,
+                diagnostics.ForwardCachedFrameCount,
+                diagnostics.MaxPreviousCachedFrameCount,
+                diagnostics.MaxForwardCachedFrameCount,
+                diagnostics.ApproximateCachedFrameBytes,
+                diagnostics.HardwareFrameTransferMilliseconds,
+                diagnostics.BgraConversionMilliseconds,
                 diagnostics.HasAudioStream,
                 diagnostics.AudioPlaybackAvailable,
                 diagnostics.AudioPlaybackActive,
@@ -429,7 +498,7 @@ namespace FramePlayer.Diagnostics
 
             return string.Format(
                 System.Globalization.CultureInfo.InvariantCulture,
-                "Custom FFmpeg open made the first frame available while the file-global frame index status is '{0}' with {1} indexed frames. Absolute frame identity available: {2}. Open timings: total {3:0.0} ms, container/probe {4:0.0} ms, stream {5:0.0} ms, audio probe {6:0.0} ms, first frame {7:0.0} ms, cache warm {8:0.0} ms, index build {9:0.0} ms.",
+                "Custom FFmpeg open made the first frame available while the file-global frame index status is '{0}' with {1} indexed frames. Absolute frame identity available: {2}. Open timings: total {3:0.0} ms, container/probe {4:0.0} ms, stream {5:0.0} ms, audio probe {6:0.0} ms, first frame {7:0.0} ms, cache warm {8:0.0} ms, index build {9:0.0} ms. Decode backend: {10}. GPU active: {11}. GPU status: {12}. Fallback: {13}. Budget band: {14}. Host class: {15}. Session budget: {16:0.0} MiB. Pane budget: {17:0.0} MiB. Queue depth: {18}. HW transfer: {19:0.###} ms. BGRA convert: {20:0.###} ms.",
                 ffmpegEngine.GlobalFrameIndexStatus,
                 ffmpegEngine.IndexedFrameCount,
                 engine.Position.IsFrameIndexAbsolute ? "yes" : "no",
@@ -439,7 +508,25 @@ namespace FramePlayer.Diagnostics
                 ffmpegEngine.LastOpenAudioProbeMilliseconds,
                 ffmpegEngine.LastOpenFirstFrameDecodeMilliseconds,
                 ffmpegEngine.LastOpenInitialCacheWarmMilliseconds,
-                ffmpegEngine.LastGlobalFrameIndexBuildMilliseconds);
+                ffmpegEngine.LastGlobalFrameIndexBuildMilliseconds,
+                string.IsNullOrWhiteSpace(ffmpegEngine.ActiveDecodeBackend) ? "(unknown)" : ffmpegEngine.ActiveDecodeBackend,
+                ffmpegEngine.IsGpuActive ? "yes" : "no",
+                string.IsNullOrWhiteSpace(ffmpegEngine.GpuCapabilityStatus) ? "(none)" : ffmpegEngine.GpuCapabilityStatus,
+                string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? "(none)" : ffmpegEngine.GpuFallbackReason,
+                string.IsNullOrWhiteSpace(ffmpegEngine.BudgetBand) ? "(none)" : ffmpegEngine.BudgetBand,
+                string.IsNullOrWhiteSpace(ffmpegEngine.HostResourceClass) ? "(none)" : ffmpegEngine.HostResourceClass,
+                ffmpegEngine.SessionDecodedFrameCacheBudgetBytes / 1048576d,
+                ffmpegEngine.DecodedFrameCacheBudgetBytes / 1048576d,
+                ffmpegEngine.OperationalQueueDepth,
+                ffmpegEngine.LastHardwareFrameTransferMilliseconds,
+                ffmpegEngine.LastBgraConversionMilliseconds);
+        }
+
+        private static FfmpegReviewEngine CreateFfmpegReviewEngine()
+        {
+            return new FfmpegReviewEngine(
+                new FfmpegReviewEngineOptionsProvider(
+                    new AppPreferencesService()));
         }
 
         private static void EnsureRuntimePathsConfigured()
@@ -483,6 +570,23 @@ namespace FramePlayer.Diagnostics
                 ffmpegEngine.LastOperationUsedGlobalIndex,
                 ffmpegEngine.LastAnchorStrategy,
                 ffmpegEngine.LastAnchorFrameIndex,
+                ffmpegEngine.ActiveDecodeBackend,
+                ffmpegEngine.IsGpuActive,
+                ffmpegEngine.GpuCapabilityStatus,
+                ffmpegEngine.GpuFallbackReason,
+                ffmpegEngine.OperationalQueueDepth,
+                ffmpegEngine.SessionDecodedFrameCacheBudgetBytes,
+                ffmpegEngine.DecodedFrameCacheBudgetBytes,
+                ffmpegEngine.BudgetBand,
+                ffmpegEngine.HostResourceClass,
+                ffmpegEngine.ActualBackendUsed,
+                ffmpegEngine.PreviousCachedFrameCount,
+                ffmpegEngine.ForwardCachedFrameCount,
+                ffmpegEngine.MaxPreviousCachedFrameCount,
+                ffmpegEngine.MaxForwardCachedFrameCount,
+                ffmpegEngine.ApproximateCachedFrameBytes,
+                ffmpegEngine.LastHardwareFrameTransferMilliseconds,
+                ffmpegEngine.LastBgraConversionMilliseconds,
                 ffmpegEngine.HasAudioStream,
                 ffmpegEngine.AudioStreamInfo.DecoderAvailable,
                 ffmpegEngine.IsAudioPlaybackActive,
@@ -515,6 +619,23 @@ namespace FramePlayer.Diagnostics
                 null,
                 string.Empty,
                 null,
+                string.Empty,
+                null,
+                string.Empty,
+                string.Empty,
+                null,
+                null,
+                null,
+                string.Empty,
+                string.Empty,
+                string.Empty,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null,
                 null,
                 null,
@@ -529,6 +650,23 @@ namespace FramePlayer.Diagnostics
             bool? usedGlobalIndex,
             string anchorStrategy,
             long? anchorFrameIndex,
+            string activeDecodeBackend,
+            bool? isGpuActive,
+            string gpuCapabilityStatus,
+            string gpuFallbackReason,
+            int? operationalQueueDepth,
+            long? sessionDecodedFrameCacheBudgetBytes,
+            long? decodedFrameCacheBudgetBytes,
+            string budgetBand,
+            string hostResourceClass,
+            string actualBackendUsed,
+            int? previousCachedFrameCount,
+            int? forwardCachedFrameCount,
+            int? maxPreviousCachedFrameCount,
+            int? maxForwardCachedFrameCount,
+            long? approximateCachedFrameBytes,
+            double? hardwareFrameTransferMilliseconds,
+            double? bgraConversionMilliseconds,
             bool? hasAudioStream,
             bool? audioPlaybackAvailable,
             bool? audioPlaybackActive,
@@ -542,6 +680,23 @@ namespace FramePlayer.Diagnostics
             UsedGlobalIndex = usedGlobalIndex;
             AnchorStrategy = anchorStrategy ?? string.Empty;
             AnchorFrameIndex = anchorFrameIndex;
+            ActiveDecodeBackend = activeDecodeBackend ?? string.Empty;
+            IsGpuActive = isGpuActive;
+            GpuCapabilityStatus = gpuCapabilityStatus ?? string.Empty;
+            GpuFallbackReason = gpuFallbackReason ?? string.Empty;
+            OperationalQueueDepth = operationalQueueDepth;
+            SessionDecodedFrameCacheBudgetBytes = sessionDecodedFrameCacheBudgetBytes;
+            DecodedFrameCacheBudgetBytes = decodedFrameCacheBudgetBytes;
+            BudgetBand = budgetBand ?? string.Empty;
+            HostResourceClass = hostResourceClass ?? string.Empty;
+            ActualBackendUsed = actualBackendUsed ?? string.Empty;
+            PreviousCachedFrameCount = previousCachedFrameCount;
+            ForwardCachedFrameCount = forwardCachedFrameCount;
+            MaxPreviousCachedFrameCount = maxPreviousCachedFrameCount;
+            MaxForwardCachedFrameCount = maxForwardCachedFrameCount;
+            ApproximateCachedFrameBytes = approximateCachedFrameBytes;
+            HardwareFrameTransferMilliseconds = hardwareFrameTransferMilliseconds;
+            BgraConversionMilliseconds = bgraConversionMilliseconds;
             HasAudioStream = hasAudioStream;
             AudioPlaybackAvailable = audioPlaybackAvailable;
             AudioPlaybackActive = audioPlaybackActive;
@@ -560,6 +715,40 @@ namespace FramePlayer.Diagnostics
         public string AnchorStrategy { get; }
 
         public long? AnchorFrameIndex { get; }
+
+        public string ActiveDecodeBackend { get; }
+
+        public bool? IsGpuActive { get; }
+
+        public string GpuCapabilityStatus { get; }
+
+        public string GpuFallbackReason { get; }
+
+        public int? OperationalQueueDepth { get; }
+
+        public long? SessionDecodedFrameCacheBudgetBytes { get; }
+
+        public long? DecodedFrameCacheBudgetBytes { get; }
+
+        public string BudgetBand { get; }
+
+        public string HostResourceClass { get; }
+
+        public string ActualBackendUsed { get; }
+
+        public int? PreviousCachedFrameCount { get; }
+
+        public int? ForwardCachedFrameCount { get; }
+
+        public int? MaxPreviousCachedFrameCount { get; }
+
+        public int? MaxForwardCachedFrameCount { get; }
+
+        public long? ApproximateCachedFrameBytes { get; }
+
+        public double? HardwareFrameTransferMilliseconds { get; }
+
+        public double? BgraConversionMilliseconds { get; }
 
         public bool? HasAudioStream { get; }
 
@@ -654,6 +843,23 @@ namespace FramePlayer.Diagnostics
             bool? usedGlobalIndex,
             string anchorStrategy,
             long? anchorFrameIndex,
+            string activeDecodeBackend,
+            bool? isGpuActive,
+            string gpuCapabilityStatus,
+            string gpuFallbackReason,
+            int? operationalQueueDepth,
+            long? sessionDecodedFrameCacheBudgetBytes,
+            long? decodedFrameCacheBudgetBytes,
+            string budgetBand,
+            string hostResourceClass,
+            string actualBackendUsed,
+            int? previousCachedFrameCount,
+            int? forwardCachedFrameCount,
+            int? maxPreviousCachedFrameCount,
+            int? maxForwardCachedFrameCount,
+            long? approximateCachedFrameBytes,
+            double? hardwareFrameTransferMilliseconds,
+            double? bgraConversionMilliseconds,
             bool? hasAudioStream,
             bool? audioPlaybackAvailable,
             bool? audioPlaybackActive,
@@ -675,6 +881,23 @@ namespace FramePlayer.Diagnostics
             UsedGlobalIndex = usedGlobalIndex;
             AnchorStrategy = anchorStrategy ?? string.Empty;
             AnchorFrameIndex = anchorFrameIndex;
+            ActiveDecodeBackend = activeDecodeBackend ?? string.Empty;
+            IsGpuActive = isGpuActive;
+            GpuCapabilityStatus = gpuCapabilityStatus ?? string.Empty;
+            GpuFallbackReason = gpuFallbackReason ?? string.Empty;
+            OperationalQueueDepth = operationalQueueDepth;
+            SessionDecodedFrameCacheBudgetBytes = sessionDecodedFrameCacheBudgetBytes;
+            DecodedFrameCacheBudgetBytes = decodedFrameCacheBudgetBytes;
+            BudgetBand = budgetBand ?? string.Empty;
+            HostResourceClass = hostResourceClass ?? string.Empty;
+            ActualBackendUsed = actualBackendUsed ?? string.Empty;
+            PreviousCachedFrameCount = previousCachedFrameCount;
+            ForwardCachedFrameCount = forwardCachedFrameCount;
+            MaxPreviousCachedFrameCount = maxPreviousCachedFrameCount;
+            MaxForwardCachedFrameCount = maxForwardCachedFrameCount;
+            ApproximateCachedFrameBytes = approximateCachedFrameBytes;
+            HardwareFrameTransferMilliseconds = hardwareFrameTransferMilliseconds;
+            BgraConversionMilliseconds = bgraConversionMilliseconds;
             HasAudioStream = hasAudioStream;
             AudioPlaybackAvailable = audioPlaybackAvailable;
             AudioPlaybackActive = audioPlaybackActive;
@@ -710,6 +933,40 @@ namespace FramePlayer.Diagnostics
 
         public long? AnchorFrameIndex { get; }
 
+        public string ActiveDecodeBackend { get; }
+
+        public bool? IsGpuActive { get; }
+
+        public string GpuCapabilityStatus { get; }
+
+        public string GpuFallbackReason { get; }
+
+        public int? OperationalQueueDepth { get; }
+
+        public long? SessionDecodedFrameCacheBudgetBytes { get; }
+
+        public long? DecodedFrameCacheBudgetBytes { get; }
+
+        public string BudgetBand { get; }
+
+        public string HostResourceClass { get; }
+
+        public string ActualBackendUsed { get; }
+
+        public int? PreviousCachedFrameCount { get; }
+
+        public int? ForwardCachedFrameCount { get; }
+
+        public int? MaxPreviousCachedFrameCount { get; }
+
+        public int? MaxForwardCachedFrameCount { get; }
+
+        public long? ApproximateCachedFrameBytes { get; }
+
+        public double? HardwareFrameTransferMilliseconds { get; }
+
+        public double? BgraConversionMilliseconds { get; }
+
         public bool? HasAudioStream { get; }
 
         public bool? AudioPlaybackAvailable { get; }
@@ -739,6 +996,23 @@ namespace FramePlayer.Diagnostics
             bool? usedGlobalIndex,
             string anchorStrategy,
             long? anchorFrameIndex,
+            string activeDecodeBackend,
+            bool? isGpuActive,
+            string gpuCapabilityStatus,
+            string gpuFallbackReason,
+            int? operationalQueueDepth,
+            long? sessionDecodedFrameCacheBudgetBytes,
+            long? decodedFrameCacheBudgetBytes,
+            string budgetBand,
+            string hostResourceClass,
+            string actualBackendUsed,
+            int? previousCachedFrameCount,
+            int? forwardCachedFrameCount,
+            int? maxPreviousCachedFrameCount,
+            int? maxForwardCachedFrameCount,
+            long? approximateCachedFrameBytes,
+            double? hardwareFrameTransferMilliseconds,
+            double? bgraConversionMilliseconds,
             bool? hasAudioStream,
             bool? audioPlaybackAvailable,
             bool? audioPlaybackActive,
@@ -758,6 +1032,23 @@ namespace FramePlayer.Diagnostics
             UsedGlobalIndex = usedGlobalIndex;
             AnchorStrategy = anchorStrategy ?? string.Empty;
             AnchorFrameIndex = anchorFrameIndex;
+            ActiveDecodeBackend = activeDecodeBackend ?? string.Empty;
+            IsGpuActive = isGpuActive;
+            GpuCapabilityStatus = gpuCapabilityStatus ?? string.Empty;
+            GpuFallbackReason = gpuFallbackReason ?? string.Empty;
+            OperationalQueueDepth = operationalQueueDepth;
+            SessionDecodedFrameCacheBudgetBytes = sessionDecodedFrameCacheBudgetBytes;
+            DecodedFrameCacheBudgetBytes = decodedFrameCacheBudgetBytes;
+            BudgetBand = budgetBand ?? string.Empty;
+            HostResourceClass = hostResourceClass ?? string.Empty;
+            ActualBackendUsed = actualBackendUsed ?? string.Empty;
+            PreviousCachedFrameCount = previousCachedFrameCount;
+            ForwardCachedFrameCount = forwardCachedFrameCount;
+            MaxPreviousCachedFrameCount = maxPreviousCachedFrameCount;
+            MaxForwardCachedFrameCount = maxForwardCachedFrameCount;
+            ApproximateCachedFrameBytes = approximateCachedFrameBytes;
+            HardwareFrameTransferMilliseconds = hardwareFrameTransferMilliseconds;
+            BgraConversionMilliseconds = bgraConversionMilliseconds;
             HasAudioStream = hasAudioStream;
             AudioPlaybackAvailable = audioPlaybackAvailable;
             AudioPlaybackActive = audioPlaybackActive;
@@ -788,6 +1079,40 @@ namespace FramePlayer.Diagnostics
         public string AnchorStrategy { get; }
 
         public long? AnchorFrameIndex { get; }
+
+        public string ActiveDecodeBackend { get; }
+
+        public bool? IsGpuActive { get; }
+
+        public string GpuCapabilityStatus { get; }
+
+        public string GpuFallbackReason { get; }
+
+        public int? OperationalQueueDepth { get; }
+
+        public long? SessionDecodedFrameCacheBudgetBytes { get; }
+
+        public long? DecodedFrameCacheBudgetBytes { get; }
+
+        public string BudgetBand { get; }
+
+        public string HostResourceClass { get; }
+
+        public string ActualBackendUsed { get; }
+
+        public int? PreviousCachedFrameCount { get; }
+
+        public int? ForwardCachedFrameCount { get; }
+
+        public int? MaxPreviousCachedFrameCount { get; }
+
+        public int? MaxForwardCachedFrameCount { get; }
+
+        public long? ApproximateCachedFrameBytes { get; }
+
+        public double? HardwareFrameTransferMilliseconds { get; }
+
+        public double? BgraConversionMilliseconds { get; }
 
         public bool? HasAudioStream { get; }
 

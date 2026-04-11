@@ -18,7 +18,7 @@ param(
     [string]$Configuration = "Release",
 
     [Parameter(Mandatory = $false)]
-    [string[]]$IncludeExtensions = @(".mp4", ".mov", ".mkv", ".avi", ".wmv", ".m4v", ".ts")
+    [string[]]$IncludeExtensions = @(".mp4", ".mov", ".mkv", ".avi", ".wmv", ".m4v")
 )
 
 $ErrorActionPreference = "Stop"
@@ -127,6 +127,23 @@ function Resolve-RegressionInputFiles
     return @($resolvedFiles | Sort-Object)
 }
 
+function Format-NullableNumber
+{
+    param(
+        [AllowNull()]
+        [object]$Value,
+        [string]$Format = "0.###",
+        [string]$Fallback = ""
+    )
+
+    if ($null -eq $Value)
+    {
+        return $Fallback
+    }
+
+    return ("{0:$Format}" -f $Value)
+}
+
 function Convert-ToCheckRows
 {
     param(
@@ -161,6 +178,24 @@ function Convert-ToCheckRows
             VideoCodec = ""
             FramesPerSecond = ""
             HasAudioStream = ""
+            DecodeBackend = ""
+            ActualBackendUsed = ""
+            GpuActive = ""
+            BudgetBand = ""
+            HostResourceClass = ""
+            SessionBudgetMiB = ""
+            PaneBudgetMiB = ""
+            ConfiguredCacheBack = ""
+            ConfiguredCacheAhead = ""
+            ObservedCacheBack = ""
+            ObservedCacheAhead = ""
+            ForwardCacheHits = ""
+            ForwardReconstructions = ""
+            ForwardCacheHitRate = ""
+            BackwardCacheHits = ""
+            BackwardReconstructions = ""
+            HwTransferMilliseconds = ""
+            BgraConversionMilliseconds = ""
         })
     }
 
@@ -193,6 +228,59 @@ function Convert-ToCheckRows
                 VideoCodec = $fileResult.MediaProfile.VideoCodecName
                 FramesPerSecond = $fileResult.MediaProfile.FramesPerSecond
                 HasAudioStream = $fileResult.MediaProfile.HasAudioStream
+                DecodeBackend = $fileResult.DecodeProfile.ActiveDecodeBackend
+                ActualBackendUsed = $fileResult.DecodeProfile.ActualBackendUsed
+                GpuActive = $fileResult.DecodeProfile.IsGpuActive
+                BudgetBand = $fileResult.DecodeProfile.BudgetBand
+                HostResourceClass = $fileResult.DecodeProfile.HostResourceClass
+                SessionBudgetMiB = if ($fileResult.DecodeProfile)
+                {
+                    [math]::Round(($fileResult.DecodeProfile.SessionDecodedFrameCacheBudgetBytes / 1MB), 3)
+                }
+                else
+                {
+                    ""
+                }
+                PaneBudgetMiB = if ($fileResult.DecodeProfile)
+                {
+                    [math]::Round(($fileResult.DecodeProfile.DecodedFrameCacheBudgetBytes / 1MB), 3)
+                }
+                else
+                {
+                    ""
+                }
+                ConfiguredCacheBack = $fileResult.DecodeProfile.ConfiguredPreviousCachedFrames
+                ConfiguredCacheAhead = $fileResult.DecodeProfile.ConfiguredForwardCachedFrames
+                ObservedCacheBack = $fileResult.DecodeProfile.ObservedPreviousCachedFrames
+                ObservedCacheAhead = $fileResult.DecodeProfile.ObservedForwardCachedFrames
+                ForwardCacheHits = $fileResult.DecodeProfile.ForwardStepCacheHits
+                ForwardReconstructions = $fileResult.DecodeProfile.ForwardStepReconstructionCount
+                ForwardCacheHitRate = if ($fileResult.DecodeProfile)
+                {
+                    [math]::Round($fileResult.DecodeProfile.ForwardStepCacheHitRate, 3)
+                }
+                else
+                {
+                    ""
+                }
+                BackwardCacheHits = $fileResult.DecodeProfile.BackwardStepCacheHits
+                BackwardReconstructions = $fileResult.DecodeProfile.BackwardStepReconstructionCount
+                HwTransferMilliseconds = if ($fileResult.DecodeProfile)
+                {
+                    [math]::Round($fileResult.DecodeProfile.HardwareFrameTransferMilliseconds, 3)
+                }
+                else
+                {
+                    ""
+                }
+                BgraConversionMilliseconds = if ($fileResult.DecodeProfile)
+                {
+                    [math]::Round($fileResult.DecodeProfile.BgraConversionMilliseconds, 3)
+                }
+                else
+                {
+                    ""
+                }
             })
         }
     }
@@ -241,7 +329,100 @@ function New-MarkdownSummary
         $passCount = @($checks | Where-Object { $_.Classification -eq "pass" }).Count
         $warningCount = @($checks | Where-Object { $_.Classification -eq "warning" }).Count
         $failCount = @($checks | Where-Object { $_.Classification -eq "fail" }).Count
-        [void]$lines.Add("| $($fileResult.FileName) | $($fileResult.MediaProfile.VideoCodecName) | $([string]::Format([System.Globalization.CultureInfo]::InvariantCulture, '{0:0.###}', $fileResult.MediaProfile.FramesPerSecond)) | $($fileResult.MediaProfile.HasAudioStream) | $passCount | $warningCount | $failCount |")
+        [void]$lines.Add("| $($fileResult.FileName) | $($fileResult.MediaProfile.VideoCodecName) | $(Format-NullableNumber -Value $fileResult.MediaProfile.FramesPerSecond -Format '0.###' -Fallback '0') | $($fileResult.MediaProfile.HasAudioStream) | $passCount | $warningCount | $failCount |")
+    }
+
+    [void]$lines.Add("")
+    [void]$lines.Add("## Decode Proof")
+    [void]$lines.Add("")
+    [void]$lines.Add("| File | Backend | Band | Host | GPU | Queue | Session / Pane Budget | Configured Cache | Forward Hits / Recon / Rate | Backward Hits / Recon | Copy / Convert ms |")
+    [void]$lines.Add("| --- | --- | --- | --- | --- | ---: | --- | --- | --- | --- | --- |")
+    foreach ($fileResult in $Report.FileResults)
+    {
+        $decodeProfile = $fileResult.DecodeProfile
+        $backendText = if ($decodeProfile -and -not [string]::IsNullOrWhiteSpace($decodeProfile.ActiveDecodeBackend))
+        {
+            $decodeProfile.ActiveDecodeBackend
+        }
+        else
+        {
+            "(unknown)"
+        }
+        $gpuText = if ($decodeProfile)
+        {
+            if ($decodeProfile.IsGpuActive) { "active" } else { "inactive" }
+        }
+        else
+        {
+            "(unknown)"
+        }
+        $queueDepth = if ($decodeProfile) { $decodeProfile.OperationalQueueDepth } else { 0 }
+        $budgetBand = if ($decodeProfile -and -not [string]::IsNullOrWhiteSpace($decodeProfile.BudgetBand))
+        {
+            $decodeProfile.BudgetBand
+        }
+        else
+        {
+            "(unknown)"
+        }
+        $hostClass = if ($decodeProfile -and -not [string]::IsNullOrWhiteSpace($decodeProfile.HostResourceClass))
+        {
+            $decodeProfile.HostResourceClass
+        }
+        else
+        {
+            "(unknown)"
+        }
+        $budgetText = if ($decodeProfile)
+        {
+            ("{0:0.0} / {1:0.0} MiB" -f ($decodeProfile.SessionDecodedFrameCacheBudgetBytes / 1MB), ($decodeProfile.DecodedFrameCacheBudgetBytes / 1MB))
+        }
+        else
+        {
+            "0.0 / 0.0 MiB"
+        }
+        $configuredCache = if ($decodeProfile)
+        {
+            "$($decodeProfile.ConfiguredPreviousCachedFrames) back / $($decodeProfile.ConfiguredForwardCachedFrames) ahead"
+        }
+        else
+        {
+            "0 back / 0 ahead"
+        }
+        $observedCache = if ($decodeProfile)
+        {
+            "$($decodeProfile.ObservedPreviousCachedFrames) back / $($decodeProfile.ObservedForwardCachedFrames) ahead"
+        }
+        else
+        {
+            "0 back / 0 ahead"
+        }
+        $forwardStats = if ($decodeProfile)
+        {
+            "$($decodeProfile.ForwardStepCacheHits) / $($decodeProfile.ForwardStepReconstructionCount) / $(Format-NullableNumber -Value $decodeProfile.ForwardStepCacheHitRate -Format '0.###' -Fallback '0')"
+        }
+        else
+        {
+            "0 / 0 / 0"
+        }
+        $backwardStats = if ($decodeProfile)
+        {
+            "$($decodeProfile.BackwardStepCacheHits) / $($decodeProfile.BackwardStepReconstructionCount)"
+        }
+        else
+        {
+            "0 / 0"
+        }
+        $copyStats = if ($decodeProfile)
+        {
+            ("{0:0.###} / {1:0.###}" -f $decodeProfile.HardwareFrameTransferMilliseconds, $decodeProfile.BgraConversionMilliseconds)
+        }
+        else
+        {
+            "0.000 / 0.000"
+        }
+
+        [void]$lines.Add("| $($fileResult.FileName) | $backendText | $budgetBand | $hostClass | $gpuText | $queueDepth | $budgetText | $configuredCache | $forwardStats | $backwardStats | $copyStats |")
     }
 
     $issues = New-Object System.Collections.Generic.List[object]

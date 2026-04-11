@@ -43,7 +43,7 @@
   file path, width, height, codec name, duration when available, nominal frame rate when available, video stream index, stream time base, audio stream presence, audio codec, audio stream index, sample rate, and channel count when available.
 - `FrameDescriptor` for decoded custom-engine frames reflects:
   decoded display-order frame index, whether that frame index is absolute from stream start, presentation time, presentation timestamp, decode timestamp, duration timestamp when available, keyframe flag, source pixel format, and converted output pixel format.
-- `DecodedVideoFrame` carries both a frozen WPF `BitmapSource` and an engine-owned managed BGRA buffer plus stride for later `WriteableBitmap` presentation.
+- `DecodedFrameBuffer` is now the authoritative decoded-frame payload, and the WPF shell creates `BitmapSource` instances only at presentation time.
 - `ReviewPosition` reflects the current decoded frame's actual presentation metadata instead of placeholder timing guesses.
 - `FrameStepResult` now records whether a frame step was satisfied from cache and whether reconstruction was required.
 

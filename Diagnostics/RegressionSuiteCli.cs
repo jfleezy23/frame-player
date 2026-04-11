@@ -279,6 +279,9 @@ namespace FramePlayer.Diagnostics
             [DataMember(Name = "mediaProfile")]
             public RegressionMediaProfileExport MediaProfile { get; set; }
 
+            [DataMember(Name = "decodeProfile")]
+            public RegressionDecodeProfileExport DecodeProfile { get; set; }
+
             [DataMember(Name = "engineChecks")]
             public RegressionCheckResultExport[] EngineChecks { get; set; }
 
@@ -300,6 +303,7 @@ namespace FramePlayer.Diagnostics
                     string.Empty,
                     string.Empty,
                     null,
+                    null,
                     new RegressionCheckResult[0],
                     new RegressionCheckResult[0],
                     new RegressionMetrics(),
@@ -311,6 +315,7 @@ namespace FramePlayer.Diagnostics
                     FilePath = report.FilePath ?? string.Empty,
                     FileName = report.FileName ?? string.Empty,
                     MediaProfile = RegressionMediaProfileExport.FromReport(report.MediaProfile),
+                    DecodeProfile = RegressionDecodeProfileExport.FromReport(report.DecodeProfile),
                     EngineChecks = (report.EngineChecks ?? new RegressionCheckResult[0])
                         .Select(RegressionCheckResultExport.FromReport)
                         .ToArray(),
@@ -320,6 +325,126 @@ namespace FramePlayer.Diagnostics
                     EngineMetrics = RegressionMetricsExport.FromMetrics(report.EngineMetrics),
                     UiMetrics = RegressionMetricsExport.FromMetrics(report.UiMetrics),
                     Notes = report.Notes ?? new string[0]
+                };
+            }
+        }
+
+        [DataContract]
+        private sealed class RegressionDecodeProfileExport
+        {
+            [DataMember(Name = "activeDecodeBackend")]
+            public string ActiveDecodeBackend { get; set; }
+
+            [DataMember(Name = "actualBackendUsed")]
+            public string ActualBackendUsed { get; set; }
+
+            [DataMember(Name = "isGpuActive")]
+            public bool IsGpuActive { get; set; }
+
+            [DataMember(Name = "gpuCapabilityStatus")]
+            public string GpuCapabilityStatus { get; set; }
+
+            [DataMember(Name = "gpuFallbackReason")]
+            public string GpuFallbackReason { get; set; }
+
+            [DataMember(Name = "operationalQueueDepth")]
+            public int OperationalQueueDepth { get; set; }
+
+            [DataMember(Name = "sessionDecodedFrameCacheBudgetBytes")]
+            public long SessionDecodedFrameCacheBudgetBytes { get; set; }
+
+            [DataMember(Name = "decodedFrameCacheBudgetBytes")]
+            public long DecodedFrameCacheBudgetBytes { get; set; }
+
+            [DataMember(Name = "budgetBand")]
+            public string BudgetBand { get; set; }
+
+            [DataMember(Name = "hostResourceClass")]
+            public string HostResourceClass { get; set; }
+
+            [DataMember(Name = "configuredPreviousCachedFrames")]
+            public int ConfiguredPreviousCachedFrames { get; set; }
+
+            [DataMember(Name = "configuredForwardCachedFrames")]
+            public int ConfiguredForwardCachedFrames { get; set; }
+
+            [DataMember(Name = "observedPreviousCachedFrames")]
+            public int ObservedPreviousCachedFrames { get; set; }
+
+            [DataMember(Name = "observedForwardCachedFrames")]
+            public int ObservedForwardCachedFrames { get; set; }
+
+            [DataMember(Name = "observedApproximateCacheBytes")]
+            public long ObservedApproximateCacheBytes { get; set; }
+
+            [DataMember(Name = "backwardStepCacheHits")]
+            public int BackwardStepCacheHits { get; set; }
+
+            [DataMember(Name = "backwardStepReconstructionCount")]
+            public int BackwardStepReconstructionCount { get; set; }
+
+            [DataMember(Name = "forwardStepCacheHits")]
+            public int ForwardStepCacheHits { get; set; }
+
+            [DataMember(Name = "forwardStepReconstructionCount")]
+            public int ForwardStepReconstructionCount { get; set; }
+
+            [DataMember(Name = "forwardStepCacheHitRate")]
+            public double ForwardStepCacheHitRate { get; set; }
+
+            [DataMember(Name = "hardwareFrameTransferMilliseconds")]
+            public double HardwareFrameTransferMilliseconds { get; set; }
+
+            [DataMember(Name = "bgraConversionMilliseconds")]
+            public double BgraConversionMilliseconds { get; set; }
+
+            [DataMember(Name = "globalFrameIndexStatus")]
+            public string GlobalFrameIndexStatus { get; set; }
+
+            [DataMember(Name = "isGlobalFrameIndexAvailable")]
+            public bool IsGlobalFrameIndexAvailable { get; set; }
+
+            [DataMember(Name = "lastObservedCacheRefillReason")]
+            public string LastObservedCacheRefillReason { get; set; }
+
+            [DataMember(Name = "lastObservedCacheRefillMode")]
+            public string LastObservedCacheRefillMode { get; set; }
+
+            [DataMember(Name = "lastObservedCacheRefillMilliseconds")]
+            public double LastObservedCacheRefillMilliseconds { get; set; }
+
+            public static RegressionDecodeProfileExport FromReport(RegressionDecodeProfile report)
+            {
+                report = report ?? RegressionDecodeProfile.Empty;
+                return new RegressionDecodeProfileExport
+                {
+                    ActiveDecodeBackend = report.ActiveDecodeBackend ?? string.Empty,
+                    ActualBackendUsed = report.ActualBackendUsed ?? string.Empty,
+                    IsGpuActive = report.IsGpuActive,
+                    GpuCapabilityStatus = report.GpuCapabilityStatus ?? string.Empty,
+                    GpuFallbackReason = report.GpuFallbackReason ?? string.Empty,
+                    OperationalQueueDepth = report.OperationalQueueDepth,
+                    SessionDecodedFrameCacheBudgetBytes = report.SessionDecodedFrameCacheBudgetBytes,
+                    DecodedFrameCacheBudgetBytes = report.DecodedFrameCacheBudgetBytes,
+                    BudgetBand = report.BudgetBand ?? string.Empty,
+                    HostResourceClass = report.HostResourceClass ?? string.Empty,
+                    ConfiguredPreviousCachedFrames = report.ConfiguredPreviousCachedFrames,
+                    ConfiguredForwardCachedFrames = report.ConfiguredForwardCachedFrames,
+                    ObservedPreviousCachedFrames = report.ObservedPreviousCachedFrames,
+                    ObservedForwardCachedFrames = report.ObservedForwardCachedFrames,
+                    ObservedApproximateCacheBytes = report.ObservedApproximateCacheBytes,
+                    BackwardStepCacheHits = report.BackwardStepCacheHits,
+                    BackwardStepReconstructionCount = report.BackwardStepReconstructionCount,
+                    ForwardStepCacheHits = report.ForwardStepCacheHits,
+                    ForwardStepReconstructionCount = report.ForwardStepReconstructionCount,
+                    ForwardStepCacheHitRate = report.ForwardStepCacheHitRate,
+                    HardwareFrameTransferMilliseconds = report.HardwareFrameTransferMilliseconds,
+                    BgraConversionMilliseconds = report.BgraConversionMilliseconds,
+                    GlobalFrameIndexStatus = report.GlobalFrameIndexStatus ?? string.Empty,
+                    IsGlobalFrameIndexAvailable = report.IsGlobalFrameIndexAvailable,
+                    LastObservedCacheRefillReason = report.LastObservedCacheRefillReason ?? string.Empty,
+                    LastObservedCacheRefillMode = report.LastObservedCacheRefillMode ?? string.Empty,
+                    LastObservedCacheRefillMilliseconds = report.LastObservedCacheRefillMilliseconds
                 };
             }
         }
@@ -415,6 +540,36 @@ namespace FramePlayer.Diagnostics
             [DataMember(Name = "uiIndexReadyMilliseconds")]
             public double UiIndexReadyMilliseconds { get; set; }
 
+            [DataMember(Name = "maxObservedPreviousCachedFrames")]
+            public int MaxObservedPreviousCachedFrames { get; set; }
+
+            [DataMember(Name = "maxObservedForwardCachedFrames")]
+            public int MaxObservedForwardCachedFrames { get; set; }
+
+            [DataMember(Name = "maxObservedApproximateCacheBytes")]
+            public long MaxObservedApproximateCacheBytes { get; set; }
+
+            [DataMember(Name = "backwardStepCacheHits")]
+            public int BackwardStepCacheHits { get; set; }
+
+            [DataMember(Name = "backwardStepReconstructionCount")]
+            public int BackwardStepReconstructionCount { get; set; }
+
+            [DataMember(Name = "forwardStepCacheHits")]
+            public int ForwardStepCacheHits { get; set; }
+
+            [DataMember(Name = "forwardStepReconstructionCount")]
+            public int ForwardStepReconstructionCount { get; set; }
+
+            [DataMember(Name = "lastObservedCacheRefillMilliseconds")]
+            public double LastObservedCacheRefillMilliseconds { get; set; }
+
+            [DataMember(Name = "lastObservedCacheRefillReason")]
+            public string LastObservedCacheRefillReason { get; set; }
+
+            [DataMember(Name = "lastObservedCacheRefillMode")]
+            public string LastObservedCacheRefillMode { get; set; }
+
             public static RegressionMetricsExport FromMetrics(RegressionMetrics metrics)
             {
                 metrics = metrics ?? new RegressionMetrics();
@@ -431,7 +586,17 @@ namespace FramePlayer.Diagnostics
                     UiClickSeekMilliseconds = metrics.UiClickSeekMilliseconds,
                     UiDragSeekMilliseconds = metrics.UiDragSeekMilliseconds,
                     UiEndSeekMilliseconds = metrics.UiEndSeekMilliseconds,
-                    UiIndexReadyMilliseconds = metrics.UiIndexReadyMilliseconds
+                    UiIndexReadyMilliseconds = metrics.UiIndexReadyMilliseconds,
+                    MaxObservedPreviousCachedFrames = metrics.MaxObservedPreviousCachedFrames,
+                    MaxObservedForwardCachedFrames = metrics.MaxObservedForwardCachedFrames,
+                    MaxObservedApproximateCacheBytes = metrics.MaxObservedApproximateCacheBytes,
+                    BackwardStepCacheHits = metrics.BackwardStepCacheHits,
+                    BackwardStepReconstructionCount = metrics.BackwardStepReconstructionCount,
+                    ForwardStepCacheHits = metrics.ForwardStepCacheHits,
+                    ForwardStepReconstructionCount = metrics.ForwardStepReconstructionCount,
+                    LastObservedCacheRefillMilliseconds = metrics.LastObservedCacheRefillMilliseconds,
+                    LastObservedCacheRefillReason = metrics.LastObservedCacheRefillReason ?? string.Empty,
+                    LastObservedCacheRefillMode = metrics.LastObservedCacheRefillMode ?? string.Empty
                 };
             }
         }

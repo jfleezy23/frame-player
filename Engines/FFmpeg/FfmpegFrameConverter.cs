@@ -1,6 +1,4 @@
 using System;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using FFmpeg.AutoGen;
 using FramePlayer.Core.Models;
 
@@ -11,7 +9,7 @@ namespace FramePlayer.Engines.FFmpeg
         private const AVPixelFormat OutputPixelFormat = AVPixelFormat.AV_PIX_FMT_BGRA;
         private SwsContext* _scaleContext;
 
-        public DecodedVideoFrame Convert(AVFrame* sourceFrame, FrameDescriptor descriptor)
+        public DecodedFrameBuffer Convert(AVFrame* sourceFrame, FrameDescriptor descriptor)
         {
             if (sourceFrame == null)
             {
@@ -59,23 +57,11 @@ namespace FramePlayer.Engines.FFmpeg
                 stride = destinationLinesize[0];
             }
 
-            var bitmapSource = BitmapSource.Create(
-                width,
-                height,
-                96d,
-                96d,
-                PixelFormats.Bgra32,
-                null,
-                pixelBuffer,
-                stride);
-            bitmapSource.Freeze();
-
-            return new DecodedVideoFrame(
+            return new DecodedFrameBuffer(
                 descriptor,
-                bitmapSource,
                 pixelBuffer,
                 stride,
-                PixelFormats.Bgra32);
+                "bgra");
         }
 
         public void Dispose()

@@ -36,9 +36,12 @@ namespace FramePlayer
         private readonly DispatcherTimer _positionTimer;
         private readonly DispatcherTimer _frameStepRepeatTimer;
         private readonly BuildVariantInfo _buildVariant;
+        private readonly AppPreferencesService _appPreferencesService;
         private readonly DiagnosticLogService _diagnosticLogService;
+        private readonly FfmpegReviewEngineOptionsProvider _ffmpegReviewEngineOptionsProvider;
         private readonly RecentFilesService _recentFilesService;
         private readonly ReviewSessionCoordinator _sessionCoordinator;
+        private readonly VideoReviewEngineFactory _videoReviewEngineFactory;
         private readonly ReviewWorkspaceCoordinator _workspaceCoordinator;
         private readonly IVideoReviewEngine _videoReviewEngine;
         private IVideoReviewEngine _compareVideoReviewEngine;
@@ -79,9 +82,13 @@ namespace FramePlayer
             _buildVariant = BuildVariantInfo.Current;
             CustomVideoSurfaceHost.Visibility = Visibility.Visible;
 
+            _appPreferencesService = new AppPreferencesService();
             _diagnosticLogService = new DiagnosticLogService();
+            _ffmpegReviewEngineOptionsProvider = new FfmpegReviewEngineOptionsProvider(_appPreferencesService);
             _recentFilesService = new RecentFilesService();
-            _videoReviewEngine = CreateVideoReviewEngine();
+            _videoReviewEngineFactory = new VideoReviewEngineFactory(_ffmpegReviewEngineOptionsProvider);
+            UseGpuAccelerationMenuItem.IsChecked = _ffmpegReviewEngineOptionsProvider.UseGpuAcceleration;
+            _videoReviewEngine = CreateVideoReviewEngine(PrimaryPaneId);
             _sessionCoordinator = new ReviewSessionCoordinator(_videoReviewEngine);
             _workspaceCoordinator = new ReviewWorkspaceCoordinator(_videoReviewEngine, _sessionCoordinator);
             _workspaceCoordinator.WorkspaceChanged += ReviewWorkspaceCoordinator_WorkspaceChanged;
@@ -123,9 +130,9 @@ namespace FramePlayer
                     : GetRuntimeStatusMessage()));
         }
 
-        private IVideoReviewEngine CreateVideoReviewEngine()
+        private IVideoReviewEngine CreateVideoReviewEngine(string paneId)
         {
-            return new FfmpegReviewEngine();
+            return _videoReviewEngineFactory.Create(paneId);
         }
 
         private void FocusPreferredVideoSurface()
@@ -142,12 +149,12 @@ namespace FramePlayer
 
         private static string GetSupportedVideoExtensionsDescription()
         {
-            return "AVI, MOV, M4V, MP4, MKV, WMV, TS";
+            return "AVI, MOV, M4V, MP4, MKV, WMV";
         }
 
         private static string GetOpenFileFilter()
         {
-            return "Supported Video Files|*.avi;*.mov;*.m4v;*.mp4;*.mkv;*.wmv;*.ts|AVI Files|*.avi|MOV Files|*.mov|M4V Files|*.m4v|MP4 Files|*.mp4|MKV Files|*.mkv|WMV Files|*.wmv|TS Files|*.ts|All Files|*.*";
+            return "Supported Video Files|*.avi;*.mov;*.m4v;*.mp4;*.mkv;*.wmv|AVI Files|*.avi|MOV Files|*.mov|M4V Files|*.m4v|MP4 Files|*.mp4|MKV Files|*.mkv|WMV Files|*.wmv|All Files|*.*";
         }
 
         private bool IsCompareModeEnabled
@@ -238,7 +245,7 @@ namespace FramePlayer
                 return;
             }
 
-            _compareVideoReviewEngine = CreateVideoReviewEngine();
+            _compareVideoReviewEngine = CreateVideoReviewEngine(ComparePaneId);
             _compareSessionCoordinator = new ReviewSessionCoordinator(
                 _compareVideoReviewEngine,
                 CompareSessionId,
@@ -1182,6 +1189,15 @@ namespace FramePlayer
                 var ffmpegEngine = targetEngine as FfmpegReviewEngine;
                 if (ffmpegEngine != null)
                 {
+                    LogInfo(string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Decode backend: {0} | GPU active {1} | GPU status {2} | Fallback {3} | Cache budget {4:0.0} MiB | Queue depth {5}.",
+                        string.IsNullOrWhiteSpace(ffmpegEngine.ActiveDecodeBackend) ? "(unknown)" : ffmpegEngine.ActiveDecodeBackend,
+                        ffmpegEngine.IsGpuActive ? "yes" : "no",
+                        string.IsNullOrWhiteSpace(ffmpegEngine.GpuCapabilityStatus) ? "(none)" : ffmpegEngine.GpuCapabilityStatus,
+                        string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? "(none)" : ffmpegEngine.GpuFallbackReason,
+                        ffmpegEngine.DecodedFrameCacheBudgetBytes / 1048576d,
+                        ffmpegEngine.OperationalQueueDepth));
                     LogInfo(string.Format(
                         CultureInfo.InvariantCulture,
                         "Open timing: total {0:0.0} ms | container/probe {1:0.0} ms | stream {2:0.0} ms | audio probe {3:0.0} ms | decoder {4:0.0} ms | first frame {5:0.0} ms | cache warm {6:0.0} ms | index {7}.",
@@ -2132,8 +2148,7 @@ namespace FramePlayer
                 || extension.Equals(".m4v", StringComparison.OrdinalIgnoreCase)
                 || extension.Equals(".mp4", StringComparison.OrdinalIgnoreCase)
                 || extension.Equals(".mkv", StringComparison.OrdinalIgnoreCase)
-                || extension.Equals(".wmv", StringComparison.OrdinalIgnoreCase)
-                || extension.Equals(".ts", StringComparison.OrdinalIgnoreCase);
+                || extension.Equals(".wmv", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string FormatTime(TimeSpan value)
@@ -2289,7 +2304,7 @@ namespace FramePlayer
                 return;
             }
 
-            var imageSource = e != null && e.Frame != null ? e.Frame.BitmapSource : null;
+            var imageSource = e != null ? WpfFrameBufferPresenter.CreateBitmapSource(e.FrameBuffer) : null;
             if (ReferenceEquals(sender, _compareVideoReviewEngine))
             {
                 CompareVideoSurface.Source = imageSource;
@@ -2297,6 +2312,33 @@ namespace FramePlayer
             }
 
             CustomVideoSurface.Source = imageSource;
+        }
+
+        private void UseGpuAccelerationMenuItem_Checked(object sender, RoutedEventArgs e)
+        {
+            SetGpuAccelerationPreference(true);
+        }
+
+        private void UseGpuAccelerationMenuItem_Unchecked(object sender, RoutedEventArgs e)
+        {
+            SetGpuAccelerationPreference(false);
+        }
+
+        private void SetGpuAccelerationPreference(bool useGpuAcceleration)
+        {
+            if (_ffmpegReviewEngineOptionsProvider.UseGpuAcceleration == useGpuAcceleration)
+            {
+                return;
+            }
+
+            _ffmpegReviewEngineOptionsProvider.SetUseGpuAcceleration(useGpuAcceleration);
+            SetPlaybackMessage(useGpuAcceleration
+                ? "GPU acceleration enabled for newly opened media."
+                : "GPU acceleration disabled for newly opened media.");
+            LogInfo(useGpuAcceleration
+                ? "GPU acceleration preference enabled. Reopen media to apply the change."
+                : "GPU acceleration preference disabled. Reopen media to apply the change.");
+            UpdateCacheStatusFromEngine();
         }
 
         private void VideoPane_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -2525,6 +2567,7 @@ namespace FramePlayer
             var forwardCount = Math.Max(0, ffmpegEngine.ForwardCachedFrameCount);
             var previousCount = Math.Max(0, ffmpegEngine.PreviousCachedFrameCount);
             var approximateCacheMegabytes = ffmpegEngine.ApproximateCachedFrameBytes / 1048576d;
+            var cacheBudgetMegabytes = ffmpegEngine.DecodedFrameCacheBudgetBytes / 1048576d;
             var positionIdentity = focusedEngine != null &&
                                    focusedEngine.Position != null &&
                                    focusedEngine.Position.IsFrameIndexAbsolute
@@ -2533,18 +2576,24 @@ namespace FramePlayer
             var message = string.Format(
                 CultureInfo.InvariantCulture,
                 ffmpegEngine.IsGlobalFrameIndexBuildInProgress
-                    ? "Cache: indexing ({0} back / {1} ahead)"
-                    : "Cache: ready ({0} back / {1} ahead)",
+                    ? "Cache: indexing ({0} back / {1} ahead, {2})"
+                    : "Cache: ready ({0} back / {1} ahead, {2})",
                 previousCount,
-                forwardCount);
+                forwardCount,
+                ffmpegEngine.IsGpuActive ? "GPU" : "CPU");
             var tooltip = string.Format(
                 CultureInfo.InvariantCulture,
-                "Index: {0}. Frame identity: {1}. Review cache holds up to {2} prior and {3} forward decoded frames and is currently using about {4:0.0} MiB. Last refill: {5} ({6:0.0} ms, {7}). Timeline seeks show the landed frame first.",
+                "Backend: {0}. GPU status: {1}. Fallback: {2}. Queue depth: {3}. Index: {4}. Frame identity: {5}. Review cache budget is {6:0.0} MiB and currently uses about {7:0.0} MiB with up to {8} prior and {9} forward decoded frames. Last refill: {10} ({11:0.0} ms, {12}). Timeline seeks show the landed frame first.",
+                string.IsNullOrWhiteSpace(ffmpegEngine.ActiveDecodeBackend) ? "(unknown)" : ffmpegEngine.ActiveDecodeBackend,
+                string.IsNullOrWhiteSpace(ffmpegEngine.GpuCapabilityStatus) ? "(none)" : ffmpegEngine.GpuCapabilityStatus,
+                string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? "(none)" : ffmpegEngine.GpuFallbackReason,
+                ffmpegEngine.OperationalQueueDepth,
                 ffmpegEngine.GlobalFrameIndexStatus,
                 positionIdentity,
+                cacheBudgetMegabytes,
+                approximateCacheMegabytes,
                 ffmpegEngine.MaxPreviousCachedFrameCount,
                 ffmpegEngine.MaxForwardCachedFrameCount,
-                approximateCacheMegabytes,
                 string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason) ? "(none)" : ffmpegEngine.LastCacheRefillReason,
                 ffmpegEngine.LastCacheRefillMilliseconds,
                 string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillMode) ? "none" : ffmpegEngine.LastCacheRefillMode);
@@ -2637,6 +2686,14 @@ namespace FramePlayer
                     "Frame index status: " + (ffmpegEngine != null ? ffmpegEngine.GlobalFrameIndexStatus : "(unavailable)"),
                     "Frame index available: " + (ffmpegEngine != null && ffmpegEngine.IsGlobalFrameIndexAvailable ? "Yes" : "No"),
                     "Indexed frame count: " + (ffmpegEngine != null ? ffmpegEngine.IndexedFrameCount.ToString(CultureInfo.InvariantCulture) : "(unavailable)"),
+                    "Decode backend: " + (ffmpegEngine != null ? ffmpegEngine.ActiveDecodeBackend : "(unavailable)"),
+                    "GPU active: " + (ffmpegEngine != null && ffmpegEngine.IsGpuActive ? "Yes" : "No"),
+                    "GPU status: " + (ffmpegEngine != null ? ffmpegEngine.GpuCapabilityStatus : "(unavailable)"),
+                    "GPU fallback reason: " + (ffmpegEngine != null && !string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? ffmpegEngine.GpuFallbackReason : "(none)"),
+                    "Decode cache budget: " + (ffmpegEngine != null
+                        ? string.Format(CultureInfo.InvariantCulture, "{0:0.0} MiB", ffmpegEngine.DecodedFrameCacheBudgetBytes / 1048576d)
+                        : "(unavailable)"),
+                    "Operational queue depth: " + (ffmpegEngine != null ? ffmpegEngine.OperationalQueueDepth.ToString(CultureInfo.InvariantCulture) : "(unavailable)"),
                     "Review cache window: " + (ffmpegEngine != null
                         ? string.Format(
                             CultureInfo.InvariantCulture,

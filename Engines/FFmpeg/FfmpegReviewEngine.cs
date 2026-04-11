@@ -8,13 +8,18 @@ using FFmpeg.AutoGen;
 using FramePlayer.Core.Abstractions;
 using FramePlayer.Core.Events;
 using FramePlayer.Core.Models;
+using FramePlayer.Services;
 
 namespace FramePlayer.Engines.FFmpeg
 {
     public unsafe sealed class FfmpegReviewEngine : IVideoReviewEngine
     {
-        private const int CachedPreviousFrameCount = 10;
-        private const int CachedForwardFrameCount = 1;
+        private const int DefaultCachedPreviousFrameCount = 10;
+        private const int DefaultCachedForwardFrameCount = 1;
+        private const int CpuOperationalQueueDepth = 1;
+        private const int GpuOperationalQueueDepth = 2;
+        private const int AvCodecHwConfigMethodHwDeviceContext = 0x01;
+        private const int AvCodecHwConfigMethodHwFramesContext = 0x02;
         private static readonly TimeSpan MinimumPlaybackDelay = TimeSpan.FromMilliseconds(1d);
 
         // Decoded display-order frame identity is the source of truth for this engine.
@@ -27,6 +32,9 @@ namespace FramePlayer.Engines.FFmpeg
         private readonly object _playbackSync = new object();
         private readonly object _indexBuildSync = new object();
         private readonly FfmpegDecodedFrameCache _frameCache;
+        private readonly FfmpegReviewEngineOptionsProvider _optionsProvider;
+        private readonly DecodedFrameBudgetCoordinator _budgetCoordinator;
+        private readonly string _paneId;
         private FfmpegGlobalFrameIndex _globalFrameIndex;
         private FfmpegAudioPlaybackSession _audioPlaybackSession;
         private FfmpegAudioStreamInfo _audioStreamInfo;
@@ -40,17 +48,22 @@ namespace FramePlayer.Engines.FFmpeg
         private string _lastAudioErrorMessage;
         private VideoMediaInfo _mediaInfo;
         private ReviewPosition _position;
-        private DecodedVideoFrame _currentFrame;
+        private DecodedFrameBuffer _currentFrame;
         private long _decodedSegmentFrameCount;
         private int _videoStreamIndex;
         private AVRational _videoStreamTimeBase;
         private AVRational _nominalFrameRate;
         private AVFormatContext* _formatContext;
+        private AVCodec* _videoDecoder;
         private AVCodecContext* _codecContext;
         private AVStream* _videoStream;
         private AVPacket* _packet;
         private AVFrame* _decodedFrame;
+        private AVFrame* _softwareFrame;
+        private AVBufferRef* _hardwareDeviceContext;
+        private AVPixelFormat _hardwarePixelFormat;
         private FfmpegFrameConverter _frameConverter;
+        private AVCodecContext_get_format _hardwareGetFormatCallback;
         private CancellationTokenSource _playbackCancellationSource;
         private Task _playbackTask;
         private CancellationTokenSource _indexBuildCancellationSource;
@@ -58,11 +71,37 @@ namespace FramePlayer.Engines.FFmpeg
         private long _lastAudioSubmittedBytes;
         private int _indexBuildGeneration;
         private bool _isGlobalFrameIndexBuildInProgress;
+        private bool _hardwareDecodeFormatSelected;
         private string _globalFrameIndexStatus;
+        private FfmpegReviewEngineOptions _currentOpenOptions;
+        private int _maxPreviousCachedFrameCount;
+        private int _maxForwardCachedFrameCount;
+        private long _configuredCacheBudgetBytes;
+        private long _sessionDecodedFrameCacheBudgetBytes;
+        private DecodedFrameBudgetBand _budgetBand;
+        private HostResourceClass _hostResourceClass;
 
         public FfmpegReviewEngine()
+            : this(null, null, "pane-primary")
         {
-            _frameCache = new FfmpegDecodedFrameCache(CachedPreviousFrameCount, CachedForwardFrameCount);
+        }
+
+        internal FfmpegReviewEngine(FfmpegReviewEngineOptionsProvider optionsProvider)
+            : this(optionsProvider, null, "pane-primary")
+        {
+        }
+
+        internal FfmpegReviewEngine(
+            FfmpegReviewEngineOptionsProvider optionsProvider,
+            DecodedFrameBudgetCoordinator budgetCoordinator,
+            string paneId)
+        {
+            _optionsProvider = optionsProvider;
+            _frameCache = new FfmpegDecodedFrameCache(DefaultCachedPreviousFrameCount, DefaultCachedForwardFrameCount);
+            _budgetCoordinator = budgetCoordinator ?? new DecodedFrameBudgetCoordinator();
+            _paneId = string.IsNullOrWhiteSpace(paneId)
+                ? "pane-" + Guid.NewGuid().ToString("N")
+                : paneId;
             _currentFilePath = string.Empty;
             _lastErrorMessage = string.Empty;
             _mediaInfo = VideoMediaInfo.Empty;
@@ -75,6 +114,20 @@ namespace FramePlayer.Engines.FFmpeg
             _videoStreamIndex = -1;
             _videoStreamTimeBase = default(AVRational);
             _nominalFrameRate = default(AVRational);
+            _currentOpenOptions = FfmpegReviewEngineOptions.Default;
+            _maxPreviousCachedFrameCount = DefaultCachedPreviousFrameCount;
+            _maxForwardCachedFrameCount = DefaultCachedForwardFrameCount;
+            _configuredCacheBudgetBytes = 0L;
+            _sessionDecodedFrameCacheBudgetBytes = 0L;
+            _budgetBand = DecodedFrameBudgetBand.SinglePaneCpu;
+            _hostResourceClass = _budgetCoordinator.HostResourceClass;
+            ActiveDecodeBackend = "ffmpeg-cpu";
+            GpuCapabilityStatus = "not-requested";
+            GpuFallbackReason = string.Empty;
+            OperationalQueueDepth = CpuOperationalQueueDepth;
+            _budgetCoordinator.AllocationChanged += BudgetCoordinator_AllocationChanged;
+            _budgetCoordinator.RegisterPane(_paneId);
+            RefreshDecodedFrameBudgetState(isOpen: false, approximateFrameBytes: 0, gpuActive: false);
         }
 
         public bool IsMediaOpen { get; private set; }
@@ -86,6 +139,41 @@ namespace FramePlayer.Engines.FFmpeg
         public bool LastFrameAdvanceWasCacheHit { get; private set; }
 
         public bool LastFrameSeekWasCacheHit { get; private set; }
+
+        public bool IsGpuActive { get; private set; }
+
+        public string ActiveDecodeBackend { get; private set; }
+
+        public string GpuCapabilityStatus { get; private set; }
+
+        public string GpuFallbackReason { get; private set; }
+
+        public long DecodedFrameCacheBudgetBytes
+        {
+            get { return _configuredCacheBudgetBytes; }
+        }
+
+        public long SessionDecodedFrameCacheBudgetBytes
+        {
+            get { return _sessionDecodedFrameCacheBudgetBytes; }
+        }
+
+        public string BudgetBand
+        {
+            get { return _budgetBand.ToString(); }
+        }
+
+        public string HostResourceClass
+        {
+            get { return _hostResourceClass.ToString(); }
+        }
+
+        public string ActualBackendUsed
+        {
+            get { return ActiveDecodeBackend; }
+        }
+
+        public int OperationalQueueDepth { get; private set; }
 
         public bool HasAudioStream
         {
@@ -170,6 +258,10 @@ namespace FramePlayer.Engines.FFmpeg
 
         public double LastGlobalFrameIndexBuildMilliseconds { get; private set; }
 
+        public double LastHardwareFrameTransferMilliseconds { get; private set; }
+
+        public double LastBgraConversionMilliseconds { get; private set; }
+
         public double LastSeekTotalMilliseconds { get; private set; }
 
         public double LastSeekIndexWaitMilliseconds { get; private set; }
@@ -198,12 +290,12 @@ namespace FramePlayer.Engines.FFmpeg
 
         public int MaxPreviousCachedFrameCount
         {
-            get { return CachedPreviousFrameCount; }
+            get { return _maxPreviousCachedFrameCount; }
         }
 
         public int MaxForwardCachedFrameCount
         {
-            get { return CachedForwardFrameCount; }
+            get { return _maxForwardCachedFrameCount; }
         }
 
         public int PreviousCachedFrameCount
@@ -286,6 +378,8 @@ namespace FramePlayer.Engines.FFmpeg
             _lastAudioErrorMessage = string.Empty;
             LastAnchorFrameIndex = null;
             LastAnchorStrategy = string.Empty;
+            _currentOpenOptions = GetCurrentOptions();
+            ResetHardwareDecodeDiagnostics();
             ResetOpenPerformanceInstrumentation();
 
             try
@@ -317,6 +411,10 @@ namespace FramePlayer.Engines.FFmpeg
                     throw new InvalidOperationException("No displayable video frame could be decoded from the selected stream.");
                 }
 
+                RefreshDecodedFrameBudgetState(
+                    isOpen: true,
+                    approximateFrameBytes: firstFrame.ApproximateByteCount,
+                    gpuActive: IsGpuActive);
                 _frameCache.Reset(firstFrame);
                 SetCurrentFrame(firstFrame);
                 RecordNoCacheRefill("open-landed-no-warm", afterLanding: false);
@@ -423,7 +521,7 @@ namespace FramePlayer.Engines.FFmpeg
 
             StopPlayback(raiseStateChanged: false);
 
-            DecodedVideoFrame nextFrame;
+            DecodedFrameBuffer nextFrame;
             if (_frameCache.TryMoveNext(out nextFrame))
             {
                 LastFrameAdvanceWasCacheHit = true;
@@ -494,7 +592,7 @@ namespace FramePlayer.Engines.FFmpeg
                     false));
             }
 
-            DecodedVideoFrame previousFrame;
+            DecodedFrameBuffer previousFrame;
             if (_frameCache.TryMovePrevious(out previousFrame))
             {
                 LastFrameAdvanceWasCacheHit = true;
@@ -624,7 +722,7 @@ namespace FramePlayer.Engines.FFmpeg
             bool landedAtOrAfterTarget;
             if (TryResolveIndexedSeekTarget(targetTimestamp, out indexedTargetEntry, out landedAtOrAfterTarget))
             {
-                DecodedVideoFrame cachedSeekFrame;
+                DecodedFrameBuffer cachedSeekFrame;
                 if (_frameCache.TryMoveToAbsoluteFrameIndex(indexedTargetEntry.AbsoluteFrameIndex, out cachedSeekFrame))
                 {
                     SetCurrentFrame(cachedSeekFrame);
@@ -734,7 +832,7 @@ namespace FramePlayer.Engines.FFmpeg
                 }
             }
 
-            DecodedVideoFrame cachedFrame;
+            DecodedFrameBuffer cachedFrame;
             if (_frameCache.TryMoveToAbsoluteFrameIndex(targetFrameIndex, out cachedFrame))
             {
                 LastFrameSeekWasCacheHit = true;
@@ -794,6 +892,8 @@ namespace FramePlayer.Engines.FFmpeg
 
             StopPlaybackForDispose();
             CloseCore(clearFilePath: true, clearErrorMessage: true);
+            _budgetCoordinator.AllocationChanged -= BudgetCoordinator_AllocationChanged;
+            _budgetCoordinator.UnregisterPane(_paneId);
             _disposed = true;
         }
 
@@ -980,6 +1080,7 @@ namespace FramePlayer.Engines.FFmpeg
             LastOpenInitialCacheWarmMilliseconds = 0d;
             LastGlobalFrameIndexBuildMilliseconds = 0d;
             _globalFrameIndexStatus = "not-started";
+            ResetFrameTransferInstrumentation();
             ResetSeekPerformanceInstrumentation();
         }
 
@@ -991,6 +1092,12 @@ namespace FramePlayer.Engines.FFmpeg
             LastSeekForwardCacheWarmMilliseconds = 0d;
             LastSeekMode = string.Empty;
             ResetCacheRefillInstrumentation();
+        }
+
+        private void ResetFrameTransferInstrumentation()
+        {
+            LastHardwareFrameTransferMilliseconds = 0d;
+            LastBgraConversionMilliseconds = 0d;
         }
 
         private void PlaybackLoop(
@@ -1010,7 +1117,7 @@ namespace FramePlayer.Engines.FFmpeg
                         return;
                     }
 
-                    DecodedVideoFrame nextFrame;
+                    DecodedFrameBuffer nextFrame;
                     bool wasCacheHit;
                     if (!TryPreparePlaybackFrame(cancellationToken, out nextFrame, out wasCacheHit))
                     {
@@ -1240,7 +1347,7 @@ namespace FramePlayer.Engines.FFmpeg
 
         private bool TryPreparePlaybackFrame(
             CancellationToken cancellationToken,
-            out DecodedVideoFrame frame,
+            out DecodedFrameBuffer frame,
             out bool wasCacheHit)
         {
             if (_frameCache.TryPeekNext(out frame))
@@ -1254,14 +1361,14 @@ namespace FramePlayer.Engines.FFmpeg
             return frame != null;
         }
 
-        private void PresentPlaybackFrame(DecodedVideoFrame preparedFrame, bool wasCacheHit)
+        private void PresentPlaybackFrame(DecodedFrameBuffer preparedFrame, bool wasCacheHit)
         {
             if (preparedFrame == null)
             {
                 throw new ArgumentNullException(nameof(preparedFrame));
             }
 
-            DecodedVideoFrame frameToPresent;
+            DecodedFrameBuffer frameToPresent;
             if (wasCacheHit)
             {
                 if (!_frameCache.TryMoveNext(out frameToPresent))
@@ -1285,8 +1392,8 @@ namespace FramePlayer.Engines.FFmpeg
         }
 
         private TimeSpan CalculatePlaybackDelay(
-            DecodedVideoFrame currentFrame,
-            DecodedVideoFrame nextFrame)
+            DecodedFrameBuffer currentFrame,
+            DecodedFrameBuffer nextFrame)
         {
             if (currentFrame != null && nextFrame != null)
             {
@@ -1316,8 +1423,8 @@ namespace FramePlayer.Engines.FFmpeg
         }
 
         private void WaitForPlaybackFrameDue(
-            DecodedVideoFrame currentFrame,
-            DecodedVideoFrame nextFrame,
+            DecodedFrameBuffer currentFrame,
+            DecodedFrameBuffer nextFrame,
             CancellationToken cancellationToken)
         {
             var audioSession = _audioPlaybackSession;
@@ -1404,7 +1511,20 @@ namespace FramePlayer.Engines.FFmpeg
                 throw new InvalidOperationException("No decoder is available for the selected video stream.");
             }
 
-            _codecContext = ffmpeg.avcodec_alloc_context3(decoder);
+            _videoDecoder = decoder;
+            CreateCodecContext();
+        }
+
+        private void CreateCodecContext()
+        {
+            ReleaseCodecContext();
+
+            if (_videoDecoder == null)
+            {
+                throw new InvalidOperationException("No decoder is available for the selected video stream.");
+            }
+
+            _codecContext = ffmpeg.avcodec_alloc_context3(_videoDecoder);
             if (_codecContext == null)
             {
                 throw new InvalidOperationException("Could not allocate the FFmpeg codec context.");
@@ -1458,10 +1578,19 @@ namespace FramePlayer.Engines.FFmpeg
 
         private void InitializeVideoDecoder()
         {
-            FfmpegNativeHelpers.ThrowIfError(
-                ffmpeg.avcodec_open2(_codecContext, _codecContext->codec, null),
-                "Open video decoder");
+            var attemptedHardwareDecode = TryConfigureHardwareDecode();
+            var openDecoderResult = ffmpeg.avcodec_open2(_codecContext, _videoDecoder, null);
+            if (openDecoderResult < 0 && attemptedHardwareDecode)
+            {
+                GpuFallbackReason = "Vulkan decode setup failed during decoder open: " +
+                    FfmpegNativeHelpers.GetErrorMessage(openDecoderResult);
+                GpuCapabilityStatus = "fallback-cpu";
+                CreateCodecContext();
+                ResetHardwareDecodeState(clearFallbackReason: false);
+                openDecoderResult = ffmpeg.avcodec_open2(_codecContext, _videoDecoder, null);
+            }
 
+            FfmpegNativeHelpers.ThrowIfError(openDecoderResult, "Open video decoder");
             _packet = ffmpeg.av_packet_alloc();
             if (_packet == null)
             {
@@ -1474,7 +1603,215 @@ namespace FramePlayer.Engines.FFmpeg
                 throw new InvalidOperationException("Could not allocate an FFmpeg frame.");
             }
 
+            _softwareFrame = ffmpeg.av_frame_alloc();
+            if (_softwareFrame == null)
+            {
+                throw new InvalidOperationException("Could not allocate an FFmpeg software transfer frame.");
+            }
+
             _frameConverter = new FfmpegFrameConverter();
+        }
+
+        private FfmpegReviewEngineOptions GetCurrentOptions()
+        {
+            return _optionsProvider != null
+                ? _optionsProvider.GetCurrent()
+                : FfmpegReviewEngineOptions.Default;
+        }
+
+        private void ResetHardwareDecodeDiagnostics()
+        {
+            ResetHardwareDecodeState(clearFallbackReason: true);
+            ActiveDecodeBackend = "ffmpeg-cpu";
+            GpuCapabilityStatus = _currentOpenOptions != null &&
+                _currentOpenOptions.GpuBackendPreference == GpuBackendPreference.Disabled
+                ? "disabled"
+                : "not-requested";
+            OperationalQueueDepth = CpuOperationalQueueDepth;
+        }
+
+        private void ResetHardwareDecodeState(bool clearFallbackReason)
+        {
+            _hardwareDecodeFormatSelected = false;
+            IsGpuActive = false;
+            _hardwarePixelFormat = AVPixelFormat.AV_PIX_FMT_NONE;
+            _hardwareGetFormatCallback = null;
+
+            if (_codecContext != null)
+            {
+                if (_codecContext->hw_device_ctx != null)
+                {
+                    var deviceContext = _codecContext->hw_device_ctx;
+                    ffmpeg.av_buffer_unref(&deviceContext);
+                    _codecContext->hw_device_ctx = null;
+                }
+            }
+
+            if (_hardwareDeviceContext != null)
+            {
+                var hardwareDeviceContext = _hardwareDeviceContext;
+                ffmpeg.av_buffer_unref(&hardwareDeviceContext);
+                _hardwareDeviceContext = null;
+            }
+
+            if (clearFallbackReason)
+            {
+                GpuFallbackReason = string.Empty;
+            }
+        }
+
+        private bool TryConfigureHardwareDecode()
+        {
+            ResetHardwareDecodeState(clearFallbackReason: true);
+
+            if (_currentOpenOptions == null ||
+                _currentOpenOptions.GpuBackendPreference == GpuBackendPreference.Disabled)
+            {
+                GpuCapabilityStatus = "disabled";
+                return false;
+            }
+
+            if (_videoDecoder == null || _codecContext == null)
+            {
+                GpuCapabilityStatus = "unavailable";
+                return false;
+            }
+
+            AVCodecHWConfig* hardwareConfiguration = null;
+            for (var configIndex = 0; ; configIndex++)
+            {
+                var candidate = ffmpeg.avcodec_get_hw_config(_videoDecoder, configIndex);
+                if (candidate == null)
+                {
+                    break;
+                }
+
+                if (candidate->device_type != AVHWDeviceType.AV_HWDEVICE_TYPE_VULKAN)
+                {
+                    continue;
+                }
+
+                if ((candidate->methods & (AvCodecHwConfigMethodHwDeviceContext | AvCodecHwConfigMethodHwFramesContext)) == 0)
+                {
+                    continue;
+                }
+
+                hardwareConfiguration = candidate;
+                break;
+            }
+
+            if (hardwareConfiguration == null)
+            {
+                GpuCapabilityStatus = "no-vulkan-config";
+                GpuFallbackReason = "FFmpeg does not advertise a Vulkan hardware decode path for this codec on the current runtime.";
+                return false;
+            }
+
+            AVBufferRef* hardwareDeviceContext = null;
+            string hardwareDeviceErrorMessage;
+            if (!FfmpegHardwareDeviceCache.TryAcquireVulkanDevice(out hardwareDeviceContext, out hardwareDeviceErrorMessage))
+            {
+                GpuCapabilityStatus = "probe-failed";
+                GpuFallbackReason = "Could not acquire a Vulkan FFmpeg device: " + hardwareDeviceErrorMessage;
+                return false;
+            }
+
+            _hardwareDeviceContext = hardwareDeviceContext;
+            _hardwarePixelFormat = hardwareConfiguration->pix_fmt;
+            _hardwareGetFormatCallback = SelectHardwarePixelFormat;
+            _codecContext->get_format = _hardwareGetFormatCallback;
+            _codecContext->hw_device_ctx = ffmpeg.av_buffer_ref(_hardwareDeviceContext);
+            GpuCapabilityStatus = "probe-ready";
+            return true;
+        }
+
+        private AVPixelFormat SelectHardwarePixelFormat(AVCodecContext* codecContext, AVPixelFormat* pixelFormats)
+        {
+            if (pixelFormats == null)
+            {
+                GpuCapabilityStatus = "fallback-cpu";
+                if (string.IsNullOrWhiteSpace(GpuFallbackReason))
+                {
+                    GpuFallbackReason = "The decoder did not expose any usable output pixel formats.";
+                }
+
+                return AVPixelFormat.AV_PIX_FMT_NONE;
+            }
+
+            for (var candidate = pixelFormats; *candidate != AVPixelFormat.AV_PIX_FMT_NONE; candidate++)
+            {
+                if (*candidate == _hardwarePixelFormat)
+                {
+                    _hardwareDecodeFormatSelected = true;
+                    GpuCapabilityStatus = "surface-selected";
+                    return *candidate;
+                }
+            }
+
+            GpuCapabilityStatus = "fallback-cpu";
+            if (string.IsNullOrWhiteSpace(GpuFallbackReason))
+            {
+                GpuFallbackReason = "The decoder did not expose the Vulkan surface format for this stream, so Frame Player stayed on CPU decode.";
+            }
+
+            return *pixelFormats;
+        }
+
+        private void RefreshDecodedFrameBudgetState(bool isOpen, int approximateFrameBytes, bool gpuActive)
+        {
+            var allocation = _budgetCoordinator.UpdatePaneState(
+                _paneId,
+                isOpen,
+                gpuActive,
+                ResolveActualDecodeBackend(gpuActive),
+                approximateFrameBytes,
+                ResolveOperationalQueueDepth(gpuActive),
+                _currentOpenOptions != null ? _currentOpenOptions.CacheBudgetOverrideMegabytes : null);
+            ApplyDecodedFrameBudget(allocation);
+        }
+
+        private void ApplyDecodedFrameBudget(PaneBudgetAllocation allocation)
+        {
+            if (allocation == null)
+            {
+                return;
+            }
+
+            _budgetBand = allocation.BudgetBand;
+            _hostResourceClass = allocation.HostResourceClass;
+            _sessionDecodedFrameCacheBudgetBytes = allocation.SessionBudgetBytes;
+            _configuredCacheBudgetBytes = allocation.PaneBudgetBytes;
+            _maxPreviousCachedFrameCount = allocation.PreviousFrameTarget;
+            _maxForwardCachedFrameCount = allocation.ForwardFrameTarget;
+            OperationalQueueDepth = allocation.QueueDepth;
+            if (!string.IsNullOrWhiteSpace(allocation.ActualDecodeBackend))
+            {
+                ActiveDecodeBackend = allocation.ActualDecodeBackend;
+            }
+
+            _frameCache.UpdateLimits(_maxPreviousCachedFrameCount, _maxForwardCachedFrameCount);
+        }
+
+        private void BudgetCoordinator_AllocationChanged(object sender, PaneBudgetAllocationChangedEventArgs e)
+        {
+            if (e == null ||
+                e.Allocation == null ||
+                !string.Equals(e.Allocation.PaneId, _paneId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            ApplyDecodedFrameBudget(e.Allocation);
+        }
+
+        private static int ResolveOperationalQueueDepth(bool gpuActive)
+        {
+            return gpuActive ? GpuOperationalQueueDepth : CpuOperationalQueueDepth;
+        }
+
+        private static string ResolveActualDecodeBackend(bool gpuActive)
+        {
+            return gpuActive ? "ffmpeg-vulkan" : "ffmpeg-cpu";
         }
 
         private void BeginDecodeSegment(bool frameIndexAbsolute)
@@ -1515,15 +1852,20 @@ namespace FramePlayer.Engines.FFmpeg
             {
                 ffmpeg.av_frame_unref(_decodedFrame);
             }
+
+            if (_softwareFrame != null)
+            {
+                ffmpeg.av_frame_unref(_softwareFrame);
+            }
         }
 
-        private DecodedVideoFrame DecodeFrameAtOrAfterTarget(
+        private DecodedFrameBuffer DecodeFrameAtOrAfterTarget(
             TimeSpan requestedPosition,
             long requestedTimestamp,
             CancellationToken cancellationToken,
             out bool landedAtOrAfterTarget)
         {
-            DecodedVideoFrame fallbackFrame = null;
+            DecodedFrameBuffer fallbackFrame = null;
 
             while (true)
             {
@@ -1549,7 +1891,7 @@ namespace FramePlayer.Engines.FFmpeg
         {
             var startingForwardCount = _frameCache.ForwardCount;
             var stopwatch = Stopwatch.StartNew();
-            while (_frameCache.ForwardCount < CachedForwardFrameCount)
+            while (_frameCache.ForwardCount < _maxForwardCachedFrameCount)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -1639,7 +1981,7 @@ namespace FramePlayer.Engines.FFmpeg
             var anchorEntry = ResolveIndexedAnchorEntry(targetEntry);
             SeekToStreamTimestamp(targetEntry.SeekAnchorTimestamp, targetEntry.SeekAnchorTimestamp <= 0L);
 
-            var framesBeforeTarget = new List<DecodedVideoFrame>(CachedPreviousFrameCount);
+            var framesBeforeTarget = new List<DecodedFrameBuffer>(_maxPreviousCachedFrameCount);
             var anchorReached = anchorEntry != null &&
                 anchorEntry.AbsoluteFrameIndex == 0L &&
                 targetEntry.SeekAnchorTimestamp <= 0L;
@@ -1681,7 +2023,7 @@ namespace FramePlayer.Engines.FFmpeg
                 }
 
                 framesBeforeTarget.Add(normalizedFrame);
-                while (framesBeforeTarget.Count > CachedPreviousFrameCount)
+                while (framesBeforeTarget.Count > _maxPreviousCachedFrameCount)
                 {
                     framesBeforeTarget.RemoveAt(0);
                 }
@@ -1691,13 +2033,13 @@ namespace FramePlayer.Engines.FFmpeg
         }
 
         private BackwardReconstructionResult ReconstructPreviousFrameWindow(
-            DecodedVideoFrame originalCurrentFrame,
+            DecodedFrameBuffer originalCurrentFrame,
             long seekTimestamp,
             CancellationToken cancellationToken)
         {
             SeekToStreamTimestamp(seekTimestamp, seekTimestamp <= 0L);
 
-            var framesBeforeOriginal = new List<DecodedVideoFrame>(CachedPreviousFrameCount + 1);
+            var framesBeforeOriginal = new List<DecodedFrameBuffer>(_maxPreviousCachedFrameCount + 1);
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -1717,7 +2059,7 @@ namespace FramePlayer.Engines.FFmpeg
                 }
 
                 framesBeforeOriginal.Add(frame);
-                while (framesBeforeOriginal.Count > CachedPreviousFrameCount + 1)
+                while (framesBeforeOriginal.Count > _maxPreviousCachedFrameCount + 1)
                 {
                     framesBeforeOriginal.RemoveAt(0);
                 }
@@ -1728,7 +2070,7 @@ namespace FramePlayer.Engines.FFmpeg
         {
             SeekToStreamTimestamp(0L, frameIndexAbsolute: true);
 
-            var framesBeforeTarget = new List<DecodedVideoFrame>(CachedPreviousFrameCount);
+            var framesBeforeTarget = new List<DecodedFrameBuffer>(_maxPreviousCachedFrameCount);
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -1747,7 +2089,7 @@ namespace FramePlayer.Engines.FFmpeg
                 }
 
                 framesBeforeTarget.Add(frame);
-                while (framesBeforeTarget.Count > CachedPreviousFrameCount)
+                while (framesBeforeTarget.Count > _maxPreviousCachedFrameCount)
                 {
                     framesBeforeTarget.RemoveAt(0);
                 }
@@ -1755,11 +2097,11 @@ namespace FramePlayer.Engines.FFmpeg
         }
 
         private BackwardReconstructionResult BuildBackwardReconstructionResult(
-            IList<DecodedVideoFrame> framesBeforeOriginal,
-            DecodedVideoFrame matchedCurrentFrame,
+            IList<DecodedFrameBuffer> framesBeforeOriginal,
+            DecodedFrameBuffer matchedCurrentFrame,
             CancellationToken cancellationToken)
         {
-            var windowFrames = new List<DecodedVideoFrame>(framesBeforeOriginal.Count + CachedForwardFrameCount + 1);
+            var windowFrames = new List<DecodedFrameBuffer>(framesBeforeOriginal.Count + _maxForwardCachedFrameCount + 1);
             int currentIndex;
             bool hasPreviousFrame = framesBeforeOriginal.Count > 0;
             var nextAbsoluteFrameIndex = GetAbsoluteFrameIndex(matchedCurrentFrame);
@@ -1776,7 +2118,7 @@ namespace FramePlayer.Engines.FFmpeg
                 currentIndex = 0;
             }
 
-            while (windowFrames.Count - currentIndex - 1 < CachedForwardFrameCount)
+            while (windowFrames.Count - currentIndex - 1 < _maxForwardCachedFrameCount)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -1803,18 +2145,18 @@ namespace FramePlayer.Engines.FFmpeg
         }
 
         private FrameSeekWindowResult BuildFrameSeekWindowResult(
-            IList<DecodedVideoFrame> framesBeforeTarget,
-            DecodedVideoFrame targetFrame,
+            IList<DecodedFrameBuffer> framesBeforeTarget,
+            DecodedFrameBuffer targetFrame,
             CancellationToken cancellationToken,
             bool primeForwardFrames = true)
         {
-            var windowFrames = new List<DecodedVideoFrame>(framesBeforeTarget.Count + CachedForwardFrameCount + 1);
+            var windowFrames = new List<DecodedFrameBuffer>(framesBeforeTarget.Count + _maxForwardCachedFrameCount + 1);
             windowFrames.AddRange(framesBeforeTarget);
             windowFrames.Add(targetFrame);
             var currentIndex = windowFrames.Count - 1;
             var nextAbsoluteFrameIndex = GetAbsoluteFrameIndex(targetFrame);
 
-            while (primeForwardFrames && windowFrames.Count - currentIndex - 1 < CachedForwardFrameCount)
+            while (primeForwardFrames && windowFrames.Count - currentIndex - 1 < _maxForwardCachedFrameCount)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -1861,8 +2203,8 @@ namespace FramePlayer.Engines.FFmpeg
             return null;
         }
 
-        private DecodedVideoFrame NormalizeFrameToIndexedEntry(
-            DecodedVideoFrame frame,
+        private DecodedFrameBuffer NormalizeFrameToIndexedEntry(
+            DecodedFrameBuffer frame,
             FfmpegGlobalFrameIndexEntry indexedEntry)
         {
             if (frame == null || indexedEntry == null)
@@ -1892,15 +2234,10 @@ namespace FramePlayer.Engines.FFmpeg
                 indexedEntry.DecodeTimestamp ?? frame.Descriptor.DecodeTimestamp,
                 frame.Descriptor.DurationTimestamp);
 
-            return new DecodedVideoFrame(
-                descriptor,
-                frame.BitmapSource,
-                frame.PixelBuffer,
-                frame.Stride,
-                frame.PixelFormat);
+            return frame.WithDescriptor(descriptor);
         }
 
-        private DecodedVideoFrame ReadNextDisplayableFrame(CancellationToken cancellationToken)
+        private DecodedFrameBuffer ReadNextDisplayableFrame(CancellationToken cancellationToken)
         {
             while (true)
             {
@@ -1968,7 +2305,7 @@ namespace FramePlayer.Engines.FFmpeg
             }
         }
 
-        private DecodedVideoFrame TryReceiveDecodedFrame(CancellationToken cancellationToken)
+        private DecodedFrameBuffer TryReceiveDecodedFrame(CancellationToken cancellationToken)
         {
             while (true)
             {
@@ -1989,7 +2326,7 @@ namespace FramePlayer.Engines.FFmpeg
                         continue;
                     }
 
-                    return BuildDecodedVideoFrame(_decodedFrame);
+                    return BuildDecodedFrameBuffer(_decodedFrame);
                 }
                 finally
                 {
@@ -1998,8 +2335,27 @@ namespace FramePlayer.Engines.FFmpeg
             }
         }
 
-        private DecodedVideoFrame BuildDecodedVideoFrame(AVFrame* decodedFrame)
+        private DecodedFrameBuffer BuildDecodedFrameBuffer(AVFrame* decodedFrame)
         {
+            var sourceFrame = decodedFrame;
+            LastHardwareFrameTransferMilliseconds = 0d;
+            if (_hardwareDecodeFormatSelected &&
+                _hardwarePixelFormat != AVPixelFormat.AV_PIX_FMT_NONE &&
+                (AVPixelFormat)decodedFrame->format == _hardwarePixelFormat)
+            {
+                var transferStopwatch = Stopwatch.StartNew();
+                ffmpeg.av_frame_unref(_softwareFrame);
+                FfmpegNativeHelpers.ThrowIfError(
+                    ffmpeg.av_hwframe_transfer_data(_softwareFrame, decodedFrame, 0),
+                    "Transfer GPU frame to system memory");
+                transferStopwatch.Stop();
+                LastHardwareFrameTransferMilliseconds = transferStopwatch.Elapsed.TotalMilliseconds;
+                sourceFrame = _softwareFrame;
+                IsGpuActive = true;
+                ActiveDecodeBackend = "ffmpeg-vulkan";
+                GpuCapabilityStatus = "active";
+            }
+
             var presentationTimestamp = GetPresentationTimestamp(decodedFrame);
             var decodeTimestamp = FfmpegNativeHelpers.AsNullableTimestamp(decodedFrame->pkt_dts);
             var durationTimestamp = decodedFrame->duration > 0
@@ -2022,20 +2378,23 @@ namespace FramePlayer.Engines.FFmpeg
                 resolvedPresentationTime,
                 indexedEntry != null ? indexedEntry.IsKeyFrame : (decodedFrame->flags & ffmpeg.AV_FRAME_FLAG_KEY) != 0,
                 isFrameIndexAbsolute,
-                decodedFrame->width,
-                decodedFrame->height,
+                sourceFrame->width,
+                sourceFrame->height,
                 OutputPixelFormatName,
-                FfmpegNativeHelpers.GetPixelFormatName((AVPixelFormat)decodedFrame->format),
+                FfmpegNativeHelpers.GetPixelFormatName((AVPixelFormat)sourceFrame->format),
                 indexedEntry != null ? indexedEntry.PresentationTimestamp : presentationTimestamp,
                 indexedEntry != null ? indexedEntry.DecodeTimestamp : decodeTimestamp,
                 durationTimestamp);
 
-            var convertedFrame = _frameConverter.Convert(decodedFrame, descriptor);
+            var conversionStopwatch = Stopwatch.StartNew();
+            var convertedFrame = _frameConverter.Convert(sourceFrame, descriptor);
+            conversionStopwatch.Stop();
+            LastBgraConversionMilliseconds = conversionStopwatch.Elapsed.TotalMilliseconds;
             _decodedSegmentFrameCount++;
             return convertedFrame;
         }
 
-        private void SetCurrentFrame(DecodedVideoFrame frame)
+        private void SetCurrentFrame(DecodedFrameBuffer frame)
         {
             _currentFrame = frame ?? throw new ArgumentNullException(nameof(frame));
             _mediaInfo = BuildMediaInfo(frame.Descriptor);
@@ -2098,7 +2457,7 @@ namespace FramePlayer.Engines.FFmpeg
                 : null;
         }
 
-        private long FindBackwardReconstructionSeekTimestamp(DecodedVideoFrame frame)
+        private long FindBackwardReconstructionSeekTimestamp(DecodedFrameBuffer frame)
         {
             if (frame == null)
             {
@@ -2114,7 +2473,7 @@ namespace FramePlayer.Engines.FFmpeg
                 : 0L;
         }
 
-        private long? GetAbsoluteFrameIndex(DecodedVideoFrame frame)
+        private long? GetAbsoluteFrameIndex(DecodedFrameBuffer frame)
         {
             return frame != null &&
                 frame.Descriptor.IsFrameIndexAbsolute &&
@@ -2123,7 +2482,7 @@ namespace FramePlayer.Engines.FFmpeg
                 : (long?)null;
         }
 
-        private static bool FramesReferToSameDisplayFrame(DecodedVideoFrame candidate, DecodedVideoFrame original)
+        private static bool FramesReferToSameDisplayFrame(DecodedFrameBuffer candidate, DecodedFrameBuffer original)
         {
             if (candidate == null || original == null)
             {
@@ -2154,7 +2513,7 @@ namespace FramePlayer.Engines.FFmpeg
                 candidate.Descriptor.FrameIndex.Value == original.Descriptor.FrameIndex.Value;
         }
 
-        private bool FrameMatchesIndexEntry(DecodedVideoFrame frame, FfmpegGlobalFrameIndexEntry indexedEntry)
+        private bool FrameMatchesIndexEntry(DecodedFrameBuffer frame, FfmpegGlobalFrameIndexEntry indexedEntry)
         {
             if (frame == null || indexedEntry == null)
             {
@@ -2186,7 +2545,7 @@ namespace FramePlayer.Engines.FFmpeg
                 frame.Descriptor.PresentationTime == indexedEntry.PresentationTime;
         }
 
-        private bool IsAtOrAfterRequestedTarget(DecodedVideoFrame frame, TimeSpan requestedPosition, long requestedTimestamp)
+        private bool IsAtOrAfterRequestedTarget(DecodedFrameBuffer frame, TimeSpan requestedPosition, long requestedTimestamp)
         {
             if (frame == null)
             {
@@ -2269,9 +2628,16 @@ namespace FramePlayer.Engines.FFmpeg
             _videoStreamIndex = -1;
             _videoStreamTimeBase = default(AVRational);
             _nominalFrameRate = default(AVRational);
+            _videoDecoder = null;
             _segmentFrameIndexAbsolute = false;
             _frameCache.Clear();
+            _configuredCacheBudgetBytes = 0L;
+            _sessionDecodedFrameCacheBudgetBytes = 0L;
+            _maxPreviousCachedFrameCount = DefaultCachedPreviousFrameCount;
+            _maxForwardCachedFrameCount = DefaultCachedForwardFrameCount;
             ResetDecodeReadState();
+            ResetHardwareDecodeDiagnostics();
+            ResetFrameTransferInstrumentation();
 
             if (clearFilePath)
             {
@@ -2283,6 +2649,8 @@ namespace FramePlayer.Engines.FFmpeg
                 _lastErrorMessage = string.Empty;
                 _lastAudioErrorMessage = string.Empty;
             }
+
+            RefreshDecodedFrameBudgetState(isOpen: false, approximateFrameBytes: 0, gpuActive: false);
         }
 
         private void ReleaseNativeState()
@@ -2300,6 +2668,13 @@ namespace FramePlayer.Engines.FFmpeg
                 _decodedFrame = null;
             }
 
+            if (_softwareFrame != null)
+            {
+                var softwareFrame = _softwareFrame;
+                ffmpeg.av_frame_free(&softwareFrame);
+                _softwareFrame = null;
+            }
+
             if (_packet != null)
             {
                 var packet = _packet;
@@ -2307,12 +2682,8 @@ namespace FramePlayer.Engines.FFmpeg
                 _packet = null;
             }
 
-            if (_codecContext != null)
-            {
-                var codecContext = _codecContext;
-                ffmpeg.avcodec_free_context(&codecContext);
-                _codecContext = null;
-            }
+            ResetHardwareDecodeState(clearFallbackReason: false);
+            ReleaseCodecContext();
 
             if (_formatContext != null)
             {
@@ -2324,7 +2695,19 @@ namespace FramePlayer.Engines.FFmpeg
             _videoStream = null;
         }
 
-        private void OnFramePresented(DecodedVideoFrame frame)
+        private void ReleaseCodecContext()
+        {
+            if (_codecContext == null)
+            {
+                return;
+            }
+
+            var codecContext = _codecContext;
+            ffmpeg.avcodec_free_context(&codecContext);
+            _codecContext = null;
+        }
+
+        private void OnFramePresented(DecodedFrameBuffer frame)
         {
             if (frame == null)
             {
@@ -2357,14 +2740,14 @@ namespace FramePlayer.Engines.FFmpeg
 
         private sealed class BackwardReconstructionResult
         {
-            public BackwardReconstructionResult(List<DecodedVideoFrame> windowFrames, int currentIndex, bool hasPreviousFrame)
+            public BackwardReconstructionResult(List<DecodedFrameBuffer> windowFrames, int currentIndex, bool hasPreviousFrame)
             {
                 WindowFrames = windowFrames ?? throw new ArgumentNullException(nameof(windowFrames));
                 CurrentIndex = currentIndex;
                 HasPreviousFrame = hasPreviousFrame;
             }
 
-            public List<DecodedVideoFrame> WindowFrames { get; }
+            public List<DecodedFrameBuffer> WindowFrames { get; }
 
             public int CurrentIndex { get; }
 
@@ -2373,13 +2756,13 @@ namespace FramePlayer.Engines.FFmpeg
 
         private sealed class FrameSeekWindowResult
         {
-            public FrameSeekWindowResult(List<DecodedVideoFrame> windowFrames, int currentIndex)
+            public FrameSeekWindowResult(List<DecodedFrameBuffer> windowFrames, int currentIndex)
             {
                 WindowFrames = windowFrames ?? throw new ArgumentNullException(nameof(windowFrames));
                 CurrentIndex = currentIndex;
             }
 
-            public List<DecodedVideoFrame> WindowFrames { get; }
+            public List<DecodedFrameBuffer> WindowFrames { get; }
 
             public int CurrentIndex { get; }
         }

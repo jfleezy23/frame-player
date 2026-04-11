@@ -5,11 +5,16 @@ namespace FramePlayer.Core.Events
 {
     public sealed class FramePresentedEventArgs : EventArgs
     {
-        public FramePresentedEventArgs(DecodedVideoFrame frame)
+        public FramePresentedEventArgs(DecodedFrameBuffer frameBuffer)
         {
-            Frame = frame ?? throw new ArgumentNullException(nameof(frame));
+            FrameBuffer = frameBuffer ?? throw new ArgumentNullException(nameof(frameBuffer));
         }
 
-        public DecodedVideoFrame Frame { get; }
+        public DecodedFrameBuffer FrameBuffer { get; }
+
+        public FrameDescriptor Descriptor
+        {
+            get { return FrameBuffer.Descriptor; }
+        }
     }
 }

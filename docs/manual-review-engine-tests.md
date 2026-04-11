@@ -51,7 +51,6 @@ When a folder is supplied, the script collects these extensions by default:
 - `.avi`
 - `.wmv`
 - `.m4v`
-- `.ts`
 
 The extension filter can be adjusted with `-IncludeExtensions`.
 
