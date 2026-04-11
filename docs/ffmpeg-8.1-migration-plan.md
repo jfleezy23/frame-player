@@ -1,6 +1,6 @@
 # FFmpeg 8.1 Source-Build Migration Plan
 
-This note is a planning checkpoint only. Do not swap `Runtime\ffmpeg` or update the runtime manifest until the FFmpeg 8.1 DLLs have been built from source, packaged, hashed, and regression-tested.
+This is a historical migration checkpoint. The FFmpeg 8.1 runtime is now the active runtime in the repo. Keep `docs\ffmpeg-8.1-build-notes.md` as the current runtime provenance note and `docs\gpu-vulkan-phase1-release.md` as the current product/release note.
 
 ## Current Runtime Integration
 

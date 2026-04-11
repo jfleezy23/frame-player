@@ -202,7 +202,7 @@ if (Test-Path -LiteralPath $testingNotesPath) {
 
 $artifactVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exePath).ProductVersion
 if ([string]::IsNullOrWhiteSpace($artifactVersion)) {
-    $artifactVersion = "1.3.0"
+    throw "The packaged executable did not report a product version. Update Properties\\AssemblyInfo.cs before building the release test drop."
 }
 
 $resolvedArtifactPath = if ([string]::IsNullOrWhiteSpace($ArtifactPath)) {
