@@ -1283,7 +1283,8 @@
       </Grid>
     </Border>
 
-      <Border Grid.Row="4"
+      <Border x:Name="StatusPanelContainer"
+              Grid.Row="4"
               Margin="10,8,10,10"
               Background="{StaticResource PanelBrush}"
               BorderBrush="{StaticResource PanelBorderBrush}"
