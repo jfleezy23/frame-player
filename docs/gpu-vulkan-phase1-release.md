@@ -1,6 +1,6 @@
 # GPU Vulkan Phase 1 Release Note
 
-This note documents the current `v1.4.3` release for the GPU Vulkan phase 1 work. It is the maintainer-facing summary of what shipped, what did not ship, and what validation evidence currently backs the release.
+This note documents the current `v1.4.4` release for the GPU Vulkan phase 1 work. It is the maintainer-facing summary of what shipped, what did not ship, and what validation evidence currently backs the release.
 
 ## What Shipped
 
@@ -14,6 +14,9 @@ This note documents the current `v1.4.3` release for the GPU Vulkan phase 1 work
   - modeless inspector windows so compare sessions can inspect both panes at once
   - compare-mode shared transport plus pane-local timeline and frame navigation
   - visible pending frame-number state until background indexing resolves absolute frame identity
+  - patch follow-ups for fullscreen review sessions and compare pane navigation:
+    - fullscreen now hides the entire status-bar container instead of leaving bottom chrome behind
+    - pane-local frame input now uses the same ceiling-style fallback clamping as the main transport path
 - A neutral frame-contract seam:
   - `DecodedFrameBuffer` is the engine-to-shell payload
   - `FramePresentedEventArgs` carries frame data plus exact `FrameDescriptor`
@@ -41,7 +44,7 @@ This note documents the current `v1.4.3` release for the GPU Vulkan phase 1 work
 
 ## Validation Evidence
 
-The raw proof harnesses are preserved on the companion validation branch `validation/gpu-v1.4.3-proof`. The release branch keeps the summarized evidence here and in the normal regression tooling.
+The raw proof harnesses are preserved on the companion validation branch `validation/gpu-v1.4.4-proof`. The release branch keeps the summarized evidence here and in the normal regression tooling.
 
 Last-known green validation runs:
 
@@ -54,7 +57,7 @@ Last-known green validation runs:
   - checks run: `488`
   - pass / warning / fail: `453 / 35 / 0`
 - Clean-runner bootstrap proof:
-  - the pinned runtime archive is published on the `v1.4.3` GitHub release as `FramePlayer-ffmpeg-runtime-x64.zip`
+  - the pinned runtime archive is published on the `v1.4.4` GitHub release as `FramePlayer-ffmpeg-runtime-x64.zip`
   - `Runtime\runtime-manifest.json` now points at that verified release asset with matching archive and DLL hashes
   - Windows CI restores the pinned runtime through `scripts\Ensure-DevRuntime.ps1` before build
 - Dual-pane real-media proof, mixed backend capable:
@@ -67,10 +70,10 @@ Last-known green validation runs:
 Exact commands used for the current release validation set:
 
 ```powershell
-.\scripts\Run-RegressionSuite.ps1 -Path "C:\Projects\Video Test Files" -Recurse -Output ".\artifacts\regression-suite\release-v1.4.3-auto" -Configuration Release
+.\scripts\Run-RegressionSuite.ps1 -Path "C:\Projects\Video Test Files" -Recurse -Output ".\artifacts\regression-suite\release-v1.4.4-auto" -Configuration Release
 
 $env:FRAMEPLAYER_GPU_BACKEND="disabled"
-.\scripts\Run-RegressionSuite.ps1 -Path "C:\Projects\Video Test Files" -Recurse -Output ".\artifacts\regression-suite\release-v1.4.3-cpu" -Configuration Release
+.\scripts\Run-RegressionSuite.ps1 -Path "C:\Projects\Video Test Files" -Recurse -Output ".\artifacts\regression-suite\release-v1.4.4-cpu" -Configuration Release
 Remove-Item Env:FRAMEPLAYER_GPU_BACKEND
 ```
 
@@ -87,7 +90,7 @@ Known non-blocking warnings from the regression corpus:
 
 ## Release Guidance
 
-- Treat `v1.4.3` as the current release that carries the verified clean-runner runtime bootstrap path forward and adds Inspector V2 plus pane-local inspector access.
+- Treat `v1.4.4` as the current patch release that carries the verified clean-runner runtime bootstrap path forward while adding fullscreen/status-bar cleanup and compare-pane frame clamping fixes on top of the Inspector V2 surface.
 - Keep `Properties\AssemblyInfo.cs` as the canonical version source and derive packaging/output names from the built executable version.
 - Keep `docs\ffmpeg-8.1-build-notes.md` factual about runtime provenance and the now-verified clean-runner restore path.
 - Preserve the proof harnesses and raw proof artifacts outside `main`; do not require the app startup path in `main` to carry harness-only CLI entry points.
