@@ -1922,6 +1922,52 @@ namespace FramePlayer.Diagnostics
                         false,
                         metrics.UiOpenMilliseconds));
 
+                    try
+                    {
+                        Trace("UI harness inspector open: " + filePath);
+                        var inspector = await controller.OpenVideoInfoWindowAsync().ConfigureAwait(true);
+                        checks.Add(
+                            inspector.HasRenderableContent
+                                ? Pass(
+                                    filePath,
+                                    "ui",
+                                    "coverage",
+                                    "ui-video-info-opens",
+                                    string.Format(
+                                        CultureInfo.InvariantCulture,
+                                        "Video Info opened with heading '{0}', {1} summary fields, {2} video fields, {3} audio fields, and {4} advanced fields.",
+                                        inspector.HeadingText,
+                                        inspector.SummaryFieldCount,
+                                        inspector.VideoFieldCount,
+                                        inspector.AudioFieldCount,
+                                        inspector.AdvancedFieldCount),
+                                    elapsedMilliseconds: inspector.ElapsedMilliseconds)
+                                : Fail(
+                                    filePath,
+                                    "ui",
+                                    "coverage",
+                                    "ui-video-info-opens",
+                                    string.Format(
+                                        CultureInfo.InvariantCulture,
+                                        "Video Info opened but rendered incomplete content. Heading '{0}', summary={1}, video={2}, audio={3}, audio-empty='{4}', advanced={5}.",
+                                        inspector.HeadingText,
+                                        inspector.SummaryFieldCount,
+                                        inspector.VideoFieldCount,
+                                        inspector.AudioFieldCount,
+                                        inspector.AudioEmptyMessage,
+                                        inspector.AdvancedFieldCount),
+                                    elapsedMilliseconds: inspector.ElapsedMilliseconds));
+                    }
+                    catch (Exception ex)
+                    {
+                        checks.Add(Fail(
+                            filePath,
+                            "ui",
+                            "coverage",
+                            "ui-video-info-opens",
+                            "Video Info failed to open cleanly: " + ex.Message));
+                    }
+
                     var immediateSliderTarget = controller.GetQuarterDurationTarget();
                     if (immediateSliderTarget > TimeSpan.Zero)
                     {
@@ -2344,6 +2390,7 @@ namespace FramePlayer.Diagnostics
                 private readonly MethodInfo _stepFrameAsyncMethod;
                 private readonly MethodInfo _startPlaybackAsyncMethod;
                 private readonly MethodInfo _pausePlaybackAsyncMethod;
+                private readonly MethodInfo _buildVideoInfoSnapshotMethod;
                 private readonly FieldInfo _videoReviewEngineField;
                 private readonly FieldInfo _isSliderDragActiveField;
 
@@ -2357,6 +2404,7 @@ namespace FramePlayer.Diagnostics
                     _stepFrameAsyncMethod = RequireMethod(windowType, "StepFrameAsync", typeof(int));
                     _startPlaybackAsyncMethod = RequireMethod(windowType, "StartPlaybackAsync");
                     _pausePlaybackAsyncMethod = RequireMethod(windowType, "PausePlaybackAsync", typeof(bool));
+                    _buildVideoInfoSnapshotMethod = RequireMethod(windowType, "BuildVideoInfoSnapshot", typeof(string), typeof(VideoMediaInfo));
                     _videoReviewEngineField = RequireField(windowType, "_videoReviewEngine");
                     _isSliderDragActiveField = RequireField(windowType, "_isSliderDragActive");
                 }
@@ -2420,6 +2468,62 @@ namespace FramePlayer.Diagnostics
                     await WaitForUiIdleAsync(_window.Dispatcher).ConfigureAwait(true);
                     _isSliderDragActiveField.SetValue(_window, false);
                     return await CommitSliderSeekAsync("drag", TimeSpan.FromSeconds(slider.Value)).ConfigureAwait(true);
+                }
+
+                public async Task<InspectorUiResult> OpenVideoInfoWindowAsync()
+                {
+                    var engine = GetEngine();
+                    var mediaInfo = engine.MediaInfo ?? VideoMediaInfo.Empty;
+                    var snapshot = (VideoInfoSnapshot)_buildVideoInfoSnapshotMethod.Invoke(
+                        _window,
+                        new object[] { "Primary", mediaInfo });
+                    InspectorUiResult result = null;
+
+                    var measured = await MeasureAsync(
+                            async () =>
+                            {
+                                var infoWindow = new VideoInfoWindow(snapshot)
+                                {
+                                    Owner = _window,
+                                    ShowInTaskbar = false,
+                                    WindowStartupLocation = WindowStartupLocation.Manual,
+                                    Left = -19000,
+                                    Top = -19000
+                                };
+
+                                try
+                                {
+                                    infoWindow.Show();
+                                    await WaitForUiIdleAsync(infoWindow.Dispatcher).ConfigureAwait(true);
+
+                                    result = new InspectorUiResult
+                                    {
+                                        HeadingText = ((TextBlock)infoWindow.FindName("HeadingTextBlock"))?.Text ?? string.Empty,
+                                        SummaryFieldCount = ((ItemsControl)infoWindow.FindName("SummaryItemsControl"))?.Items.Count ?? 0,
+                                        VideoFieldCount = ((ItemsControl)infoWindow.FindName("VideoItemsControl"))?.Items.Count ?? 0,
+                                        AudioFieldCount = ((ItemsControl)infoWindow.FindName("AudioItemsControl"))?.Items.Count ?? 0,
+                                        AudioEmptyMessage = ((TextBlock)infoWindow.FindName("AudioEmptyTextBlock"))?.Text ?? string.Empty,
+                                        AdvancedFieldCount = ((ItemsControl)infoWindow.FindName("AdvancedItemsControl"))?.Items.Count ?? 0
+                                    };
+                                }
+                                finally
+                                {
+                                    if (infoWindow.IsVisible)
+                                    {
+                                        infoWindow.Close();
+                                        await WaitForUiIdleAsync(_window.Dispatcher).ConfigureAwait(true);
+                                    }
+                                }
+                            })
+                        .ConfigureAwait(true);
+
+                    if (result == null)
+                    {
+                        result = new InspectorUiResult();
+                    }
+
+                    result.ElapsedMilliseconds = measured.Elapsed.TotalMilliseconds;
+                    return result;
                 }
 
                 public async Task<IndexReadyUiResult> WaitForIndexReadyAsync(TimeSpan timeout, CancellationToken cancellationToken)
@@ -2670,6 +2774,34 @@ namespace FramePlayer.Diagnostics
                 public double PositionStepSeconds { get; set; }
 
                 public double ElapsedMilliseconds { get; set; }
+            }
+
+            private sealed class InspectorUiResult
+            {
+                public string HeadingText { get; set; }
+
+                public int SummaryFieldCount { get; set; }
+
+                public int VideoFieldCount { get; set; }
+
+                public int AudioFieldCount { get; set; }
+
+                public string AudioEmptyMessage { get; set; }
+
+                public int AdvancedFieldCount { get; set; }
+
+                public double ElapsedMilliseconds { get; set; }
+
+                public bool HasRenderableContent
+                {
+                    get
+                    {
+                        return !string.IsNullOrWhiteSpace(HeadingText) &&
+                               SummaryFieldCount > 0 &&
+                               VideoFieldCount > 0 &&
+                               (AudioFieldCount > 0 || !string.IsNullOrWhiteSpace(AudioEmptyMessage));
+                    }
+                }
             }
         }
     }

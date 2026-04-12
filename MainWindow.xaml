@@ -10,7 +10,7 @@
         WindowStartupLocation="CenterScreen"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
-        Background="#17191D"
+        Background="Transparent"
         Foreground="#F3F4F6"
         FontFamily="Segoe UI"
         WindowStyle="None"
@@ -465,14 +465,20 @@
     </Style>
   </Window.Resources>
 
-  <Grid x:Name="RootGrid">
-    <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="*" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-    </Grid.RowDefinitions>
+  <Border x:Name="WindowFrameBorder"
+          Background="#17191D"
+          BorderBrush="#2B3138"
+          BorderThickness="1"
+          CornerRadius="0"
+          ClipToBounds="False">
+    <Grid x:Name="RootGrid">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
 
     <Border x:Name="MenuPanel"
             Grid.Row="0"
@@ -740,8 +746,17 @@
                       ClipToBounds="True"
                       Focusable="True"
                       Tag="pane-primary"
+                      PreviewMouseRightButtonDown="VideoPane_PreviewMouseRightButtonDown"
+                      ContextMenuOpening="VideoPane_ContextMenuOpening"
                       MouseMove="VideoSurfaceHost_MouseMove"
                       MouseLeave="VideoSurfaceHost_MouseLeave">
+                <Border.ContextMenu>
+                  <ContextMenu>
+                    <MenuItem Header="Video Info..."
+                              Tag="pane-primary"
+                              Click="VideoPaneVideoInfoMenuItem_Click" />
+                  </ContextMenu>
+                </Border.ContextMenu>
                 <Image x:Name="CustomVideoSurface"
                        Stretch="Uniform"
                        SnapsToDevicePixels="True"
@@ -945,8 +960,17 @@
                       ClipToBounds="True"
                       Focusable="True"
                       Tag="pane-compare-a"
+                      PreviewMouseRightButtonDown="VideoPane_PreviewMouseRightButtonDown"
+                      ContextMenuOpening="VideoPane_ContextMenuOpening"
                       MouseMove="VideoSurfaceHost_MouseMove"
                       MouseLeave="VideoSurfaceHost_MouseLeave">
+                <Border.ContextMenu>
+                  <ContextMenu>
+                    <MenuItem Header="Video Info..."
+                              Tag="pane-compare-a"
+                              Click="VideoPaneVideoInfoMenuItem_Click" />
+                  </ContextMenu>
+                </Border.ContextMenu>
                 <Image x:Name="CompareVideoSurface"
                        Stretch="Uniform"
                        SnapsToDevicePixels="True"
@@ -1259,64 +1283,70 @@
       </Grid>
     </Border>
 
-    <StatusBar x:Name="StatusPanel"
-               Grid.Row="4"
-               Margin="10,8,10,10"
-               Padding="4,3"
-               Background="{StaticResource PanelBrush}"
-               BorderBrush="{StaticResource PanelBorderBrush}"
-               BorderThickness="1"
-               Foreground="#F3F4F6">
-      <StatusBarItem>
-        <TextBlock x:Name="PlaybackStateTextBlock"
-                   FontSize="12"
-                   Width="360"
-                   TextTrimming="CharacterEllipsis"
-                   Text="A/V playback + frame review" />
-      </StatusBarItem>
-      <Separator />
-      <StatusBarItem>
-        <StackPanel Orientation="Horizontal">
-          <TextBlock x:Name="CurrentFrameTextBlock"
-                     Foreground="{StaticResource MutedBrush}"
-                     FontSize="12"
-                     Width="140"
-                     TextTrimming="CharacterEllipsis"
-                     Text="Frame --" />
-          <TextBlock Margin="8,0"
-                     Foreground="{StaticResource MutedBrush}"
-                     FontSize="12"
-                     Text="|" />
-          <TextBlock x:Name="TimecodeTextBlock"
-                     Foreground="{StaticResource MutedBrush}"
-                     FontSize="12"
-                     Width="240"
-                     TextTrimming="CharacterEllipsis"
-                     Text="--:--:--.--- / --:--:--.---" />
-        </StackPanel>
-      </StatusBarItem>
-      <Separator />
-      <StatusBarItem>
-        <TextBlock x:Name="CacheStatusTextBlock"
-                   Foreground="{StaticResource MutedBrush}"
-                   FontSize="12"
-                   Width="220"
-                   TextTrimming="CharacterEllipsis"
-                   Text="Cache: idle" />
-      </StatusBarItem>
-      <Separator />
-      <StatusBarItem>
-        <TextBlock x:Name="PointerCoordinatesTextBlock"
-                   Foreground="{StaticResource MutedBrush}"
-                   FontSize="12"
-                   Width="230"
-                   TextTrimming="CharacterEllipsis"
-                   Text="Pixel: --" />
-      </StatusBarItem>
-      <StatusBarItem Visibility="Collapsed">
-        <TextBlock x:Name="MediaSummaryTextBlock"
-                   Text="" />
-      </StatusBarItem>
-    </StatusBar>
-  </Grid>
+      <Border Grid.Row="4"
+              Margin="10,8,10,10"
+              Background="{StaticResource PanelBrush}"
+              BorderBrush="{StaticResource PanelBorderBrush}"
+              BorderThickness="1"
+              CornerRadius="10"
+              ClipToBounds="True">
+        <StatusBar x:Name="StatusPanel"
+                   Padding="4,3"
+                   Background="Transparent"
+                   BorderThickness="0"
+                   Foreground="#F3F4F6">
+          <StatusBarItem>
+            <TextBlock x:Name="PlaybackStateTextBlock"
+                       FontSize="12"
+                       Width="360"
+                       TextTrimming="CharacterEllipsis"
+                       Text="A/V playback + frame review" />
+          </StatusBarItem>
+          <Separator />
+          <StatusBarItem>
+            <StackPanel Orientation="Horizontal">
+              <TextBlock x:Name="CurrentFrameTextBlock"
+                         Foreground="{StaticResource MutedBrush}"
+                         FontSize="12"
+                         Width="140"
+                         TextTrimming="CharacterEllipsis"
+                         Text="Frame --" />
+              <TextBlock Margin="8,0"
+                         Foreground="{StaticResource MutedBrush}"
+                         FontSize="12"
+                         Text="|" />
+              <TextBlock x:Name="TimecodeTextBlock"
+                         Foreground="{StaticResource MutedBrush}"
+                         FontSize="12"
+                         Width="240"
+                         TextTrimming="CharacterEllipsis"
+                         Text="--:--:--.--- / --:--:--.---" />
+            </StackPanel>
+          </StatusBarItem>
+          <Separator />
+          <StatusBarItem>
+            <TextBlock x:Name="CacheStatusTextBlock"
+                       Foreground="{StaticResource MutedBrush}"
+                       FontSize="12"
+                       Width="220"
+                       TextTrimming="CharacterEllipsis"
+                       Text="Cache: idle" />
+          </StatusBarItem>
+          <Separator />
+          <StatusBarItem>
+            <TextBlock x:Name="PointerCoordinatesTextBlock"
+                       Foreground="{StaticResource MutedBrush}"
+                       FontSize="12"
+                       Width="230"
+                       TextTrimming="CharacterEllipsis"
+                       Text="Pixel: --" />
+          </StatusBarItem>
+          <StatusBarItem Visibility="Collapsed">
+            <TextBlock x:Name="MediaSummaryTextBlock"
+                       Text="" />
+          </StatusBarItem>
+        </StatusBar>
+      </Border>
+    </Grid>
+  </Border>
 </Window>

@@ -11,7 +11,9 @@ namespace FramePlayer.Engines.FFmpeg
             int streamIndex,
             string codecName,
             int sampleRate,
-            int channelCount)
+            int channelCount,
+            long? bitRate = null,
+            int? bitDepth = null)
         {
             HasAudioStream = hasAudioStream;
             DecoderAvailable = decoderAvailable;
@@ -19,6 +21,8 @@ namespace FramePlayer.Engines.FFmpeg
             CodecName = codecName ?? string.Empty;
             SampleRate = sampleRate;
             ChannelCount = channelCount;
+            BitRate = bitRate;
+            BitDepth = bitDepth;
         }
 
         public bool HasAudioStream { get; }
@@ -32,5 +36,9 @@ namespace FramePlayer.Engines.FFmpeg
         public int SampleRate { get; }
 
         public int ChannelCount { get; }
+
+        public long? BitRate { get; }
+
+        public int? BitDepth { get; }
     }
 }

@@ -25,7 +25,20 @@ namespace FramePlayer.Core.Models
             string audioCodecName = "",
             int audioStreamIndex = -1,
             int audioSampleRate = 0,
-            int audioChannelCount = 0)
+            int audioChannelCount = 0,
+            int? displayWidth = null,
+            int? displayHeight = null,
+            int? displayAspectRatioNumerator = null,
+            int? displayAspectRatioDenominator = null,
+            string sourcePixelFormatName = null,
+            int? videoBitDepth = null,
+            long? videoBitRate = null,
+            string videoColorSpace = null,
+            string videoColorRange = null,
+            string videoColorPrimaries = null,
+            string videoColorTransfer = null,
+            long? audioBitRate = null,
+            int? audioBitDepth = null)
         {
             FilePath = filePath ?? string.Empty;
             Duration = duration;
@@ -45,6 +58,19 @@ namespace FramePlayer.Core.Models
             AudioStreamIndex = audioStreamIndex;
             AudioSampleRate = audioSampleRate;
             AudioChannelCount = audioChannelCount;
+            DisplayWidth = displayWidth;
+            DisplayHeight = displayHeight;
+            DisplayAspectRatioNumerator = displayAspectRatioNumerator;
+            DisplayAspectRatioDenominator = displayAspectRatioDenominator;
+            SourcePixelFormatName = sourcePixelFormatName;
+            VideoBitDepth = videoBitDepth;
+            VideoBitRate = videoBitRate;
+            VideoColorSpace = videoColorSpace;
+            VideoColorRange = videoColorRange;
+            VideoColorPrimaries = videoColorPrimaries;
+            VideoColorTransfer = videoColorTransfer;
+            AudioBitRate = audioBitRate;
+            AudioBitDepth = audioBitDepth;
         }
 
         public string FilePath { get; }
@@ -82,5 +108,31 @@ namespace FramePlayer.Core.Models
         public int AudioSampleRate { get; }
 
         public int AudioChannelCount { get; }
+
+        public int? DisplayWidth { get; }
+
+        public int? DisplayHeight { get; }
+
+        public int? DisplayAspectRatioNumerator { get; }
+
+        public int? DisplayAspectRatioDenominator { get; }
+
+        public string SourcePixelFormatName { get; }
+
+        public int? VideoBitDepth { get; }
+
+        public long? VideoBitRate { get; }
+
+        public string VideoColorSpace { get; }
+
+        public string VideoColorRange { get; }
+
+        public string VideoColorPrimaries { get; }
+
+        public string VideoColorTransfer { get; }
+
+        public long? AudioBitRate { get; }
+
+        public int? AudioBitDepth { get; }
     }
 }

@@ -1,6 +1,6 @@
 # Frame Player GPU Release Test Drop
 
-Release: `1.4.2`
+Release: `1.4.3`
 
 ## What changed recently
 
@@ -8,7 +8,7 @@ Release: `1.4.2`
 - Video playback, audio playback, basic A/V sync, seek-to-time, seek-to-frame, exact frame stepping, and opportunistic Vulkan decode with strict CPU fallback are implemented in the custom engine.
 - The latest UI pass combined Play/Pause into one toggle, restored the normal visual tone, removed temporary custom-build banners, added a cache status indicator, and fixed arrow-key stepping immediately after frame entry.
 - The latest GPU/cache pass adds a visible GPU toggle, pane-aware decoded-frame budgeting, shared Vulkan warmup, and backend-aware compare behavior without changing the frames-first review contract.
-- The latest release polish pass adds live timeline scrubbing, whole-media loop playback, pane-local compare navigation, a basic Video Info dialog, and pending frame-number honesty while background indexing is still resolving absolute frame identity.
+- The latest release polish pass adds live timeline scrubbing, whole-media loop playback, pane-local compare navigation, Inspector V2 with pane context-menu access, and pending frame-number honesty while background indexing is still resolving absolute frame identity.
 
 ## Manual test checklist
 
@@ -24,6 +24,7 @@ Release: `1.4.2`
 - Step backward and forward repeatedly and confirm the frame counter moves exactly one frame at a time.
 - Open two panes and confirm both panes stay responsive while stepping and seeking together.
 - In two-pane mode, confirm the main transport controls both panes together while the pane-local sliders and frame boxes still operate on their own panes.
+- Right-click the primary pane and the compare pane, open `Video Info...` from both, and confirm two inspector windows can stay open at once with the correct pane-specific FFmpeg metadata.
 - Try at least one video with audio and confirm audio starts during playback.
 - If possible, try one video-only clip and confirm playback still works without audio errors.
 
@@ -37,14 +38,14 @@ Release: `1.4.2`
 - The pinned FFmpeg runtime is `n8.1-frameplayer-source`, recorded in `Runtime\runtime-manifest.json`.
 - The runtime was built from the official FFmpeg source tag `n8.1` and is restored locally from the self-built candidate/archive produced by `scripts\ffmpeg\Build-FFmpeg-8.1.ps1`.
 - The packaged runtime also requires `libwinpthread-1.dll`; it must ship beside `FramePlayer.exe` with the FFmpeg DLL set.
-- Clean-runner bootstrap now restores from the verified `v1.4.2` runtime release asset, so CI and other clean environments no longer depend on pre-staged local runtime artifacts.
+- Clean-runner bootstrap now restores from the verified `v1.4.3` runtime release asset, so CI and other clean environments no longer depend on pre-staged local runtime artifacts.
 
 ## Build and shortcut
 
 - Test drop executable: `bin\TestDrop\FramePlayer.exe`
 - Release archive: `artifacts\FramePlayer-CustomFFmpeg-<product-version>.zip`
 - Test-drop build script: `scripts\Build-TestDrop.ps1`
-- Desktop shortcut name: `Frame Player - Custom FFmpeg`
+- Desktop shortcut name: `Frame Player`
 - Shortcut refresh script: `scripts\Create-Comparison-Shortcuts.ps1`
 
 To refresh the shortcut after rebuilding:

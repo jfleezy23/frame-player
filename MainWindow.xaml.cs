@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -13,6 +15,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using System.Windows.Interop;
 using FramePlayer.Core.Abstractions;
 using FramePlayer.Core.Coordination;
 using FramePlayer.Core.Events;
@@ -33,6 +36,8 @@ namespace FramePlayer
         private const double CompareModePreferredMinWindowWidth = 1180d;
         private const int ControlModifiedFrameStep = 10;
         private const int ShiftModifiedFrameStep = 100;
+        private const int DefaultWindowCornerRadius = 14;
+        private const int DwmaWindowCornerPreference = 33;
         private static readonly TimeSpan SeekJump = TimeSpan.FromSeconds(5);
         private static readonly TimeSpan FrameStepInitialDelay = TimeSpan.FromMilliseconds(550);
         private static readonly TimeSpan FrameStepRepeatInterval = TimeSpan.FromMilliseconds(60);
@@ -168,6 +173,7 @@ namespace FramePlayer
             UpdateWindowStateButtonVisuals();
             UpdateTransportState();
             UpdateWorkspacePanePresentation();
+            SourceInitialized += MainWindow_SourceInitialized;
 
             LogInfo(string.Format(
                 CultureInfo.InvariantCulture,
@@ -240,6 +246,7 @@ namespace FramePlayer
         private void Window_StateChanged(object sender, EventArgs e)
         {
             UpdateWindowStateButtonVisuals();
+            UpdateWindowFrameChrome();
         }
 
         private void ToggleWindowState()
@@ -265,6 +272,39 @@ namespace FramePlayer
             var isMaximized = WindowState == WindowState.Maximized && !_isFullScreen;
             WindowStateGlyphTextBlock.Text = isMaximized ? "\uE923" : "\uE922";
             WindowStateButton.ToolTip = isMaximized ? "Restore" : "Maximize";
+        }
+
+        private void MainWindow_SourceInitialized(object sender, EventArgs e)
+        {
+            UpdateWindowFrameChrome();
+        }
+
+        private void UpdateWindowFrameChrome()
+        {
+            var useRoundedCorners = !_isFullScreen && WindowState != WindowState.Maximized;
+            var handle = new WindowInteropHelper(this).Handle;
+            if (handle == IntPtr.Zero)
+            {
+                return;
+            }
+
+            var preference = useRoundedCorners
+                ? DwmWindowCornerPreference.Round
+                : DwmWindowCornerPreference.DoNotRound;
+            try
+            {
+                DwmSetWindowAttribute(
+                    handle,
+                    DwmaWindowCornerPreference,
+                    ref preference,
+                    sizeof(int));
+            }
+            catch (DllNotFoundException)
+            {
+            }
+            catch (EntryPointNotFoundException)
+            {
+            }
         }
 
         private static string GetSupportedVideoExtensionsDescription()
@@ -1139,6 +1179,11 @@ namespace FramePlayer
         private void VideoInfoMenuItem_Click(object sender, RoutedEventArgs e)
         {
             ShowVideoInfoWindow();
+        }
+
+        private void VideoPaneVideoInfoMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            ShowVideoInfoWindow(GetPaneIdFromSender(sender));
         }
 
         private void HelpMenuItem_Click(object sender, RoutedEventArgs e)
@@ -3198,6 +3243,7 @@ namespace FramePlayer
 
             UpdateFullScreenButtonIcon();
             UpdateWindowStateButtonVisuals();
+            UpdateWindowFrameChrome();
         }
 
         private void UpdateFullScreenButtonIcon()
@@ -3798,17 +3844,27 @@ namespace FramePlayer
 
         private void ShowVideoInfoWindow()
         {
+            ShowVideoInfoWindow(null);
+        }
+
+        private void ShowVideoInfoWindow(string paneId)
+        {
             if (!_isMediaLoaded)
             {
                 SetPlaybackMessage("Load a video to inspect its details.");
                 return;
             }
 
-            var paneId = GetFocusedPaneId();
-            var paneLabel = string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
+            var resolvedPaneId = string.IsNullOrWhiteSpace(paneId)
+                ? GetFocusedPaneId()
+                : paneId;
+            TrySelectPaneForShell(resolvedPaneId);
+            UpdateWorkspacePanePresentation();
+
+            var paneLabel = string.Equals(resolvedPaneId, ComparePaneId, StringComparison.Ordinal)
                 ? "Compare"
                 : "Primary";
-            var engine = GetEngineForPane(paneId);
+            var engine = GetEngineForPane(resolvedPaneId);
             if (engine == null || !engine.IsMediaOpen)
             {
                 SetPlaybackMessage("The selected pane is not available.");
@@ -3816,44 +3872,264 @@ namespace FramePlayer
             }
 
             var mediaInfo = engine.MediaInfo ?? VideoMediaInfo.Empty;
-            var ffmpegEngine = engine as FfmpegReviewEngine;
-            var detailsBuilder = new StringBuilder();
-            detailsBuilder.AppendLine("Pane: " + paneLabel);
-            detailsBuilder.AppendLine("File: " + (string.IsNullOrWhiteSpace(mediaInfo.FilePath) ? "(none)" : mediaInfo.FilePath));
-            detailsBuilder.AppendLine("Playback state: " + (_isPlaying ? "Playing" : "Paused"));
-            detailsBuilder.AppendLine("Duration: " + FormatTime(mediaInfo.Duration));
-            detailsBuilder.AppendLine(string.Format(
-                CultureInfo.InvariantCulture,
-                "Resolution: {0} x {1}",
-                mediaInfo.PixelWidth,
-                mediaInfo.PixelHeight));
-            detailsBuilder.AppendLine(string.Format(
-                CultureInfo.InvariantCulture,
-                "Frame rate: {0:0.###} fps",
-                mediaInfo.FramesPerSecond));
-            detailsBuilder.AppendLine("Frame step: " + FormatStepDuration(mediaInfo.PositionStep));
-            detailsBuilder.AppendLine("Video codec: " + (string.IsNullOrWhiteSpace(mediaInfo.VideoCodecName) ? "unknown" : mediaInfo.VideoCodecName));
-            detailsBuilder.AppendLine("Audio: " + GetAudioTooltipText(mediaInfo));
-            detailsBuilder.AppendLine("Active backend: " + (ffmpegEngine != null && !string.IsNullOrWhiteSpace(ffmpegEngine.ActualBackendUsed)
-                ? ffmpegEngine.ActualBackendUsed
-                : "unknown"));
-            detailsBuilder.AppendLine("GPU active: " + (ffmpegEngine != null && ffmpegEngine.IsGpuActive ? "Yes" : "No"));
-            detailsBuilder.AppendLine("GPU status: " + (ffmpegEngine != null && !string.IsNullOrWhiteSpace(ffmpegEngine.GpuCapabilityStatus)
-                ? ffmpegEngine.GpuCapabilityStatus
-                : "n/a"));
-            detailsBuilder.AppendLine("Fallback reason: " + (ffmpegEngine != null && !string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason)
-                ? ffmpegEngine.GpuFallbackReason
-                : "none"));
-
-            var infoWindow = new VideoInfoWindow(
-                "Video Info - " + paneLabel,
-                paneLabel + " Video Info",
-                "Focused pane media and backend details",
-                detailsBuilder.ToString())
+            var infoWindow = new VideoInfoWindow(BuildVideoInfoSnapshot(paneLabel, mediaInfo))
             {
                 Owner = this
             };
-            infoWindow.ShowDialog();
+            var existingInspectorCount = OwnedWindows.OfType<VideoInfoWindow>().Count();
+            infoWindow.WindowStartupLocation = WindowStartupLocation.Manual;
+            infoWindow.Left = Left + 80 + (existingInspectorCount * 32);
+            infoWindow.Top = Top + 80 + (existingInspectorCount * 32);
+            infoWindow.Show();
+            infoWindow.Activate();
+        }
+
+        private void VideoPane_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            var paneId = GetPaneIdFromSender(sender);
+            if (string.IsNullOrWhiteSpace(paneId))
+            {
+                return;
+            }
+
+            TrySelectPaneForShell(paneId);
+            UpdateWorkspacePanePresentation();
+        }
+
+        private void VideoPane_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+        {
+            var paneId = GetPaneIdFromSender(sender);
+            if (string.IsNullOrWhiteSpace(paneId))
+            {
+                return;
+            }
+
+            TrySelectPaneForShell(paneId);
+            UpdateWorkspacePanePresentation();
+
+            var host = sender as FrameworkElement;
+            var menuItem = host != null && host.ContextMenu != null
+                ? host.ContextMenu.Items.OfType<MenuItem>().FirstOrDefault()
+                : null;
+            if (menuItem != null)
+            {
+                var engine = GetEngineForPane(paneId);
+                menuItem.IsEnabled = engine != null && engine.IsMediaOpen;
+            }
+        }
+
+        private VideoInfoSnapshot BuildVideoInfoSnapshot(string paneLabel, VideoMediaInfo mediaInfo)
+        {
+            var filePath = string.IsNullOrWhiteSpace(mediaInfo.FilePath)
+                ? string.Empty
+                : mediaInfo.FilePath;
+            var fileName = Path.GetFileName(filePath);
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                fileName = paneLabel + " Video";
+            }
+
+            var summaryFields = new List<VideoInfoField>
+            {
+                new VideoInfoField("Duration", FormatInspectorDuration(mediaInfo.Duration)),
+                new VideoInfoField("Frame rate", FormatInspectorFrameRate(mediaInfo.FramesPerSecond)),
+                new VideoInfoField("Display resolution", FormatInspectorResolution(mediaInfo.DisplayWidth, mediaInfo.DisplayHeight)),
+                new VideoInfoField(
+                    "Display aspect",
+                    FormatInspectorRatio(
+                        mediaInfo.DisplayAspectRatioNumerator,
+                        mediaInfo.DisplayAspectRatioDenominator))
+            };
+
+            var videoFields = new List<VideoInfoField>
+            {
+                new VideoInfoField("Codec", FormatInspectorText(mediaInfo.VideoCodecName)),
+                new VideoInfoField("Coded resolution", FormatInspectorResolution(mediaInfo.PixelWidth, mediaInfo.PixelHeight)),
+                new VideoInfoField("Display resolution", FormatInspectorResolution(mediaInfo.DisplayWidth, mediaInfo.DisplayHeight)),
+                new VideoInfoField(
+                    "Display aspect",
+                    FormatInspectorRatio(
+                        mediaInfo.DisplayAspectRatioNumerator,
+                        mediaInfo.DisplayAspectRatioDenominator)),
+                new VideoInfoField("Source pixel format", FormatInspectorText(mediaInfo.SourcePixelFormatName)),
+                new VideoInfoField("Bit depth", FormatInspectorBitDepth(mediaInfo.VideoBitDepth)),
+                new VideoInfoField("Bitrate", FormatInspectorBitRate(mediaInfo.VideoBitRate))
+            };
+            AddInspectorFieldIfKnown(videoFields, "Color space", mediaInfo.VideoColorSpace);
+            AddInspectorFieldIfKnown(videoFields, "Color range", mediaInfo.VideoColorRange);
+            AddInspectorFieldIfKnown(videoFields, "Primaries", mediaInfo.VideoColorPrimaries);
+            AddInspectorFieldIfKnown(videoFields, "Transfer", mediaInfo.VideoColorTransfer);
+
+            VideoInfoSection audioSection;
+            if (!mediaInfo.HasAudioStream)
+            {
+                audioSection = new VideoInfoSection(
+                    Array.Empty<VideoInfoField>(),
+                    "No audio stream detected.");
+            }
+            else
+            {
+                audioSection = new VideoInfoSection(new[]
+                {
+                    new VideoInfoField("Codec", FormatInspectorText(mediaInfo.AudioCodecName)),
+                    new VideoInfoField("Sample rate", FormatInspectorSampleRate(mediaInfo.AudioSampleRate)),
+                    new VideoInfoField("Channels", FormatInspectorChannelCount(mediaInfo.AudioChannelCount)),
+                    new VideoInfoField("Bit depth", FormatInspectorBitDepth(mediaInfo.AudioBitDepth)),
+                    new VideoInfoField("Bitrate", FormatInspectorBitRate(mediaInfo.AudioBitRate))
+                });
+            }
+
+            var advancedFields = new List<VideoInfoField>
+            {
+                new VideoInfoField("Video stream index", FormatInspectorIndex(mediaInfo.VideoStreamIndex)),
+                new VideoInfoField(
+                    "Nominal frame rate",
+                    FormatInspectorFraction(
+                        mediaInfo.NominalFrameRateNumerator,
+                        mediaInfo.NominalFrameRateDenominator)),
+                new VideoInfoField(
+                    "Stream time base",
+                    FormatInspectorFraction(
+                        mediaInfo.StreamTimeBaseNumerator,
+                        mediaInfo.StreamTimeBaseDenominator))
+            };
+            if (mediaInfo.HasAudioStream && mediaInfo.AudioStreamIndex >= 0)
+            {
+                advancedFields.Add(new VideoInfoField("Audio stream index", FormatInspectorIndex(mediaInfo.AudioStreamIndex)));
+            }
+
+            return new VideoInfoSnapshot(
+                "Video Info - " + paneLabel,
+                paneLabel,
+                fileName,
+                filePath,
+                new VideoInfoSection(summaryFields),
+                new VideoInfoSection(videoFields),
+                audioSection,
+                new VideoInfoSection(advancedFields));
+        }
+
+        private string FormatInspectorDuration(TimeSpan duration)
+        {
+            return duration > TimeSpan.Zero
+                ? FormatTime(duration)
+                : "Unknown";
+        }
+
+        private static void AddInspectorFieldIfKnown(ICollection<VideoInfoField> fields, string label, string value)
+        {
+            if (fields == null || string.IsNullOrWhiteSpace(label) || string.IsNullOrWhiteSpace(value))
+            {
+                return;
+            }
+
+            fields.Add(new VideoInfoField(label, value));
+        }
+
+        private static string FormatInspectorFrameRate(double framesPerSecond)
+        {
+            return framesPerSecond > 0d
+                ? string.Format(CultureInfo.InvariantCulture, "{0:0.###} fps", framesPerSecond)
+                : "Unknown";
+        }
+
+        private static string FormatInspectorResolution(int width, int height)
+        {
+            return width > 0 && height > 0
+                ? string.Format(CultureInfo.InvariantCulture, "{0} x {1}", width, height)
+                : "Unknown";
+        }
+
+        private static string FormatInspectorResolution(int? width, int? height)
+        {
+            return width.HasValue && height.HasValue
+                ? FormatInspectorResolution(width.Value, height.Value)
+                : "Unknown";
+        }
+
+        private static string FormatInspectorRatio(int? numerator, int? denominator)
+        {
+            return numerator.HasValue &&
+                   denominator.HasValue &&
+                   numerator.Value > 0 &&
+                   denominator.Value > 0
+                ? string.Format(CultureInfo.InvariantCulture, "{0}:{1}", numerator.Value, denominator.Value)
+                : "Unknown";
+        }
+
+        private static string FormatInspectorText(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return "Unknown";
+            }
+
+            var trimmedValue = value.Trim();
+            return trimmedValue.Equals("unknown", StringComparison.OrdinalIgnoreCase) ||
+                   trimmedValue.Equals("unspecified", StringComparison.OrdinalIgnoreCase) ||
+                   trimmedValue.StartsWith("reserved", StringComparison.OrdinalIgnoreCase)
+                ? "Unknown"
+                : trimmedValue;
+        }
+
+        private static string FormatInspectorBitDepth(int? bitDepth)
+        {
+            return bitDepth.HasValue && bitDepth.Value > 0
+                ? string.Format(CultureInfo.InvariantCulture, "{0}-bit", bitDepth.Value)
+                : "Unknown";
+        }
+
+        private static string FormatInspectorBitRate(long? bitsPerSecond)
+        {
+            if (!bitsPerSecond.HasValue || bitsPerSecond.Value <= 0L)
+            {
+                return "Unknown";
+            }
+
+            var units = new[] { "bit/s", "Kbit/s", "Mbit/s", "Gbit/s" };
+            var displayValue = (double)bitsPerSecond.Value;
+            var unitIndex = 0;
+            while (displayValue >= 1000d && unitIndex < units.Length - 1)
+            {
+                displayValue /= 1000d;
+                unitIndex++;
+            }
+
+            var kibibytesPerSecond = bitsPerSecond.Value / 8d / 1024d;
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "{0:0.###} {1} ({2:0.###} KiB/s)",
+                displayValue,
+                units[unitIndex],
+                kibibytesPerSecond);
+        }
+
+        private static string FormatInspectorSampleRate(int sampleRate)
+        {
+            return sampleRate > 0
+                ? string.Format(CultureInfo.InvariantCulture, "{0:N0} Hz", sampleRate)
+                : "Unknown";
+        }
+
+        private static string FormatInspectorChannelCount(int channelCount)
+        {
+            return channelCount > 0
+                ? string.Format(CultureInfo.InvariantCulture, "{0} channel(s)", channelCount)
+                : "Unknown";
+        }
+
+        private static string FormatInspectorIndex(int streamIndex)
+        {
+            return streamIndex >= 0
+                ? streamIndex.ToString(CultureInfo.InvariantCulture)
+                : "Unknown";
+        }
+
+        private static string FormatInspectorFraction(int numerator, int denominator)
+        {
+            return numerator > 0 && denominator > 0
+                ? string.Format(CultureInfo.InvariantCulture, "{0}/{1}", numerator, denominator)
+                : "Unknown";
         }
 
         private void ShowHelpWindow()
@@ -4166,6 +4442,21 @@ namespace FramePlayer
 
             _frameStepRepeatTimer.Interval = FrameStepRepeatInterval;
             _ = StepFrameAsync(_heldFrameStepDirection);
+        }
+
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmSetWindowAttribute(
+            IntPtr hwnd,
+            int dwAttribute,
+            ref DwmWindowCornerPreference pvAttribute,
+            int cbAttribute);
+
+        private enum DwmWindowCornerPreference
+        {
+            Default = 0,
+            DoNotRound = 1,
+            Round = 2,
+            RoundSmall = 3
         }
     }
 }

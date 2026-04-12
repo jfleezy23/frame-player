@@ -28,12 +28,19 @@ if (Test-Path -LiteralPath $legacyFfmeShortcutPath)
     Write-Host "Removed legacy FFME baseline shortcut from the desktop."
 }
 
-if (-not (Test-Path -LiteralPath $ExecutablePath))
+$legacyCustomShortcutPath = Join-Path $DesktopPath "Frame Player - Custom FFmpeg.lnk"
+if (Test-Path -LiteralPath $legacyCustomShortcutPath)
 {
-    throw ("Build output not found for Frame Player - Custom FFmpeg: {0}. Run .\\scripts\\Build-TestDrop.ps1 first." -f $ExecutablePath)
+    Remove-Item -LiteralPath $legacyCustomShortcutPath -Force
+    Write-Host "Removed legacy custom FFmpeg shortcut from the desktop."
 }
 
-$shortcutName = "Frame Player - Custom FFmpeg"
+if (-not (Test-Path -LiteralPath $ExecutablePath))
+{
+    throw ("Build output not found for Frame Player: {0}. Run .\\scripts\\Build-TestDrop.ps1 first." -f $ExecutablePath)
+}
+
+$shortcutName = "Frame Player"
 $shortcutPath = Join-Path $DesktopPath ($shortcutName + ".lnk")
 if (Test-Path -LiteralPath $shortcutPath)
 {
@@ -53,7 +60,7 @@ $createdShortcuts += [pscustomobject]@{
     TargetPath = $shortcut.TargetPath
 }
 
-Write-Host "Custom FFmpeg shortcut created."
+Write-Host "Frame Player shortcut created."
 foreach ($shortcutInfo in $createdShortcuts)
 {
     Write-Host ("{0}: {1}" -f $shortcutInfo.ShortcutName, $shortcutInfo.ShortcutPath)
