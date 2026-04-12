@@ -1,6 +1,6 @@
 # GPU Vulkan Phase 1 Release Note
 
-This note documents the current `v1.4.1` release candidate for the GPU Vulkan phase 1 work. It is the maintainer-facing summary of what shipped, what did not ship, and what validation evidence currently backs the release.
+This note documents the current `v1.4.2` release for the GPU Vulkan phase 1 work. It is the maintainer-facing summary of what shipped, what did not ship, and what validation evidence currently backs the release.
 
 ## What Shipped
 
@@ -40,7 +40,7 @@ This note documents the current `v1.4.1` release candidate for the GPU Vulkan ph
 
 ## Validation Evidence
 
-The raw proof harnesses are preserved on the companion validation branch `validation/gpu-v1.4.1-proof`. The release branch keeps the summarized evidence here and in the normal regression tooling.
+The raw proof harnesses are preserved on the companion validation branch `validation/gpu-v1.4.2-proof`. The release branch keeps the summarized evidence here and in the normal regression tooling.
 
 Last-known green validation runs:
 
@@ -53,7 +53,7 @@ Last-known green validation runs:
   - checks run: `488`
   - pass / warning / fail: `453 / 35 / 0`
 - Clean-runner bootstrap proof:
-  - the pinned runtime archive is published on the `v1.4.1` GitHub release as `FramePlayer-ffmpeg-runtime-x64.zip`
+  - the pinned runtime archive is published on the `v1.4.2` GitHub release as `FramePlayer-ffmpeg-runtime-x64.zip`
   - `Runtime\runtime-manifest.json` now points at that verified release asset with matching archive and DLL hashes
   - Windows CI restores the pinned runtime through `scripts\Ensure-DevRuntime.ps1` before build
 - Dual-pane real-media proof, mixed backend capable:
@@ -63,13 +63,13 @@ Last-known green validation runs:
   - pass / fail: `5418 / 0`
   - mixed proof pairs included real `ffmpeg-vulkan` + `ffmpeg-cpu` sessions
 
-Exact commands used for the current release-candidate validation set:
+Exact commands used for the current release validation set:
 
 ```powershell
-.\scripts\Run-RegressionSuite.ps1 -Path "C:\Projects\Video Test Files" -Recurse -Output ".\artifacts\regression-suite\release-v1.4.1-auto" -Configuration Release
+.\scripts\Run-RegressionSuite.ps1 -Path "C:\Projects\Video Test Files" -Recurse -Output ".\artifacts\regression-suite\release-v1.4.2-auto" -Configuration Release
 
 $env:FRAMEPLAYER_GPU_BACKEND="disabled"
-.\scripts\Run-RegressionSuite.ps1 -Path "C:\Projects\Video Test Files" -Recurse -Output ".\artifacts\regression-suite\release-v1.4.1-cpu" -Configuration Release
+.\scripts\Run-RegressionSuite.ps1 -Path "C:\Projects\Video Test Files" -Recurse -Output ".\artifacts\regression-suite\release-v1.4.2-cpu" -Configuration Release
 Remove-Item Env:FRAMEPLAYER_GPU_BACKEND
 ```
 
@@ -86,7 +86,7 @@ Known non-blocking warnings from the regression corpus:
 
 ## Release Guidance
 
-- Treat `v1.4.1` as the stabilization and UI-polish follow-up to the phase-1 GPU feature line, not as a re-baselining of the engine architecture.
+- Treat `v1.4.2` as the honest release follow-up that keeps the `v1.4.1` GPU/UI surface intact while adding the verified clean-runner runtime bootstrap path.
 - Keep `Properties\AssemblyInfo.cs` as the canonical version source and derive packaging/output names from the built executable version.
 - Keep `docs\ffmpeg-8.1-build-notes.md` factual about runtime provenance and the now-verified clean-runner restore path.
 - Preserve the proof harnesses and raw proof artifacts outside `main`; do not require the app startup path in `main` to carry harness-only CLI entry points.

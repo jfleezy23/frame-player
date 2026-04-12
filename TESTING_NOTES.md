@@ -1,6 +1,6 @@
-# Frame Player GPU Release Candidate Test Drop
+# Frame Player GPU Release Test Drop
 
-Release candidate: `1.4.1`
+Release: `1.4.2`
 
 ## What changed recently
 
@@ -8,7 +8,7 @@ Release candidate: `1.4.1`
 - Video playback, audio playback, basic A/V sync, seek-to-time, seek-to-frame, exact frame stepping, and opportunistic Vulkan decode with strict CPU fallback are implemented in the custom engine.
 - The latest UI pass combined Play/Pause into one toggle, restored the normal visual tone, removed temporary custom-build banners, added a cache status indicator, and fixed arrow-key stepping immediately after frame entry.
 - The latest GPU/cache pass adds a visible GPU toggle, pane-aware decoded-frame budgeting, shared Vulkan warmup, and backend-aware compare behavior without changing the frames-first review contract.
-- The latest release-candidate polish pass adds live timeline scrubbing, whole-media loop playback, pane-local compare navigation, a basic Video Info dialog, and pending frame-number honesty while background indexing is still resolving absolute frame identity.
+- The latest release polish pass adds live timeline scrubbing, whole-media loop playback, pane-local compare navigation, a basic Video Info dialog, and pending frame-number honesty while background indexing is still resolving absolute frame identity.
 
 ## Manual test checklist
 
@@ -37,7 +37,7 @@ Release candidate: `1.4.1`
 - The pinned FFmpeg runtime is `n8.1-frameplayer-source`, recorded in `Runtime\runtime-manifest.json`.
 - The runtime was built from the official FFmpeg source tag `n8.1` and is restored locally from the self-built candidate/archive produced by `scripts\ffmpeg\Build-FFmpeg-8.1.ps1`.
 - The packaged runtime also requires `libwinpthread-1.dll`; it must ship beside `FramePlayer.exe` with the FFmpeg DLL set.
-- Clean-runner bootstrap now restores from the verified `v1.4.1` runtime release asset, so CI and other clean environments no longer depend on pre-staged local runtime artifacts.
+- Clean-runner bootstrap now restores from the verified `v1.4.2` runtime release asset, so CI and other clean environments no longer depend on pre-staged local runtime artifacts.
 
 ## Build and shortcut
 
