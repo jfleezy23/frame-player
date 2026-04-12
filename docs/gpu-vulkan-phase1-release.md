@@ -1,11 +1,18 @@
 # GPU Vulkan Phase 1 Release Note
 
-This note documents the current `v1.4.0` release candidate for the GPU Vulkan phase 1 work. It is the maintainer-facing summary of what shipped, what did not ship, and what validation evidence currently backs the release.
+This note documents the current `v1.4.1` release candidate for the GPU Vulkan phase 1 work. It is the maintainer-facing summary of what shipped, what did not ship, and what validation evidence currently backs the release.
 
 ## What Shipped
 
 - Opportunistic Vulkan-backed FFmpeg decode for supported sessions, with strict CPU fallback when the runtime, codec, driver, or device path does not prove out.
 - A visible `Playback > Use GPU Acceleration` toggle that persists under `%LocalAppData%\FramePlayer\preferences.txt` and applies to newly opened media.
+- UI review/navigation polish on the WPF host:
+  - live timeline scrubbing that lands paused on release
+  - whole-media `Playback > Loop Playback`
+  - a labeled pixel coordinate readout in the status bar
+  - a basic `Video Info` dialog for the focused pane
+  - compare-mode shared transport plus pane-local timeline and frame navigation
+  - visible pending frame-number state until background indexing resolves absolute frame identity
 - A neutral frame-contract seam:
   - `DecodedFrameBuffer` is the engine-to-shell payload
   - `FramePresentedEventArgs` carries frame data plus exact `FrameDescriptor`
@@ -35,7 +42,7 @@ This note documents the current `v1.4.0` release candidate for the GPU Vulkan ph
 
 ## Validation Evidence
 
-The raw proof harnesses are preserved on the companion validation branch `validation/gpu-v1.4.0-proof`. The release branch keeps the summarized evidence here and in the normal regression tooling.
+The raw proof harnesses are preserved on the companion validation branch `validation/gpu-v1.4.1-proof`. The release branch keeps the summarized evidence here and in the normal regression tooling.
 
 Last-known green validation runs:
 
@@ -57,10 +64,10 @@ Last-known green validation runs:
 Exact commands used for the current release-candidate validation set:
 
 ```powershell
-.\scripts\Run-RegressionSuite.ps1 -Path "C:\Projects\Video Test Files" -Recurse -Output ".\artifacts\regression-suite\release-v1.4.0-auto" -Configuration Release
+.\scripts\Run-RegressionSuite.ps1 -Path "C:\Projects\Video Test Files" -Recurse -Output ".\artifacts\regression-suite\release-v1.4.1-auto" -Configuration Release
 
 $env:FRAMEPLAYER_GPU_BACKEND="disabled"
-.\scripts\Run-RegressionSuite.ps1 -Path "C:\Projects\Video Test Files" -Recurse -Output ".\artifacts\regression-suite\release-v1.4.0-cpu" -Configuration Release
+.\scripts\Run-RegressionSuite.ps1 -Path "C:\Projects\Video Test Files" -Recurse -Output ".\artifacts\regression-suite\release-v1.4.1-cpu" -Configuration Release
 Remove-Item Env:FRAMEPLAYER_GPU_BACKEND
 ```
 
@@ -72,12 +79,12 @@ The preserved dual-pane proof command remains available on the companion validat
 
 Known non-blocking warnings from the regression corpus:
 
-- pre-index seek operations can correctly land on time before absolute frame identity is available
+- pre-index seek operations can correctly land on time before absolute frame identity is available, and the UI now withholds a numeric frame claim until that identity resolves
 - hidden-window UI playback is intentionally skipped for some audio-bearing corpus cases while engine-level playback and audio checks still run
 
 ## Release Guidance
 
-- Treat this line as a feature release, not a patch release.
+- Treat `v1.4.1` as the stabilization and UI-polish follow-up to the phase-1 GPU feature line, not as a re-baselining of the engine architecture.
 - Keep `Properties\AssemblyInfo.cs` as the canonical version source and derive packaging/output names from the built executable version.
 - Keep `docs\ffmpeg-8.1-build-notes.md` factual about runtime provenance and still-missing clean-runner restore infrastructure.
 - Preserve the proof harnesses and raw proof artifacts outside `main`; do not require the app startup path in `main` to carry harness-only CLI entry points.

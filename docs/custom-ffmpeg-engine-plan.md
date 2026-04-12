@@ -1,6 +1,6 @@
 # Historical Custom FFmpeg Engine Plan
 
-This is a historical planning checkpoint kept for project history. It predates the active `v1.4.0` GPU release candidate. For current shipped behavior, see `docs\gpu-vulkan-phase1-release.md` and `docs\ffmpeg-8.1-build-notes.md`.
+This is a historical planning checkpoint kept for project history. It predates the active `v1.4.1` GPU release candidate. For current shipped behavior, see `docs\gpu-vulkan-phase1-release.md` and `docs\ffmpeg-8.1-build-notes.md`.
 
 ## What Changed
 

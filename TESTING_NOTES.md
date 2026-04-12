@@ -1,6 +1,6 @@
 # Frame Player GPU Release Candidate Test Drop
 
-Release candidate: `1.4.0`
+Release candidate: `1.4.1`
 
 ## What changed recently
 
@@ -8,6 +8,7 @@ Release candidate: `1.4.0`
 - Video playback, audio playback, basic A/V sync, seek-to-time, seek-to-frame, exact frame stepping, and opportunistic Vulkan decode with strict CPU fallback are implemented in the custom engine.
 - The latest UI pass combined Play/Pause into one toggle, restored the normal visual tone, removed temporary custom-build banners, added a cache status indicator, and fixed arrow-key stepping immediately after frame entry.
 - The latest GPU/cache pass adds a visible GPU toggle, pane-aware decoded-frame budgeting, shared Vulkan warmup, and backend-aware compare behavior without changing the frames-first review contract.
+- The latest release-candidate polish pass adds live timeline scrubbing, whole-media loop playback, pane-local compare navigation, a basic Video Info dialog, and pending frame-number honesty while background indexing is still resolving absolute frame identity.
 
 ## Manual test checklist
 
@@ -18,9 +19,11 @@ Release candidate: `1.4.0`
 - Disable `Playback > Use GPU Acceleration`, reopen the same file, and confirm the app stays correct on the CPU path.
 - Press Play, confirm visible playback advances, then press Pause.
 - Seek by time and confirm playback/review state remains coherent.
+- On a large HEVC file, click-seek before indexing finishes and confirm the time lands while the frame number stays visibly pending instead of claiming a fake absolute frame.
 - Type a frame number, commit it, then press Left/Right immediately to verify frame stepping works without another play/pause cycle.
 - Step backward and forward repeatedly and confirm the frame counter moves exactly one frame at a time.
 - Open two panes and confirm both panes stay responsive while stepping and seeking together.
+- In two-pane mode, confirm the main transport controls both panes together while the pane-local sliders and frame boxes still operate on their own panes.
 - Try at least one video with audio and confirm audio starts during playback.
 - If possible, try one video-only clip and confirm playback still works without audio errors.
 
