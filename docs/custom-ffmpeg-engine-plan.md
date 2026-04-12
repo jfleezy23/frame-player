@@ -1,4 +1,6 @@
-# Custom FFmpeg Engine Plan
+# Historical Custom FFmpeg Engine Plan
+
+This is a historical planning checkpoint kept for project history. It predates the active `v1.4.1` GPU release candidate. For current shipped behavior, see `docs\gpu-vulkan-phase1-release.md` and `docs\ffmpeg-8.1-build-notes.md`.
 
 ## What Changed
 
@@ -119,7 +121,7 @@
 - `MainWindow.xaml` no longer contains the legacy media element.
 - `App.xaml.cs` configures `FFmpeg.AutoGen` runtime loading directly.
 - The FFME adapter file, FFME package reference, and standalone backend comparison script have been removed.
-- The current release line is the custom-FFmpeg-only `1.3.0` build; older FFME-era releases are legacy/deprecated and should only be used for historical comparison.
+- At the time of this checkpoint the active release line was still the custom-FFmpeg-only branch, and older FFME-era releases were already legacy/deprecated.
 - The current test-drop output is expected under `bin\TestDrop\`.
 
 ## What Still Remains Stubbed

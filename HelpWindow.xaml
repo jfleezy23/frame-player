@@ -76,7 +76,29 @@
                      FontSize="13"
                      LineHeight="20"
                      TextWrapping="Wrap"
-                     Text="Pause the video, then use Left and Right to move one frame at a time. Hold either arrow to enter delayed auto-step mode. The frame field shows current / total, and you can type a frame number there before pressing Enter or Go. After Enter or Go, focus returns to the video so arrow stepping works immediately." />
+                     Text="Pause the video, then use Left and Right to move one frame at a time. Hold either arrow to enter delayed auto-step mode. Use Ctrl+Left / Ctrl+Right for 10-frame moves and Shift+Left / Shift+Right for 100-frame moves. The frame field shows current / total, and you can type a frame number there before pressing Enter or Go. After Enter or Go, focus returns to the video so arrow stepping works immediately." />
+
+          <TextBlock Margin="0,18,0,0"
+                     FontSize="15"
+                     FontWeight="SemiBold"
+                     Text="Timeline and Review" />
+          <TextBlock Margin="0,8,0,0"
+                     Foreground="{StaticResource MutedBrush}"
+                     FontSize="13"
+                     LineHeight="20"
+                     TextWrapping="Wrap"
+                     Text="Dragging the timeline now scrubs live and lands paused when you release the thumb. Track clicks still seek immediately. The status bar also shows the hovered pane and source pixel coordinates using a top-left, 0-based origin when the pointer is over the rendered image." />
+
+          <TextBlock Margin="0,18,0,0"
+                     FontSize="15"
+                     FontWeight="SemiBold"
+                     Text="Playback Options" />
+          <TextBlock Margin="0,8,0,0"
+                     Foreground="{StaticResource MutedBrush}"
+                     FontSize="13"
+                     LineHeight="20"
+                     TextWrapping="Wrap"
+                     Text="Use Playback &gt; Loop Playback for whole-media repeat. In compare mode, looping follows the same focused-pane or all-panes playback scope you are currently using." />
 
           <TextBlock Margin="0,18,0,0"
                      FontSize="15"
@@ -100,7 +122,7 @@
                      FontSize="13"
                      LineHeight="20"
                      TextWrapping="Wrap"
-                     Text="Supported formats: AVI, MOV, M4V, MP4, MKV, WMV, and TS." />
+                     Text="Supported formats: AVI, MOV, M4V, MP4, MKV, and WMV." />
         </StackPanel>
       </ScrollViewer>
     </Border>

@@ -236,7 +236,19 @@ namespace FramePlayer.Core.Coordination
 
         public Task SeekToFrameAsync(long frameIndex, CancellationToken cancellationToken = default(CancellationToken))
         {
-            return GetFocusedBinding().SessionCoordinator.Engine.SeekToFrameAsync(frameIndex, cancellationToken);
+            return SeekToFrameAsync(frameIndex, SynchronizedOperationScope.FocusedPane, cancellationToken);
+        }
+
+        public Task SeekToFrameAsync(
+            long frameIndex,
+            SynchronizedOperationScope operationScope,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            return ExecuteScopedActionAsync(
+                "seek-to-frame",
+                operationScope,
+                cancellationToken,
+                (binding, token) => binding.SessionCoordinator.Engine.SeekToFrameAsync(frameIndex, token));
         }
 
         public Task<FrameStepResult> StepBackwardAsync(CancellationToken cancellationToken = default(CancellationToken))

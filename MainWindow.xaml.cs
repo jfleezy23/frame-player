@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
@@ -10,6 +11,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using FramePlayer.Core.Abstractions;
 using FramePlayer.Core.Coordination;
@@ -29,12 +31,18 @@ namespace FramePlayer
         private const string CompareSessionId = "compare-a";
         private const string DefaultCompareAlignmentStatus = "Last align: none";
         private const double CompareModePreferredMinWindowWidth = 1180d;
+        private const int ControlModifiedFrameStep = 10;
+        private const int ShiftModifiedFrameStep = 100;
         private static readonly TimeSpan SeekJump = TimeSpan.FromSeconds(5);
         private static readonly TimeSpan FrameStepInitialDelay = TimeSpan.FromMilliseconds(550);
         private static readonly TimeSpan FrameStepRepeatInterval = TimeSpan.FromMilliseconds(60);
+        private static readonly TimeSpan SliderScrubThrottleInterval = TimeSpan.FromMilliseconds(75);
+        private static readonly TimeSpan LoopPlaybackMinimumEndTolerance = TimeSpan.FromMilliseconds(100);
 
         private readonly DispatcherTimer _positionTimer;
         private readonly DispatcherTimer _frameStepRepeatTimer;
+        private readonly DispatcherTimer _sliderScrubTimer;
+        private readonly DispatcherTimer _paneSliderScrubTimer;
         private readonly BuildVariantInfo _buildVariant;
         private readonly AppPreferencesService _appPreferencesService;
         private readonly DiagnosticLogService _diagnosticLogService;
@@ -57,14 +65,28 @@ namespace FramePlayer
         private bool _isFrameStepInProgress;
         private int _heldFrameStepDirection;
         private bool _isSliderDragActive;
+        private bool _isSliderScrubSeekInFlight;
+        private bool _hasPendingSliderScrubTarget;
+        private bool _isPaneSliderDragActive;
+        private bool _isPaneSliderScrubSeekInFlight;
+        private bool _hasPendingPaneSliderScrubTarget;
         private bool _suppressSliderUpdate;
+        private bool _suppressPaneSliderUpdate;
+        private bool _suppressLoopRestart;
+        private bool _isLoopRestartInFlight;
         private double _framesPerSecond;
+        private TimeSpan _pendingSliderScrubTarget;
+        private TimeSpan _pendingPaneSliderScrubTarget;
         private TimeSpan _positionStep;
         private TimeSpan _mediaDuration;
         private string _currentFilePath;
+        private string _activePaneSliderPaneId;
         private string _lastMediaErrorMessage;
         private bool _isCacheStatusActive;
         private string _lastCompareAlignmentStatus = DefaultCompareAlignmentStatus;
+        private Task _activeSliderScrubSeekTask = Task.CompletedTask;
+        private Task _activePaneSliderScrubSeekTask = Task.CompletedTask;
+        private SynchronizedOperationScope _lastPlaybackScope = SynchronizedOperationScope.FocusedPane;
 
         public MainWindow()
         {
@@ -77,6 +99,22 @@ namespace FramePlayer
             PositionSlider.AddHandler(
                 PreviewMouseLeftButtonUpEvent,
                 new MouseButtonEventHandler(PositionSlider_PreviewMouseLeftButtonUp),
+                true);
+            PrimaryPanePositionSlider.AddHandler(
+                PreviewMouseLeftButtonDownEvent,
+                new MouseButtonEventHandler(PanePositionSlider_PreviewMouseLeftButtonDown),
+                true);
+            PrimaryPanePositionSlider.AddHandler(
+                PreviewMouseLeftButtonUpEvent,
+                new MouseButtonEventHandler(PanePositionSlider_PreviewMouseLeftButtonUp),
+                true);
+            ComparePanePositionSlider.AddHandler(
+                PreviewMouseLeftButtonDownEvent,
+                new MouseButtonEventHandler(PanePositionSlider_PreviewMouseLeftButtonDown),
+                true);
+            ComparePanePositionSlider.AddHandler(
+                PreviewMouseLeftButtonUpEvent,
+                new MouseButtonEventHandler(PanePositionSlider_PreviewMouseLeftButtonUp),
                 true);
 
             _buildVariant = BuildVariantInfo.Current;
@@ -110,11 +148,24 @@ namespace FramePlayer
             };
             _frameStepRepeatTimer.Tick += FrameStepRepeatTimer_Tick;
 
+            _sliderScrubTimer = new DispatcherTimer
+            {
+                Interval = SliderScrubThrottleInterval
+            };
+            _sliderScrubTimer.Tick += SliderScrubTimer_Tick;
+
+            _paneSliderScrubTimer = new DispatcherTimer
+            {
+                Interval = SliderScrubThrottleInterval
+            };
+            _paneSliderScrubTimer.Tick += PaneSliderScrubTimer_Tick;
+
             RefreshRecentFilesMenu();
             UpdateCompareModeVisualState();
             UpdateHeader();
             UpdatePositionDisplay(TimeSpan.Zero);
             UpdateFullScreenVisualState();
+            UpdateWindowStateButtonVisuals();
             UpdateTransportState();
             UpdateWorkspacePanePresentation();
 
@@ -147,6 +198,75 @@ namespace FramePlayer
             Keyboard.Focus(CustomVideoSurfaceHost);
         }
 
+        private void TitleBarDragRegion_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (_isFullScreen || e.ChangedButton != MouseButton.Left)
+            {
+                return;
+            }
+
+            if (e.ClickCount == 2)
+            {
+                ToggleWindowState();
+                e.Handled = true;
+                return;
+            }
+
+            try
+            {
+                DragMove();
+                e.Handled = true;
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+
+        private void MinimizeWindowButton_Click(object sender, RoutedEventArgs e)
+        {
+            WindowState = WindowState.Minimized;
+        }
+
+        private void WindowStateButton_Click(object sender, RoutedEventArgs e)
+        {
+            ToggleWindowState();
+        }
+
+        private void CloseWindowButton_Click(object sender, RoutedEventArgs e)
+        {
+            Close();
+        }
+
+        private void Window_StateChanged(object sender, EventArgs e)
+        {
+            UpdateWindowStateButtonVisuals();
+        }
+
+        private void ToggleWindowState()
+        {
+            if (_isFullScreen || ResizeMode == ResizeMode.NoResize)
+            {
+                return;
+            }
+
+            WindowState = WindowState == WindowState.Maximized
+                ? WindowState.Normal
+                : WindowState.Maximized;
+            UpdateWindowStateButtonVisuals();
+        }
+
+        private void UpdateWindowStateButtonVisuals()
+        {
+            if (WindowStateGlyphTextBlock == null || WindowStateButton == null)
+            {
+                return;
+            }
+
+            var isMaximized = WindowState == WindowState.Maximized && !_isFullScreen;
+            WindowStateGlyphTextBlock.Text = isMaximized ? "\uE923" : "\uE922";
+            WindowStateButton.ToolTip = isMaximized ? "Restore" : "Maximize";
+        }
+
         private static string GetSupportedVideoExtensionsDescription()
         {
             return "AVI, MOV, M4V, MP4, MKV, WMV";
@@ -164,7 +284,31 @@ namespace FramePlayer
 
         private bool IsAllPaneTransportEnabled
         {
-            get { return IsCompareModeEnabled && AllPanesCheckBox != null && AllPanesCheckBox.IsChecked == true; }
+            get
+            {
+                if (!IsCompareModeEnabled)
+                {
+                    return false;
+                }
+
+                var snapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
+                if (snapshot == null)
+                {
+                    return false;
+                }
+
+                ReviewWorkspacePaneSnapshot primaryPaneSnapshot;
+                ReviewWorkspacePaneSnapshot comparePaneSnapshot;
+                return snapshot.TryGetPane(PrimaryPaneId, out primaryPaneSnapshot) &&
+                    PaneHasLoadedMedia(primaryPaneSnapshot) &&
+                    snapshot.TryGetPane(ComparePaneId, out comparePaneSnapshot) &&
+                    PaneHasLoadedMedia(comparePaneSnapshot);
+            }
+        }
+
+        private bool IsLoopPlaybackEnabled
+        {
+            get { return LoopPlaybackMenuItem != null && LoopPlaybackMenuItem.IsChecked; }
         }
 
         private SynchronizedOperationScope GetRequestedOperationScope()
@@ -287,6 +431,7 @@ namespace FramePlayer
             ComparePaneControlsPanel.Visibility = compareVisible
                 ? Visibility.Visible
                 : Visibility.Collapsed;
+            AllPanesCheckBox.Visibility = Visibility.Collapsed;
             if (!compareVisible)
             {
                 CompareStatusTextBlock.Text = string.Empty;
@@ -337,6 +482,21 @@ namespace FramePlayer
                                        hasComparePane &&
                                        CanRunCompareActions(primaryPaneSnapshot, comparePaneSnapshot);
 
+            var canAlign = canRunCompareActions;
+            AlignRightToLeftButton.IsEnabled = canAlign;
+            AlignLeftToRightButton.IsEnabled = canAlign;
+            AlignRightToLeftButton.ToolTip = canAlign
+                ? "Frame first: aligns the right pane to the left pane with exact frame identity when available."
+                : "Load videos in both panes before aligning them.";
+            AlignLeftToRightButton.ToolTip = canAlign
+                ? "Frame first: aligns the left pane to the right pane with exact frame identity when available."
+                : "Load videos in both panes before aligning them.";
+
+            AllPanesCheckBox.IsEnabled = false;
+            AllPanesCheckBox.ToolTip = canRunCompareActions
+                ? "The main playback, seek, and frame-step controls now apply to both loaded panes."
+                : "Load videos in both panes to use shared transport controls.";
+
             UpdatePaneControlState(
                 PrimaryPanePlayButton,
                 PrimaryPanePauseButton,
@@ -350,27 +510,9 @@ namespace FramePlayer
                 ComparePaneStepForwardButton,
                 hasComparePane ? comparePaneSnapshot : null);
 
-            var canAlign = canRunCompareActions;
-            AlignRightToLeftButton.IsEnabled = canAlign;
-            AlignLeftToRightButton.IsEnabled = canAlign;
-            AlignRightToLeftButton.ToolTip = canAlign
-                ? "Frame first: aligns the right pane to the left pane with exact frame identity when available."
-                : "Load videos in both panes before aligning them.";
-            AlignLeftToRightButton.ToolTip = canAlign
-                ? "Frame first: aligns the left pane to the right pane with exact frame identity when available."
-                : "Load videos in both panes before aligning them.";
-
-            AllPanesCheckBox.IsEnabled = canRunCompareActions;
-            AllPanesCheckBox.ToolTip = canRunCompareActions
-                ? "The main playback, seek, and frame-step controls apply to both loaded panes."
-                : "Load videos in both panes before controlling both panes together.";
             if (!canRunCompareActions)
             {
                 ResetCompareAlignmentStatus();
-                if (AllPanesCheckBox.IsChecked == true)
-                {
-                    AllPanesCheckBox.IsChecked = false;
-                }
             }
 
             var compareStatusText = BuildCompareStatusText(
@@ -393,6 +535,200 @@ namespace FramePlayer
             pauseButton.IsEnabled = canPlay;
             stepBackButton.IsEnabled = canControl;
             stepForwardButton.IsEnabled = canControl;
+        }
+
+        private void UpdatePaneNavigationSurface(string paneId, ReviewWorkspacePaneSnapshot paneSnapshot)
+        {
+            TextBlock currentPositionTextBlock;
+            TextBlock durationTextBlock;
+            Slider positionSlider;
+            TextBox frameNumberTextBox;
+            if (!TryGetPaneNavigationControls(
+                paneId,
+                out currentPositionTextBlock,
+                out durationTextBlock,
+                out positionSlider,
+                out frameNumberTextBox))
+            {
+                return;
+            }
+
+            var paneHasLoadedMedia = PaneHasLoadedMedia(paneSnapshot);
+            var currentPosition = paneSnapshot != null ? paneSnapshot.PresentationTime : TimeSpan.Zero;
+            var mediaDuration = GetPaneMediaDuration(paneId);
+            currentPositionTextBlock.Text = FormatTime(currentPosition);
+            durationTextBlock.Text = FormatTime(mediaDuration);
+            positionSlider.IsEnabled = paneHasLoadedMedia;
+            frameNumberTextBox.IsEnabled = paneHasLoadedMedia;
+
+            _suppressPaneSliderUpdate = true;
+            try
+            {
+                positionSlider.Maximum = mediaDuration > TimeSpan.Zero ? mediaDuration.TotalSeconds : 1.0;
+                if (!(_isPaneSliderDragActive && string.Equals(_activePaneSliderPaneId, paneId, StringComparison.Ordinal)))
+                {
+                    positionSlider.Value = Math.Min(currentPosition.TotalSeconds, positionSlider.Maximum);
+                }
+            }
+            finally
+            {
+                _suppressPaneSliderUpdate = false;
+            }
+
+            long currentFrameIndex = 0L;
+            bool isAbsoluteFrameIndex = false;
+            var hasFrameIdentity = TryGetCurrentEngineFrameIndex(paneId, out currentFrameIndex, out isAbsoluteFrameIndex);
+            if (!frameNumberTextBox.IsKeyboardFocusWithin)
+            {
+                frameNumberTextBox.Text = hasFrameIdentity && isAbsoluteFrameIndex
+                    ? GetDisplayedFrameNumber(currentFrameIndex).ToString(CultureInfo.InvariantCulture)
+                    : string.Empty;
+            }
+
+            frameNumberTextBox.ToolTip = BuildPaneFrameNumberInputToolTip(
+                paneId,
+                paneHasLoadedMedia,
+                hasFrameIdentity,
+                isAbsoluteFrameIndex,
+                currentFrameIndex);
+        }
+
+        private string BuildPaneFrameNumberInputToolTip(
+            string paneId,
+            bool paneHasLoadedMedia,
+            bool hasFrameIdentity,
+            bool isAbsoluteFrameIndex,
+            long currentFrameIndex)
+        {
+            if (!paneHasLoadedMedia)
+            {
+                return "Load media in this pane, then type a frame number and press Enter.";
+            }
+
+            if (hasFrameIdentity && !isAbsoluteFrameIndex)
+            {
+                var pendingFrameMessage = _buildVariant.UsesZeroIndexedFrameDisplay
+                    ? "The current frame number is pending while the background index finishes. The visible frame is correct, but the absolute zero-indexed frame label is not ready yet."
+                    : "The current frame number is pending while the background index finishes. The visible frame is correct, but the absolute frame label is not ready yet.";
+                var pendingMaxFrameIndex = GetMaxFrameIndex(paneId);
+                if (pendingMaxFrameIndex >= 0)
+                {
+                    var lastFrameNumber = GetDisplayedTotalFrameValue(pendingMaxFrameIndex + 1L);
+                    return string.Format(
+                        CultureInfo.InvariantCulture,
+                        "{0} Last frame: {1}. Type a frame number and press Enter once the index is ready.",
+                        pendingFrameMessage,
+                        lastFrameNumber);
+                }
+
+                return pendingFrameMessage + " You can still type a frame number and press Enter.";
+            }
+
+            var maxFrameIndex = GetMaxFrameIndex(paneId);
+            if (maxFrameIndex >= 0)
+            {
+                var lastFrameNumber = GetDisplayedTotalFrameValue(maxFrameIndex + 1L);
+                return _buildVariant.UsesZeroIndexedFrameDisplay
+                    ? string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Type a zero-indexed frame number for this pane and press Enter. Last frame: {0}.",
+                        lastFrameNumber)
+                    : string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Type a frame number for this pane and press Enter. Last frame: {0}.",
+                        lastFrameNumber);
+            }
+
+            return "Type a frame number for this pane and press Enter.";
+        }
+
+        private bool TryGetPaneNavigationControls(
+            string paneId,
+            out TextBlock currentPositionTextBlock,
+            out TextBlock durationTextBlock,
+            out Slider positionSlider,
+            out TextBox frameNumberTextBox)
+        {
+            if (string.Equals(paneId, ComparePaneId, StringComparison.Ordinal))
+            {
+                currentPositionTextBlock = ComparePaneCurrentPositionTextBlock;
+                durationTextBlock = ComparePaneDurationTextBlock;
+                positionSlider = ComparePanePositionSlider;
+                frameNumberTextBox = ComparePaneFrameNumberTextBox;
+                return currentPositionTextBlock != null &&
+                       durationTextBlock != null &&
+                       positionSlider != null &&
+                       frameNumberTextBox != null;
+            }
+
+            currentPositionTextBlock = PrimaryPaneCurrentPositionTextBlock;
+            durationTextBlock = PrimaryPaneDurationTextBlock;
+            positionSlider = PrimaryPanePositionSlider;
+            frameNumberTextBox = PrimaryPaneFrameNumberTextBox;
+            return currentPositionTextBlock != null &&
+                   durationTextBlock != null &&
+                   positionSlider != null &&
+                   frameNumberTextBox != null;
+        }
+
+        private TimeSpan GetPaneMediaDuration(string paneId)
+        {
+            var engine = GetEngineForPane(paneId);
+            return engine != null && engine.IsMediaOpen
+                ? engine.MediaInfo.Duration
+                : TimeSpan.Zero;
+        }
+
+        private TimeSpan GetPanePositionStep(string paneId)
+        {
+            var engine = GetEngineForPane(paneId);
+            return engine != null && engine.IsMediaOpen
+                ? engine.MediaInfo.PositionStep
+                : TimeSpan.Zero;
+        }
+
+        private TimeSpan GetPaneDisplayPosition(string paneId)
+        {
+            var engine = GetEngineForPane(paneId);
+            return engine != null && engine.IsMediaOpen && engine.Position != null
+                ? engine.Position.PresentationTime
+                : TimeSpan.Zero;
+        }
+
+        private bool TryGetCurrentEngineFrameIndex(string paneId, out long frameIndex, out bool isAbsoluteFrameIndex)
+        {
+            frameIndex = 0L;
+            isAbsoluteFrameIndex = false;
+
+            var engine = GetEngineForPane(paneId);
+            var enginePosition = engine != null ? engine.Position : null;
+            if (enginePosition == null || !enginePosition.FrameIndex.HasValue)
+            {
+                return false;
+            }
+
+            frameIndex = Math.Max(0L, enginePosition.FrameIndex.Value);
+            isAbsoluteFrameIndex = enginePosition.IsFrameIndexAbsolute;
+            return true;
+        }
+
+        private long GetMaxFrameIndex(string paneId)
+        {
+            var ffmpegEngine = GetEngineForPane(paneId) as FfmpegReviewEngine;
+            if (ffmpegEngine != null && ffmpegEngine.IsGlobalFrameIndexAvailable && ffmpegEngine.IndexedFrameCount > 0L)
+            {
+                return ffmpegEngine.IndexedFrameCount - 1L;
+            }
+
+            var mediaDuration = GetPaneMediaDuration(paneId);
+            var positionStep = GetPanePositionStep(paneId);
+            if (mediaDuration <= TimeSpan.Zero || positionStep <= TimeSpan.Zero)
+            {
+                return -1L;
+            }
+
+            var totalSteps = Math.Max(1L, (long)Math.Round(mediaDuration.Ticks / (double)positionStep.Ticks, MidpointRounding.AwayFromZero));
+            return Math.Max(0L, totalSteps - 1L);
         }
 
         private void UpdatePanePresentation(
@@ -478,6 +814,7 @@ namespace FramePlayer
             emptyOverlay.Visibility = paneHasLoadedMedia
                 ? Visibility.Collapsed
                 : Visibility.Visible;
+            UpdatePaneNavigationSurface(paneId, paneSnapshot);
             if (string.Equals(paneId, ComparePaneId, StringComparison.Ordinal))
             {
                 emptyTitleTextBlock.Text = "Add a compare video";
@@ -737,19 +1074,15 @@ namespace FramePlayer
 
         private void AllPanesCheckBox_Checked(object sender, RoutedEventArgs e)
         {
-            if (AllPanesCheckBox != null && !AllPanesCheckBox.IsEnabled)
+            if (AllPanesCheckBox == null || AllPanesCheckBox.Visibility != Visibility.Visible)
             {
-                AllPanesCheckBox.IsChecked = false;
-                SetPlaybackMessage("Load videos in both panes to control both together.");
                 return;
             }
-
-            SetPlaybackMessage("Controlling both loaded panes.");
         }
 
         private void AllPanesCheckBox_Unchecked(object sender, RoutedEventArgs e)
         {
-            if (_isMediaLoaded)
+            if (AllPanesCheckBox != null && AllPanesCheckBox.Visibility == Visibility.Visible && _isMediaLoaded)
             {
                 UpdateTransportState();
             }
@@ -803,6 +1136,11 @@ namespace FramePlayer
             await CloseMediaAsync();
         }
 
+        private void VideoInfoMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            ShowVideoInfoWindow();
+        }
+
         private void HelpMenuItem_Click(object sender, RoutedEventArgs e)
         {
             ShowHelpWindow();
@@ -821,6 +1159,18 @@ namespace FramePlayer
         private void ToggleFullScreenMenuItem_Click(object sender, RoutedEventArgs e)
         {
             ToggleFullScreen();
+        }
+
+        private void LoopPlaybackMenuItem_Checked(object sender, RoutedEventArgs e)
+        {
+            SetPlaybackMessage("Loop playback enabled.");
+            LogInfo("Loop playback enabled.");
+        }
+
+        private void LoopPlaybackMenuItem_Unchecked(object sender, RoutedEventArgs e)
+        {
+            SetPlaybackMessage("Loop playback disabled.");
+            LogInfo("Loop playback disabled.");
         }
 
         private void ToggleFullScreenButton_Click(object sender, RoutedEventArgs e)
@@ -867,6 +1217,29 @@ namespace FramePlayer
             FrameNumberTextBox.SelectAll();
         }
 
+        private async void PaneFrameNumberTextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Enter)
+            {
+                return;
+            }
+
+            var paneId = GetPaneIdFromSender(sender);
+            var frameNumberTextBox = sender as TextBox;
+            if (frameNumberTextBox == null)
+            {
+                return;
+            }
+
+            await JumpToFrameFromInputAsync(paneId, frameNumberTextBox);
+            e.Handled = true;
+        }
+
+        private void PaneFrameNumberTextBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        {
+            (sender as TextBox)?.SelectAll();
+        }
+
         private async void PositionSlider_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             if (!_isMediaLoaded)
@@ -876,6 +1249,13 @@ namespace FramePlayer
 
             if (IsSliderThumbSource(e.OriginalSource as DependencyObject))
             {
+                EndHeldFrameStep();
+                if (_isPlaying)
+                {
+                    _suppressLoopRestart = true;
+                    await PausePlaybackAsync(logAction: false);
+                }
+
                 _isSliderDragActive = true;
                 return;
             }
@@ -884,7 +1264,7 @@ namespace FramePlayer
             e.Handled = true;
 
             TimeSpan clickedTarget;
-            if (TryMoveSliderToPoint(e, out clickedTarget))
+            if (TryMoveSliderToPoint(PositionSlider, e, out clickedTarget))
             {
                 await CommitSliderSeekAsync("click", clickedTarget);
             }
@@ -899,18 +1279,21 @@ namespace FramePlayer
             }
 
             _isSliderDragActive = false;
+            _hasPendingSliderScrubTarget = false;
+            _sliderScrubTimer.Stop();
+            await AwaitSliderScrubIdleAsync();
             await CommitSliderSeekAsync("drag", TimeSpan.FromSeconds(PositionSlider.Value));
         }
 
-        private bool TryMoveSliderToPoint(MouseButtonEventArgs e, out TimeSpan target)
+        private static bool TryMoveSliderToPoint(Slider slider, MouseButtonEventArgs e, out TimeSpan target)
         {
             target = TimeSpan.Zero;
-            if (PositionSlider.Maximum <= PositionSlider.Minimum)
+            if (slider == null || slider.Maximum <= slider.Minimum)
             {
                 return false;
             }
 
-            var track = PositionSlider.Template.FindName("PART_Track", PositionSlider) as Track;
+            var track = slider.Template.FindName("PART_Track", slider) as Track;
             double value;
             if (track != null)
             {
@@ -918,23 +1301,23 @@ namespace FramePlayer
             }
             else
             {
-                if (PositionSlider.ActualWidth <= 0d)
+                if (slider.ActualWidth <= 0d)
                 {
                     return false;
                 }
 
-                var point = e.GetPosition(PositionSlider);
-                var ratio = Math.Max(0d, Math.Min(1d, point.X / PositionSlider.ActualWidth));
-                if (PositionSlider.FlowDirection == FlowDirection.RightToLeft)
+                var point = e.GetPosition(slider);
+                var ratio = Math.Max(0d, Math.Min(1d, point.X / slider.ActualWidth));
+                if (slider.FlowDirection == FlowDirection.RightToLeft)
                 {
                     ratio = 1d - ratio;
                 }
 
-                value = PositionSlider.Minimum + ((PositionSlider.Maximum - PositionSlider.Minimum) * ratio);
+                value = slider.Minimum + ((slider.Maximum - slider.Minimum) * ratio);
             }
 
-            value = Math.Max(PositionSlider.Minimum, Math.Min(PositionSlider.Maximum, value));
-            PositionSlider.Value = value;
+            value = Math.Max(slider.Minimum, Math.Min(slider.Maximum, value));
+            slider.Value = value;
             target = TimeSpan.FromSeconds(value);
             return true;
         }
@@ -963,11 +1346,119 @@ namespace FramePlayer
 
             var previewPosition = TimeSpan.FromSeconds(PositionSlider.Value);
             CurrentPositionTextBlock.Text = FormatTime(previewPosition);
+            QueueSliderScrub(previewPosition);
+        }
+
+        private async void PanePositionSlider_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            var slider = sender as Slider;
+            var paneId = GetPaneIdFromSender(sender);
+            if (slider == null || string.IsNullOrWhiteSpace(paneId))
+            {
+                return;
+            }
+
+            if (!TrySelectPaneForPaneCommand(paneId))
+            {
+                return;
+            }
+
+            if (IsSliderThumbSource(e.OriginalSource as DependencyObject))
+            {
+                EndHeldFrameStep();
+                var engine = GetEngineForPane(paneId);
+                if (engine != null && engine.IsPlaying)
+                {
+                    _suppressLoopRestart = true;
+                    await PausePlaybackAsync(logAction: false, operationScope: SynchronizedOperationScope.FocusedPane);
+                }
+
+                _activePaneSliderPaneId = paneId;
+                _isPaneSliderDragActive = true;
+                return;
+            }
+
+            _isPaneSliderDragActive = false;
+            _activePaneSliderPaneId = paneId;
+            e.Handled = true;
+
+            TimeSpan clickedTarget;
+            if (TryMoveSliderToPoint(slider, e, out clickedTarget))
+            {
+                await CommitPaneSliderSeekAsync(paneId, "click", clickedTarget);
+            }
+        }
+
+        private async void PanePositionSlider_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            var slider = sender as Slider;
+            var paneId = GetPaneIdFromSender(sender);
+            if (slider == null || string.IsNullOrWhiteSpace(paneId) || !_isPaneSliderDragActive)
+            {
+                _isPaneSliderDragActive = false;
+                return;
+            }
+
+            _isPaneSliderDragActive = false;
+            _activePaneSliderPaneId = paneId;
+            _hasPendingPaneSliderScrubTarget = false;
+            _paneSliderScrubTimer.Stop();
+            await AwaitPaneSliderScrubIdleAsync();
+            await CommitPaneSliderSeekAsync(paneId, "drag", TimeSpan.FromSeconds(slider.Value));
+        }
+
+        private void PanePositionSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            var paneId = GetPaneIdFromSender(sender);
+            if (_suppressPaneSliderUpdate ||
+                !_isPaneSliderDragActive ||
+                !string.Equals(_activePaneSliderPaneId, paneId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            TextBlock currentPositionTextBlock;
+            TextBlock durationTextBlock;
+            Slider positionSlider;
+            TextBox frameNumberTextBox;
+            if (!TryGetPaneNavigationControls(
+                paneId,
+                out currentPositionTextBlock,
+                out durationTextBlock,
+                out positionSlider,
+                out frameNumberTextBox))
+            {
+                return;
+            }
+
+            var previewPosition = TimeSpan.FromSeconds(positionSlider.Value);
+            currentPositionTextBlock.Text = FormatTime(previewPosition);
+            QueuePaneSliderScrub(paneId, previewPosition);
         }
 
         private async void Window_Drop(object sender, DragEventArgs e)
         {
-            var files = e.Data.GetData(DataFormats.FileDrop) as string[];
+            await HandleDroppedFilesAsync(e, preferredPaneId: null);
+        }
+
+        private void Window_PreviewDragOver(object sender, DragEventArgs e)
+        {
+            UpdateDropEffects(e, preferredPaneId: null);
+        }
+
+        private async void VideoPane_Drop(object sender, DragEventArgs e)
+        {
+            await HandleDroppedFilesAsync(e, (sender as FrameworkElement)?.Tag as string);
+        }
+
+        private void VideoPane_PreviewDragOver(object sender, DragEventArgs e)
+        {
+            UpdateDropEffects(e, (sender as FrameworkElement)?.Tag as string);
+        }
+
+        private async Task HandleDroppedFilesAsync(DragEventArgs e, string preferredPaneId)
+        {
+            var files = GetDroppedFiles(e);
             if (files == null || files.Length == 0)
             {
                 return;
@@ -982,24 +1473,72 @@ namespace FramePlayer
                     "Unsupported File",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
+                e.Handled = true;
                 return;
             }
 
             if (!EnsureRuntimeAvailable())
             {
+                e.Handled = true;
                 return;
             }
 
-            await OpenMediaAsync(firstSupportedFile);
+            var targetPaneId = ResolveDropTargetPaneId(preferredPaneId, e.OriginalSource as DependencyObject);
+            await OpenMediaAsync(firstSupportedFile, targetPaneId);
+            e.Handled = true;
         }
 
-        private void Window_PreviewDragOver(object sender, DragEventArgs e)
+        private void UpdateDropEffects(DragEventArgs e, string preferredPaneId)
         {
-            var files = e.Data.GetData(DataFormats.FileDrop) as string[];
-            e.Effects = files != null && files.Any(IsSupportedVideoFile)
+            var files = GetDroppedFiles(e);
+            var hasSupportedFile = files != null && files.Any(IsSupportedVideoFile);
+            e.Effects = hasSupportedFile
                 ? DragDropEffects.Copy
                 : DragDropEffects.None;
+
             e.Handled = true;
+        }
+
+        private static string[] GetDroppedFiles(DragEventArgs e)
+        {
+            return e != null
+                ? e.Data.GetData(DataFormats.FileDrop) as string[]
+                : null;
+        }
+
+        private string ResolveDropTargetPaneId(string preferredPaneId, DependencyObject originalSource)
+        {
+            if (!string.IsNullOrWhiteSpace(preferredPaneId))
+            {
+                return preferredPaneId;
+            }
+
+            var resolvedPaneId = TryFindPaneId(originalSource);
+            return string.IsNullOrWhiteSpace(resolvedPaneId)
+                ? GetFocusedPaneId()
+                : resolvedPaneId;
+        }
+
+        private string TryFindPaneId(DependencyObject originalSource)
+        {
+            var current = originalSource;
+            while (current != null)
+            {
+                var frameworkElement = current as FrameworkElement;
+                var taggedPaneId = frameworkElement != null ? frameworkElement.Tag as string : null;
+                if (string.Equals(taggedPaneId, PrimaryPaneId, StringComparison.Ordinal) ||
+                    string.Equals(taggedPaneId, ComparePaneId, StringComparison.Ordinal))
+                {
+                    return taggedPaneId;
+                }
+
+                var frameworkContentElement = current as FrameworkContentElement;
+                current = frameworkContentElement != null
+                    ? frameworkContentElement.Parent
+                    : VisualTreeHelper.GetParent(current);
+            }
+
+            return null;
         }
 
         private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -1053,8 +1592,21 @@ namespace FramePlayer
                 return;
             }
 
-            if (FrameNumberTextBox.IsKeyboardFocusWithin)
+            if (FrameNumberTextBox.IsKeyboardFocusWithin ||
+                PrimaryPaneFrameNumberTextBox.IsKeyboardFocusWithin ||
+                ComparePaneFrameNumberTextBox.IsKeyboardFocusWithin)
             {
+                return;
+            }
+
+            int modifiedFrameStep;
+            if (_isMediaLoaded &&
+                !_isPlaying &&
+                TryGetModifiedFrameStepCount(Keyboard.Modifiers, out modifiedFrameStep) &&
+                (e.Key == Key.Left || e.Key == Key.Right))
+            {
+                await StepFrameAsync((e.Key == Key.Left ? -1 : 1) * modifiedFrameStep);
+                e.Handled = true;
                 return;
             }
 
@@ -1129,7 +1681,12 @@ namespace FramePlayer
             }
         }
 
-        private async Task OpenMediaAsync(string filePath)
+        private Task OpenMediaAsync(string filePath)
+        {
+            return OpenMediaAsync(filePath, null);
+        }
+
+        private async Task OpenMediaAsync(string filePath, string paneId)
         {
             if (!File.Exists(filePath))
             {
@@ -1152,6 +1709,11 @@ namespace FramePlayer
 
             try
             {
+                if (!string.IsNullOrWhiteSpace(paneId))
+                {
+                    TrySelectPaneForShell(paneId);
+                }
+
                 var targetEngine = GetFocusedPaneEngine();
                 Mouse.OverrideCursor = Cursors.Wait;
                 _lastMediaErrorMessage = string.Empty;
@@ -1253,7 +1815,8 @@ namespace FramePlayer
                 return;
             }
 
-            TrySelectPaneForShell(string.IsNullOrWhiteSpace(paneId) ? GetFocusedPaneId() : paneId);
+            var resolvedPaneId = string.IsNullOrWhiteSpace(paneId) ? GetFocusedPaneId() : paneId;
+            TrySelectPaneForShell(resolvedPaneId);
 
             var dialog = new OpenFileDialog
             {
@@ -1263,7 +1826,7 @@ namespace FramePlayer
 
             if (dialog.ShowDialog(this) == true)
             {
-                await OpenMediaAsync(dialog.FileName);
+                await OpenMediaAsync(dialog.FileName, resolvedPaneId);
             }
         }
 
@@ -1324,6 +1887,7 @@ namespace FramePlayer
                 return;
             }
 
+            _suppressLoopRestart = true;
             var positionBeforePause = GetDisplayPosition();
             var wasPlaying = _isPlaying;
             await _workspaceCoordinator.PauseAsync(operationScope ?? GetRequestedOperationScope());
@@ -1357,7 +1921,10 @@ namespace FramePlayer
             }
 
             var targetEngine = GetFocusedPaneEngine();
-            await _workspaceCoordinator.PlayAsync(operationScope ?? GetRequestedOperationScope());
+            var activeScope = operationScope ?? GetRequestedOperationScope();
+            _lastPlaybackScope = activeScope;
+            _suppressLoopRestart = false;
+            await _workspaceCoordinator.PlayAsync(activeScope);
             ApplySessionSnapshot(_workspaceCoordinator.RefreshFromEngine());
             if (!_isPlaying)
             {
@@ -1389,6 +1956,7 @@ namespace FramePlayer
                 return;
             }
 
+            _suppressLoopRestart = true;
             var target = ClampPosition(GetDisplayPosition() + offset);
             await RunWithCacheStatusAsync(
                 "Cache: seeking and warming...",
@@ -1410,28 +1978,39 @@ namespace FramePlayer
 
         private async Task StepFrameAsync(int delta, SynchronizedOperationScope? operationScope)
         {
-            if (!_isMediaLoaded || _isFrameStepInProgress)
+            if (!_isMediaLoaded || _isFrameStepInProgress || delta == 0)
             {
                 return;
             }
 
             _isFrameStepInProgress = true;
+            var stepDirection = delta < 0 ? -1 : 1;
+            var stepCount = Math.Max(1, Math.Abs(delta));
 
             try
             {
+                _suppressLoopRestart = true;
                 await PausePlaybackAsync(logAction: false, operationScope: operationScope);
 
                 FrameStepResult stepResult = null;
+                var activeScope = operationScope ?? GetRequestedOperationScope();
                 await RunWithCacheStatusAsync(
-                    delta < 0 ? "Cache: checking backward window..." : "Cache: refilling forward window...",
+                    stepDirection < 0 ? "Cache: checking backward window..." : "Cache: refilling forward window...",
                     async () =>
                     {
-                        stepResult = delta < 0
-                            ? await _workspaceCoordinator.StepBackwardAsync(operationScope ?? GetRequestedOperationScope())
-                            : await _workspaceCoordinator.StepForwardAsync(operationScope ?? GetRequestedOperationScope());
+                        for (var stepIndex = 0; stepIndex < stepCount; stepIndex++)
+                        {
+                            stepResult = stepDirection < 0
+                                ? await _workspaceCoordinator.StepBackwardAsync(activeScope)
+                                : await _workspaceCoordinator.StepForwardAsync(activeScope);
+                            if (!stepResult.Success)
+                            {
+                                break;
+                            }
+                        }
                     });
 
-                if (!stepResult.Success)
+                if (stepResult != null && !stepResult.Success)
                 {
                     SetPlaybackMessage(stepResult.Message);
                     LogWarning(stepResult.Message);
@@ -1474,6 +2053,7 @@ namespace FramePlayer
                 return;
             }
 
+            _suppressLoopRestart = true;
             var clampedTarget = ClampPosition(target);
             await RunWithCacheStatusAsync(
                 "Cache: seeking...",
@@ -1483,6 +2063,40 @@ namespace FramePlayer
             if (!string.IsNullOrWhiteSpace(diagnosticSource))
             {
                 LogSeekResult(diagnosticSource, target, clampedTarget);
+            }
+        }
+
+        private async Task SeekPaneToAsync(string paneId, TimeSpan target, string diagnosticSource = null)
+        {
+            EndHeldFrameStep();
+
+            if (!TrySelectPaneForPaneCommand(paneId))
+            {
+                return;
+            }
+
+            var engine = GetEngineForPane(paneId);
+            if (engine == null || !engine.IsMediaOpen)
+            {
+                return;
+            }
+
+            _suppressLoopRestart = true;
+            var clampedTarget = ClampPositionForPane(paneId, target);
+            await RunWithCacheStatusAsync(
+                "Cache: seeking...",
+                () => _workspaceCoordinator.SeekToTimeAsync(clampedTarget, SynchronizedOperationScope.FocusedPane));
+            UpdateWorkspacePanePresentation();
+
+            if (!string.IsNullOrWhiteSpace(diagnosticSource))
+            {
+                LogInfo(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0}: requested {1}; committed {2}; landed at {3}.",
+                    diagnosticSource,
+                    FormatTime(target),
+                    FormatTime(clampedTarget),
+                    FormatTime(GetPaneDisplayPosition(paneId))));
             }
         }
 
@@ -1620,7 +2234,7 @@ namespace FramePlayer
             await PausePlaybackAsync();
             await RunWithCacheStatusAsync(
                 "Cache: seeking frame...",
-                () => _workspaceCoordinator.SeekToFrameAsync(targetFrameIndex));
+                () => _workspaceCoordinator.SeekToFrameAsync(targetFrameIndex, GetRequestedOperationScope()));
             FocusPreferredVideoSurface();
             UpdatePositionDisplay(GetDisplayPosition());
             LogInfo(string.Format(
@@ -1628,6 +2242,49 @@ namespace FramePlayer
                 "Jumped to frame {0} at {1}.",
                 GetDisplayedFrameNumber(targetFrameIndex),
                 FormatTime(GetDisplayPosition())));
+        }
+
+        private async Task JumpToFrameFromInputAsync(string paneId, TextBox frameNumberTextBox)
+        {
+            EndHeldFrameStep();
+
+            if (frameNumberTextBox == null || !TrySelectPaneForPaneCommand(paneId))
+            {
+                return;
+            }
+
+            var positionStep = GetPanePositionStep(paneId);
+            if (positionStep <= TimeSpan.Zero)
+            {
+                return;
+            }
+
+            long requestedFrameNumber;
+            if (!long.TryParse(frameNumberTextBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out requestedFrameNumber))
+            {
+                SetPlaybackMessage("Enter a valid frame number for the selected pane.");
+                return;
+            }
+
+            var maxFrameIndex = GetMaxFrameIndex(paneId);
+            var targetFrameIndex = GetFrameIndexFromDisplayedFrameNumber(requestedFrameNumber);
+            if (maxFrameIndex >= 0 && targetFrameIndex > maxFrameIndex)
+            {
+                targetFrameIndex = maxFrameIndex;
+            }
+
+            await PausePlaybackAsync(logAction: false, operationScope: SynchronizedOperationScope.FocusedPane);
+            await RunWithCacheStatusAsync(
+                "Cache: seeking frame...",
+                () => _workspaceCoordinator.SeekToFrameAsync(targetFrameIndex, SynchronizedOperationScope.FocusedPane));
+            UpdateWorkspacePanePresentation();
+            FocusPreferredVideoSurface();
+            LogInfo(string.Format(
+                CultureInfo.InvariantCulture,
+                "Jumped {0} to frame {1} at {2}.",
+                GetComparePaneSideLabel(paneId),
+                GetDisplayedFrameNumber(targetFrameIndex),
+                FormatTime(GetPaneDisplayPosition(paneId))));
         }
 
         private void PositionTimer_Tick(object sender, EventArgs e)
@@ -1638,6 +2295,10 @@ namespace FramePlayer
             }
 
             UpdatePositionDisplay(GetDisplayPosition());
+            if (IsCompareModeEnabled)
+            {
+                UpdateWorkspacePanePresentation();
+            }
         }
 
         private async void RecentFileMenuItem_Click(object sender, RoutedEventArgs e)
@@ -1764,6 +2425,7 @@ namespace FramePlayer
             PreviousFrameButton.IsEnabled = canControl;
             NextFrameButton.IsEnabled = canControl;
             CloseVideoMenuItem.IsEnabled = canControl;
+            VideoInfoMenuItem.IsEnabled = canControl;
             PositionSlider.IsEnabled = canControl;
             FrameNumberTextBox.IsEnabled = canControl;
             ToggleFullScreenButton.IsEnabled = canControl;
@@ -1789,6 +2451,7 @@ namespace FramePlayer
                 TimecodeTextBlock.ToolTip = null;
                 FrameNumberTextBox.Text = string.Empty;
                 FrameNumberTextBox.ToolTip = GetFrameNumberInputToolTip();
+                ClearPointerCoordinates();
                 UpdateCacheStatusFromEngine();
                 UpdateFullScreenButtonIcon();
                 UpdateWorkspacePanePresentation();
@@ -1867,7 +2530,9 @@ namespace FramePlayer
                 if (!FrameNumberTextBox.IsKeyboardFocusWithin &&
                     TryGetCurrentEngineFrameIndex(out currentFrameIndex, out isAbsoluteFrameIndex))
                 {
-                    FrameNumberTextBox.Text = GetDisplayedFrameNumber(currentFrameIndex).ToString(CultureInfo.InvariantCulture);
+                    FrameNumberTextBox.Text = isAbsoluteFrameIndex
+                        ? GetDisplayedFrameNumber(currentFrameIndex).ToString(CultureInfo.InvariantCulture)
+                        : string.Empty;
                 }
             }
         }
@@ -1913,6 +2578,47 @@ namespace FramePlayer
                     : currentFrame.ToString(CultureInfo.InvariantCulture).Length);
             var frameFormat = "D" + frameDigits.ToString(CultureInfo.InvariantCulture);
             var timecode = FormatTimecode(currentFrameIndex);
+
+            if (!isAbsoluteFrameIndex)
+            {
+                CurrentFrameTextBlock.Text = totalFrames > 0
+                    ? string.Format(
+                        CultureInfo.InvariantCulture,
+                        _buildVariant.UsesZeroIndexedFrameDisplay
+                            ? "Frame -- / {0} (pending, 0-index)"
+                            : "Frame -- / {0} (pending)",
+                        totalFrameDisplay.ToString(frameFormat, CultureInfo.InvariantCulture))
+                    : "Frame -- (pending)";
+                CurrentFrameTextBlock.ToolTip = _buildVariant.UsesZeroIndexedFrameDisplay
+                    ? string.Format(
+                        CultureInfo.InvariantCulture,
+                        "The visible frame is correct, but the absolute zero-indexed frame number is still pending while the background index finishes. Current segment-local frame: {0}.",
+                        currentFrame)
+                    : string.Format(
+                        CultureInfo.InvariantCulture,
+                        "The visible frame is correct, but the absolute frame number is still pending while the background index finishes. Current segment-local frame: {0}.",
+                        currentFrame);
+                TimecodeTextBlock.Text = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0} / {1}",
+                    FormatTime(currentPosition),
+                    FormatTime(_mediaDuration));
+                TimecodeTextBlock.ToolTip = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Timeline time has landed, but frame identity is still pending. Frame-derived timecode {0} uses nominal {1} fps buckets for {2:0.###} fps media.",
+                    timecode,
+                    GetNominalTimecodeFramesPerSecond(),
+                    _framesPerSecond);
+                if (!FrameNumberTextBox.IsKeyboardFocusWithin)
+                {
+                    FrameNumberTextBox.Text = string.Empty;
+                }
+
+                FrameNumberTextBox.ToolTip = _buildVariant.UsesZeroIndexedFrameDisplay
+                    ? "The visible frame is correct, but the absolute zero-indexed frame number is still pending while the background index finishes. Type a frame number and press Enter once the index is ready."
+                    : "The visible frame is correct, but the absolute frame number is still pending while the background index finishes. Type a frame number and press Enter once the index is ready.";
+                return;
+            }
 
             if (totalFrames > 0)
             {
@@ -1996,11 +2702,6 @@ namespace FramePlayer
 
             var enginePosition = _workspaceCoordinator.CurrentSession.Position;
             if (enginePosition == null || !enginePosition.FrameIndex.HasValue)
-            {
-                return false;
-            }
-
-            if (!enginePosition.IsFrameIndexAbsolute)
             {
                 return false;
             }
@@ -2101,6 +2802,22 @@ namespace FramePlayer
             if (_mediaDuration > TimeSpan.Zero && target > _mediaDuration)
             {
                 return _mediaDuration;
+            }
+
+            return target;
+        }
+
+        private TimeSpan ClampPositionForPane(string paneId, TimeSpan target)
+        {
+            if (target < TimeSpan.Zero)
+            {
+                return TimeSpan.Zero;
+            }
+
+            var mediaDuration = GetPaneMediaDuration(paneId);
+            if (mediaDuration > TimeSpan.Zero && target > mediaDuration)
+            {
+                return mediaDuration;
             }
 
             return target;
@@ -2224,6 +2941,7 @@ namespace FramePlayer
             var previousSession = e != null ? e.PreviousWorkspace.FocusedSession : ReviewSessionSnapshot.Empty;
             var currentSession = e != null ? e.CurrentWorkspace.FocusedSession : ReviewSessionSnapshot.Empty;
             var wasMediaLoaded = previousSession.IsMediaOpen;
+            var shouldRestartLoopPlayback = ShouldRestartLoopPlayback(e);
             ApplySessionSnapshot(currentSession);
             UpdateWorkspacePanePresentation();
 
@@ -2272,6 +2990,12 @@ namespace FramePlayer
             UpdateHeader();
             UpdatePositionDisplay(currentSession.Position.PresentationTime);
             UpdateTransportState();
+
+            if (shouldRestartLoopPlayback)
+            {
+                _ = RestartLoopPlaybackAsync();
+                return;
+            }
 
             if (!wasMediaLoaded)
             {
@@ -2358,6 +3082,47 @@ namespace FramePlayer
             }
         }
 
+        private void VideoSurfaceHost_MouseMove(object sender, MouseEventArgs e)
+        {
+            var host = sender as FrameworkElement;
+            if (host == null)
+            {
+                ClearPointerCoordinates();
+                return;
+            }
+
+            var paneId = host.Tag as string;
+            if (string.IsNullOrWhiteSpace(paneId))
+            {
+                ClearPointerCoordinates();
+                return;
+            }
+
+            var geometry = GetFrameSurfaceGeometry(paneId);
+            int sourcePixelX;
+            int sourcePixelY;
+            if (!geometry.TryMapPointToSourcePixel(e.GetPosition(host), out sourcePixelX, out sourcePixelY))
+            {
+                ClearPointerCoordinates();
+                return;
+            }
+
+            var paneLabel = string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
+                ? "Compare"
+                : "Primary";
+            SetPointerCoordinates(string.Format(
+                CultureInfo.InvariantCulture,
+                "Pixel: {0} ({1},{2})",
+                paneLabel,
+                sourcePixelX,
+                sourcePixelY));
+        }
+
+        private void VideoSurfaceHost_MouseLeave(object sender, MouseEventArgs e)
+        {
+            ClearPointerCoordinates();
+        }
+
         private void ToggleFullScreen()
         {
             if (!_isMediaLoaded)
@@ -2424,11 +3189,15 @@ namespace FramePlayer
             StatusPanel.Visibility = _isFullScreen ? Visibility.Collapsed : Visibility.Visible;
             FullscreenControlBar.Visibility = _isFullScreen ? Visibility.Visible : Visibility.Collapsed;
 
-            RootGrid.Margin = _isFullScreen ? new Thickness(0) : new Thickness(10);
-            VideoPanel.Margin = _isFullScreen ? new Thickness(0) : new Thickness(0, 8, 0, 0);
-            VideoPanel.CornerRadius = _isFullScreen ? new CornerRadius(0) : new CornerRadius(12);
+            RootGrid.Margin = new Thickness(0);
+            HeaderPanel.Margin = _isFullScreen ? new Thickness(0) : new Thickness(10, 10, 10, 0);
+            VideoPanel.Margin = _isFullScreen ? new Thickness(0) : new Thickness(10, 8, 10, 0);
+            ControlPanel.Margin = _isFullScreen ? new Thickness(0) : new Thickness(10, 8, 10, 0);
+            StatusPanel.Margin = _isFullScreen ? new Thickness(0) : new Thickness(10, 8, 10, 10);
+            VideoPanel.CornerRadius = new CornerRadius(0);
 
             UpdateFullScreenButtonIcon();
+            UpdateWindowStateButtonVisuals();
         }
 
         private void UpdateFullScreenButtonIcon()
@@ -2453,10 +3222,12 @@ namespace FramePlayer
             if (string.Equals(paneId, ComparePaneId, StringComparison.Ordinal))
             {
                 CompareVideoSurface.Source = null;
+                ClearPointerCoordinates();
                 return;
             }
 
             CustomVideoSurface.Source = null;
+            ClearPointerCoordinates();
         }
 
         private void ResetMediaState(bool clearFilePath, bool clearErrorMessage)
@@ -2466,6 +3237,16 @@ namespace FramePlayer
             _heldFrameStepDirection = 0;
             _frameStepRepeatTimer.Stop();
             _isSliderDragActive = false;
+            _isSliderScrubSeekInFlight = false;
+            _hasPendingSliderScrubTarget = false;
+            _sliderScrubTimer.Stop();
+            _isPaneSliderDragActive = false;
+            _isPaneSliderScrubSeekInFlight = false;
+            _hasPendingPaneSliderScrubTarget = false;
+            _paneSliderScrubTimer.Stop();
+            _activePaneSliderPaneId = string.Empty;
+            _suppressLoopRestart = false;
+            _isLoopRestartInFlight = false;
             ResetCompareAlignmentStatus();
             ClearPaneSurface(GetFocusedPaneId());
             ApplySessionSnapshot(_workspaceCoordinator.Reset(clearFilePath ? string.Empty : _currentFilePath));
@@ -2610,6 +3391,469 @@ namespace FramePlayer
             {
                 CacheStatusTextBlock.Foreground = brush;
             }
+        }
+
+        private static bool TryGetModifiedFrameStepCount(ModifierKeys modifiers, out int frameStepCount)
+        {
+            switch (modifiers)
+            {
+                case ModifierKeys.Control:
+                    frameStepCount = ControlModifiedFrameStep;
+                    return true;
+                case ModifierKeys.Shift:
+                    frameStepCount = ShiftModifiedFrameStep;
+                    return true;
+                default:
+                    frameStepCount = 0;
+                    return false;
+            }
+        }
+
+        private void QueueSliderScrub(TimeSpan target)
+        {
+            _pendingSliderScrubTarget = ClampPosition(target);
+            _hasPendingSliderScrubTarget = true;
+            if (!_sliderScrubTimer.IsEnabled)
+            {
+                _sliderScrubTimer.Start();
+            }
+        }
+
+        private void SliderScrubTimer_Tick(object sender, EventArgs e)
+        {
+            if (!_isMediaLoaded)
+            {
+                _sliderScrubTimer.Stop();
+                _hasPendingSliderScrubTarget = false;
+                return;
+            }
+
+            if (!_isSliderDragActive)
+            {
+                _hasPendingSliderScrubTarget = false;
+                if (!_isSliderScrubSeekInFlight)
+                {
+                    _sliderScrubTimer.Stop();
+                }
+
+                return;
+            }
+
+            if (_isSliderScrubSeekInFlight || !_hasPendingSliderScrubTarget)
+            {
+                if (!_isSliderScrubSeekInFlight)
+                {
+                    _sliderScrubTimer.Stop();
+                }
+
+                return;
+            }
+
+            _hasPendingSliderScrubTarget = false;
+            DispatchSliderScrubSeek(_pendingSliderScrubTarget);
+        }
+
+        private void DispatchSliderScrubSeek(TimeSpan target)
+        {
+            if (_isSliderScrubSeekInFlight)
+            {
+                return;
+            }
+
+            _isSliderScrubSeekInFlight = true;
+            _activeSliderScrubSeekTask = ExecuteSliderScrubSeekAsync(target);
+        }
+
+        private async Task ExecuteSliderScrubSeekAsync(TimeSpan target)
+        {
+            try
+            {
+                await SeekToAsync(target, diagnosticSource: null, operationScope: null);
+            }
+            catch (Exception ex)
+            {
+                var sanitizedMessage = SanitizeSensitiveText(ex.Message);
+                SetPlaybackMessage("Timeline scrub failed.");
+                SetMediaSummary(sanitizedMessage);
+                LogError("Timeline scrub failed: " + sanitizedMessage);
+            }
+            finally
+            {
+                _isSliderScrubSeekInFlight = false;
+                if (!_isSliderDragActive && !_hasPendingSliderScrubTarget)
+                {
+                    _sliderScrubTimer.Stop();
+                }
+            }
+        }
+
+        private async Task AwaitSliderScrubIdleAsync()
+        {
+            var pendingTask = _activeSliderScrubSeekTask;
+            if (pendingTask == null)
+            {
+                return;
+            }
+
+            await pendingTask;
+        }
+
+        private void QueuePaneSliderScrub(string paneId, TimeSpan target)
+        {
+            _activePaneSliderPaneId = paneId ?? string.Empty;
+            _pendingPaneSliderScrubTarget = ClampPositionForPane(paneId, target);
+            _hasPendingPaneSliderScrubTarget = true;
+            if (!_paneSliderScrubTimer.IsEnabled)
+            {
+                _paneSliderScrubTimer.Start();
+            }
+        }
+
+        private void PaneSliderScrubTimer_Tick(object sender, EventArgs e)
+        {
+            ReviewWorkspacePaneSnapshot paneSnapshot;
+            var workspaceSnapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
+            if (string.IsNullOrWhiteSpace(_activePaneSliderPaneId) ||
+                workspaceSnapshot == null ||
+                !workspaceSnapshot.TryGetPane(_activePaneSliderPaneId, out paneSnapshot) ||
+                !PaneHasLoadedMedia(paneSnapshot))
+            {
+                _paneSliderScrubTimer.Stop();
+                _hasPendingPaneSliderScrubTarget = false;
+                return;
+            }
+
+            if (!_isPaneSliderDragActive)
+            {
+                _hasPendingPaneSliderScrubTarget = false;
+                if (!_isPaneSliderScrubSeekInFlight)
+                {
+                    _paneSliderScrubTimer.Stop();
+                }
+
+                return;
+            }
+
+            if (_isPaneSliderScrubSeekInFlight || !_hasPendingPaneSliderScrubTarget)
+            {
+                if (!_isPaneSliderScrubSeekInFlight)
+                {
+                    _paneSliderScrubTimer.Stop();
+                }
+
+                return;
+            }
+
+            _hasPendingPaneSliderScrubTarget = false;
+            DispatchPaneSliderScrubSeek(_activePaneSliderPaneId, _pendingPaneSliderScrubTarget);
+        }
+
+        private void DispatchPaneSliderScrubSeek(string paneId, TimeSpan target)
+        {
+            if (_isPaneSliderScrubSeekInFlight)
+            {
+                return;
+            }
+
+            _isPaneSliderScrubSeekInFlight = true;
+            _activePaneSliderScrubSeekTask = ExecutePaneSliderScrubSeekAsync(paneId, target);
+        }
+
+        private async Task ExecutePaneSliderScrubSeekAsync(string paneId, TimeSpan target)
+        {
+            try
+            {
+                if (!TrySelectPaneForPaneCommand(paneId))
+                {
+                    return;
+                }
+
+                await SeekPaneToAsync(paneId, target, diagnosticSource: null);
+            }
+            catch (Exception ex)
+            {
+                var sanitizedMessage = SanitizeSensitiveText(ex.Message);
+                SetPlaybackMessage("Pane timeline scrub failed.");
+                SetMediaSummary(sanitizedMessage);
+                LogError("Pane timeline scrub failed: " + sanitizedMessage);
+            }
+            finally
+            {
+                _isPaneSliderScrubSeekInFlight = false;
+                if (!_isPaneSliderDragActive && !_hasPendingPaneSliderScrubTarget)
+                {
+                    _paneSliderScrubTimer.Stop();
+                }
+            }
+        }
+
+        private async Task AwaitPaneSliderScrubIdleAsync()
+        {
+            var pendingTask = _activePaneSliderScrubSeekTask;
+            if (pendingTask == null)
+            {
+                return;
+            }
+
+            await pendingTask;
+        }
+
+        private async Task CommitPaneSliderSeekAsync(string paneId, string interactionName, TimeSpan target)
+        {
+            if (!TrySelectPaneForPaneCommand(paneId))
+            {
+                return;
+            }
+
+            LogInfo(string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} timeline {1} seek requested from pane slider at {2}.",
+                GetComparePaneSideLabel(paneId),
+                interactionName,
+                FormatTime(ClampPositionForPane(paneId, target))));
+
+            await SeekPaneToAsync(
+                paneId,
+                target,
+                string.Format(CultureInfo.InvariantCulture, "{0} timeline {1}", GetComparePaneSideLabel(paneId), interactionName));
+            FocusPreferredVideoSurface();
+        }
+
+        private FrameSurfaceGeometry GetFrameSurfaceGeometry(string paneId)
+        {
+            FrameworkElement host;
+            Image image;
+            if (!TryGetVideoSurfaceElements(paneId, out host, out image))
+            {
+                return FrameSurfaceGeometry.Empty;
+            }
+
+            var bitmapSource = image.Source as BitmapSource;
+            return bitmapSource == null
+                ? FrameSurfaceGeometry.Empty
+                : FrameSurfaceGeometry.Create(
+                    new Size(host.ActualWidth, host.ActualHeight),
+                    bitmapSource.PixelWidth,
+                    bitmapSource.PixelHeight,
+                    bitmapSource.Width,
+                    bitmapSource.Height);
+        }
+
+        private bool TryGetVideoSurfaceElements(string paneId, out FrameworkElement host, out Image image)
+        {
+            if (string.Equals(paneId, ComparePaneId, StringComparison.Ordinal))
+            {
+                host = CompareVideoSurfaceHost;
+                image = CompareVideoSurface;
+                return host != null && image != null;
+            }
+
+            host = CustomVideoSurfaceHost;
+            image = CustomVideoSurface;
+            return host != null && image != null;
+        }
+
+        private void SetPointerCoordinates(string message)
+        {
+            var displayMessage = string.IsNullOrWhiteSpace(message) ? "Pixel: --" : message;
+            PointerCoordinatesTextBlock.Text = displayMessage;
+            PointerCoordinatesTextBlock.ToolTip = string.IsNullOrWhiteSpace(message)
+                ? "Pixel location within the displayed video frame."
+                : displayMessage + " within the displayed video frame.";
+        }
+
+        private void ClearPointerCoordinates()
+        {
+            SetPointerCoordinates(null);
+        }
+
+        private bool ShouldRestartLoopPlayback(ReviewWorkspaceChangedEventArgs e)
+        {
+            if (!IsLoopPlaybackEnabled ||
+                _suppressLoopRestart ||
+                _isLoopRestartInFlight ||
+                !_buildVariant.SupportsTimedPlayback ||
+                e == null)
+            {
+                return false;
+            }
+
+            var scope = ResolveLoopPlaybackScope(e.CurrentWorkspace);
+            var previousTargetPanes = GetLoopTargetPanes(e.PreviousWorkspace, scope);
+            var currentTargetPanes = GetLoopTargetPanes(e.CurrentWorkspace, scope);
+            if (previousTargetPanes.Length == 0 || currentTargetPanes.Length == 0)
+            {
+                return false;
+            }
+
+            if (!previousTargetPanes.Any(pane => pane.Session.PlaybackState == ReviewPlaybackState.Playing))
+            {
+                return false;
+            }
+
+            if (currentTargetPanes.Any(pane => pane.Session.PlaybackState == ReviewPlaybackState.Playing))
+            {
+                return false;
+            }
+
+            return currentTargetPanes.All(pane => IsSessionAtPlaybackEnd(pane.Session));
+        }
+
+        private async Task RestartLoopPlaybackAsync()
+        {
+            if (_isLoopRestartInFlight || !_isMediaLoaded)
+            {
+                return;
+            }
+
+            _isLoopRestartInFlight = true;
+            try
+            {
+                var scope = ResolveLoopPlaybackScope(_workspaceCoordinator.CurrentWorkspace);
+                _suppressLoopRestart = true;
+                await RunWithCacheStatusAsync(
+                    "Cache: looping to start...",
+                    () => _workspaceCoordinator.SeekToTimeAsync(TimeSpan.Zero, scope));
+                await _workspaceCoordinator.PlayAsync(scope);
+                ApplySessionSnapshot(_workspaceCoordinator.RefreshFromEngine());
+                UpdateTransportState();
+
+                if (_isPlaying)
+                {
+                    _lastPlaybackScope = scope;
+                    _suppressLoopRestart = false;
+                    LogInfo("Loop playback restarted from the beginning.");
+                }
+                else
+                {
+                    LogWarning("Loop playback restart did not resume playback.");
+                }
+            }
+            catch (Exception ex)
+            {
+                var sanitizedMessage = SanitizeSensitiveText(ex.Message);
+                SetPlaybackMessage("Loop playback restart failed.");
+                SetMediaSummary(sanitizedMessage);
+                LogError("Loop playback restart failed: " + sanitizedMessage);
+            }
+            finally
+            {
+                _isLoopRestartInFlight = false;
+            }
+        }
+
+        private SynchronizedOperationScope ResolveLoopPlaybackScope(MultiVideoWorkspaceState workspaceState)
+        {
+            if (_lastPlaybackScope == SynchronizedOperationScope.AllPanes &&
+                workspaceState != null &&
+                workspaceState.Panes.Count(pane => pane != null && pane.Session.IsMediaOpen) > 1)
+            {
+                return SynchronizedOperationScope.AllPanes;
+            }
+
+            return SynchronizedOperationScope.FocusedPane;
+        }
+
+        private static ReviewPaneState[] GetLoopTargetPanes(
+            MultiVideoWorkspaceState workspaceState,
+            SynchronizedOperationScope scope)
+        {
+            if (workspaceState == null)
+            {
+                return Array.Empty<ReviewPaneState>();
+            }
+
+            if (scope == SynchronizedOperationScope.AllPanes)
+            {
+                return workspaceState.Panes
+                    .Where(pane => pane != null && pane.Session.IsMediaOpen)
+                    .ToArray();
+            }
+
+            var focusedPane = workspaceState.FocusedPane;
+            return focusedPane != null && focusedPane.Session.IsMediaOpen
+                ? new[] { focusedPane }
+                : Array.Empty<ReviewPaneState>();
+        }
+
+        private static bool IsSessionAtPlaybackEnd(ReviewSessionSnapshot session)
+        {
+            if (session == null || !session.IsMediaOpen || session.MediaInfo.Duration <= TimeSpan.Zero)
+            {
+                return false;
+            }
+
+            var stepToleranceTicks = session.MediaInfo.PositionStep > TimeSpan.Zero
+                ? session.MediaInfo.PositionStep.Ticks * 2L
+                : 0L;
+            var tolerance = TimeSpan.FromTicks(Math.Max(stepToleranceTicks, LoopPlaybackMinimumEndTolerance.Ticks));
+            var endThreshold = session.MediaInfo.Duration - tolerance;
+            if (endThreshold < TimeSpan.Zero)
+            {
+                endThreshold = TimeSpan.Zero;
+            }
+
+            return session.Position.PresentationTime >= endThreshold;
+        }
+
+        private void ShowVideoInfoWindow()
+        {
+            if (!_isMediaLoaded)
+            {
+                SetPlaybackMessage("Load a video to inspect its details.");
+                return;
+            }
+
+            var paneId = GetFocusedPaneId();
+            var paneLabel = string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
+                ? "Compare"
+                : "Primary";
+            var engine = GetEngineForPane(paneId);
+            if (engine == null || !engine.IsMediaOpen)
+            {
+                SetPlaybackMessage("The selected pane is not available.");
+                return;
+            }
+
+            var mediaInfo = engine.MediaInfo ?? VideoMediaInfo.Empty;
+            var ffmpegEngine = engine as FfmpegReviewEngine;
+            var detailsBuilder = new StringBuilder();
+            detailsBuilder.AppendLine("Pane: " + paneLabel);
+            detailsBuilder.AppendLine("File: " + (string.IsNullOrWhiteSpace(mediaInfo.FilePath) ? "(none)" : mediaInfo.FilePath));
+            detailsBuilder.AppendLine("Playback state: " + (_isPlaying ? "Playing" : "Paused"));
+            detailsBuilder.AppendLine("Duration: " + FormatTime(mediaInfo.Duration));
+            detailsBuilder.AppendLine(string.Format(
+                CultureInfo.InvariantCulture,
+                "Resolution: {0} x {1}",
+                mediaInfo.PixelWidth,
+                mediaInfo.PixelHeight));
+            detailsBuilder.AppendLine(string.Format(
+                CultureInfo.InvariantCulture,
+                "Frame rate: {0:0.###} fps",
+                mediaInfo.FramesPerSecond));
+            detailsBuilder.AppendLine("Frame step: " + FormatStepDuration(mediaInfo.PositionStep));
+            detailsBuilder.AppendLine("Video codec: " + (string.IsNullOrWhiteSpace(mediaInfo.VideoCodecName) ? "unknown" : mediaInfo.VideoCodecName));
+            detailsBuilder.AppendLine("Audio: " + GetAudioTooltipText(mediaInfo));
+            detailsBuilder.AppendLine("Active backend: " + (ffmpegEngine != null && !string.IsNullOrWhiteSpace(ffmpegEngine.ActualBackendUsed)
+                ? ffmpegEngine.ActualBackendUsed
+                : "unknown"));
+            detailsBuilder.AppendLine("GPU active: " + (ffmpegEngine != null && ffmpegEngine.IsGpuActive ? "Yes" : "No"));
+            detailsBuilder.AppendLine("GPU status: " + (ffmpegEngine != null && !string.IsNullOrWhiteSpace(ffmpegEngine.GpuCapabilityStatus)
+                ? ffmpegEngine.GpuCapabilityStatus
+                : "n/a"));
+            detailsBuilder.AppendLine("Fallback reason: " + (ffmpegEngine != null && !string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason)
+                ? ffmpegEngine.GpuFallbackReason
+                : "none"));
+
+            var infoWindow = new VideoInfoWindow(
+                "Video Info - " + paneLabel,
+                paneLabel + " Video Info",
+                "Focused pane media and backend details",
+                detailsBuilder.ToString())
+            {
+                Owner = this
+            };
+            infoWindow.ShowDialog();
         }
 
         private void ShowHelpWindow()

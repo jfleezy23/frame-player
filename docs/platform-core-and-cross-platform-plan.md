@@ -1,6 +1,6 @@
 # Platform Core And Cross-Platform Plan
 
-This note is a planning checkpoint. The current WPF app remains the working reference implementation. This pass adds only small neutral seams and does not start the UI migration.
+This is a historical planning checkpoint. The current WPF app remains the working reference implementation for `v1.4.1`, but current shipped behavior is documented in `docs\gpu-vulkan-phase1-release.md`. This note exists to preserve the earlier extraction plan, not to define the active release surface.
 
 ## What Already Looks Core-Oriented
 

@@ -75,6 +75,10 @@
       <DependentUpon>HelpWindow.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="VideoInfoWindow.xaml.cs">
+      <DependentUpon>VideoInfoWindow.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="Core\Abstractions\IVideoReviewEngine.cs" />
     <Compile Include="Core\Events\FramePresentedEventArgs.cs" />
     <Compile Include="Core\Events\ReviewSessionChangedEventArgs.cs" />
@@ -128,6 +132,7 @@
     <Compile Include="Services\BuildVariantInfo.cs" />
     <Compile Include="Services\DecodedFrameBudgetCoordinator.cs" />
     <Compile Include="Services\DiagnosticLogService.cs" />
+    <Compile Include="Services\FrameSurfaceGeometry.cs" />
     <Compile Include="Services\FfmpegReviewEngineOptionsProvider.cs" />
     <Compile Include="Services\RecentFilesService.cs" />
     <Compile Include="Services\VideoReviewEngineFactory.cs" />
@@ -141,6 +146,10 @@
       <SubType>Designer</SubType>
     </Page>
     <Page Include="MainWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="VideoInfoWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>
