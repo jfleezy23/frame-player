@@ -37,7 +37,7 @@ Release candidate: `1.4.1`
 - The pinned FFmpeg runtime is `n8.1-frameplayer-source`, recorded in `Runtime\runtime-manifest.json`.
 - The runtime was built from the official FFmpeg source tag `n8.1` and is restored locally from the self-built candidate/archive produced by `scripts\ffmpeg\Build-FFmpeg-8.1.ps1`.
 - The packaged runtime also requires `libwinpthread-1.dll`; it must ship beside `FramePlayer.exe` with the FFmpeg DLL set.
-- Clean-runner bootstrap is still intentionally disabled in CI until the manifest points at a verified published FFmpeg 8.1 restore source.
+- Clean-runner bootstrap now restores from the verified `v1.4.1` runtime release asset, so CI and other clean environments no longer depend on pre-staged local runtime artifacts.
 
 ## Build and shortcut
 

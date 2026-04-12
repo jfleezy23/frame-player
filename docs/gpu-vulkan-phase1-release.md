@@ -33,8 +33,6 @@ This note documents the current `v1.4.1` release candidate for the GPU Vulkan ph
 
 ## What Did Not Ship
 
-- No verified published remote FFmpeg 8.1 restore asset is declared yet in `Runtime\runtime-manifest.json`.
-- CI still uses `/p:SkipRuntimeBootstrap=true` on clean runners until that verified remote restore source exists.
 - No bundled Vulkan loader is shipped in the runtime archive. Actual GPU acceleration still depends on a working system Vulkan loader/driver.
 - No zero-copy presentation path exists yet. The current GPU path still pays hardware decode, `av_hwframe_transfer_data()`, CPU-side BGRA conversion, and WPF presentation cost.
 - No cross-platform UI port ships in this phase.
@@ -54,6 +52,10 @@ Last-known green validation runs:
   - files tested: `15`
   - checks run: `488`
   - pass / warning / fail: `453 / 35 / 0`
+- Clean-runner bootstrap proof:
+  - the pinned runtime archive is published on the `v1.4.1` GitHub release as `FramePlayer-ffmpeg-runtime-x64.zip`
+  - `Runtime\runtime-manifest.json` now points at that verified release asset with matching archive and DLL hashes
+  - Windows CI restores the pinned runtime through `scripts\Ensure-DevRuntime.ps1` before build
 - Dual-pane real-media proof, mixed backend capable:
   - corpus files: `15`
   - pair runs: `51`
@@ -86,12 +88,11 @@ Known non-blocking warnings from the regression corpus:
 
 - Treat `v1.4.1` as the stabilization and UI-polish follow-up to the phase-1 GPU feature line, not as a re-baselining of the engine architecture.
 - Keep `Properties\AssemblyInfo.cs` as the canonical version source and derive packaging/output names from the built executable version.
-- Keep `docs\ffmpeg-8.1-build-notes.md` factual about runtime provenance and still-missing clean-runner restore infrastructure.
+- Keep `docs\ffmpeg-8.1-build-notes.md` factual about runtime provenance and the now-verified clean-runner restore path.
 - Preserve the proof harnesses and raw proof artifacts outside `main`; do not require the app startup path in `main` to carry harness-only CLI entry points.
 
 ## Next R&D Areas
 
-- verified published FFmpeg 8.1 restore source for clean-runner bootstrap
 - lower-overhead GPU startup/device reuse work
 - zero-copy or GPU-native presentation research
 - non-Windows and ARM validation using the preserved proof/tooling branch
