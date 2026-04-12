@@ -2232,7 +2232,9 @@ namespace FramePlayer.Engines.FFmpeg
                 frame.Descriptor.SourcePixelFormatName,
                 indexedEntry.PresentationTimestamp ?? frame.Descriptor.PresentationTimestamp,
                 indexedEntry.DecodeTimestamp ?? frame.Descriptor.DecodeTimestamp,
-                frame.Descriptor.DurationTimestamp);
+                frame.Descriptor.DurationTimestamp,
+                frame.Descriptor.DisplayWidth,
+                frame.Descriptor.DisplayHeight);
 
             return frame.WithDescriptor(descriptor);
         }
@@ -2356,6 +2358,8 @@ namespace FramePlayer.Engines.FFmpeg
                 GpuCapabilityStatus = "active";
             }
 
+            ApplyVisibleFrameCrop(sourceFrame);
+
             var presentationTimestamp = GetPresentationTimestamp(decodedFrame);
             var decodeTimestamp = FfmpegNativeHelpers.AsNullableTimestamp(decodedFrame->pkt_dts);
             var durationTimestamp = decodedFrame->duration > 0
@@ -2372,6 +2376,9 @@ namespace FramePlayer.Engines.FFmpeg
                 ? (long?)indexedEntry.AbsoluteFrameIndex
                 : _decodedSegmentFrameCount;
             var isFrameIndexAbsolute = indexedEntry != null || _segmentFrameIndexAbsolute;
+            int displayWidth;
+            int displayHeight;
+            FfmpegNativeHelpers.GetDisplayDimensions(_formatContext, _videoStream, sourceFrame, out displayWidth, out displayHeight);
 
             var descriptor = new FrameDescriptor(
                 resolvedFrameIndex,
@@ -2384,7 +2391,9 @@ namespace FramePlayer.Engines.FFmpeg
                 FfmpegNativeHelpers.GetPixelFormatName((AVPixelFormat)sourceFrame->format),
                 indexedEntry != null ? indexedEntry.PresentationTimestamp : presentationTimestamp,
                 indexedEntry != null ? indexedEntry.DecodeTimestamp : decodeTimestamp,
-                durationTimestamp);
+                durationTimestamp,
+                displayWidth,
+                displayHeight);
 
             var conversionStopwatch = Stopwatch.StartNew();
             var convertedFrame = _frameConverter.Convert(sourceFrame, descriptor);
@@ -2392,6 +2401,22 @@ namespace FramePlayer.Engines.FFmpeg
             LastBgraConversionMilliseconds = conversionStopwatch.Elapsed.TotalMilliseconds;
             _decodedSegmentFrameCount++;
             return convertedFrame;
+        }
+
+        private static void ApplyVisibleFrameCrop(AVFrame* sourceFrame)
+        {
+            if (sourceFrame == null ||
+                (sourceFrame->crop_left | sourceFrame->crop_top | sourceFrame->crop_right | sourceFrame->crop_bottom) == 0)
+            {
+                return;
+            }
+
+            var cropResult = ffmpeg.av_frame_apply_cropping(sourceFrame, 0);
+            if (cropResult < 0)
+            {
+                // Keep the uncropped frame if FFmpeg cannot apply the visible-frame crop safely.
+                return;
+            }
         }
 
         private void SetCurrentFrame(DecodedFrameBuffer frame)

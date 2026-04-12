@@ -179,6 +179,46 @@ namespace FramePlayer.Engines.FFmpeg
                 MidpointRounding.AwayFromZero)));
         }
 
+        internal static void GetDisplayDimensions(
+            AVFormatContext* formatContext,
+            AVStream* stream,
+            AVFrame* frame,
+            out int displayWidth,
+            out int displayHeight)
+        {
+            displayWidth = frame != null ? Math.Max(0, frame->width) : 0;
+            displayHeight = frame != null ? Math.Max(0, frame->height) : 0;
+            if (frame == null || displayWidth <= 0 || displayHeight <= 0)
+            {
+                return;
+            }
+
+            var sampleAspectRatio = ffmpeg.av_guess_sample_aspect_ratio(formatContext, stream, frame);
+            if (!IsValid(sampleAspectRatio) ||
+                sampleAspectRatio.num <= 0 ||
+                sampleAspectRatio.den <= 0 ||
+                sampleAspectRatio.num == sampleAspectRatio.den)
+            {
+                return;
+            }
+
+            if (sampleAspectRatio.num > sampleAspectRatio.den)
+            {
+                displayWidth = Math.Max(
+                    1,
+                    (int)Math.Round(
+                        displayWidth * sampleAspectRatio.num / (double)sampleAspectRatio.den,
+                        MidpointRounding.AwayFromZero));
+                return;
+            }
+
+            displayHeight = Math.Max(
+                1,
+                (int)Math.Round(
+                    displayHeight * sampleAspectRatio.den / (double)sampleAspectRatio.num,
+                    MidpointRounding.AwayFromZero));
+        }
+
         internal static long ToStreamTimestamp(TimeSpan position, AVRational timeBase)
         {
             if (!IsValid(timeBase))

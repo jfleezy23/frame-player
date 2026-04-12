@@ -15,7 +15,9 @@ namespace FramePlayer.Core.Models
             string sourcePixelFormatName,
             long? presentationTimestamp,
             long? decodeTimestamp,
-            long? durationTimestamp)
+            long? durationTimestamp,
+            int? displayWidth = null,
+            int? displayHeight = null)
         {
             FrameIndex = frameIndex;
             PresentationTime = presentationTime;
@@ -28,6 +30,8 @@ namespace FramePlayer.Core.Models
             PresentationTimestamp = presentationTimestamp;
             DecodeTimestamp = decodeTimestamp;
             DurationTimestamp = durationTimestamp;
+            DisplayWidth = displayWidth.GetValueOrDefault(pixelWidth);
+            DisplayHeight = displayHeight.GetValueOrDefault(pixelHeight);
         }
 
         public long? FrameIndex { get; }
@@ -51,5 +55,9 @@ namespace FramePlayer.Core.Models
         public long? DecodeTimestamp { get; }
 
         public long? DurationTimestamp { get; }
+
+        public int DisplayWidth { get; }
+
+        public int DisplayHeight { get; }
     }
 }

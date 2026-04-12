@@ -1,3 +1,4 @@
+using System;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using FramePlayer.Core.Models;
@@ -17,11 +18,24 @@ namespace FramePlayer.Services
                 return null;
             }
 
+            var dpiX = 96d;
+            var dpiY = 96d;
+            if (frameBuffer.Descriptor.DisplayWidth > 0 &&
+                frameBuffer.Descriptor.DisplayHeight > 0)
+            {
+                dpiX = Math.Max(
+                    1d,
+                    96d * frameBuffer.Descriptor.PixelWidth / frameBuffer.Descriptor.DisplayWidth);
+                dpiY = Math.Max(
+                    1d,
+                    96d * frameBuffer.Descriptor.PixelHeight / frameBuffer.Descriptor.DisplayHeight);
+            }
+
             var bitmapSource = BitmapSource.Create(
                 frameBuffer.Descriptor.PixelWidth,
                 frameBuffer.Descriptor.PixelHeight,
-                96d,
-                96d,
+                dpiX,
+                dpiY,
                 PixelFormats.Bgra32,
                 null,
                 frameBuffer.PixelBuffer,
