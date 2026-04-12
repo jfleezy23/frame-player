@@ -73,7 +73,7 @@ Both paths are intentionally ignored by git. `scripts\Ensure-DevRuntime.ps1` res
 
 - `Runtime\runtime-manifest.json` records the expected FFmpeg 8.1 DLL hashes, archive filename, archive SHA256, and source-build provenance.
 - `scripts\Ensure-DevRuntime.ps1` restores `Runtime\ffmpeg\` from `Runtime\ffmpeg-8.1-candidate\` or `artifacts\FramePlayer-ffmpeg-runtime-x64.zip` before attempting any remote download path.
-- If neither local source exists, the script now fails fast when the manifest does not provide a verified remote `tag` or `assetUrl` for the pinned FFmpeg 8.1 runtime.
+- If neither local source exists, the script downloads the pinned runtime from the verified `v1.4.1` release asset declared in the manifest and validates both the archive SHA256 and extracted DLL hashes.
 - `Runtime\runtime-manifest.json` now also records that the current source-built runtime targets FFmpeg Vulkan hardware-device support while still requiring a system Vulkan loader at runtime.
 
 ## Windows CI
@@ -81,14 +81,14 @@ Both paths are intentionally ignored by git. `scripts\Ensure-DevRuntime.ps1` res
 GitHub Actions Windows CI now runs compile validation only on clean runners:
 
 ```powershell
-msbuild .\FramePlayer.csproj /t:Restore,Build /p:Configuration=Release /p:Platform=x64 /p:SkipRuntimeBootstrap=true
+.\scripts\Ensure-DevRuntime.ps1
+msbuild .\FramePlayer.csproj /t:Restore,Build /p:Configuration=Release /p:Platform=x64
 ```
 
-This is intentional. Clean GitHub runners do not have the staged local FFmpeg runtime artifacts, and the current manifest does not yet identify a verified published FFmpeg 8.1 restore source.
+This is intentional and now supported. Clean GitHub runners do not have staged local FFmpeg runtime artifacts, so the workflow restores the runtime from the verified `v1.4.1` release asset recorded in `Runtime\runtime-manifest.json`.
 
-## Still Needed For Clean-Runner Restore
+## Still Needed Beyond Clean-Runner Restore
 
-- Publish the exact FFmpeg 8.1 runtime archive that matches the current manifest hashes.
-- Update `Runtime\runtime-manifest.json` with a verified release `tag` or explicit `assetUrl` for that archive.
-- Keep `assetSha256` and the per-DLL SHA256 entries aligned with the published archive before re-enabling bootstrap on clean runners.
-- Do not point the manifest at any published archive unless the archive SHA256 and extracted DLL hashes are proven to match the current FFmpeg 8.1 runtime.
+- Keep the published runtime archive, `assetSha256`, and per-DLL SHA256 entries aligned whenever the pinned runtime changes.
+- Do not retarget the manifest to any future published archive unless the archive SHA256 and extracted DLL hashes are proven to match the pinned runtime.
+- If the runtime asset ever moves off the `v1.4.1` release, update both `tag`/`assetUrl` and CI expectations in the same change.

@@ -168,7 +168,7 @@ try {
             "https://github.com/jfleezy23/frame-player/releases/download/{0}/{1}" -f $manifest.tag, $manifest.assetName
         }
 
-        $archivePath = Join-Path $env:TEMP $manifest.assetName
+        $archivePath = Join-Path $env:TEMP (([Guid]::NewGuid().ToString("N")) + "-" + $manifest.assetName)
         Write-Host "Downloading FFmpeg runtime from $downloadUrl"
         Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath
     }
@@ -187,13 +187,16 @@ try {
     Expand-Archive -Path $archivePath -DestinationPath $extractRoot -Force
 
     $sourceDirectory = Join-Path $extractRoot "ffmpeg"
-    if (-not (Test-Path $sourceDirectory)) {
+    if (Test-RuntimeDirectory -DirectoryPath $extractRoot) {
+        $sourceDirectory = $extractRoot
+    }
+    elseif (-not (Test-Path $sourceDirectory)) {
         $nestedFfmpegDirectory = Get-ChildItem $extractRoot -Directory -Recurse |
             Where-Object { $_.Name -ieq "ffmpeg" } |
             Select-Object -First 1
 
         if ($null -eq $nestedFfmpegDirectory) {
-            throw "The runtime archive did not contain an 'ffmpeg' directory."
+            throw "The runtime archive did not contain an 'ffmpeg' directory or a runtime DLL set at archive root."
         }
 
         $sourceDirectory = $nestedFfmpegDirectory.FullName

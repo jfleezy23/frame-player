@@ -71,7 +71,7 @@ The shipped app is packaged with the FFmpeg runtime DLLs next to `FramePlayer.ex
 - The generated MSIX artifacts are written to `dist\\MSIX`
 - The FFmpeg development runtime is not stored in git; local restore comes from the self-built candidate folder or local runtime archive staged by `scripts\ffmpeg\Build-FFmpeg-8.1.ps1`
 - The runtime manifest records the expected archive filename, archive SHA256, human-readable FFmpeg version, DLL hashes, and source-build metadata
-- The current manifest does not yet declare a verified published FFmpeg 8.1 restore `tag` or `assetUrl` for clean-runner bootstrap
+- The current manifest declares the verified `v1.4.1` GitHub release asset used for clean-runner bootstrap
 
 ## Quick Start
 
@@ -88,7 +88,7 @@ That script:
 3. Restores NuGet packages
 4. Builds the app in `Release|x64`
 
-If the self-built runtime has not been staged yet, run `.\scripts\ffmpeg\Build-FFmpeg-8.1.ps1` first. Regular Visual Studio and MSBuild builds still bootstrap `Runtime\ffmpeg` automatically when it is missing, but today that flow assumes the FFmpeg 8.1 runtime has already been staged locally.
+If the self-built runtime has not been staged yet, run `.\scripts\ffmpeg\Build-FFmpeg-8.1.ps1` first if you want a local candidate/runtime archive. Regular Visual Studio and MSBuild builds still bootstrap `Runtime\ffmpeg` automatically when it is missing, and clean bootstrap environments can now fall back to the verified `v1.4.1` release asset.
 
 For phase-1 GPU validation, keep the default `Playback > Use GPU Acceleration` setting enabled and test on a machine with a working Vulkan loader/driver. Unsupported systems and unsupported codec/device combinations stay on CPU decode automatically.
 
@@ -132,7 +132,7 @@ powershell -ExecutionPolicy Bypass -File .\Packaging\MSIX\build-msix.ps1 -Signin
 
 ## Windows CI
 
-GitHub Actions Windows CI is compile validation on a clean runner. The workflow builds with `/p:SkipRuntimeBootstrap=true`, so it intentionally skips runtime bootstrap in CI while local/dev builds continue to use the default bootstrap path. This stays in place until the manifest has a verified published FFmpeg 8.1 restore source for clean-runner acquisition.
+GitHub Actions Windows CI is compile validation on a clean runner. The workflow now restores the pinned FFmpeg runtime through `scripts\Ensure-DevRuntime.ps1` before building, using the verified `v1.4.1` runtime archive published on GitHub Releases. Local/dev builds continue to use the same bootstrap path, with local candidate/runtime archives still preferred when they are available.
 
 ## Notes
 

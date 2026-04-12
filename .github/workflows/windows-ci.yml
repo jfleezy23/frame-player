@@ -21,6 +21,10 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v3
 
+      - name: Restore pinned FFmpeg runtime
+        shell: pwsh
+        run: .\scripts\Ensure-DevRuntime.ps1
+
       - name: Restore and build
         shell: pwsh
-        run: msbuild .\FramePlayer.csproj /t:Restore,Build /p:Configuration=Release /p:Platform=x64 /p:SkipRuntimeBootstrap=true
+        run: msbuild .\FramePlayer.csproj /t:Restore,Build /p:Configuration=Release /p:Platform=x64
