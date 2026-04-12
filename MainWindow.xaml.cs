@@ -767,8 +767,7 @@ namespace FramePlayer
                 return -1L;
             }
 
-            var totalSteps = Math.Max(1L, (long)Math.Round(mediaDuration.Ticks / (double)positionStep.Ticks, MidpointRounding.AwayFromZero));
-            return Math.Max(0L, totalSteps - 1L);
+            return Math.Max(0L, (mediaDuration.Ticks + positionStep.Ticks - 1L) / positionStep.Ticks - 1L);
         }
 
         private void UpdatePanePresentation(
@@ -3231,14 +3230,14 @@ namespace FramePlayer
             MenuPanel.Visibility = _isFullScreen ? Visibility.Collapsed : Visibility.Visible;
             HeaderPanel.Visibility = _isFullScreen ? Visibility.Collapsed : Visibility.Visible;
             ControlPanel.Visibility = _isFullScreen ? Visibility.Collapsed : Visibility.Visible;
-            StatusPanel.Visibility = _isFullScreen ? Visibility.Collapsed : Visibility.Visible;
+            StatusPanelContainer.Visibility = _isFullScreen ? Visibility.Collapsed : Visibility.Visible;
             FullscreenControlBar.Visibility = _isFullScreen ? Visibility.Visible : Visibility.Collapsed;
 
             RootGrid.Margin = new Thickness(0);
             HeaderPanel.Margin = _isFullScreen ? new Thickness(0) : new Thickness(10, 10, 10, 0);
             VideoPanel.Margin = _isFullScreen ? new Thickness(0) : new Thickness(10, 8, 10, 0);
             ControlPanel.Margin = _isFullScreen ? new Thickness(0) : new Thickness(10, 8, 10, 0);
-            StatusPanel.Margin = _isFullScreen ? new Thickness(0) : new Thickness(10, 8, 10, 10);
+            StatusPanelContainer.Margin = _isFullScreen ? new Thickness(0) : new Thickness(10, 8, 10, 10);
             VideoPanel.CornerRadius = new CornerRadius(0);
 
             UpdateFullScreenButtonIcon();
