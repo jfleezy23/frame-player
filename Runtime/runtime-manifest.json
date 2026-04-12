@@ -11,8 +11,8 @@
     "systemVulkanLoaderNotes": "GPU acceleration depends on a system Vulkan loader/driver at runtime. The FFmpeg runtime archive itself only bundles the FFmpeg-built DLL set."
   },
   "assetName": "FramePlayer-ffmpeg-runtime-x64.zip",
-  "tag": "v1.4.2",
-  "assetUrl": "https://github.com/jfleezy23/frame-player/releases/download/v1.4.2/FramePlayer-ffmpeg-runtime-x64.zip",
+  "tag": "v1.4.3",
+  "assetUrl": "https://github.com/jfleezy23/frame-player/releases/download/v1.4.3/FramePlayer-ffmpeg-runtime-x64.zip",
   "assetSha256": "391a79bf6f3f91e8c064db842420435702570ab0691adce897eefc647bdbdfb7",
   "files": {
     "avcodec-62.dll": "7f936eadaf5214d62e2ac8ae475bdde66d126692ef27eb79ca5103f8f581a29d",
