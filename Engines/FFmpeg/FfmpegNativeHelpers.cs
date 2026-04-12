@@ -70,6 +70,76 @@ namespace FramePlayer.Engines.FFmpeg
                 : name;
         }
 
+        internal static string GetColorRangeName(AVColorRange colorRange)
+        {
+            return ffmpeg.av_color_range_name(colorRange) ?? string.Empty;
+        }
+
+        internal static string GetColorPrimariesName(AVColorPrimaries colorPrimaries)
+        {
+            return ffmpeg.av_color_primaries_name(colorPrimaries) ?? string.Empty;
+        }
+
+        internal static string GetColorTransferName(AVColorTransferCharacteristic colorTransfer)
+        {
+            return ffmpeg.av_color_transfer_name(colorTransfer) ?? string.Empty;
+        }
+
+        internal static string GetColorSpaceName(AVColorSpace colorSpace)
+        {
+            return ffmpeg.av_color_space_name(colorSpace) ?? string.Empty;
+        }
+
+        internal static int? GetPixelFormatBitDepth(AVPixelFormat pixelFormat)
+        {
+            if (pixelFormat == AVPixelFormat.AV_PIX_FMT_NONE)
+            {
+                return null;
+            }
+
+            var descriptor = ffmpeg.av_pix_fmt_desc_get(pixelFormat);
+            if (descriptor == null || descriptor->nb_components <= 0)
+            {
+                return null;
+            }
+
+            var depth = descriptor->comp[0].depth;
+            return depth > 0
+                ? (int?)depth
+                : null;
+        }
+
+        internal static int? GetBitDepth(AVCodecContext* codecContext, AVCodecParameters* codecParameters, AVPixelFormat pixelFormat)
+        {
+            if (codecContext != null)
+            {
+                if (codecContext->bits_per_raw_sample > 0)
+                {
+                    return codecContext->bits_per_raw_sample;
+                }
+
+                if (codecContext->bits_per_coded_sample > 0)
+                {
+                    return codecContext->bits_per_coded_sample;
+                }
+            }
+
+            if (codecParameters != null)
+            {
+                if (codecParameters->bits_per_raw_sample > 0)
+                {
+                    return codecParameters->bits_per_raw_sample;
+                }
+
+                if (codecParameters->bits_per_coded_sample > 0)
+                {
+                    return codecParameters->bits_per_coded_sample;
+                }
+            }
+
+            return GetPixelFormatBitDepth(pixelFormat);
+        }
+
         internal static int OpenInput(AVFormatContext** formatContext, string filePath, AVInputFormat* inputFormat, AVDictionary** options)
         {
             if (string.IsNullOrWhiteSpace(filePath))
@@ -219,6 +289,21 @@ namespace FramePlayer.Engines.FFmpeg
                     MidpointRounding.AwayFromZero));
         }
 
+        internal static bool TryReduceRatio(int numerator, int denominator, out int reducedNumerator, out int reducedDenominator)
+        {
+            reducedNumerator = 0;
+            reducedDenominator = 0;
+            if (numerator <= 0 || denominator <= 0)
+            {
+                return false;
+            }
+
+            var divisor = GreatestCommonDivisor(numerator, denominator);
+            reducedNumerator = numerator / divisor;
+            reducedDenominator = denominator / divisor;
+            return true;
+        }
+
         internal static long ToStreamTimestamp(TimeSpan position, AVRational timeBase)
         {
             if (!IsValid(timeBase))
@@ -297,6 +382,22 @@ namespace FramePlayer.Engines.FFmpeg
             memoryStatus = new MemoryStatusEx();
             memoryStatus.dwLength = (uint)Marshal.SizeOf(typeof(MemoryStatusEx));
             return GlobalMemoryStatusEx(ref memoryStatus);
+        }
+
+        private static int GreatestCommonDivisor(int left, int right)
+        {
+            left = Math.Abs(left);
+            right = Math.Abs(right);
+            while (right != 0)
+            {
+                var remainder = left % right;
+                left = right;
+                right = remainder;
+            }
+
+            return left == 0
+                ? 1
+                : left;
         }
 
         private static avformat_open_input_utf8_delegate LoadAvformatOpenInputUtf8()

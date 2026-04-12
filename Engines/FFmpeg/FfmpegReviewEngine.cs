@@ -1568,7 +1568,9 @@ namespace FramePlayer.Engines.FFmpeg
                 bestStreamIndex,
                 FfmpegNativeHelpers.GetCodecName(audioStream->codecpar->codec_id),
                 audioStream->codecpar->sample_rate,
-                audioStream->codecpar->ch_layout.nb_channels);
+                audioStream->codecpar->ch_layout.nb_channels,
+                audioStream->codecpar->bit_rate > 0 ? (long?)audioStream->codecpar->bit_rate : null,
+                FfmpegNativeHelpers.GetBitDepth(null, audioStream->codecpar, AVPixelFormat.AV_PIX_FMT_NONE));
 
             if (decoder == null)
             {
@@ -2431,6 +2433,18 @@ namespace FramePlayer.Engines.FFmpeg
             var duration = FfmpegNativeHelpers.GetDuration(_formatContext, _videoStream);
             var framesPerSecond = FfmpegNativeHelpers.ToDouble(_nominalFrameRate);
             var positionStep = FfmpegNativeHelpers.GetPositionStep(_nominalFrameRate);
+            int displayAspectRatioNumerator;
+            int displayAspectRatioDenominator;
+            var hasDisplayAspectRatio = FfmpegNativeHelpers.TryReduceRatio(
+                descriptor.DisplayWidth,
+                descriptor.DisplayHeight,
+                out displayAspectRatioNumerator,
+                out displayAspectRatioDenominator);
+            var sourcePixelFormat = GetInspectorSourcePixelFormat();
+            var videoBitDepth = FfmpegNativeHelpers.GetBitDepth(
+                _codecContext,
+                _videoStream != null ? _videoStream->codecpar : null,
+                sourcePixelFormat);
 
             return new VideoMediaInfo(
                 _currentFilePath,
@@ -2450,7 +2464,58 @@ namespace FramePlayer.Engines.FFmpeg
                 _audioStreamInfo != null ? _audioStreamInfo.CodecName : string.Empty,
                 _audioStreamInfo != null ? _audioStreamInfo.StreamIndex : -1,
                 _audioStreamInfo != null ? _audioStreamInfo.SampleRate : 0,
-                _audioStreamInfo != null ? _audioStreamInfo.ChannelCount : 0);
+                _audioStreamInfo != null ? _audioStreamInfo.ChannelCount : 0,
+                descriptor.DisplayWidth > 0 ? (int?)descriptor.DisplayWidth : null,
+                descriptor.DisplayHeight > 0 ? (int?)descriptor.DisplayHeight : null,
+                hasDisplayAspectRatio ? (int?)displayAspectRatioNumerator : null,
+                hasDisplayAspectRatio ? (int?)displayAspectRatioDenominator : null,
+                string.IsNullOrWhiteSpace(descriptor.SourcePixelFormatName) ? null : descriptor.SourcePixelFormatName,
+                videoBitDepth,
+                _videoStream != null && _videoStream->codecpar->bit_rate > 0 ? (long?)_videoStream->codecpar->bit_rate : null,
+                GetColorMetadataValue(FfmpegNativeHelpers.GetColorSpaceName(_codecContext != null ? _codecContext->colorspace : default(AVColorSpace))),
+                GetColorMetadataValue(FfmpegNativeHelpers.GetColorRangeName(_codecContext != null ? _codecContext->color_range : default(AVColorRange))),
+                GetColorMetadataValue(FfmpegNativeHelpers.GetColorPrimariesName(_codecContext != null ? _codecContext->color_primaries : default(AVColorPrimaries))),
+                GetColorMetadataValue(FfmpegNativeHelpers.GetColorTransferName(_codecContext != null ? _codecContext->color_trc : default(AVColorTransferCharacteristic))),
+                _audioStreamInfo != null ? _audioStreamInfo.BitRate : null,
+                _audioStreamInfo != null ? _audioStreamInfo.BitDepth : null);
+        }
+
+        private AVPixelFormat GetInspectorSourcePixelFormat()
+        {
+            if (_codecContext == null)
+            {
+                return AVPixelFormat.AV_PIX_FMT_NONE;
+            }
+
+            if (_hardwareDecodeFormatSelected && _codecContext->sw_pix_fmt != AVPixelFormat.AV_PIX_FMT_NONE)
+            {
+                return _codecContext->sw_pix_fmt;
+            }
+
+            if (_codecContext->pix_fmt != AVPixelFormat.AV_PIX_FMT_NONE)
+            {
+                return _codecContext->pix_fmt;
+            }
+
+            return _codecContext->sw_pix_fmt;
+        }
+
+        private static string GetColorMetadataValue(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return null;
+            }
+
+            var trimmedValue = value.Trim();
+            if (trimmedValue.Equals("unknown", StringComparison.OrdinalIgnoreCase) ||
+                trimmedValue.Equals("unspecified", StringComparison.OrdinalIgnoreCase) ||
+                trimmedValue.StartsWith("reserved", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            return trimmedValue;
         }
 
         private static ReviewPosition BuildReviewPosition(FrameDescriptor descriptor)
