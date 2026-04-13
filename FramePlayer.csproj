@@ -102,6 +102,7 @@
     <Compile Include="Core\Models\DecodedFrameBuffer.cs" />
     <Compile Include="Core\Models\FrameDescriptor.cs" />
     <Compile Include="Core\Models\FrameStepResult.cs" />
+    <Compile Include="Core\Models\LoopPlaybackRangeSnapshot.cs" />
     <Compile Include="Core\Models\ReviewPlaybackState.cs" />
     <Compile Include="Core\Models\ReviewPosition.cs" />
     <Compile Include="Core\Models\ReviewSessionSnapshot.cs" />
@@ -137,6 +138,7 @@
     <Compile Include="Services\RecentFilesService.cs" />
     <Compile Include="Services\VideoReviewEngineFactory.cs" />
     <Compile Include="Services\WpfFrameBufferPresenter.cs" />
+    <Compile Include="Controls\LoopRangeOverlay.cs" />
     <Page Include="AboutWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>

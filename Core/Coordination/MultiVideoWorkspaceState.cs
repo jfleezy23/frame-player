@@ -15,6 +15,7 @@ namespace FramePlayer.Core.Coordination
                 string.Empty,
                 string.Empty,
                 string.Empty,
+                LoopPlaybackRangeSnapshot.Empty,
                 Array.Empty<ReviewPaneState>());
 
         public MultiVideoWorkspaceState(
@@ -24,6 +25,7 @@ namespace FramePlayer.Core.Coordination
             string primaryPaneId,
             string activePaneId,
             string focusedPaneId,
+            LoopPlaybackRangeSnapshot sharedLoopRange,
             IReadOnlyList<ReviewPaneState> panes)
         {
             MasterTimelinePosition = masterTimelinePosition;
@@ -32,6 +34,7 @@ namespace FramePlayer.Core.Coordination
             PrimaryPaneId = primaryPaneId ?? string.Empty;
             ActivePaneId = activePaneId ?? string.Empty;
             FocusedPaneId = focusedPaneId ?? string.Empty;
+            SharedLoopRange = sharedLoopRange ?? LoopPlaybackRangeSnapshot.Empty;
             Panes = panes ?? Array.Empty<ReviewPaneState>();
         }
 
@@ -46,6 +49,8 @@ namespace FramePlayer.Core.Coordination
         public string ActivePaneId { get; }
 
         public string FocusedPaneId { get; }
+
+        public LoopPlaybackRangeSnapshot SharedLoopRange { get; }
 
         public IReadOnlyList<ReviewPaneState> Panes { get; }
 

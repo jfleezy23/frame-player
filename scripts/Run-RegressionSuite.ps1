@@ -669,12 +669,16 @@ if ($resolvedFiles.Count -eq 0)
     throw "No input videos were found for the regression suite."
 }
 
+$outputDirectory = (Resolve-Path -LiteralPath (New-Item -ItemType Directory -Path $Output -Force)).Path
+$regressionArtifactDirectory = Join-Path $projectRoot "artifacts\regression-builds"
+New-Item -ItemType Directory -Force -Path $regressionArtifactDirectory | Out-Null
+$regressionArtifactPath = Join-Path $regressionArtifactDirectory ("FramePlayer-RegressionBuild-{0}.zip" -f ([Guid]::NewGuid().ToString("N")))
+
 $buildScript = Join-Path $PSScriptRoot "Build-TestDrop.ps1"
-$buildResult = & $buildScript -Configuration $Configuration
+$buildResult = & $buildScript -Configuration $Configuration -ArtifactPath $regressionArtifactPath
 
 $assemblyPath = $buildResult.ExecutablePath
 $manifestPath = Join-Path $projectRoot "Runtime\runtime-manifest.json"
-$outputDirectory = (Resolve-Path -LiteralPath (New-Item -ItemType Directory -Path $Output -Force)).Path
 $csvPath = Join-Path $outputDirectory "regression-suite-checks.csv"
 $markdownPath = Join-Path $outputDirectory "regression-suite-summary.md"
 $fileReports = New-Object System.Collections.Generic.List[object]

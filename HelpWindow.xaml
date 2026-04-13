@@ -65,6 +65,10 @@
           <TextBlock Foreground="{StaticResource MutedBrush}"
                      FontFamily="Consolas"
                      FontSize="12"
+                     Text="[ / ]  Set loop in and loop out" />
+          <TextBlock Foreground="{StaticResource MutedBrush}"
+                     FontFamily="Consolas"
+                     FontSize="12"
                      Text="F11 or Alt+Enter  Toggle full screen" />
 
           <TextBlock Margin="0,18,0,0"
@@ -98,7 +102,7 @@
                      FontSize="13"
                      LineHeight="20"
                      TextWrapping="Wrap"
-                     Text="Use Playback &gt; Loop Playback for whole-media repeat. In compare mode, looping follows the same focused-pane or all-panes playback scope you are currently using." />
+                     Text="Use Playback &gt; Loop Playback for whole-media repeat or an exact A/B range. Use [ to set loop-in and ] to set loop-out on the current transport scope. The main timeline greys out everything outside the boxed range. If a marker is still pending absolute frame identity, the loop status stays pending and A/B repeat will not start until the engine proves that frame." />
 
           <TextBlock Margin="0,18,0,0"
                      FontSize="15"
