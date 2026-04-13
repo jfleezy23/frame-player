@@ -1,0 +1,39 @@
+name: Feature request
+description: Propose a user-facing improvement or workflow enhancement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or goal
+      description: What user problem are we solving?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the desired workflow or UI.
+    validations:
+      required: true
+
+  - type: textarea
+    id: frames_first
+    attributes:
+      label: Frames-first impact
+      description: Call out any possible interaction with exact frame identity, stepping, or seek behavior.
+      placeholder: Explain why this does or does not touch frames-first behavior.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Supporting context
+      description: Feedback screenshots, corpus examples, or workflow notes.
