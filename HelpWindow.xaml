@@ -102,7 +102,7 @@
                      FontSize="13"
                      LineHeight="20"
                      TextWrapping="Wrap"
-                     Text="Use Playback &gt; Loop Playback for whole-media repeat or an exact A/B range. Use [ to set loop-in and ] to set loop-out on the current transport scope. The main timeline greys out everything outside the boxed range. If a marker is still pending absolute frame identity, the loop status stays pending and A/B repeat will not start until the engine proves that frame." />
+                     Text="Use Playback &gt; Loop Playback for whole-media repeat or an exact A/B range. Use [ to set loop-in and ] to set loop-out on the current loop context. The main timeline greys out everything outside the shared boxed range, and compare mode can also show pane-local loop boxes on the pane sliders. If a marker is still pending absolute frame identity, the loop status stays pending and A/B repeat will not start until the engine proves that frame." />
 
           <TextBlock Margin="0,18,0,0"
                      FontSize="15"
