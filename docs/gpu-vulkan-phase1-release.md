@@ -1,6 +1,6 @@
-# GPU Vulkan Phase 1 Release Note
+# GPU Vulkan Phase 1 Release Note (Historical v1.4.4)
 
-This note documents the current `v1.4.4` release for the GPU Vulkan phase 1 work. It is the maintainer-facing summary of what shipped, what did not ship, and what validation evidence currently backs the release.
+This note documents the historical `v1.4.4` GPU Vulkan phase 1 release. The current branch release target is documented in `docs\release-v1.5.0-ab-loop.md`.
 
 ## What Shipped
 

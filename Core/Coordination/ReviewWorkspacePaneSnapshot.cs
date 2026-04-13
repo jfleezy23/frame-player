@@ -16,7 +16,8 @@ namespace FramePlayer.Core.Coordination
             TimeSpan timelineOffset,
             ReviewPlaybackState playbackState,
             string currentFilePath,
-            ReviewPosition position)
+            ReviewPosition position,
+            LoopPlaybackPaneRangeSnapshot loopRange)
         {
             PaneId = paneId ?? string.Empty;
             SessionId = sessionId ?? string.Empty;
@@ -29,6 +30,7 @@ namespace FramePlayer.Core.Coordination
             PlaybackState = playbackState;
             CurrentFilePath = currentFilePath ?? string.Empty;
             Position = position ?? ReviewPosition.Empty;
+            LoopRange = loopRange;
         }
 
         public string PaneId { get; }
@@ -52,6 +54,8 @@ namespace FramePlayer.Core.Coordination
         public string CurrentFilePath { get; }
 
         public ReviewPosition Position { get; }
+
+        public LoopPlaybackPaneRangeSnapshot LoopRange { get; }
 
         public TimeSpan PresentationTime
         {

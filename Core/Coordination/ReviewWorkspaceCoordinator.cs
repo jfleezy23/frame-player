@@ -17,6 +17,9 @@ namespace FramePlayer.Core.Coordination
 
         private readonly List<WorkspacePaneBinding> _paneBindings;
         private readonly string _primaryPaneId;
+        private readonly Dictionary<string, LoopPlaybackRangeSnapshot> _paneLoopRanges =
+            new Dictionary<string, LoopPlaybackRangeSnapshot>(StringComparer.Ordinal);
+        private LoopPlaybackRangeSnapshot _sharedLoopRange = LoopPlaybackRangeSnapshot.Empty;
         private string _activePaneId;
         private string _focusedPaneId;
 
@@ -91,6 +94,83 @@ namespace FramePlayer.Core.Coordination
         public bool TryGetPaneSnapshot(string paneId, out ReviewWorkspacePaneSnapshot paneSnapshot)
         {
             return GetWorkspaceSnapshot().TryGetPane(paneId, out paneSnapshot);
+        }
+
+        public LoopPlaybackRangeSnapshot SetSharedLoopMarker(
+            LoopPlaybackMarkerEndpoint endpoint,
+            SynchronizedOperationScope operationScope)
+        {
+            var workspace = CurrentWorkspace ?? BuildWorkspace();
+            var targetPanes = GetMarkerTargetPanes(workspace, operationScope);
+            if (targetPanes.Length == 0)
+            {
+                return _sharedLoopRange;
+            }
+
+            var baselineRange = TargetsMatchRange(_sharedLoopRange, targetPanes)
+                ? _sharedLoopRange
+                : LoopPlaybackRangeSnapshot.Empty;
+            _sharedLoopRange = ResolveSharedLoopRange(CaptureSharedLoopMarker(baselineRange, endpoint, targetPanes), targetPanes);
+            RefreshWorkspace();
+            return _sharedLoopRange;
+        }
+
+        public LoopPlaybackPaneRangeSnapshot SetPaneLoopMarker(
+            string paneId,
+            LoopPlaybackMarkerEndpoint endpoint)
+        {
+            var workspace = CurrentWorkspace ?? BuildWorkspace();
+            ReviewPaneState targetPane;
+            if (!workspace.TryGetPane(paneId, out targetPane) ||
+                targetPane == null ||
+                !targetPane.Session.IsMediaOpen)
+            {
+                return null;
+            }
+
+            LoopPlaybackRangeSnapshot existingRange;
+            _paneLoopRanges.TryGetValue(targetPane.PaneId, out existingRange);
+            var nextRange = ResolvePaneLocalLoopRange(
+                CapturePaneLoopMarker(existingRange, endpoint, targetPane),
+                targetPane);
+            if (nextRange != null && nextRange.HasMarkers)
+            {
+                _paneLoopRanges[targetPane.PaneId] = nextRange;
+            }
+            else
+            {
+                _paneLoopRanges.Remove(targetPane.PaneId);
+            }
+
+            RefreshWorkspace();
+
+            ReviewPaneState refreshedPane;
+            return CurrentWorkspace != null &&
+                   CurrentWorkspace.TryGetPane(targetPane.PaneId, out refreshedPane) &&
+                   refreshedPane != null
+                ? refreshedPane.LoopRange
+                : null;
+        }
+
+        public void ClearSharedLoopRange()
+        {
+            if (!_sharedLoopRange.HasMarkers)
+            {
+                return;
+            }
+
+            _sharedLoopRange = LoopPlaybackRangeSnapshot.Empty;
+            RefreshWorkspace();
+        }
+
+        public void ClearPaneLoopRange(string paneId)
+        {
+            if (string.IsNullOrWhiteSpace(paneId) || !_paneLoopRanges.Remove(paneId))
+            {
+                return;
+            }
+
+            RefreshWorkspace();
         }
 
         public bool TrySelectPane(
@@ -205,6 +285,18 @@ namespace FramePlayer.Core.Coordination
                 (binding, cancellationToken) => binding.SessionCoordinator.Engine.PauseAsync());
         }
 
+        public Task PlayPaneAsync(string paneId)
+        {
+            var binding = GetRequiredBinding(paneId);
+            return binding.SessionCoordinator.Engine.PlayAsync();
+        }
+
+        public Task PausePaneAsync(string paneId)
+        {
+            var binding = GetRequiredBinding(paneId);
+            return binding.SessionCoordinator.Engine.PauseAsync();
+        }
+
         public Task SeekToTimeAsync(TimeSpan position, CancellationToken cancellationToken = default(CancellationToken))
         {
             return SeekToTimeAsync(position, SynchronizedOperationScope.FocusedPane, cancellationToken);
@@ -220,6 +312,15 @@ namespace FramePlayer.Core.Coordination
                 operationScope,
                 cancellationToken,
                 (binding, token) => binding.SessionCoordinator.Engine.SeekToTimeAsync(position, token));
+        }
+
+        public Task SeekPaneToTimeAsync(
+            string paneId,
+            TimeSpan position,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            var binding = GetRequiredBinding(paneId);
+            return binding.SessionCoordinator.Engine.SeekToTimeAsync(position, cancellationToken);
         }
 
         public Task<ReviewWorkspaceOperationResult> SeekToTimeWithPaneResultsAsync(
@@ -249,6 +350,15 @@ namespace FramePlayer.Core.Coordination
                 operationScope,
                 cancellationToken,
                 (binding, token) => binding.SessionCoordinator.Engine.SeekToFrameAsync(frameIndex, token));
+        }
+
+        public Task SeekPaneToFrameAsync(
+            string paneId,
+            long frameIndex,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            var binding = GetRequiredBinding(paneId);
+            return binding.SessionCoordinator.Engine.SeekToFrameAsync(frameIndex, cancellationToken);
         }
 
         public Task<FrameStepResult> StepBackwardAsync(CancellationToken cancellationToken = default(CancellationToken))
@@ -303,6 +413,59 @@ namespace FramePlayer.Core.Coordination
                 operationScope,
                 cancellationToken,
                 (binding, token) => binding.SessionCoordinator.Engine.StepForwardAsync(token));
+        }
+
+        public async Task SeekToPaneFramesAsync(
+            IReadOnlyDictionary<string, long> paneFrameIndices,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            if (paneFrameIndices == null)
+            {
+                throw new ArgumentNullException(nameof(paneFrameIndices));
+            }
+
+            if (paneFrameIndices.Count == 0)
+            {
+                return;
+            }
+
+            var focusedBinding = GetFocusedBinding();
+            var paneResults = new List<ReviewWorkspacePaneOperationResult>();
+            for (var index = 0; index < _paneBindings.Count; index++)
+            {
+                var binding = _paneBindings[index];
+                long frameIndex;
+                if (!paneFrameIndices.TryGetValue(binding.PaneId, out frameIndex))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    await binding.SessionCoordinator.Engine
+                        .SeekToFrameAsync(Math.Max(0L, frameIndex), cancellationToken)
+                        .ConfigureAwait(false);
+                    paneResults.Add(CreateSucceededPaneOperationResult(
+                        binding,
+                        binding.SessionCoordinator.CurrentSession ?? ReviewSessionSnapshot.Empty,
+                        null));
+                }
+                catch (Exception exception)
+                {
+                    paneResults.Add(CreateFailedPaneOperationResult(
+                        binding,
+                        binding.SessionCoordinator.CurrentSession ?? ReviewSessionSnapshot.Empty,
+                        exception.Message,
+                        exception,
+                        null));
+                }
+            }
+
+            ThrowIfOperationFailed(new ReviewWorkspaceOperationResult(
+                "seek-pane-frames",
+                SynchronizedOperationScope.AllPanes,
+                focusedBinding.PaneId,
+                paneResults));
         }
 
         public ReviewSessionSnapshot RefreshFromEngine()
@@ -458,6 +621,48 @@ namespace FramePlayer.Core.Coordination
             var activePane = ResolvePane(paneStates, _activePaneId, pane => pane.IsActive) ??
                              ResolvePane(paneStates, _focusedPaneId, pane => pane.IsFocused) ??
                              ResolvePane(paneStates, _primaryPaneId, pane => pane.IsPrimary);
+            _sharedLoopRange = ResolveSharedLoopRange(_sharedLoopRange, paneStates);
+            var resolvedPaneLoopRanges = new Dictionary<string, LoopPlaybackRangeSnapshot>(StringComparer.Ordinal);
+            for (var index = 0; index < paneStates.Length; index++)
+            {
+                var paneState = paneStates[index];
+                if (paneState == null)
+                {
+                    continue;
+                }
+
+                LoopPlaybackRangeSnapshot paneLoopRange;
+                _paneLoopRanges.TryGetValue(paneState.PaneId, out paneLoopRange);
+                var resolvedPaneLoopRange = ResolvePaneLocalLoopRange(paneLoopRange, paneState);
+                if (resolvedPaneLoopRange != null && resolvedPaneLoopRange.HasMarkers)
+                {
+                    resolvedPaneLoopRanges[paneState.PaneId] = resolvedPaneLoopRange;
+                }
+
+                LoopPlaybackPaneRangeSnapshot resolvedPaneRange = null;
+                if (resolvedPaneLoopRange != null)
+                {
+                    resolvedPaneLoopRange.TryGetPaneRange(paneState.PaneId, out resolvedPaneRange);
+                }
+
+                paneStates[index] = new ReviewPaneState(
+                    paneState.PaneId,
+                    paneState.DisplayLabel,
+                    paneState.SessionId,
+                    paneState.Session,
+                    paneState.TimelineOffset,
+                    paneState.IsFocused,
+                    paneState.IsActive,
+                    paneState.IsPrimary,
+                    resolvedPaneRange);
+            }
+
+            _paneLoopRanges.Clear();
+            foreach (var entry in resolvedPaneLoopRanges)
+            {
+                _paneLoopRanges[entry.Key] = entry.Value;
+            }
+
             return new MultiVideoWorkspaceState(
                 activePane != null
                     ? activePane.Session.Position.PresentationTime
@@ -467,6 +672,7 @@ namespace FramePlayer.Core.Coordination
                 _primaryPaneId,
                 _activePaneId,
                 _focusedPaneId,
+                _sharedLoopRange,
                 paneStates);
         }
 
@@ -506,6 +712,7 @@ namespace FramePlayer.Core.Coordination
                 workspaceState.PrimaryPaneId,
                 workspaceState.ActivePaneId,
                 workspaceState.FocusedPaneId,
+                workspaceState.SharedLoopRange,
                 paneSnapshots);
         }
 
@@ -524,7 +731,8 @@ namespace FramePlayer.Core.Coordination
                     TimeSpan.Zero,
                     ReviewPlaybackState.Closed,
                     string.Empty,
-                    ReviewPosition.Empty);
+                    ReviewPosition.Empty,
+                    null);
             }
 
             var session = paneState.Session ?? ReviewSessionSnapshot.Empty;
@@ -540,7 +748,8 @@ namespace FramePlayer.Core.Coordination
                 paneState.TimelineOffset,
                 session.PlaybackState,
                 session.CurrentFilePath,
-                session.Position);
+                session.Position,
+                paneState.LoopRange);
         }
 
         private static bool WorkspaceStatesEqual(MultiVideoWorkspaceState left, MultiVideoWorkspaceState right)
@@ -561,6 +770,7 @@ namespace FramePlayer.Core.Coordination
                    string.Equals(left.PrimaryPaneId, right.PrimaryPaneId, StringComparison.Ordinal) &&
                    string.Equals(left.ActivePaneId, right.ActivePaneId, StringComparison.Ordinal) &&
                    string.Equals(left.FocusedPaneId, right.FocusedPaneId, StringComparison.Ordinal) &&
+                   LoopRangesEqual(left.SharedLoopRange, right.SharedLoopRange) &&
                    PaneCollectionsEqual(left.Panes, right.Panes);
         }
 
@@ -608,7 +818,77 @@ namespace FramePlayer.Core.Coordination
                    left.IsFocused == right.IsFocused &&
                    left.IsActive == right.IsActive &&
                    left.IsPrimary == right.IsPrimary &&
+                   PaneRangesEqual(left.LoopRange, right.LoopRange) &&
                    SessionsEqual(left.Session, right.Session);
+        }
+
+        private static bool LoopRangesEqual(LoopPlaybackRangeSnapshot left, LoopPlaybackRangeSnapshot right)
+        {
+            if (ReferenceEquals(left, right))
+            {
+                return true;
+            }
+
+            if (left == null || right == null)
+            {
+                return false;
+            }
+
+            if (left.TargetKind != right.TargetKind || left.PaneRanges.Count != right.PaneRanges.Count)
+            {
+                return false;
+            }
+
+            for (var index = 0; index < left.PaneRanges.Count; index++)
+            {
+                if (!PaneRangesEqual(left.PaneRanges[index], right.PaneRanges[index]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool PaneRangesEqual(LoopPlaybackPaneRangeSnapshot left, LoopPlaybackPaneRangeSnapshot right)
+        {
+            if (ReferenceEquals(left, right))
+            {
+                return true;
+            }
+
+            if (left == null || right == null)
+            {
+                return false;
+            }
+
+            return string.Equals(left.PaneId, right.PaneId, StringComparison.Ordinal) &&
+                   string.Equals(left.SessionId, right.SessionId, StringComparison.Ordinal) &&
+                   string.Equals(left.DisplayLabel, right.DisplayLabel, StringComparison.Ordinal) &&
+                   string.Equals(left.CurrentFilePath, right.CurrentFilePath, StringComparison.Ordinal) &&
+                   left.Duration == right.Duration &&
+                   AnchorsEqual(left.LoopIn, right.LoopIn) &&
+                   AnchorsEqual(left.LoopOut, right.LoopOut);
+        }
+
+        private static bool AnchorsEqual(LoopPlaybackAnchorSnapshot left, LoopPlaybackAnchorSnapshot right)
+        {
+            if (ReferenceEquals(left, right))
+            {
+                return true;
+            }
+
+            if (left == null || right == null)
+            {
+                return false;
+            }
+
+            return string.Equals(left.PaneId, right.PaneId, StringComparison.Ordinal) &&
+                   string.Equals(left.SessionId, right.SessionId, StringComparison.Ordinal) &&
+                   string.Equals(left.DisplayLabel, right.DisplayLabel, StringComparison.Ordinal) &&
+                   left.PresentationTime == right.PresentationTime &&
+                   left.AbsoluteFrameIndex == right.AbsoluteFrameIndex &&
+                   left.IsFrameIndexAbsolute == right.IsFrameIndexAbsolute;
         }
 
         private static bool SessionsEqual(ReviewSessionSnapshot left, ReviewSessionSnapshot right)
@@ -632,6 +912,256 @@ namespace FramePlayer.Core.Coordination
                    left.MediaInfo.Duration == right.MediaInfo.Duration &&
                    left.MediaInfo.PositionStep == right.MediaInfo.PositionStep &&
                    Math.Abs(left.MediaInfo.FramesPerSecond - right.MediaInfo.FramesPerSecond) < 0.0001d;
+        }
+
+        private static ReviewPaneState[] GetMarkerTargetPanes(
+            MultiVideoWorkspaceState workspace,
+            SynchronizedOperationScope operationScope)
+        {
+            if (workspace == null)
+            {
+                return Array.Empty<ReviewPaneState>();
+            }
+
+            if (operationScope == SynchronizedOperationScope.AllPanes)
+            {
+                return workspace.Panes
+                    .Where(pane => pane != null && pane.Session.IsMediaOpen)
+                    .ToArray();
+            }
+
+            var focusedPane = workspace.FocusedPane;
+            return focusedPane != null && focusedPane.Session.IsMediaOpen
+                ? new[] { focusedPane }
+                : Array.Empty<ReviewPaneState>();
+        }
+
+        private static LoopPlaybackRangeSnapshot CapturePaneLoopMarker(
+            LoopPlaybackRangeSnapshot existingRange,
+            LoopPlaybackMarkerEndpoint endpoint,
+            ReviewPaneState targetPane)
+        {
+            if (targetPane == null)
+            {
+                return LoopPlaybackRangeSnapshot.Empty;
+            }
+
+            var session = targetPane.Session ?? ReviewSessionSnapshot.Empty;
+            if (!session.IsMediaOpen)
+            {
+                return LoopPlaybackRangeSnapshot.Empty;
+            }
+
+            LoopPlaybackPaneRangeSnapshot existingPaneRange = null;
+            if (existingRange != null)
+            {
+                existingRange.TryGetPaneRange(targetPane.PaneId, out existingPaneRange);
+            }
+
+            var nextAnchor = CreateAnchorSnapshot(targetPane, session);
+            return new LoopPlaybackRangeSnapshot(
+                LoopPlaybackTargetKind.PaneLocal,
+                new[]
+                {
+                    new LoopPlaybackPaneRangeSnapshot(
+                        targetPane.PaneId,
+                        session.SessionId,
+                        targetPane.DisplayLabel,
+                        session.CurrentFilePath,
+                        session.MediaInfo.Duration,
+                        endpoint == LoopPlaybackMarkerEndpoint.In ? nextAnchor : (existingPaneRange != null ? existingPaneRange.LoopIn : null),
+                        endpoint == LoopPlaybackMarkerEndpoint.Out ? nextAnchor : (existingPaneRange != null ? existingPaneRange.LoopOut : null))
+                });
+        }
+
+        private static bool TargetsMatchRange(
+            LoopPlaybackRangeSnapshot existingRange,
+            ReviewPaneState[] targetPanes)
+        {
+            if (existingRange == null || existingRange.PaneRanges.Count != targetPanes.Length)
+            {
+                return false;
+            }
+
+            for (var index = 0; index < targetPanes.Length; index++)
+            {
+                var targetPane = targetPanes[index];
+                var existingPaneRange = existingRange.PaneRanges[index];
+                if (targetPane == null ||
+                    existingPaneRange == null ||
+                    !string.Equals(targetPane.PaneId, existingPaneRange.PaneId, StringComparison.Ordinal))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static LoopPlaybackRangeSnapshot CaptureSharedLoopMarker(
+            LoopPlaybackRangeSnapshot existingRange,
+            LoopPlaybackMarkerEndpoint endpoint,
+            ReviewPaneState[] targetPanes)
+        {
+            var paneRanges = new LoopPlaybackPaneRangeSnapshot[targetPanes.Length];
+            for (var index = 0; index < targetPanes.Length; index++)
+            {
+                var pane = targetPanes[index];
+                var session = pane != null ? pane.Session ?? ReviewSessionSnapshot.Empty : ReviewSessionSnapshot.Empty;
+                LoopPlaybackPaneRangeSnapshot existingPaneRange = null;
+                if (existingRange != null)
+                {
+                    existingRange.TryGetPaneRange(pane != null ? pane.PaneId : string.Empty, out existingPaneRange);
+                }
+
+                var nextAnchor = pane != null && session.IsMediaOpen
+                    ? CreateAnchorSnapshot(pane, session)
+                    : null;
+                paneRanges[index] = new LoopPlaybackPaneRangeSnapshot(
+                    pane != null ? pane.PaneId : string.Empty,
+                    session.SessionId,
+                    pane != null ? pane.DisplayLabel : string.Empty,
+                    session.CurrentFilePath,
+                    session.MediaInfo.Duration,
+                    endpoint == LoopPlaybackMarkerEndpoint.In ? nextAnchor : (existingPaneRange != null ? existingPaneRange.LoopIn : null),
+                    endpoint == LoopPlaybackMarkerEndpoint.Out ? nextAnchor : (existingPaneRange != null ? existingPaneRange.LoopOut : null));
+            }
+
+            return new LoopPlaybackRangeSnapshot(LoopPlaybackTargetKind.SharedWorkspace, paneRanges);
+        }
+
+        private static LoopPlaybackRangeSnapshot ResolvePaneLocalLoopRange(
+            LoopPlaybackRangeSnapshot range,
+            ReviewPaneState currentPane)
+        {
+            if (range == null || !range.HasMarkers || currentPane == null || !currentPane.Session.IsMediaOpen)
+            {
+                return LoopPlaybackRangeSnapshot.Empty;
+            }
+
+            LoopPlaybackPaneRangeSnapshot paneRange;
+            if (!range.TryGetPaneRange(currentPane.PaneId, out paneRange) || paneRange == null)
+            {
+                return LoopPlaybackRangeSnapshot.Empty;
+            }
+
+            if (!string.Equals(currentPane.Session.CurrentFilePath, paneRange.CurrentFilePath, StringComparison.Ordinal))
+            {
+                return LoopPlaybackRangeSnapshot.Empty;
+            }
+
+            return new LoopPlaybackRangeSnapshot(
+                LoopPlaybackTargetKind.PaneLocal,
+                new[]
+                {
+                    new LoopPlaybackPaneRangeSnapshot(
+                        currentPane.PaneId,
+                        currentPane.Session.SessionId,
+                        currentPane.DisplayLabel,
+                        currentPane.Session.CurrentFilePath,
+                        currentPane.Session.MediaInfo.Duration,
+                        ResolveAnchorSnapshot(paneRange.LoopIn, currentPane),
+                        ResolveAnchorSnapshot(paneRange.LoopOut, currentPane))
+                });
+        }
+
+        private static LoopPlaybackRangeSnapshot ResolveSharedLoopRange(
+            LoopPlaybackRangeSnapshot range,
+            ReviewPaneState[] currentPanes)
+        {
+            if (range == null || !range.HasMarkers)
+            {
+                return LoopPlaybackRangeSnapshot.Empty;
+            }
+
+            var resolvedPaneRanges = new LoopPlaybackPaneRangeSnapshot[range.PaneRanges.Count];
+            for (var index = 0; index < range.PaneRanges.Count; index++)
+            {
+                var paneRange = range.PaneRanges[index];
+                if (paneRange == null)
+                {
+                    return LoopPlaybackRangeSnapshot.Empty;
+                }
+
+                var currentPane = currentPanes != null
+                    ? currentPanes.FirstOrDefault(pane => pane != null && string.Equals(pane.PaneId, paneRange.PaneId, StringComparison.Ordinal))
+                    : null;
+                if (currentPane == null ||
+                    !currentPane.Session.IsMediaOpen ||
+                    !string.Equals(currentPane.Session.CurrentFilePath, paneRange.CurrentFilePath, StringComparison.Ordinal))
+                {
+                    return LoopPlaybackRangeSnapshot.Empty;
+                }
+
+                resolvedPaneRanges[index] = new LoopPlaybackPaneRangeSnapshot(
+                    currentPane.PaneId,
+                    currentPane.Session.SessionId,
+                    currentPane.DisplayLabel,
+                    currentPane.Session.CurrentFilePath,
+                    currentPane.Session.MediaInfo.Duration,
+                    ResolveAnchorSnapshot(paneRange.LoopIn, currentPane),
+                    ResolveAnchorSnapshot(paneRange.LoopOut, currentPane));
+            }
+
+            return new LoopPlaybackRangeSnapshot(range.TargetKind, resolvedPaneRanges);
+        }
+
+        private static LoopPlaybackAnchorSnapshot ResolveAnchorSnapshot(
+            LoopPlaybackAnchorSnapshot anchor,
+            ReviewPaneState pane)
+        {
+            if (anchor == null || pane == null)
+            {
+                return anchor;
+            }
+
+            var session = pane.Session ?? ReviewSessionSnapshot.Empty;
+            if (!session.IsMediaOpen)
+            {
+                return anchor;
+            }
+
+            if (!anchor.HasAbsoluteFrameIdentity &&
+                session.HasAbsoluteFrameIdentity &&
+                ArePresentationTimesEquivalent(anchor.PresentationTime, session.Position.PresentationTime, session.MediaInfo.PositionStep))
+            {
+                return CreateAnchorSnapshot(pane, session);
+            }
+
+            return new LoopPlaybackAnchorSnapshot(
+                pane.PaneId,
+                session.SessionId,
+                pane.DisplayLabel,
+                anchor.PresentationTime,
+                anchor.AbsoluteFrameIndex,
+                anchor.IsFrameIndexAbsolute);
+        }
+
+        private static LoopPlaybackAnchorSnapshot CreateAnchorSnapshot(
+            ReviewPaneState pane,
+            ReviewSessionSnapshot session)
+        {
+            return new LoopPlaybackAnchorSnapshot(
+                pane.PaneId,
+                session.SessionId,
+                pane.DisplayLabel,
+                session.Position.PresentationTime,
+                session.HasAbsoluteFrameIdentity
+                    ? (long?)Math.Max(0L, session.Position.FrameIndex.GetValueOrDefault())
+                    : null,
+                session.HasAbsoluteFrameIdentity);
+        }
+
+        private static bool ArePresentationTimesEquivalent(
+            TimeSpan expected,
+            TimeSpan actual,
+            TimeSpan positionStep)
+        {
+            var toleranceTicks = positionStep > TimeSpan.Zero
+                ? Math.Max(1L, positionStep.Ticks / 2L)
+                : TimeSpan.FromMilliseconds(2).Ticks;
+            var difference = expected > actual ? expected - actual : actual - expected;
+            return difference.Ticks <= toleranceTicks;
         }
 
         private static ReviewPaneState ResolvePane(
@@ -973,6 +1503,17 @@ namespace FramePlayer.Core.Coordination
             }
 
             return null;
+        }
+
+        private WorkspacePaneBinding GetRequiredBinding(string paneId)
+        {
+            var binding = ResolveBinding(paneId);
+            if (binding == null)
+            {
+                throw new InvalidOperationException("The requested workspace pane is not available.");
+            }
+
+            return binding;
         }
 
         private static string NormalizePaneId(string paneId, ReviewSessionCoordinator sessionCoordinator)

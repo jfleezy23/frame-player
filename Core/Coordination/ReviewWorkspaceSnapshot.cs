@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using FramePlayer.Core.Models;
 
 namespace FramePlayer.Core.Coordination
 {
@@ -13,6 +14,7 @@ namespace FramePlayer.Core.Coordination
                 string.Empty,
                 string.Empty,
                 string.Empty,
+                LoopPlaybackRangeSnapshot.Empty,
                 Array.Empty<ReviewWorkspacePaneSnapshot>());
 
         public ReviewWorkspaceSnapshot(
@@ -22,6 +24,7 @@ namespace FramePlayer.Core.Coordination
             string primaryPaneId,
             string activePaneId,
             string focusedPaneId,
+            LoopPlaybackRangeSnapshot sharedLoopRange,
             IReadOnlyList<ReviewWorkspacePaneSnapshot> panes)
         {
             MasterTimelinePosition = masterTimelinePosition;
@@ -30,6 +33,7 @@ namespace FramePlayer.Core.Coordination
             PrimaryPaneId = primaryPaneId ?? string.Empty;
             ActivePaneId = activePaneId ?? string.Empty;
             FocusedPaneId = focusedPaneId ?? string.Empty;
+            SharedLoopRange = sharedLoopRange ?? LoopPlaybackRangeSnapshot.Empty;
             Panes = panes ?? Array.Empty<ReviewWorkspacePaneSnapshot>();
         }
 
@@ -44,6 +48,8 @@ namespace FramePlayer.Core.Coordination
         public string ActivePaneId { get; }
 
         public string FocusedPaneId { get; }
+
+        public LoopPlaybackRangeSnapshot SharedLoopRange { get; }
 
         public IReadOnlyList<ReviewWorkspacePaneSnapshot> Panes { get; }
 

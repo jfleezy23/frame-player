@@ -1,6 +1,7 @@
 <Window x:Class="FramePlayer.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:FramePlayer.Controls"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="Frame Player"
         Width="1280"
@@ -538,6 +539,17 @@
                       IsCheckable="True"
                       Checked="LoopPlaybackMenuItem_Checked"
                       Unchecked="LoopPlaybackMenuItem_Unchecked" />
+            <MenuItem x:Name="SetLoopInMenuItem"
+                      Header="Set Loop _In"
+                      InputGestureText="["
+                      Click="SetLoopInMenuItem_Click" />
+            <MenuItem x:Name="SetLoopOutMenuItem"
+                      Header="Set Loop _Out"
+                      InputGestureText="]"
+                      Click="SetLoopOutMenuItem_Click" />
+            <MenuItem x:Name="ClearLoopPointsMenuItem"
+                      Header="_Clear Loop Points"
+                      Click="ClearLoopPointsMenuItem_Click" />
             <Separator Style="{StaticResource TitleBarMenuSeparatorStyle}" />
             <MenuItem x:Name="UseGpuAccelerationMenuItem"
                       Header="Use _GPU Acceleration"
@@ -598,6 +610,7 @@
             CornerRadius="10">
       <Grid>
         <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
@@ -805,6 +818,7 @@
                 <Grid.RowDefinitions>
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
                 <Grid>
@@ -821,14 +835,18 @@
                              TextAlignment="Left"
                              Text="00:00:00.000" />
 
-                  <Slider x:Name="PrimaryPanePositionSlider"
-                          Grid.Column="1"
-                          Margin="8,0"
-                          Minimum="0"
-                          Maximum="1"
-                          Tag="pane-primary"
-                          IsMoveToPointEnabled="False"
-                          ValueChanged="PanePositionSlider_ValueChanged" />
+                  <Grid Grid.Column="1"
+                        Margin="8,0">
+                    <Slider x:Name="PrimaryPanePositionSlider"
+                            Minimum="0"
+                            Maximum="1"
+                            Tag="pane-primary"
+                            IsMoveToPointEnabled="False"
+                            ValueChanged="PanePositionSlider_ValueChanged" />
+                    <controls:LoopRangeOverlay x:Name="PrimaryPaneLoopRangeOverlay"
+                                               Maximum="{Binding ElementName=PrimaryPanePositionSlider, Path=Maximum}"
+                                               IsHitTestVisible="False" />
+                  </Grid>
 
                   <TextBlock x:Name="PrimaryPaneDurationTextBlock"
                              Grid.Column="2"
@@ -839,7 +857,16 @@
                              Text="00:00:00.000" />
                 </Grid>
 
-                <Grid Grid.Row="1" Margin="0,8,0,0">
+                <TextBlock x:Name="PrimaryPaneLoopStatusTextBlock"
+                           Grid.Row="1"
+                           Margin="0,6,0,0"
+                           HorizontalAlignment="Right"
+                           Foreground="{StaticResource MutedBrush}"
+                           FontSize="11"
+                           Text="Loop: off"
+                           TextTrimming="CharacterEllipsis" />
+
+                <Grid Grid.Row="2" Margin="0,8,0,0">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
@@ -1019,6 +1046,7 @@
                 <Grid.RowDefinitions>
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
                 <Grid>
@@ -1035,14 +1063,18 @@
                              TextAlignment="Left"
                              Text="00:00:00.000" />
 
-                  <Slider x:Name="ComparePanePositionSlider"
-                          Grid.Column="1"
-                          Margin="8,0"
-                          Minimum="0"
-                          Maximum="1"
-                          Tag="pane-compare-a"
-                          IsMoveToPointEnabled="False"
-                          ValueChanged="PanePositionSlider_ValueChanged" />
+                  <Grid Grid.Column="1"
+                        Margin="8,0">
+                    <Slider x:Name="ComparePanePositionSlider"
+                            Minimum="0"
+                            Maximum="1"
+                            Tag="pane-compare-a"
+                            IsMoveToPointEnabled="False"
+                            ValueChanged="PanePositionSlider_ValueChanged" />
+                    <controls:LoopRangeOverlay x:Name="ComparePaneLoopRangeOverlay"
+                                               Maximum="{Binding ElementName=ComparePanePositionSlider, Path=Maximum}"
+                                               IsHitTestVisible="False" />
+                  </Grid>
 
                   <TextBlock x:Name="ComparePaneDurationTextBlock"
                              Grid.Column="2"
@@ -1053,7 +1085,16 @@
                              Text="00:00:00.000" />
                 </Grid>
 
-                <Grid Grid.Row="1" Margin="0,8,0,0">
+                <TextBlock x:Name="ComparePaneLoopStatusTextBlock"
+                           Grid.Row="1"
+                           Margin="0,6,0,0"
+                           HorizontalAlignment="Right"
+                           Foreground="{StaticResource MutedBrush}"
+                           FontSize="11"
+                           Text="Loop: off"
+                           TextTrimming="CharacterEllipsis" />
+
+                <Grid Grid.Row="2" Margin="0,8,0,0">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
@@ -1180,6 +1221,7 @@
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <Grid>
@@ -1196,13 +1238,17 @@
                      TextAlignment="Left"
                      Text="00:00:00.000" />
 
-          <Slider x:Name="PositionSlider"
-                  Grid.Column="1"
-                  Margin="8,0"
-                  Minimum="0"
-                  Maximum="1"
-                  IsMoveToPointEnabled="False"
-                  ValueChanged="PositionSlider_ValueChanged" />
+          <Grid Grid.Column="1"
+                Margin="8,0">
+            <Slider x:Name="PositionSlider"
+                    Minimum="0"
+                    Maximum="1"
+                    IsMoveToPointEnabled="False"
+                    ValueChanged="PositionSlider_ValueChanged" />
+            <controls:LoopRangeOverlay x:Name="PositionLoopRangeOverlay"
+                                       Maximum="{Binding ElementName=PositionSlider, Path=Maximum}"
+                                       IsHitTestVisible="False" />
+          </Grid>
 
           <TextBlock x:Name="DurationTextBlock"
                      Grid.Column="2"
@@ -1213,7 +1259,16 @@
                      Text="00:00:00.000" />
         </Grid>
 
-        <Grid Grid.Row="1" Margin="0,8,0,0">
+        <TextBlock x:Name="LoopStatusTextBlock"
+                   Grid.Row="1"
+                   Margin="0,6,0,0"
+                   HorizontalAlignment="Right"
+                   Foreground="{StaticResource MutedBrush}"
+                   FontSize="11"
+                   Text="Loop: off"
+                   TextTrimming="CharacterEllipsis" />
+
+        <Grid Grid.Row="2" Margin="0,8,0,0">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />

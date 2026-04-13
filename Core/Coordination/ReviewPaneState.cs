@@ -13,7 +13,8 @@ namespace FramePlayer.Core.Coordination
             TimeSpan timelineOffset,
             bool isFocused,
             bool isActive,
-            bool isPrimary)
+            bool isPrimary,
+            LoopPlaybackPaneRangeSnapshot loopRange = null)
         {
             PaneId = string.IsNullOrWhiteSpace(paneId) ? "primary" : paneId;
             DisplayLabel = displayLabel ?? string.Empty;
@@ -25,6 +26,7 @@ namespace FramePlayer.Core.Coordination
             IsFocused = isFocused;
             IsActive = isActive;
             IsPrimary = isPrimary;
+            LoopRange = loopRange;
         }
 
         public string PaneId { get; }
@@ -42,5 +44,7 @@ namespace FramePlayer.Core.Coordination
         public bool IsActive { get; }
 
         public bool IsPrimary { get; }
+
+        public LoopPlaybackPaneRangeSnapshot LoopRange { get; }
     }
 }
