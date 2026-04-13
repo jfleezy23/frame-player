@@ -35,14 +35,14 @@ jobs:
         run: .\scripts\Build-TestDrop.ps1
 
       - name: Upload release zip
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: FramePlayer-TestDrop-${{ github.run_number }}
           path: artifacts/FramePlayer-CustomFFmpeg-*.zip
           if-no-files-found: error
 
       - name: Upload packaged folder
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: FramePlayer-TestDrop-Folder-${{ github.run_number }}
           path: bin/TestDrop/**
