@@ -1,6 +1,6 @@
 # Frame Player Release Candidate Test Drop
 
-Release target: `1.5.0`
+Release: `1.5.0`
 
 ## What changed recently
 
@@ -41,7 +41,7 @@ Release target: `1.5.0`
 - The pinned FFmpeg runtime is `n8.1-frameplayer-source`, recorded in `Runtime\runtime-manifest.json`.
 - The runtime was built from the official FFmpeg source tag `n8.1` and is restored locally from the self-built candidate/archive produced by `scripts\ffmpeg\Build-FFmpeg-8.1.ps1`.
 - The packaged runtime also requires `libwinpthread-1.dll`; it must ship beside `FramePlayer.exe` with the FFmpeg DLL set.
-- Clean-runner bootstrap still restores from the verified `v1.4.4` runtime release asset on this branch. Move the manifest to `v1.5.0` only when the new release asset has been published and verified.
+- Clean-runner bootstrap restores from the verified `v1.5.0` runtime release asset recorded in `Runtime\runtime-manifest.json`.
 
 ## Build and shortcut
 

@@ -1,6 +1,6 @@
 # Frame Player v1.5.0 Release Note
 
-This note documents the current branch release target `v1.5.0`. It is the maintainer-facing summary of what is new on top of `v1.4.4`, what remains intentionally deferred, and what validation evidence currently backs the branch.
+This note documents the current `v1.5.0` release. It is the maintainer-facing summary of what is new on top of `v1.4.4`, what remains intentionally deferred, and what validation evidence backs this release.
 
 ## What Is New In v1.5.0
 
@@ -31,14 +31,13 @@ This note documents the current branch release target `v1.5.0`. It is the mainta
 
 ## Runtime And CI Truth
 
-- Product version target on this branch: `v1.5.0`
-- Current published clean-runner bootstrap asset: `v1.4.4`
-- `Runtime\runtime-manifest.json` remains pinned to the verified `v1.4.4` runtime asset until the `v1.5.0` release assets are actually published and hash-verified.
-- Do not retarget the manifest to `v1.5.0` before the runtime archive is live on the release.
+- Product version: `v1.5.0`
+- Current published clean-runner bootstrap asset: `v1.5.0`
+- `Runtime\runtime-manifest.json` is pinned to the verified `v1.5.0` runtime asset and should stay aligned with the published archive SHA256 and DLL hashes.
 
 ## Validation Evidence
 
-Last-known green validation runs for this branch:
+Green validation runs captured for this release:
 
 - Loop smoke, default backend:
   - files tested: `2`
@@ -88,7 +87,6 @@ Remove-Item Env:FRAMEPLAYER_GPU_BACKEND
 - Treat `v1.5.0` as a minor feature release on top of `v1.4.4`.
 - Keep `Properties\AssemblyInfo.cs` as the canonical version source.
 - Keep the new loop smoke checks in the broader regression suite; they are stable enough to stay wired into normal validation.
-- During actual release publication:
-  - publish the new `FramePlayer-CustomFFmpeg-1.5.0.zip`
-  - publish `FramePlayer-ffmpeg-runtime-x64.zip` on the `v1.5.0` release
-  - only then retarget `Runtime\runtime-manifest.json` and CI/bootstrap references to the `v1.5.0` asset in the same change or release cut
+- Release assets for this cut are:
+  - `FramePlayer-CustomFFmpeg-1.5.0.zip`
+  - `FramePlayer-ffmpeg-runtime-x64.zip`
