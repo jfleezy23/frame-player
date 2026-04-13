@@ -1,0 +1,71 @@
+name: Bug report
+description: Report a defect with reproduction details and evidence.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is wrong?
+      placeholder: Describe the observed problem clearly.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      description: Give exact steps, files, and settings when possible.
+      placeholder: |
+        1. Open ...
+        2. Enable ...
+        3. Press ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: App version or release tag.
+      placeholder: v1.5.0
+
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Backend mode
+      options:
+        - Auto / default
+        - Forced CPU
+        - Vulkan / GPU active
+        - Unknown
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Add logs, screenshots, regression summaries, or media details.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched for existing issues first.
+        - label: I removed or redacted sensitive data from logs and screenshots.
