@@ -4212,7 +4212,7 @@ namespace FramePlayer
             var paneSnapshot = evaluation.WorkspaceSnapshot != null
                 ? evaluation.WorkspaceSnapshot.FocusedPane ?? evaluation.WorkspaceSnapshot.PrimaryPane
                 : null;
-            if (!PaneHasLoadedMedia(paneSnapshot))
+            if (paneSnapshot == null || !PaneHasLoadedMedia(paneSnapshot))
             {
                 failureMessage = "Load a video and set a shared A/B range before exporting a clip.";
                 return false;
