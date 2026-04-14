@@ -1,6 +1,6 @@
 # Platform Core And Cross-Platform Plan
 
-This is a historical planning checkpoint. The current WPF app remains the working reference implementation for the `v1.5.0` release, but current shipped behavior is documented in `docs\release-v1.5.0-ab-loop.md`. This note exists to preserve the earlier extraction plan, not to define the active release surface.
+This is a historical planning checkpoint. The current WPF app remains the working reference implementation for the `v1.6.0` release, but current shipped behavior is documented in `docs\release-v1.6.0-loop-export.md`. This note exists to preserve the earlier extraction plan, not to define the active release surface.
 
 ## What Already Looks Core-Oriented
 
