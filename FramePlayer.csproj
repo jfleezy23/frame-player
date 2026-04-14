@@ -100,6 +100,9 @@
     <Compile Include="Core\Coordination\TimelineSynchronizationMode.cs" />
     <Compile Include="Core\Coordination\WorkspacePaneSelectionMode.cs" />
     <Compile Include="Core\Models\DecodedFrameBuffer.cs" />
+    <Compile Include="Core\Models\ClipExportPlan.cs" />
+    <Compile Include="Core\Models\ClipExportRequest.cs" />
+    <Compile Include="Core\Models\ClipExportResult.cs" />
     <Compile Include="Core\Models\FrameDescriptor.cs" />
     <Compile Include="Core\Models\FrameStepResult.cs" />
     <Compile Include="Core\Models\LoopPlaybackRangeSnapshot.cs" />
@@ -131,6 +134,7 @@
     <Compile Include="Services\AppPreferences.cs" />
     <Compile Include="Services\AppPreferencesService.cs" />
     <Compile Include="Services\BuildVariantInfo.cs" />
+    <Compile Include="Services\ExportToolsManifestService.cs" />
     <Compile Include="Services\DecodedFrameBudgetCoordinator.cs" />
     <Compile Include="Services\DiagnosticLogService.cs" />
     <Compile Include="Services\FrameSurfaceGeometry.cs" />
@@ -161,11 +165,14 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Services\RuntimeManifestService.cs" />
+    <Compile Include="Services\ClipExportService.cs" />
     <None Include="Assets\FramePlayer.ico" />
     <None Include="Runtime\README.md" />
+    <None Include="scripts\ffmpeg\Build-FFmpeg-Tools-8.1.ps1" />
     <None Include="scripts\Build-FramePlayer.ps1" />
     <None Include="scripts\Build-Comparison-Variants.ps1" />
     <None Include="scripts\Create-Comparison-Shortcuts.ps1" />
+    <None Include="scripts\Ensure-DevExportTools.ps1" />
     <None Include="scripts\Ensure-DevRuntime.ps1" />
     <None Include="scripts\Run-ReviewEngine-ManualTests.ps1" />
     <None Include="scripts\Run-RegressionSuite.ps1" />
@@ -179,7 +186,12 @@
       <Link>%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="Runtime\ffmpeg-tools\*.*">
+      <Link>ffmpeg-tools\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <EmbeddedResource Include="Runtime\runtime-manifest.json" />
+    <EmbeddedResource Include="Runtime\export-tools-manifest.json" />
   </ItemGroup>
   <Target Name="EnsureBundledRuntime" BeforeTargets="PrepareForBuild"
           Condition="'$(OS)' == 'Windows_NT' and '$(SkipRuntimeBootstrap)' != 'true' and !Exists('Runtime\\ffmpeg\\avcodec-62.dll')">

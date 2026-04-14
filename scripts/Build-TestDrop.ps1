@@ -9,7 +9,9 @@ param(
 
     [string]$IntermediateDirectory = "",
 
-    [string]$ArtifactPath = ""
+    [string]$ArtifactPath = "",
+
+    [switch]$RequireExportTools
 )
 
 $ErrorActionPreference = "Stop"
@@ -141,12 +143,34 @@ $resolvedOutputDirectory = Assert-PathWithin -Path $resolvedOutputDirectory -Roo
 $resolvedIntermediateDirectory = Assert-PathWithin -Path $resolvedIntermediateDirectory -Root (Join-Path $repoRoot "obj")
 
 $ensureRuntimeScript = Join-Path $PSScriptRoot "Ensure-DevRuntime.ps1"
+$ensureExportToolsScript = Join-Path $PSScriptRoot "Ensure-DevExportTools.ps1"
 $msbuildPath = Resolve-MSBuildPath
 $manifestPath = Join-Path $repoRoot "Runtime\runtime-manifest.json"
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 $expectedRuntimeFiles = Get-ManifestFileHashes -Manifest $manifest
+$exportToolsManifestPath = Join-Path $repoRoot "Runtime\export-tools-manifest.json"
+$exportToolsManifest = if (Test-Path -LiteralPath $exportToolsManifestPath) {
+    Get-Content -LiteralPath $exportToolsManifestPath -Raw | ConvertFrom-Json
+}
+else {
+    $null
+}
+$expectedExportToolsFiles = if ($null -ne $exportToolsManifest) {
+    Get-ManifestFileHashes -Manifest $exportToolsManifest
+}
+else {
+    @{}
+}
 
 & $ensureRuntimeScript
+if ($expectedExportToolsFiles.Count -gt 0 -and (Test-Path -LiteralPath $ensureExportToolsScript)) {
+    if ($RequireExportTools) {
+        & $ensureExportToolsScript -Required
+    }
+    else {
+        & $ensureExportToolsScript
+    }
+}
 
 if (Test-Path -LiteralPath $resolvedOutputDirectory) {
     Remove-Item -LiteralPath $resolvedOutputDirectory -Recurse -Force
@@ -195,6 +219,11 @@ if ($staleRuntimeFiles.Count -gt 0) {
 
 Test-OutputRuntimeIntegrity -DirectoryPath $resolvedOutputDirectory -ExpectedHashes $expectedRuntimeFiles
 
+if ($expectedExportToolsFiles.Count -gt 0 -and (Test-Path -LiteralPath (Join-Path $resolvedOutputDirectory "ffmpeg-tools"))) {
+    $exportToolsOutputDirectory = Join-Path $resolvedOutputDirectory "ffmpeg-tools"
+    Test-OutputRuntimeIntegrity -DirectoryPath $exportToolsOutputDirectory -ExpectedHashes $expectedExportToolsFiles
+}
+
 $testingNotesPath = Join-Path $repoRoot "TESTING_NOTES.md"
 if (Test-Path -LiteralPath $testingNotesPath) {
     Copy-Item -LiteralPath $testingNotesPath -Destination (Join-Path $resolvedOutputDirectory "TESTING_NOTES.md") -Force
@@ -225,5 +254,6 @@ Compress-Archive -Path (Join-Path $resolvedOutputDirectory "*") -DestinationPath
     ExecutablePath = $exePath
     ArtifactPath = $resolvedArtifactPath
     RuntimeFiles = @($expectedRuntimeFiles.Keys | Sort-Object)
+    ExportToolsFiles = @($expectedExportToolsFiles.Keys | Sort-Object)
     ProductVersion = $artifactVersion
 }

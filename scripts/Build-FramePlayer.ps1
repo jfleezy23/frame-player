@@ -28,7 +28,11 @@ function Resolve-MSBuildPath {
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $ensureRuntimeScript = Join-Path $PSScriptRoot "Ensure-DevRuntime.ps1"
+$ensureExportToolsScript = Join-Path $PSScriptRoot "Ensure-DevExportTools.ps1"
 $msbuildPath = Resolve-MSBuildPath
 
 & $ensureRuntimeScript
+if (Test-Path -LiteralPath $ensureExportToolsScript) {
+    & $ensureExportToolsScript
+}
 & $msbuildPath (Join-Path $repoRoot "FramePlayer.csproj") /t:Restore,Build /p:Configuration=$Configuration /p:Platform=$Platform

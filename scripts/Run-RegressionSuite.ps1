@@ -675,7 +675,7 @@ New-Item -ItemType Directory -Force -Path $regressionArtifactDirectory | Out-Nul
 $regressionArtifactPath = Join-Path $regressionArtifactDirectory ("FramePlayer-RegressionBuild-{0}.zip" -f ([Guid]::NewGuid().ToString("N")))
 
 $buildScript = Join-Path $PSScriptRoot "Build-TestDrop.ps1"
-$buildResult = & $buildScript -Configuration $Configuration -ArtifactPath $regressionArtifactPath
+$buildResult = & $buildScript -Configuration $Configuration -ArtifactPath $regressionArtifactPath -RequireExportTools
 
 $assemblyPath = $buildResult.ExecutablePath
 $manifestPath = Join-Path $projectRoot "Runtime\runtime-manifest.json"
