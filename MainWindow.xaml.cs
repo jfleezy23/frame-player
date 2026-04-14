@@ -1417,7 +1417,11 @@ namespace FramePlayer
 
         private async void PaneSaveLoopAsClipMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            await ExportLoopClipAsync(null, GetPaneIdFromSender(sender));
+            var paneId = GetPaneIdFromSender(sender);
+
+            // Let the popup close before showing the save dialog from a pane context menu.
+            await Dispatcher.Yield(DispatcherPriority.Background);
+            await ExportLoopClipAsync(null, paneId);
         }
 
         private void ToggleFullScreenButton_Click(object sender, RoutedEventArgs e)
