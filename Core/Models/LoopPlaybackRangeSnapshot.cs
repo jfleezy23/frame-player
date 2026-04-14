@@ -23,7 +23,9 @@ namespace FramePlayer.Core.Models
             string displayLabel,
             TimeSpan presentationTime,
             long? absoluteFrameIndex,
-            bool isFrameIndexAbsolute)
+            bool isFrameIndexAbsolute,
+            long? presentationTimestamp,
+            long? decodeTimestamp)
         {
             PaneId = paneId ?? string.Empty;
             SessionId = sessionId ?? string.Empty;
@@ -33,6 +35,8 @@ namespace FramePlayer.Core.Models
                 ? Math.Max(0L, absoluteFrameIndex.Value)
                 : (long?)null;
             IsFrameIndexAbsolute = isFrameIndexAbsolute && AbsoluteFrameIndex.HasValue;
+            PresentationTimestamp = presentationTimestamp;
+            DecodeTimestamp = decodeTimestamp;
         }
 
         public string PaneId { get; }
@@ -46,6 +50,10 @@ namespace FramePlayer.Core.Models
         public long? AbsoluteFrameIndex { get; }
 
         public bool IsFrameIndexAbsolute { get; }
+
+        public long? PresentationTimestamp { get; }
+
+        public long? DecodeTimestamp { get; }
 
         public bool HasAbsoluteFrameIdentity
         {

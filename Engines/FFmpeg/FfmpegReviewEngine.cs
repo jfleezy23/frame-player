@@ -257,6 +257,27 @@ namespace FramePlayer.Engines.FFmpeg
             return false;
         }
 
+        internal bool TryResolveIndexedFrameIdentity(
+            long? presentationTimestamp,
+            long? decodeTimestamp,
+            out long absoluteFrameIndex,
+            out TimeSpan presentationTime)
+        {
+            FfmpegGlobalFrameIndexEntry entry;
+            if (_globalFrameIndex != null &&
+                _globalFrameIndex.TryResolve(presentationTimestamp, decodeTimestamp, out entry) &&
+                entry != null)
+            {
+                absoluteFrameIndex = entry.AbsoluteFrameIndex;
+                presentationTime = entry.PresentationTime;
+                return true;
+            }
+
+            absoluteFrameIndex = 0L;
+            presentationTime = TimeSpan.Zero;
+            return false;
+        }
+
         public double LastOpenTotalMilliseconds { get; private set; }
 
         public double LastOpenContainerProbeMilliseconds { get; private set; }
