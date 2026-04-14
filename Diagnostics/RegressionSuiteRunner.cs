@@ -2450,8 +2450,9 @@ namespace FramePlayer.Diagnostics
                                         "ui-loop-export-pane-compare",
                                         "Compare pane clip export reported success but did not produce the expected output file."));
 
+                                var paneLoopStartDeltaSeconds = Math.Abs(primaryPaneLoopUi.InPosition - comparePaneLoopUi.InPosition);
                                 var paneExportIndependent = comparePaneExport.Plan != null &&
-                                                            primaryPaneLoopUi.InPosition != comparePaneLoopUi.InPosition &&
+                                                            paneLoopStartDeltaSeconds > 0.001d &&
                                                             comparePaneExport.Plan.StartTime.TotalSeconds >= comparePaneLoopUi.InPosition - 0.25d &&
                                                             comparePaneExport.Plan.StartTime.TotalSeconds <= comparePaneLoopUi.InPosition + 0.25d;
                                 checks.Add(paneExportIndependent
