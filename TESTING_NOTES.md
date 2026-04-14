@@ -1,6 +1,6 @@
 # Frame Player Release Candidate Test Drop
 
-Release: `1.5.0`
+Release: `1.6.0`
 
 ## What changed recently
 
