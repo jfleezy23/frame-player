@@ -21,6 +21,7 @@ When reporting an issue, include:
 This repository currently uses a mix of GitHub-native security tooling and workflow guardrails to reduce drift and catch issues earlier:
 
 - `main` requires pull requests before merge, including for administrators.
+- `Windows CI` is required before merges into `main`.
 - Merged branches are deleted automatically to reduce branch sprawl and stale release drift.
 - `Windows CI` runs on pushes and pull requests and verifies the pinned runtime restore plus a Release `x64` build.
 - GitHub code scanning is enabled through GitHub's default CodeQL setup for `actions` and `csharp`.
@@ -29,6 +30,7 @@ This repository currently uses a mix of GitHub-native security tooling and workf
 - The dependency graph and automatic dependency submission are enabled so GitHub can reason about shipped dependencies beyond just manifest files.
 - Dependabot security and version update pull requests are enabled for `nuget` and GitHub Actions dependencies.
 - Dependency review now runs on pull requests to flag newly introduced vulnerable dependencies before merge.
+- Desktop packaging artifacts can be attested with GitHub artifact attestations so published build provenance can be verified.
 - Pull request templates and issue templates are in place to keep validation, documentation, and security review visible during review.
 
 These checks improve detection and consistency, but they are not a guarantee that a release is free of vulnerabilities. Human review and release validation still matter.
