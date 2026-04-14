@@ -31,6 +31,7 @@ This repository currently uses a mix of GitHub-native security tooling and workf
 - Dependabot security and version update pull requests are enabled for `nuget` and GitHub Actions dependencies.
 - Dependency review now runs on pull requests to flag newly introduced vulnerable dependencies before merge.
 - Desktop packaging artifacts can be attested with GitHub artifact attestations so published build provenance can be verified.
+- A SonarQube Cloud workflow is configured for PRs and `main` pushes, and becomes active when the repository `SONAR_TOKEN` secret is present; repository-level overrides are available for organization and project key if the default mapping is not correct.
 - Pull request templates and issue templates are in place to keep validation, documentation, and security review visible during review.
 
 These checks improve detection and consistency, but they are not a guarantee that a release is free of vulnerabilities. Human review and release validation still matter.

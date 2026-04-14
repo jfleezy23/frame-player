@@ -1,0 +1,119 @@
+name: SonarQube
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  analyze:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve SonarQube configuration
+        id: sonar_config
+        shell: pwsh
+        run: |
+          $token = "${{ secrets.SONAR_TOKEN }}"
+          if ([string]::IsNullOrWhiteSpace($token)) {
+            "enabled=false" >> $env:GITHUB_OUTPUT
+            Write-Host "::notice::SONAR_TOKEN is not configured for this repository. Skipping SonarQube analysis."
+            exit 0
+          }
+
+          $organization = "${{ vars.SONAR_ORGANIZATION }}"
+          if ([string]::IsNullOrWhiteSpace($organization)) {
+            $organization = "${{ github.repository_owner }}"
+          }
+
+          $projectKey = "${{ vars.SONAR_PROJECT_KEY }}"
+          if ([string]::IsNullOrWhiteSpace($projectKey)) {
+            $projectKey = "${{ github.repository_owner }}_${{ github.event.repository.name }}"
+          }
+
+          "enabled=true" >> $env:GITHUB_OUTPUT
+          "organization=$organization" >> $env:GITHUB_OUTPUT
+          "project_key=$projectKey" >> $env:GITHUB_OUTPUT
+
+      - name: Setup Java
+        if: steps.sonar_config.outputs.enabled == 'true'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup .NET SDK
+        if: steps.sonar_config.outputs.enabled == 'true'
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Setup NuGet
+        if: steps.sonar_config.outputs.enabled == 'true'
+        uses: NuGet/setup-nuget@v3
+
+      - name: Setup MSBuild
+        if: steps.sonar_config.outputs.enabled == 'true'
+        uses: microsoft/setup-msbuild@v3
+
+      - name: Cache SonarQube packages
+        if: steps.sonar_config.outputs.enabled == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~\.sonar\cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      - name: Cache SonarQube scanner
+        if: steps.sonar_config.outputs.enabled == 'true'
+        id: cache-sonar-scanner
+        uses: actions/cache@v4
+        with:
+          path: .\.sonar\scanner
+          key: ${{ runner.os }}-sonar-scanner
+          restore-keys: ${{ runner.os }}-sonar-scanner
+
+      - name: Install SonarQube scanner
+        if: steps.sonar_config.outputs.enabled == 'true' && steps.cache-sonar-scanner.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          New-Item -Path .\.sonar\scanner -ItemType Directory -Force | Out-Null
+          dotnet tool update dotnet-sonarscanner --tool-path .\.sonar\scanner
+
+      - name: Restore pinned FFmpeg runtime
+        if: steps.sonar_config.outputs.enabled == 'true'
+        shell: pwsh
+        run: .\scripts\Ensure-DevRuntime.ps1
+
+      - name: Build and analyze
+        if: steps.sonar_config.outputs.enabled == 'true'
+        shell: pwsh
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
+
+          .\.sonar\scanner\dotnet-sonarscanner begin `
+            /k:"${{ steps.sonar_config.outputs.project_key }}" `
+            /o:"${{ steps.sonar_config.outputs.organization }}" `
+            /d:sonar.token="$env:SONAR_TOKEN"
+
+          msbuild .\FramePlayer.csproj /t:Restore,Build /p:Configuration=Release /p:Platform=x64
+
+          .\.sonar\scanner\dotnet-sonarscanner end `
+            /d:sonar.token="$env:SONAR_TOKEN"
