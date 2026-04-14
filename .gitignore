@@ -16,3 +16,5 @@ AppData/
 packages/
 Runtime/ffmpeg/
 Runtime/ffmpeg-8.1-candidate/
+Runtime/ffmpeg-tools/
+Runtime/ffmpeg-tools-8.1-candidate/

@@ -110,10 +110,22 @@ jobs:
           $ErrorActionPreference = "Stop"
           $PSNativeCommandUseErrorActionPreference = $true
 
+          # These desktop review/export flows are exercised by the app-driven
+          # regression suite rather than imported .NET line-coverage reports.
+          $coverageExclusions = @(
+            "Core/Models/ClipExport*.cs"
+            "Services/ClipExportService.cs"
+            "Services/ExportToolsManifestService.cs"
+            "Engines/FFmpeg/FfmpegReviewEngine.cs"
+            "MainWindow.xaml.cs"
+            "Diagnostics/RegressionSuiteRunner.cs"
+          ) -join ","
+
           .\.sonar\scanner\dotnet-sonarscanner begin `
             /k:"${{ steps.sonar_config.outputs.project_key }}" `
             /o:"${{ steps.sonar_config.outputs.organization }}" `
-            /d:sonar.token="$env:SONAR_TOKEN"
+            /d:sonar.token="$env:SONAR_TOKEN" `
+            /d:sonar.coverage.exclusions="$coverageExclusions"
 
           msbuild .\FramePlayer.csproj /t:Restore,Build /p:Configuration=Release /p:Platform=x64
 

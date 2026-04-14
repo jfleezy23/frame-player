@@ -242,6 +242,21 @@ namespace FramePlayer.Engines.FFmpeg
             }
         }
 
+        internal bool TryGetIndexedPresentationTime(long absoluteFrameIndex, out TimeSpan presentationTime)
+        {
+            FfmpegGlobalFrameIndexEntry entry;
+            if (_globalFrameIndex != null &&
+                _globalFrameIndex.TryGetByAbsoluteFrameIndex(absoluteFrameIndex, out entry) &&
+                entry != null)
+            {
+                presentationTime = entry.PresentationTime;
+                return true;
+            }
+
+            presentationTime = TimeSpan.Zero;
+            return false;
+        }
+
         public double LastOpenTotalMilliseconds { get; private set; }
 
         public double LastOpenContainerProbeMilliseconds { get; private set; }
