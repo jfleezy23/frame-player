@@ -1415,6 +1415,11 @@ namespace FramePlayer
             await ExportLoopClipAsync(null, null);
         }
 
+        private async void PaneSaveLoopAsClipMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            await ExportLoopClipAsync(null, GetPaneIdFromSender(sender));
+        }
+
         private void ToggleFullScreenButton_Click(object sender, RoutedEventArgs e)
         {
             ToggleFullScreen();
@@ -4202,68 +4207,133 @@ namespace FramePlayer
                 return false;
             }
 
-            if (IsCompareModeEnabled)
+            if (!IsCompareModeEnabled)
             {
-                failureMessage = "Compare clip export ships in phase 2. Exit two-pane mode to save the shared loop as a clip.";
+                var evaluation = EvaluateSharedLoopRange(workspaceSnapshot, GetRequestedOperationScope());
+                var paneSnapshot = evaluation.WorkspaceSnapshot != null
+                    ? evaluation.WorkspaceSnapshot.FocusedPane ?? evaluation.WorkspaceSnapshot.PrimaryPane
+                    : null;
+                if (paneSnapshot == null || !PaneHasLoadedMedia(paneSnapshot))
+                {
+                    failureMessage = "Load a video and set a shared A/B range before exporting a clip.";
+                    return false;
+                }
+
+                if (!evaluation.HasMarkers)
+                {
+                    failureMessage = "Set loop-in and loop-out on the main transport before exporting a clip.";
+                    return false;
+                }
+
+                if (evaluation.MissingTargetPaneRanges)
+                {
+                    failureMessage = "The shared loop range was captured for a different transport scope. Reset the loop markers and try again.";
+                    return false;
+                }
+
+                if (evaluation.HasPendingMarkers)
+                {
+                    failureMessage = "Clip export is disabled while the shared loop range is still pending exact frame identity.";
+                    return false;
+                }
+
+                if (evaluation.IsInvalidRange)
+                {
+                    failureMessage = "Clip export is disabled because the shared loop range is invalid.";
+                    return false;
+                }
+
+                var loopRange = evaluation.FocusedPaneRange;
+                if (loopRange == null || !loopRange.HasLoopIn || !loopRange.HasLoopOut)
+                {
+                    failureMessage = "Clip export requires both loop-in and loop-out on the main transport.";
+                    return false;
+                }
+
+                var engine = GetEngineForPane(paneSnapshot.PaneId) as FfmpegReviewEngine;
+                if (engine == null || !engine.IsMediaOpen)
+                {
+                    failureMessage = "The active review engine is unavailable for clip export.";
+                    return false;
+                }
+
+                exportTarget = new ClipExportTarget(
+                    paneSnapshot.PaneId,
+                    "Main transport",
+                    false,
+                    paneSnapshot,
+                    loopRange,
+                    engine);
+                return true;
+            }
+
+            var resolvedPaneId = ResolveClipExportPaneId(workspaceSnapshot, requestedPaneId);
+            ReviewWorkspacePaneSnapshot targetPaneSnapshot;
+            if (!workspaceSnapshot.TryGetPane(resolvedPaneId, out targetPaneSnapshot) || !PaneHasLoadedMedia(targetPaneSnapshot))
+            {
+                failureMessage = "Load media into the selected compare pane before exporting a clip.";
                 return false;
             }
 
-            var evaluation = EvaluateSharedLoopRange(workspaceSnapshot, GetRequestedOperationScope());
-            var paneSnapshot = evaluation.WorkspaceSnapshot != null
-                ? evaluation.WorkspaceSnapshot.FocusedPane ?? evaluation.WorkspaceSnapshot.PrimaryPane
-                : null;
-            if (paneSnapshot == null || !PaneHasLoadedMedia(paneSnapshot))
+            var paneLoopRange = targetPaneSnapshot.LoopRange;
+            var paneLabel = GetPaneDisplayLabel(resolvedPaneId);
+            if (paneLoopRange == null || !paneLoopRange.HasAnyMarkers)
             {
-                failureMessage = "Load a video and set a shared A/B range before exporting a clip.";
+                failureMessage = paneLabel + " does not have a pane-local A/B range to export yet.";
                 return false;
             }
 
-            if (!evaluation.HasMarkers)
+            if (!paneLoopRange.HasLoopIn || !paneLoopRange.HasLoopOut)
             {
-                failureMessage = "Set loop-in and loop-out on the main transport before exporting a clip.";
+                failureMessage = paneLabel + " clip export requires both pane-local loop markers.";
                 return false;
             }
 
-            if (evaluation.MissingTargetPaneRanges)
+            if (paneLoopRange.HasPendingMarkers)
             {
-                failureMessage = "The shared loop range was captured for a different transport scope. Reset the loop markers and try again.";
+                failureMessage = paneLabel + " clip export is disabled while pane-local markers are still pending exact frame identity.";
                 return false;
             }
 
-            if (evaluation.HasPendingMarkers)
+            if (paneLoopRange.IsInvalidRange)
             {
-                failureMessage = "Clip export is disabled while the shared loop range is still pending exact frame identity.";
+                failureMessage = paneLabel + " clip export is disabled because the pane-local loop range is invalid.";
                 return false;
             }
 
-            if (evaluation.IsInvalidRange)
+            var paneEngine = GetEngineForPane(resolvedPaneId) as FfmpegReviewEngine;
+            if (paneEngine == null || !paneEngine.IsMediaOpen)
             {
-                failureMessage = "Clip export is disabled because the shared loop range is invalid.";
-                return false;
-            }
-
-            var loopRange = evaluation.FocusedPaneRange;
-            if (loopRange == null || !loopRange.HasLoopIn || !loopRange.HasLoopOut)
-            {
-                failureMessage = "Clip export requires both loop-in and loop-out on the main transport.";
-                return false;
-            }
-
-            var engine = GetEngineForPane(paneSnapshot.PaneId) as FfmpegReviewEngine;
-            if (engine == null || !engine.IsMediaOpen)
-            {
-                failureMessage = "The active review engine is unavailable for clip export.";
+                failureMessage = paneLabel + " review engine is unavailable for clip export.";
                 return false;
             }
 
             exportTarget = new ClipExportTarget(
-                paneSnapshot.PaneId,
-                "Main transport",
-                false,
-                paneSnapshot,
-                loopRange,
-                engine);
+                resolvedPaneId,
+                paneLabel,
+                true,
+                targetPaneSnapshot,
+                paneLoopRange,
+                paneEngine);
             return true;
+        }
+
+        private string ResolveClipExportPaneId(ReviewWorkspaceSnapshot workspaceSnapshot, string requestedPaneId)
+        {
+            ReviewWorkspacePaneSnapshot paneSnapshot;
+            if (!string.IsNullOrWhiteSpace(requestedPaneId) &&
+                workspaceSnapshot != null &&
+                workspaceSnapshot.TryGetPane(requestedPaneId, out paneSnapshot) &&
+                paneSnapshot != null)
+            {
+                return requestedPaneId;
+            }
+
+            return workspaceSnapshot != null &&
+                   workspaceSnapshot.ActivePane != null &&
+                   !string.IsNullOrWhiteSpace(workspaceSnapshot.ActivePane.PaneId)
+                ? workspaceSnapshot.ActivePane.PaneId
+                : GetFocusedPaneId();
         }
 
         private bool TryPromptForClipExportPath(ClipExportTarget exportTarget, out string outputPath)
@@ -4409,6 +4479,13 @@ namespace FramePlayer
                 value.Minutes,
                 value.Seconds,
                 value.Milliseconds);
+        }
+
+        private static string GetPaneDisplayLabel(string paneId)
+        {
+            return string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
+                ? "Compare pane"
+                : "Primary pane";
         }
 
         private void UpdateLoopUi()

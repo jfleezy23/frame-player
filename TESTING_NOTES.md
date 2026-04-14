@@ -28,6 +28,7 @@ Release: `1.5.0`
 - Open two panes and confirm both panes stay responsive while stepping and seeking together.
 - In two-pane mode, confirm the main transport controls both panes together while the pane-local sliders and frame boxes still operate on their own panes.
 - In two-pane mode, set different pane-local loop boxes on Primary and Compare and confirm each pane slider shows its own boxed range instead of sharing one loop box.
+- In two-pane mode, right-click each pane and use `Save Loop As Clip...` to confirm Primary and Compare can each export their own pane-local loop as separate MP4 clips.
 - Right-click the primary pane and the compare pane, open `Video Info...` from both, and confirm two inspector windows can stay open at once with the correct pane-specific FFmpeg metadata.
 - Try at least one video with audio and confirm audio starts during playback.
 - If possible, try one video-only clip and confirm playback still works without audio errors.

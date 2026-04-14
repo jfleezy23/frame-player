@@ -102,7 +102,7 @@
                      FontSize="13"
                      LineHeight="20"
                      TextWrapping="Wrap"
-                     Text="Use Playback &gt; Loop Playback for whole-media repeat or an exact A/B range. Use [ to set loop-in and ] to set loop-out on the current loop context. The main timeline greys out everything outside the shared boxed range, and compare mode can also show pane-local loop boxes on the pane sliders. If a marker is still pending absolute frame identity, the loop status stays pending and A/B repeat will not start until the engine proves that frame. Once a reviewed shared range is ready, use Playback &gt; Save Loop As Clip... to export an MP4 subset." />
+                     Text="Use Playback &gt; Loop Playback for whole-media repeat or an exact A/B range. Use [ to set loop-in and ] to set loop-out on the current loop context. The main timeline greys out everything outside the shared boxed range, and compare mode can also show pane-local loop boxes on the pane sliders. If a marker is still pending absolute frame identity, the loop status stays pending and A/B repeat will not start until the engine proves that frame. Once a reviewed range is ready, use Playback &gt; Save Loop As Clip... or the pane context menu in compare mode to export an MP4 subset." />
 
           <TextBlock Margin="0,18,0,0"
                      FontSize="15"
