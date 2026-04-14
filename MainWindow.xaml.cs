@@ -51,6 +51,7 @@ namespace FramePlayer
         private readonly DispatcherTimer _paneSliderScrubTimer;
         private readonly BuildVariantInfo _buildVariant;
         private readonly AppPreferencesService _appPreferencesService;
+        private readonly ClipExportService _clipExportService;
         private readonly DiagnosticLogService _diagnosticLogService;
         private readonly FfmpegReviewEngineOptionsProvider _ffmpegReviewEngineOptionsProvider;
         private readonly RecentFilesService _recentFilesService;
@@ -156,6 +157,37 @@ namespace FramePlayer
             }
         }
 
+        private sealed class ClipExportTarget
+        {
+            public ClipExportTarget(
+                string paneId,
+                string contextLabel,
+                bool isPaneLocal,
+                ReviewWorkspacePaneSnapshot paneSnapshot,
+                LoopPlaybackPaneRangeSnapshot loopRange,
+                FfmpegReviewEngine engine)
+            {
+                PaneId = paneId ?? string.Empty;
+                ContextLabel = contextLabel ?? string.Empty;
+                IsPaneLocal = isPaneLocal;
+                PaneSnapshot = paneSnapshot;
+                LoopRange = loopRange;
+                Engine = engine;
+            }
+
+            public string PaneId { get; }
+
+            public string ContextLabel { get; }
+
+            public bool IsPaneLocal { get; }
+
+            public ReviewWorkspacePaneSnapshot PaneSnapshot { get; }
+
+            public LoopPlaybackPaneRangeSnapshot LoopRange { get; }
+
+            public FfmpegReviewEngine Engine { get; }
+        }
+
         public MainWindow()
         {
             InitializeComponent();
@@ -190,6 +222,7 @@ namespace FramePlayer
 
             _appPreferencesService = new AppPreferencesService();
             _diagnosticLogService = new DiagnosticLogService();
+            _clipExportService = new ClipExportService();
             _ffmpegReviewEngineOptionsProvider = new FfmpegReviewEngineOptionsProvider(_appPreferencesService);
             _recentFilesService = new RecentFilesService();
             _videoReviewEngineFactory = new VideoReviewEngineFactory(_ffmpegReviewEngineOptionsProvider);
@@ -1375,6 +1408,11 @@ namespace FramePlayer
         private void ClearLoopPointsMenuItem_Click(object sender, RoutedEventArgs e)
         {
             ClearLoopPoints();
+        }
+
+        private async void SaveLoopAsClipMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            await ExportLoopClipAsync(null, null);
         }
 
         private void ToggleFullScreenButton_Click(object sender, RoutedEventArgs e)
@@ -4041,6 +4079,338 @@ namespace FramePlayer
             LogInfo("Cleared loop points.");
         }
 
+        private async Task<ClipExportResult> ExportLoopClipAsync(string outputPath, string paneId)
+        {
+            var workspaceSnapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
+            ClipExportTarget exportTarget;
+            string exportFailureMessage;
+            if (!TryResolveClipExportTarget(workspaceSnapshot, paneId, out exportTarget, out exportFailureMessage))
+            {
+                if (!string.IsNullOrWhiteSpace(exportFailureMessage))
+                {
+                    SetPlaybackMessage(exportFailureMessage);
+                    LogWarning(exportFailureMessage);
+                }
+
+                return null;
+            }
+
+            var pauseScope = IsCompareModeEnabled
+                ? SynchronizedOperationScope.AllPanes
+                : GetRequestedOperationScope();
+            await PausePlaybackAsync(logAction: false, operationScope: pauseScope);
+
+            workspaceSnapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
+            if (!TryResolveClipExportTarget(workspaceSnapshot, paneId, out exportTarget, out exportFailureMessage))
+            {
+                if (!string.IsNullOrWhiteSpace(exportFailureMessage))
+                {
+                    SetPlaybackMessage(exportFailureMessage);
+                    LogWarning(exportFailureMessage);
+                }
+
+                return null;
+            }
+
+            var resolvedOutputPath = outputPath;
+            if (string.IsNullOrWhiteSpace(resolvedOutputPath))
+            {
+                if (!TryPromptForClipExportPath(exportTarget, out resolvedOutputPath))
+                {
+                    return null;
+                }
+            }
+
+            var request = BuildClipExportRequest(exportTarget, resolvedOutputPath);
+            try
+            {
+                SetPlaybackMessage(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Exporting {0} clip...",
+                    exportTarget.ContextLabel.ToLowerInvariant()));
+                LogInfo(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Starting clip export for {0}: {1}.",
+                    exportTarget.ContextLabel.ToLowerInvariant(),
+                    GetSafeFileDisplay(resolvedOutputPath)));
+
+                var exportResult = await _clipExportService.ExportAsync(request).ConfigureAwait(true);
+                if (exportResult != null && exportResult.Succeeded)
+                {
+                    var durationText = exportResult.ProbedDuration.HasValue
+                        ? FormatTime(exportResult.ProbedDuration.Value)
+                        : FormatTime(exportResult.Plan.Duration);
+                    SetPlaybackMessage("Clip exported.");
+                    LogInfo(string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Clip export completed for {0}: source {1}, output {2}, start {3}, end-exclusive {4}, duration {5}, strategy {6}, elapsed {7:0.0} ms.",
+                        exportTarget.ContextLabel.ToLowerInvariant(),
+                        GetSafeFileDisplay(exportResult.Plan.SourceFilePath),
+                        GetSafeFileDisplay(exportResult.Plan.OutputFilePath),
+                        FormatTime(exportResult.Plan.StartTime),
+                        FormatTime(exportResult.Plan.EndTimeExclusive),
+                        durationText,
+                        string.IsNullOrWhiteSpace(exportResult.Plan.EndBoundaryStrategy)
+                            ? "(none)"
+                            : exportResult.Plan.EndBoundaryStrategy,
+                        exportResult.Elapsed.TotalMilliseconds));
+                }
+                else if (exportResult != null)
+                {
+                    var sanitizedMessage = SanitizeSensitiveText(exportResult.Message);
+                    SetPlaybackMessage("Clip export failed.");
+                    LogError("Clip export failed: " + sanitizedMessage);
+                }
+
+                return exportResult;
+            }
+            catch (Exception ex)
+            {
+                var sanitizedMessage = SanitizeSensitiveText(ex.Message);
+                SetPlaybackMessage("Clip export failed.");
+                LogError("Clip export failed: " + sanitizedMessage);
+                return new ClipExportResult(
+                    false,
+                    null,
+                    sanitizedMessage,
+                    -1,
+                    TimeSpan.Zero,
+                    null,
+                    string.Empty,
+                    string.Empty);
+            }
+        }
+
+        private bool TryResolveClipExportTarget(
+            ReviewWorkspaceSnapshot workspaceSnapshot,
+            string requestedPaneId,
+            out ClipExportTarget exportTarget,
+            out string failureMessage)
+        {
+            exportTarget = null;
+            failureMessage = string.Empty;
+
+            if (!_clipExportService.IsBundledToolingAvailable)
+            {
+                failureMessage = _clipExportService.GetToolAvailabilityMessage();
+                return false;
+            }
+
+            if (workspaceSnapshot == null)
+            {
+                failureMessage = "Load a video and set a loop range before exporting a clip.";
+                return false;
+            }
+
+            if (IsCompareModeEnabled)
+            {
+                failureMessage = "Compare clip export ships in phase 2. Exit two-pane mode to save the shared loop as a clip.";
+                return false;
+            }
+
+            var evaluation = EvaluateSharedLoopRange(workspaceSnapshot, GetRequestedOperationScope());
+            var paneSnapshot = evaluation.WorkspaceSnapshot != null
+                ? evaluation.WorkspaceSnapshot.FocusedPane ?? evaluation.WorkspaceSnapshot.PrimaryPane
+                : null;
+            if (paneSnapshot == null || !PaneHasLoadedMedia(paneSnapshot))
+            {
+                failureMessage = "Load a video and set a shared A/B range before exporting a clip.";
+                return false;
+            }
+
+            if (!evaluation.HasMarkers)
+            {
+                failureMessage = "Set loop-in and loop-out on the main transport before exporting a clip.";
+                return false;
+            }
+
+            if (evaluation.MissingTargetPaneRanges)
+            {
+                failureMessage = "The shared loop range was captured for a different transport scope. Reset the loop markers and try again.";
+                return false;
+            }
+
+            if (evaluation.HasPendingMarkers)
+            {
+                failureMessage = "Clip export is disabled while the shared loop range is still pending exact frame identity.";
+                return false;
+            }
+
+            if (evaluation.IsInvalidRange)
+            {
+                failureMessage = "Clip export is disabled because the shared loop range is invalid.";
+                return false;
+            }
+
+            var loopRange = evaluation.FocusedPaneRange;
+            if (loopRange == null || !loopRange.HasLoopIn || !loopRange.HasLoopOut)
+            {
+                failureMessage = "Clip export requires both loop-in and loop-out on the main transport.";
+                return false;
+            }
+
+            var engine = GetEngineForPane(paneSnapshot.PaneId) as FfmpegReviewEngine;
+            if (engine == null || !engine.IsMediaOpen)
+            {
+                failureMessage = "The active review engine is unavailable for clip export.";
+                return false;
+            }
+
+            exportTarget = new ClipExportTarget(
+                paneSnapshot.PaneId,
+                "Main transport",
+                false,
+                paneSnapshot,
+                loopRange,
+                engine);
+            return true;
+        }
+
+        private bool TryPromptForClipExportPath(ClipExportTarget exportTarget, out string outputPath)
+        {
+            outputPath = string.Empty;
+            if (exportTarget == null)
+            {
+                return false;
+            }
+
+            var dialog = new SaveFileDialog
+            {
+                Title = exportTarget.IsPaneLocal
+                    ? exportTarget.ContextLabel + " - Save Loop As Clip"
+                    : "Save Loop As Clip",
+                Filter = "MP4 Video|*.mp4",
+                DefaultExt = ".mp4",
+                AddExtension = true,
+                OverwritePrompt = true,
+                CheckPathExists = true,
+                FileName = BuildSuggestedClipFileName(exportTarget)
+            };
+
+            var sourceDirectory = Path.GetDirectoryName(exportTarget.PaneSnapshot != null
+                ? exportTarget.PaneSnapshot.CurrentFilePath
+                : string.Empty);
+            if (!string.IsNullOrWhiteSpace(sourceDirectory) && Directory.Exists(sourceDirectory))
+            {
+                dialog.InitialDirectory = sourceDirectory;
+            }
+
+            if (dialog.ShowDialog(this) != true)
+            {
+                return false;
+            }
+
+            outputPath = dialog.FileName;
+            return true;
+        }
+
+        private ClipExportRequest BuildClipExportRequest(ClipExportTarget exportTarget, string outputPath)
+        {
+            var engine = exportTarget.Engine;
+            var paneSnapshot = exportTarget.PaneSnapshot;
+            var sessionSnapshot = engine != null
+                ? new ReviewSessionSnapshot(
+                    paneSnapshot != null ? paneSnapshot.SessionId : exportTarget.PaneId,
+                    paneSnapshot != null ? paneSnapshot.DisplayLabel : exportTarget.ContextLabel,
+                    paneSnapshot != null ? paneSnapshot.PlaybackState : ReviewPlaybackState.Paused,
+                    engine.CurrentFilePath,
+                    engine.MediaInfo,
+                    engine.Position)
+                : ReviewSessionSnapshot.Empty;
+
+            return new ClipExportRequest(
+                paneSnapshot != null ? paneSnapshot.CurrentFilePath : string.Empty,
+                outputPath,
+                exportTarget.ContextLabel,
+                exportTarget.PaneId,
+                exportTarget.IsPaneLocal,
+                sessionSnapshot,
+                exportTarget.LoopRange,
+                exportTarget.Engine);
+        }
+
+        private bool CanExportLoopClip(ReviewWorkspaceSnapshot workspaceSnapshot, string paneId, out string toolTip)
+        {
+            ClipExportTarget exportTarget;
+            string failureMessage;
+            if (!TryResolveClipExportTarget(workspaceSnapshot, paneId, out exportTarget, out failureMessage))
+            {
+                toolTip = string.IsNullOrWhiteSpace(failureMessage)
+                    ? "Set a valid reviewed loop range before exporting a clip."
+                    : failureMessage;
+                return false;
+            }
+
+            toolTip = string.Format(
+                CultureInfo.InvariantCulture,
+                "Save the current {0} A/B range as an MP4 clip.",
+                exportTarget.IsPaneLocal
+                    ? exportTarget.ContextLabel.ToLowerInvariant()
+                    : "main transport");
+            return true;
+        }
+
+        private static string BuildSuggestedClipFileName(ClipExportTarget exportTarget)
+        {
+            var sourceFilePath = exportTarget != null && exportTarget.PaneSnapshot != null
+                ? exportTarget.PaneSnapshot.CurrentFilePath
+                : string.Empty;
+            var baseName = string.IsNullOrWhiteSpace(sourceFilePath)
+                ? "clip"
+                : Path.GetFileNameWithoutExtension(sourceFilePath);
+            baseName = SanitizeFileNameSegment(baseName);
+
+            var loopRange = exportTarget != null ? exportTarget.LoopRange : null;
+            var startSegment = loopRange != null && loopRange.LoopIn != null
+                ? FormatClipFileNameTime(loopRange.LoopIn.PresentationTime)
+                : "start";
+            var endSegment = loopRange != null && loopRange.LoopOut != null
+                ? FormatClipFileNameTime(loopRange.LoopOut.PresentationTime)
+                : "end";
+            var paneSegment = exportTarget != null && exportTarget.IsPaneLocal
+                ? "-" + SanitizeFileNameSegment(exportTarget.ContextLabel.ToLowerInvariant())
+                : string.Empty;
+
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}{1}-{2}-{3}.mp4",
+                string.IsNullOrWhiteSpace(baseName) ? "clip" : baseName,
+                paneSegment,
+                startSegment,
+                endSegment);
+        }
+
+        private static string SanitizeFileNameSegment(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var invalidCharacters = Path.GetInvalidFileNameChars();
+            var builder = new StringBuilder(value.Length);
+            foreach (var character in value.Trim())
+            {
+                builder.Append(Array.IndexOf(invalidCharacters, character) >= 0 || char.IsWhiteSpace(character)
+                    ? '-'
+                    : character);
+            }
+
+            return builder.ToString().Trim('-');
+        }
+
+        private static string FormatClipFileNameTime(TimeSpan value)
+        {
+            value = value < TimeSpan.Zero ? TimeSpan.Zero : value;
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "{0:00}{1:00}{2:00}{3:000}",
+                (int)value.TotalHours,
+                value.Minutes,
+                value.Seconds,
+                value.Milliseconds);
+        }
+
         private void UpdateLoopUi()
         {
             var snapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
@@ -4104,7 +4474,7 @@ namespace FramePlayer
 
         private void UpdateLoopCommandMenuState(ReviewWorkspaceSnapshot workspaceSnapshot)
         {
-            if (SetLoopInMenuItem == null || SetLoopOutMenuItem == null || ClearLoopPointsMenuItem == null)
+            if (SetLoopInMenuItem == null || SetLoopOutMenuItem == null || ClearLoopPointsMenuItem == null || SaveLoopAsClipMenuItem == null)
             {
                 return;
             }
@@ -4122,6 +4492,11 @@ namespace FramePlayer
                 CultureInfo.InvariantCulture,
                 "Clear loop points for the {0}.",
                 contextLabel);
+
+            string clipExportToolTip;
+            var canExportLoopClip = CanExportLoopClip(workspaceSnapshot, null, out clipExportToolTip);
+            SaveLoopAsClipMenuItem.IsEnabled = canExportLoopClip;
+            SaveLoopAsClipMenuItem.ToolTip = clipExportToolTip;
         }
 
         private void UpdatePaneLoopUi(ReviewWorkspaceSnapshot workspaceSnapshot, string paneId)
@@ -4976,13 +5351,21 @@ namespace FramePlayer
             UpdateWorkspacePanePresentation();
 
             var host = sender as FrameworkElement;
-            var menuItem = host != null && host.ContextMenu != null
-                ? host.ContextMenu.Items.OfType<MenuItem>().FirstOrDefault()
-                : null;
-            if (menuItem != null)
+            var menuItems = host != null && host.ContextMenu != null
+                ? host.ContextMenu.Items.OfType<MenuItem>().ToArray()
+                : Array.Empty<MenuItem>();
+            if (menuItems.Length > 0)
             {
                 var engine = GetEngineForPane(paneId);
-                menuItem.IsEnabled = engine != null && engine.IsMediaOpen;
+                menuItems[0].IsEnabled = engine != null && engine.IsMediaOpen;
+            }
+
+            if (menuItems.Length > 1)
+            {
+                string toolTip;
+                var canExport = CanExportLoopClip(_workspaceCoordinator.GetWorkspaceSnapshot(), paneId, out toolTip);
+                menuItems[1].IsEnabled = canExport;
+                menuItems[1].ToolTip = toolTip;
             }
         }
 
@@ -5263,6 +5646,8 @@ namespace FramePlayer
                     ".NET: " + Environment.Version,
                     "Runtime available: " + (App.HasBundledFfmpegRuntime ? "Yes" : "No"),
                     "Runtime status: " + GetRuntimeStatusMessage(),
+                    "Export tools available: " + (_clipExportService.IsBundledToolingAvailable ? "Yes" : "No"),
+                    "Export tools status: " + _clipExportService.GetToolAvailabilityMessage(),
                     "Latest session log: " + GetSafeFileDisplay(_diagnosticLogService.LatestLogPath),
                     "Current file: " + GetSafeFileDisplay(_currentFilePath),
                     "Media loaded: " + (_isMediaLoaded ? "Yes" : "No"),

@@ -20,6 +20,7 @@ Frame Player is a frames-first WPF review tool built on a custom FFmpeg engine w
 - Supports live timeline scrubbing that lands paused on release
 - Supports whole-media loop playback and exact A/B loop playback on the main transport using `[` and `]`
 - In compare mode, the pane-local sliders can carry independent pane-local loop boxes for focused review
+- Saves reviewed shared-loop ranges as MP4 clip exports through a bundled FFmpeg CLI toolset
 - Shows a labeled pixel coordinate readout for the hovered pane
 - Includes a structured `Video Info` inspector for FFmpeg-reported pane media metadata, including right-click access on video panes and compare-friendly modeless windows
 - Shows playback state, FPS, frame-step size, duration, frame number, and a frame-derived timecode readout
@@ -61,10 +62,12 @@ The shipped app is packaged with the FFmpeg runtime DLLs next to `FramePlayer.ex
 - Pinned FFmpeg runtime version: `n8.1-frameplayer-source`
 - Runtime provenance: built from the official FFmpeg source tag `n8.1` at commit `9047fa1b084f76b1b4d065af2d743df1b40dfb56`
 - Runtime hashes and source-build metadata are recorded in `Runtime\\runtime-manifest.json` and `docs\\ffmpeg-8.1-build-notes.md`
+- Export-tool hashes and source-build metadata are recorded in `Runtime\\export-tools-manifest.json`
 - The current source-build path enables FFmpeg's Vulkan hardware-device support, but actual GPU acceleration still depends on a system Vulkan loader/driver at runtime
 - There is no FFmpeg folder picker in the UI
-- The app does not call `ffmpeg.exe` or `ffprobe.exe`
+- Playback and frame stepping do not call `ffmpeg.exe` or `ffprobe.exe`; reviewed clip export uses a separate bundled `ffmpeg-tools\\ffmpeg.exe` / `ffmpeg-tools\\ffprobe.exe` toolset
 - Playback and frame stepping run through the custom FFmpeg engine and the bundled FFmpeg DLLs loaded in-process
+- Clip export runs through a separate pinned FFmpeg CLI bundle stored under `ffmpeg-tools` beside the app output
 - Playback uses a simple audio-master clock when audio output is active, while exact frame stepping remains decode/index based
 - Session diagnostics are mirrored to `%LocalAppData%\\FramePlayer\\Logs\\latest-session.log` and protected at rest with Windows DPAPI
 - `File > Export Diagnostics...` saves a shareable text report with runtime and playback state
@@ -87,11 +90,12 @@ If you just want a working local build without thinking about dependencies:
 That script:
 
 1. Restores the pinned FFmpeg runtime from the local source-built candidate or local runtime archive when available
-2. Verifies the runtime archive SHA256 and the extracted DLL hashes
-3. Restores NuGet packages
-4. Builds the app in `Release|x64`
+2. Attempts to restore the pinned FFmpeg export tools when a populated export-tools manifest is available
+3. Verifies the runtime archive SHA256 and the extracted DLL hashes
+4. Restores NuGet packages
+5. Builds the app in `Release|x64`
 
-If the self-built runtime has not been staged yet, run `.\scripts\ffmpeg\Build-FFmpeg-8.1.ps1` first if you want a local candidate/runtime archive. Regular Visual Studio and MSBuild builds still bootstrap `Runtime\ffmpeg` automatically when it is missing, and clean bootstrap environments fall back to the verified `v1.5.0` release asset.
+If the self-built runtime has not been staged yet, run `.\scripts\ffmpeg\Build-FFmpeg-8.1.ps1` first if you want a local candidate/runtime archive. If you also want clip export available in the local build, run `.\scripts\ffmpeg\Build-FFmpeg-Tools-8.1.ps1` and then `.\scripts\Ensure-DevExportTools.ps1`. Regular Visual Studio and MSBuild builds still bootstrap `Runtime\ffmpeg` automatically when it is missing, and clean bootstrap environments fall back to the verified `v1.5.0` release asset.
 
 For phase-1 GPU validation, keep the default `Playback > Use GPU Acceleration` setting enabled and test on a machine with a working Vulkan loader/driver. Unsupported systems and unsupported codec/device combinations stay on CPU decode automatically.
 
@@ -112,12 +116,13 @@ For most machines, use the helper script:
 .\scripts\Build-FramePlayer.ps1
 ```
 
-If the active runtime directory is missing, run `.\scripts\ffmpeg\Build-FFmpeg-8.1.ps1` once, then `.\scripts\Ensure-DevRuntime.ps1`, and rebuild.
+If the active runtime directory is missing, run `.\scripts\ffmpeg\Build-FFmpeg-8.1.ps1` once, then `.\scripts\Ensure-DevRuntime.ps1`, and rebuild. If the export-tools manifest has been pinned locally and you want clip export enabled, run `.\scripts\ffmpeg\Build-FFmpeg-Tools-8.1.ps1` and `.\scripts\Ensure-DevExportTools.ps1` too.
 
 If you need to call MSBuild directly, use a Visual Studio Developer PowerShell or a machine with Visual Studio Build Tools installed:
 
 ```powershell
 .\scripts\Ensure-DevRuntime.ps1
+.\scripts\Ensure-DevExportTools.ps1
 & "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\amd64\MSBuild.exe" .\FramePlayer.csproj /t:Restore,Build /p:Configuration=Release /p:Platform=x64
 ```
 
@@ -141,7 +146,7 @@ GitHub Actions Windows CI is compile validation on a clean runner. The workflow 
 
 - Frame stepping uses decoded display-order frame identity instead of timestamp math
 - Timecode is frame-derived and uses nominal whole-frame buckets for fractional frame rates like `23.976` -> `24`
-- A/B loop ranges are frames-first review ranges intended to feed future trimming/export work, but no trimming/export feature ships on this branch
+- A/B loop ranges can be saved as exact MP4 clip exports through the bundled `ffmpeg-tools` path
 - The standard build output is in `bin\Release`
 - The packaged test-drop output used for release verification is `bin\TestDrop`
 - The portable release archive is written to `artifacts\FramePlayer-CustomFFmpeg-<product-version>.zip`

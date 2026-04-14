@@ -8,7 +8,7 @@ Release: `1.5.0`
 - Video playback, audio playback, basic A/V sync, seek-to-time, seek-to-frame, exact frame stepping, and opportunistic Vulkan decode with strict CPU fallback are implemented in the custom engine.
 - The latest UI pass combined Play/Pause into one toggle, restored the normal visual tone, removed temporary custom-build banners, added a cache status indicator, and fixed arrow-key stepping immediately after frame entry.
 - The latest GPU/cache pass adds a visible GPU toggle, pane-aware decoded-frame budgeting, shared Vulkan warmup, and backend-aware compare behavior without changing the frames-first review contract.
-- The latest release polish pass adds live timeline scrubbing, A/B loop playback on the main transport, pane-local compare loop boxes, pane-local compare navigation, Inspector V2 with pane context-menu access, pending frame-number honesty while background indexing is still resolving absolute frame identity, and follow-up fixes for fullscreen status-bar chrome plus pane-local frame clamping.
+- The latest release polish pass adds live timeline scrubbing, A/B loop playback on the main transport, pane-local compare loop boxes, pane-local compare navigation, Inspector V2 with pane context-menu access, pending frame-number honesty while background indexing is still resolving absolute frame identity, follow-up fixes for fullscreen status-bar chrome plus pane-local frame clamping, and reviewed-loop MP4 clip export through a separate FFmpeg CLI bundle.
 
 ## Manual test checklist
 
@@ -19,6 +19,7 @@ Release: `1.5.0`
 - Disable `Playback > Use GPU Acceleration`, reopen the same file, and confirm the app stays correct on the CPU path.
 - Press Play, confirm visible playback advances, then press Pause.
 - Set `[` and `]` in single-pane mode, enable `Playback > Loop Playback`, and confirm playback loops the boxed range instead of the full clip.
+- With a valid reviewed main-loop range, use `Playback > Save Loop As Clip...` and confirm an MP4 clip is written with duration close to the selected A/B window.
 - Set a loop marker before indexing is ready on a large file and confirm the loop status stays visibly pending instead of pretending the range is finalized.
 - Seek by time and confirm playback/review state remains coherent.
 - On a large HEVC file, click-seek before indexing finishes and confirm the time lands while the frame number stays visibly pending instead of claiming a fake absolute frame.
@@ -41,6 +42,7 @@ Release: `1.5.0`
 - The pinned FFmpeg runtime is `n8.1-frameplayer-source`, recorded in `Runtime\runtime-manifest.json`.
 - The runtime was built from the official FFmpeg source tag `n8.1` and is restored locally from the self-built candidate/archive produced by `scripts\ffmpeg\Build-FFmpeg-8.1.ps1`.
 - The packaged runtime also requires `libwinpthread-1.dll`; it must ship beside `FramePlayer.exe` with the FFmpeg DLL set.
+- Clip export uses a separate `ffmpeg-tools` folder beside the app output and depends on the hashes recorded in `Runtime\export-tools-manifest.json`.
 - Clean-runner bootstrap restores from the verified `v1.5.0` runtime release asset recorded in `Runtime\runtime-manifest.json`.
 
 ## Build and shortcut
