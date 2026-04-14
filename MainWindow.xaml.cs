@@ -4377,10 +4377,11 @@ namespace FramePlayer
                 string.IsNullOrWhiteSpace(sessionId) ? anchor.SessionId : sessionId,
                 string.IsNullOrWhiteSpace(displayLabel) ? anchor.DisplayLabel : displayLabel,
                 resolvedPresentationTime > TimeSpan.Zero ? resolvedPresentationTime : anchor.PresentationTime,
-                absoluteFrameIndex,
-                true,
-                anchor.PresentationTimestamp,
-                anchor.DecodeTimestamp);
+                new LoopPlaybackFrameIdentitySnapshot(
+                    absoluteFrameIndex,
+                    true,
+                    anchor.PresentationTimestamp,
+                    anchor.DecodeTimestamp));
         }
 
         private string ResolveClipExportPaneId(ReviewWorkspaceSnapshot workspaceSnapshot, string requestedPaneId)
