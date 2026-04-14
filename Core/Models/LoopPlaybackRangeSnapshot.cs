@@ -15,6 +15,33 @@ namespace FramePlayer.Core.Models
         Out = 1
     }
 
+    public sealed class LoopPlaybackFrameIdentitySnapshot
+    {
+        public static readonly LoopPlaybackFrameIdentitySnapshot Empty = new LoopPlaybackFrameIdentitySnapshot(null, false, null, null);
+
+        public LoopPlaybackFrameIdentitySnapshot(
+            long? absoluteFrameIndex,
+            bool isFrameIndexAbsolute,
+            long? presentationTimestamp,
+            long? decodeTimestamp)
+        {
+            AbsoluteFrameIndex = absoluteFrameIndex.HasValue
+                ? Math.Max(0L, absoluteFrameIndex.Value)
+                : (long?)null;
+            IsFrameIndexAbsolute = isFrameIndexAbsolute && AbsoluteFrameIndex.HasValue;
+            PresentationTimestamp = presentationTimestamp;
+            DecodeTimestamp = decodeTimestamp;
+        }
+
+        public long? AbsoluteFrameIndex { get; }
+
+        public bool IsFrameIndexAbsolute { get; }
+
+        public long? PresentationTimestamp { get; }
+
+        public long? DecodeTimestamp { get; }
+    }
+
     public sealed class LoopPlaybackAnchorSnapshot
     {
         public LoopPlaybackAnchorSnapshot(
@@ -22,17 +49,13 @@ namespace FramePlayer.Core.Models
             string sessionId,
             string displayLabel,
             TimeSpan presentationTime,
-            long? absoluteFrameIndex,
-            bool isFrameIndexAbsolute)
+            LoopPlaybackFrameIdentitySnapshot frameIdentity)
         {
             PaneId = paneId ?? string.Empty;
             SessionId = sessionId ?? string.Empty;
             DisplayLabel = displayLabel ?? string.Empty;
             PresentationTime = presentationTime < TimeSpan.Zero ? TimeSpan.Zero : presentationTime;
-            AbsoluteFrameIndex = absoluteFrameIndex.HasValue
-                ? Math.Max(0L, absoluteFrameIndex.Value)
-                : (long?)null;
-            IsFrameIndexAbsolute = isFrameIndexAbsolute && AbsoluteFrameIndex.HasValue;
+            FrameIdentity = frameIdentity ?? LoopPlaybackFrameIdentitySnapshot.Empty;
         }
 
         public string PaneId { get; }
@@ -43,9 +66,27 @@ namespace FramePlayer.Core.Models
 
         public TimeSpan PresentationTime { get; }
 
-        public long? AbsoluteFrameIndex { get; }
+        public LoopPlaybackFrameIdentitySnapshot FrameIdentity { get; }
 
-        public bool IsFrameIndexAbsolute { get; }
+        public long? AbsoluteFrameIndex
+        {
+            get { return FrameIdentity.AbsoluteFrameIndex; }
+        }
+
+        public bool IsFrameIndexAbsolute
+        {
+            get { return FrameIdentity.IsFrameIndexAbsolute; }
+        }
+
+        public long? PresentationTimestamp
+        {
+            get { return FrameIdentity.PresentationTimestamp; }
+        }
+
+        public long? DecodeTimestamp
+        {
+            get { return FrameIdentity.DecodeTimestamp; }
+        }
 
         public bool HasAbsoluteFrameIdentity
         {

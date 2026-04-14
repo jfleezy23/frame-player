@@ -1133,8 +1133,11 @@ namespace FramePlayer.Core.Coordination
                 session.SessionId,
                 pane.DisplayLabel,
                 anchor.PresentationTime,
-                anchor.AbsoluteFrameIndex,
-                anchor.IsFrameIndexAbsolute);
+                new LoopPlaybackFrameIdentitySnapshot(
+                    anchor.AbsoluteFrameIndex,
+                    anchor.IsFrameIndexAbsolute,
+                    anchor.PresentationTimestamp,
+                    anchor.DecodeTimestamp));
         }
 
         private static LoopPlaybackAnchorSnapshot CreateAnchorSnapshot(
@@ -1146,10 +1149,13 @@ namespace FramePlayer.Core.Coordination
                 session.SessionId,
                 pane.DisplayLabel,
                 session.Position.PresentationTime,
-                session.HasAbsoluteFrameIdentity
-                    ? (long?)Math.Max(0L, session.Position.FrameIndex.GetValueOrDefault())
-                    : null,
-                session.HasAbsoluteFrameIdentity);
+                new LoopPlaybackFrameIdentitySnapshot(
+                    session.HasAbsoluteFrameIdentity
+                        ? (long?)Math.Max(0L, session.Position.FrameIndex.GetValueOrDefault())
+                        : null,
+                    session.HasAbsoluteFrameIdentity,
+                    session.Position.PresentationTimestamp,
+                    session.Position.DecodeTimestamp));
         }
 
         private static bool ArePresentationTimesEquivalent(

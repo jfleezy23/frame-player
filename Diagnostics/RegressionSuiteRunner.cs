@@ -2114,123 +2114,146 @@ namespace FramePlayer.Diagnostics
                                     sharedLoopUi.IsOutPending,
                                     sharedLoopUi.IsInvalid)));
 
-                        if (runPlaybackLifecycleChecks)
+                        var loopPlaybackEnabled = false;
+                        var mainExportOutputPath = Path.Combine(
+                            Path.GetTempPath(),
+                            "frameplayer-loop-export-main-" + Guid.NewGuid().ToString("N") + ".mp4");
+                        try
                         {
-                            var playbackStart = controller.CaptureSnapshot();
-                            Trace("UI harness playback start: " + filePath);
-                            await controller.StartPlaybackAsync().ConfigureAwait(true);
-                            await Task.Delay(PlaybackDelay, cancellationToken).ConfigureAwait(true);
-                            await controller.PausePlaybackAsync().ConfigureAwait(true);
-                            Trace("UI harness playback pause: " + filePath);
-                            var playbackPaused = controller.CaptureSnapshot();
-                            var playbackAdvanced = playbackStart.EngineFrameIndex.HasValue &&
-                                playbackPaused.EngineFrameIndex.HasValue &&
-                                playbackPaused.EngineFrameIndex.Value > playbackStart.EngineFrameIndex.Value;
-                            checks.Add(playbackAdvanced
-                                ? Pass(
-                                    filePath,
-                                    "ui",
-                                    "lifecycle",
-                                    "ui-playback-pause-progress",
-                                    string.Format(
-                                        CultureInfo.InvariantCulture,
-                                        "UI playback advanced from frame {0} to frame {1} before pause.",
-                                        playbackStart.EngineFrameIndex.Value,
-                                        playbackPaused.EngineFrameIndex.Value))
-                                : Fail(
-                                    filePath,
-                                    "ui",
-                                    "lifecycle",
-                                    "ui-playback-pause-progress",
-                                    string.Format(
-                                        CultureInfo.InvariantCulture,
-                                        "UI playback did not advance before pause. Start frame {0}, paused frame {1}.",
-                                        FormatFrameIndex(playbackStart.EngineFrameIndex),
-                                        FormatFrameIndex(playbackPaused.EngineFrameIndex)),
-                                    actualFrameIndex: playbackPaused.EngineFrameIndex));
+                            if (runPlaybackLifecycleChecks)
+                            {
+                                var playbackStart = controller.CaptureSnapshot();
+                                Trace("UI harness playback start: " + filePath);
+                                await controller.StartPlaybackAsync().ConfigureAwait(true);
+                                await Task.Delay(PlaybackDelay, cancellationToken).ConfigureAwait(true);
+                                await controller.PausePlaybackAsync().ConfigureAwait(true);
+                                Trace("UI harness playback pause: " + filePath);
+                                var playbackPaused = controller.CaptureSnapshot();
+                                var playbackAdvanced = playbackStart.EngineFrameIndex.HasValue &&
+                                    playbackPaused.EngineFrameIndex.HasValue &&
+                                    playbackPaused.EngineFrameIndex.Value > playbackStart.EngineFrameIndex.Value;
+                                checks.Add(playbackAdvanced
+                                    ? Pass(
+                                        filePath,
+                                        "ui",
+                                        "lifecycle",
+                                        "ui-playback-pause-progress",
+                                        string.Format(
+                                            CultureInfo.InvariantCulture,
+                                            "UI playback advanced from frame {0} to frame {1} before pause.",
+                                            playbackStart.EngineFrameIndex.Value,
+                                            playbackPaused.EngineFrameIndex.Value))
+                                    : Fail(
+                                        filePath,
+                                        "ui",
+                                        "lifecycle",
+                                        "ui-playback-pause-progress",
+                                        string.Format(
+                                            CultureInfo.InvariantCulture,
+                                            "UI playback did not advance before pause. Start frame {0}, paused frame {1}.",
+                                            FormatFrameIndex(playbackStart.EngineFrameIndex),
+                                            FormatFrameIndex(playbackPaused.EngineFrameIndex)),
+                                        actualFrameIndex: playbackPaused.EngineFrameIndex));
 
-                            var postPlaybackTarget = controller.GetSliderTargetFromRatio(0.5d);
-                            Trace("UI harness post-playback seek: " + filePath);
-                            var postPlaybackSeek = await controller.CommitSliderSeekAsync("click", postPlaybackTarget).ConfigureAwait(true);
-                            checks.Add(EvaluateUiFrameTruth(
-                                filePath,
-                                "ui-post-playback-slider-seek",
-                                postPlaybackSeek,
-                                postPlaybackTarget,
-                                false,
-                                postPlaybackSeek.ElapsedMilliseconds));
-                            checks.AddRange(await controller.RunUiStepRoundTripAsync(filePath, "ui-post-playback-slider-seek", cancellationToken).ConfigureAwait(true));
+                                var postPlaybackTarget = controller.GetSliderTargetFromRatio(0.5d);
+                                Trace("UI harness post-playback seek: " + filePath);
+                                var postPlaybackSeek = await controller.CommitSliderSeekAsync("click", postPlaybackTarget).ConfigureAwait(true);
+                                checks.Add(EvaluateUiFrameTruth(
+                                    filePath,
+                                    "ui-post-playback-slider-seek",
+                                    postPlaybackSeek,
+                                    postPlaybackTarget,
+                                    false,
+                                    postPlaybackSeek.ElapsedMilliseconds));
+                                checks.AddRange(await controller.RunUiStepRoundTripAsync(filePath, "ui-post-playback-slider-seek", cancellationToken).ConfigureAwait(true));
 
-                            await controller.SetLoopPlaybackEnabledAsync(true).ConfigureAwait(true);
-                            var loopEntrySeek = await controller.CommitSliderSeekAsync("click", loopStartSnapshot.EnginePresentationTime).ConfigureAwait(true);
-                            var loopEntryLandedInsideRange = loopStartSnapshot.EngineFrameIndex.HasValue &&
-                                                             loopEndSnapshot.EngineFrameIndex.HasValue &&
-                                                             loopEntrySeek.EngineFrameIndex.HasValue &&
-                                                             loopEntrySeek.EngineFrameIndex.Value >= loopStartSnapshot.EngineFrameIndex.Value &&
-                                                             loopEntrySeek.EngineFrameIndex.Value <= loopEndSnapshot.EngineFrameIndex.Value;
-                            checks.Add(loopEntryLandedInsideRange
-                                ? Pass(
+                                await controller.SetLoopPlaybackEnabledAsync(true).ConfigureAwait(true);
+                                loopPlaybackEnabled = true;
+                                var loopEntrySeek = await controller.CommitSliderSeekAsync("click", loopStartSnapshot.EnginePresentationTime).ConfigureAwait(true);
+                                var loopEntryLandedInsideRange = loopStartSnapshot.EngineFrameIndex.HasValue &&
+                                                                 loopEndSnapshot.EngineFrameIndex.HasValue &&
+                                                                 loopEntrySeek.EngineFrameIndex.HasValue &&
+                                                                 loopEntrySeek.EngineFrameIndex.Value >= loopStartSnapshot.EngineFrameIndex.Value &&
+                                                                 loopEntrySeek.EngineFrameIndex.Value <= loopEndSnapshot.EngineFrameIndex.Value;
+                                checks.Add(loopEntryLandedInsideRange
+                                    ? Pass(
+                                        filePath,
+                                        "ui",
+                                        "lifecycle",
+                                        "ui-loop-main-entry-seek",
+                                        string.Format(
+                                            CultureInfo.InvariantCulture,
+                                            "Loop entry seek landed inside the boxed frame range {0}..{1} before timed playback.",
+                                            loopStartSnapshot.EngineFrameIndex.Value,
+                                            loopEndSnapshot.EngineFrameIndex.Value),
+                                        actualFrameIndex: loopEntrySeek.EngineFrameIndex)
+                                    : Fail(
+                                        filePath,
+                                        "ui",
+                                        "lifecycle",
+                                        "ui-loop-main-entry-seek",
+                                        string.Format(
+                                            CultureInfo.InvariantCulture,
+                                            "Loop entry seek did not land inside the boxed frame range {0}..{1}. Landed at frame {2}.",
+                                            FormatFrameIndex(loopStartSnapshot.EngineFrameIndex),
+                                            FormatFrameIndex(loopEndSnapshot.EngineFrameIndex),
+                                            FormatFrameIndex(loopEntrySeek.EngineFrameIndex)),
+                                        actualFrameIndex: loopEntrySeek.EngineFrameIndex));
+                                Trace("UI harness loop playback smoke: " + filePath);
+                                await controller.StartPlaybackAsync().ConfigureAwait(true);
+                                await Task.Delay(750, cancellationToken).ConfigureAwait(true);
+                                await controller.PausePlaybackAsync().ConfigureAwait(true);
+                                var loopPlaybackSnapshot = controller.CaptureSnapshot();
+                                var loopStayedWithinRange = loopStartSnapshot.EngineFrameIndex.HasValue &&
+                                                            loopEndSnapshot.EngineFrameIndex.HasValue &&
+                                                            loopPlaybackSnapshot.EngineFrameIndex.HasValue &&
+                                                            loopPlaybackSnapshot.EngineFrameIndex.Value >= loopStartSnapshot.EngineFrameIndex.Value &&
+                                                            loopPlaybackSnapshot.EngineFrameIndex.Value <= loopEndSnapshot.EngineFrameIndex.Value;
+                                checks.Add(loopStayedWithinRange
+                                    ? Pass(
+                                        filePath,
+                                        "ui",
+                                        "lifecycle",
+                                        "ui-loop-main-playback-bounded",
+                                        string.Format(
+                                            CultureInfo.InvariantCulture,
+                                            "Loop playback stayed inside the boxed frame range {0}..{1} after timed playback.",
+                                            loopStartSnapshot.EngineFrameIndex.Value,
+                                            loopEndSnapshot.EngineFrameIndex.Value),
+                                        actualFrameIndex: loopPlaybackSnapshot.EngineFrameIndex)
+                                    : Fail(
+                                        filePath,
+                                        "ui",
+                                        "lifecycle",
+                                        "ui-loop-main-playback-bounded",
+                                        string.Format(
+                                            CultureInfo.InvariantCulture,
+                                            "Loop playback escaped the boxed range {0}..{1}. Paused at frame {2}.",
+                                            FormatFrameIndex(loopStartSnapshot.EngineFrameIndex),
+                                            FormatFrameIndex(loopEndSnapshot.EngineFrameIndex),
+                                            FormatFrameIndex(loopPlaybackSnapshot.EngineFrameIndex)),
+                                        actualFrameIndex: loopPlaybackSnapshot.EngineFrameIndex));
+                            }
+                            else
+                            {
+                                checks.Add(Warning(
                                     filePath,
                                     "ui",
-                                    "lifecycle",
-                                    "ui-loop-main-entry-seek",
-                                    string.Format(
-                                        CultureInfo.InvariantCulture,
-                                        "Loop entry seek landed inside the boxed frame range {0}..{1} before timed playback.",
-                                        loopStartSnapshot.EngineFrameIndex.Value,
-                                        loopEndSnapshot.EngineFrameIndex.Value),
-                                    actualFrameIndex: loopEntrySeek.EngineFrameIndex)
-                                : Fail(
-                                    filePath,
-                                    "ui",
-                                    "lifecycle",
-                                    "ui-loop-main-entry-seek",
-                                    string.Format(
-                                        CultureInfo.InvariantCulture,
-                                        "Loop entry seek did not land inside the boxed frame range {0}..{1}. Landed at frame {2}.",
-                                        FormatFrameIndex(loopStartSnapshot.EngineFrameIndex),
-                                        FormatFrameIndex(loopEndSnapshot.EngineFrameIndex),
-                                        FormatFrameIndex(loopEntrySeek.EngineFrameIndex)),
-                                    actualFrameIndex: loopEntrySeek.EngineFrameIndex));
-                            Trace("UI harness loop playback smoke: " + filePath);
-                            await controller.StartPlaybackAsync().ConfigureAwait(true);
-                            await Task.Delay(750, cancellationToken).ConfigureAwait(true);
-                            await controller.PausePlaybackAsync().ConfigureAwait(true);
-                            var loopPlaybackSnapshot = controller.CaptureSnapshot();
-                            var loopStayedWithinRange = loopStartSnapshot.EngineFrameIndex.HasValue &&
-                                                        loopEndSnapshot.EngineFrameIndex.HasValue &&
-                                                        loopPlaybackSnapshot.EngineFrameIndex.HasValue &&
-                                                        loopPlaybackSnapshot.EngineFrameIndex.Value >= loopStartSnapshot.EngineFrameIndex.Value &&
-                                                        loopPlaybackSnapshot.EngineFrameIndex.Value <= loopEndSnapshot.EngineFrameIndex.Value;
-                            checks.Add(loopStayedWithinRange
-                                ? Pass(
-                                    filePath,
-                                    "ui",
-                                    "lifecycle",
-                                    "ui-loop-main-playback-bounded",
-                                    string.Format(
-                                        CultureInfo.InvariantCulture,
-                                        "Loop playback stayed inside the boxed frame range {0}..{1} after timed playback.",
-                                        loopStartSnapshot.EngineFrameIndex.Value,
-                                        loopEndSnapshot.EngineFrameIndex.Value),
-                                    actualFrameIndex: loopPlaybackSnapshot.EngineFrameIndex)
-                                : Fail(
-                                    filePath,
-                                    "ui",
-                                    "lifecycle",
-                                    "ui-loop-main-playback-bounded",
-                                    string.Format(
-                                        CultureInfo.InvariantCulture,
-                                        "Loop playback escaped the boxed range {0}..{1}. Paused at frame {2}.",
-                                        FormatFrameIndex(loopStartSnapshot.EngineFrameIndex),
-                                        FormatFrameIndex(loopEndSnapshot.EngineFrameIndex),
-                                        FormatFrameIndex(loopPlaybackSnapshot.EngineFrameIndex)),
-                                    actualFrameIndex: loopPlaybackSnapshot.EngineFrameIndex));
+                                    "coverage",
+                                    "ui-playback-lifecycle-skipped",
+                                    "Timed playback was skipped in the hidden-window UI harness for this audio-bearing corpus file. Engine-level playback and audio checks still ran."));
+                            }
 
-                            var mainExportOutputPath = Path.Combine(
-                                Path.GetTempPath(),
-                                "frameplayer-loop-export-main-" + Guid.NewGuid().ToString("N") + ".mp4");
-                            try
+                            if (!sharedLoopReady)
+                            {
+                                checks.Add(Warning(
+                                    filePath,
+                                    "ui",
+                                    "coverage",
+                                    "ui-loop-export-main-skipped",
+                                    "Main-loop clip export was skipped because the reviewed A/B range never settled into a ready exact box."));
+                            }
+                            else
                             {
                                 var mainExportResult = await controller.ExportLoopClipAsync(mainExportOutputPath).ConfigureAwait(true);
                                 if (mainExportResult == null)
@@ -2293,28 +2316,21 @@ namespace FramePlayer.Diagnostics
                                                 durationDelta)));
                                 }
                             }
-                            finally
+                        }
+                        finally
                             {
+                                if (loopPlaybackEnabled)
+                                {
+                                    await controller.SetLoopPlaybackEnabledAsync(false).ConfigureAwait(true);
+                                }
+
+                                await controller.ClearLoopPointsAsync().ConfigureAwait(true);
+
                                 if (File.Exists(mainExportOutputPath))
                                 {
                                     File.Delete(mainExportOutputPath);
                                 }
                             }
-
-                            await controller.SetLoopPlaybackEnabledAsync(false).ConfigureAwait(true);
-                            await controller.ClearLoopPointsAsync().ConfigureAwait(true);
-                        }
-                        else
-                        {
-                            checks.Add(Warning(
-                                filePath,
-                                "ui",
-                                "coverage",
-                                "ui-playback-lifecycle-skipped",
-                                "Timed playback was skipped in the hidden-window UI harness for this audio-bearing corpus file. Engine-level playback and audio checks still ran."));
-                            await controller.ClearLoopPointsAsync().ConfigureAwait(true);
-                        }
-
                         await controller.SetCompareModeAsync(true).ConfigureAwait(true);
                         await controller.OpenAsync(filePath, "pane-compare-a").ConfigureAwait(true);
                         await controller.CommitPaneSliderSeekAsync("pane-primary", "click", controller.GetSliderTargetFromRatio(0.20d)).ConfigureAwait(true);
