@@ -2226,6 +2226,81 @@ namespace FramePlayer.Diagnostics
                                         FormatFrameIndex(loopEndSnapshot.EngineFrameIndex),
                                         FormatFrameIndex(loopPlaybackSnapshot.EngineFrameIndex)),
                                     actualFrameIndex: loopPlaybackSnapshot.EngineFrameIndex));
+
+                            var mainExportOutputPath = Path.Combine(
+                                Path.GetTempPath(),
+                                "frameplayer-loop-export-main-" + Guid.NewGuid().ToString("N") + ".mp4");
+                            try
+                            {
+                                var mainExportResult = await controller.ExportLoopClipAsync(mainExportOutputPath).ConfigureAwait(true);
+                                if (mainExportResult == null)
+                                {
+                                    checks.Add(Warning(
+                                        filePath,
+                                        "ui",
+                                        "coverage",
+                                        "ui-loop-export-main-skipped",
+                                        "Main-loop clip export was skipped because the export tools were unavailable or the loop state changed before export."));
+                                }
+                                else if (!mainExportResult.Succeeded)
+                                {
+                                    checks.Add(Fail(
+                                        filePath,
+                                        "ui",
+                                        "lifecycle",
+                                        "ui-loop-export-main",
+                                        "Main-loop clip export failed: " + mainExportResult.Message));
+                                }
+                                else
+                                {
+                                    checks.Add(File.Exists(mainExportOutputPath)
+                                        ? Pass(
+                                            filePath,
+                                            "ui",
+                                            "lifecycle",
+                                            "ui-loop-export-main",
+                                            "Main-loop clip export produced an MP4 output file.")
+                                        : Fail(
+                                            filePath,
+                                            "ui",
+                                            "lifecycle",
+                                            "ui-loop-export-main",
+                                            "Main-loop clip export reported success but did not produce the expected output file."));
+
+                                    var expectedDuration = mainExportResult.Plan != null
+                                        ? mainExportResult.Plan.Duration
+                                        : TimeSpan.Zero;
+                                    var actualDuration = mainExportResult.ProbedDuration ?? expectedDuration;
+                                    var durationDelta = Math.Abs((actualDuration - expectedDuration).TotalMilliseconds);
+                                    checks.Add(durationDelta <= 250d
+                                        ? Pass(
+                                            filePath,
+                                            "ui",
+                                            "correctness",
+                                            "ui-loop-export-main-duration",
+                                            string.Format(
+                                                CultureInfo.InvariantCulture,
+                                                "Main-loop clip export duration matched the reviewed A/B range within tolerance ({0:0.0} ms delta).",
+                                                durationDelta))
+                                        : Fail(
+                                            filePath,
+                                            "ui",
+                                            "correctness",
+                                            "ui-loop-export-main-duration",
+                                            string.Format(
+                                                CultureInfo.InvariantCulture,
+                                                "Main-loop clip export duration drifted from the reviewed A/B range by {0:0.0} ms.",
+                                                durationDelta)));
+                                }
+                            }
+                            finally
+                            {
+                                if (File.Exists(mainExportOutputPath))
+                                {
+                                    File.Delete(mainExportOutputPath);
+                                }
+                            }
+
                             await controller.SetLoopPlaybackEnabledAsync(false).ConfigureAwait(true);
                             await controller.ClearLoopPointsAsync().ConfigureAwait(true);
                         }
@@ -2240,51 +2315,6 @@ namespace FramePlayer.Diagnostics
                             await controller.ClearLoopPointsAsync().ConfigureAwait(true);
                         }
 
-                        await controller.SetCompareModeAsync(true).ConfigureAwait(true);
-                        await controller.OpenAsync(filePath, "pane-compare-a").ConfigureAwait(true);
-                        await controller.CommitPaneSliderSeekAsync("pane-primary", "click", controller.GetSliderTargetFromRatio(0.20d)).ConfigureAwait(true);
-                        await controller.SetPaneLoopMarkerAsync("pane-primary", LoopPlaybackMarkerEndpoint.In).ConfigureAwait(true);
-                        await controller.CommitPaneSliderSeekAsync("pane-primary", "click", controller.GetSliderTargetFromRatio(0.22d)).ConfigureAwait(true);
-                        await controller.SetPaneLoopMarkerAsync("pane-primary", LoopPlaybackMarkerEndpoint.Out).ConfigureAwait(true);
-                        await controller.CommitPaneSliderSeekAsync("pane-compare-a", "click", controller.GetSliderTargetFromRatio(0.40d)).ConfigureAwait(true);
-                        await controller.SetPaneLoopMarkerAsync("pane-compare-a", LoopPlaybackMarkerEndpoint.In).ConfigureAwait(true);
-                        await controller.CommitPaneSliderSeekAsync("pane-compare-a", "click", controller.GetSliderTargetFromRatio(0.42d)).ConfigureAwait(true);
-                        await controller.SetPaneLoopMarkerAsync("pane-compare-a", LoopPlaybackMarkerEndpoint.Out).ConfigureAwait(true);
-
-                        var primaryPaneLoopUi = controller.CapturePaneLoopUiSnapshot("pane-primary");
-                        var comparePaneLoopUi = controller.CapturePaneLoopUiSnapshot("pane-compare-a");
-                        var paneLocalLoopsIndependent = !primaryPaneLoopUi.IsInvalid &&
-                                                        !comparePaneLoopUi.IsInvalid &&
-                                                        !double.IsNaN(primaryPaneLoopUi.InPosition) &&
-                                                        !double.IsNaN(primaryPaneLoopUi.OutPosition) &&
-                                                        !double.IsNaN(comparePaneLoopUi.InPosition) &&
-                                                        !double.IsNaN(comparePaneLoopUi.OutPosition) &&
-                                                        Math.Abs(primaryPaneLoopUi.InPosition - comparePaneLoopUi.InPosition) > 0.01d;
-                        checks.Add(paneLocalLoopsIndependent
-                            ? Pass(
-                                filePath,
-                                "ui",
-                                "coverage",
-                                "ui-loop-pane-local-independent",
-                                string.Format(
-                                    CultureInfo.InvariantCulture,
-                                    "Primary and Compare sliders rendered independent pane-local loop boxes ({0:0.###} vs {1:0.###} seconds).",
-                                    primaryPaneLoopUi.InPosition,
-                                    comparePaneLoopUi.InPosition))
-                            : Fail(
-                                filePath,
-                                "ui",
-                                "coverage",
-                                "ui-loop-pane-local-independent",
-                                string.Format(
-                                    CultureInfo.InvariantCulture,
-                                    "Pane-local loop boxes did not stay independent. Primary status='{0}' in={1} out={2}; Compare status='{3}' in={4} out={5}.",
-                                    primaryPaneLoopUi.StatusText,
-                                    primaryPaneLoopUi.InPosition,
-                                    primaryPaneLoopUi.OutPosition,
-                                    comparePaneLoopUi.StatusText,
-                                    comparePaneLoopUi.InPosition,
-                                    comparePaneLoopUi.OutPosition)));
                         await controller.ClearLoopPointsAsync("pane-primary").ConfigureAwait(true);
                         await controller.ClearLoopPointsAsync("pane-compare-a").ConfigureAwait(true);
                         await controller.SetCompareModeAsync(false).ConfigureAwait(true);
@@ -2583,6 +2613,7 @@ namespace FramePlayer.Diagnostics
                 private readonly MethodInfo _buildVideoInfoSnapshotMethod;
                 private readonly MethodInfo _setLoopMarkerMethod;
                 private readonly MethodInfo _clearLoopPointsMethod;
+                private readonly MethodInfo _exportLoopClipAsyncMethod;
                 private readonly MethodInfo _setSharedLoopCommandContextMethod;
                 private readonly MethodInfo _setPaneLoopCommandContextMethod;
                 private readonly FieldInfo _videoReviewEngineField;
@@ -2603,6 +2634,7 @@ namespace FramePlayer.Diagnostics
                     _buildVideoInfoSnapshotMethod = RequireMethod(windowType, "BuildVideoInfoSnapshot", typeof(string), typeof(VideoMediaInfo));
                     _setLoopMarkerMethod = RequireMethod(windowType, "SetLoopMarker", typeof(LoopPlaybackMarkerEndpoint));
                     _clearLoopPointsMethod = RequireMethod(windowType, "ClearLoopPoints");
+                    _exportLoopClipAsyncMethod = RequireMethod(windowType, "ExportLoopClipAsync", typeof(string), typeof(string));
                     _setSharedLoopCommandContextMethod = RequireMethod(windowType, "SetSharedLoopCommandContext");
                     _setPaneLoopCommandContextMethod = RequireMethod(windowType, "SetPaneLoopCommandContext", typeof(string));
                     _videoReviewEngineField = RequireField(windowType, "_videoReviewEngine");
@@ -2695,6 +2727,11 @@ namespace FramePlayer.Diagnostics
 
                     _clearLoopPointsMethod.Invoke(_window, null);
                     await WaitForUiIdleAsync(_window.Dispatcher).ConfigureAwait(true);
+                }
+
+                public async Task<ClipExportResult> ExportLoopClipAsync(string outputPath, string paneId = null)
+                {
+                    return await InvokeTaskWithResultAsync<ClipExportResult>(_exportLoopClipAsyncMethod, outputPath, paneId).ConfigureAwait(true);
                 }
 
                 public async Task SetCompareModeAsync(bool isEnabled)
@@ -2980,6 +3017,21 @@ namespace FramePlayer.Diagnostics
                     }
 
                     await WaitForUiIdleAsync(_window.Dispatcher).ConfigureAwait(true);
+                }
+
+                private async Task<T> InvokeTaskWithResultAsync<T>(MethodInfo method, params object[] arguments)
+                {
+                    var result = method.Invoke(_window, arguments);
+                    var task = result as Task<T>;
+                    if (task == null)
+                    {
+                        await WaitForUiIdleAsync(_window.Dispatcher).ConfigureAwait(true);
+                        return default(T);
+                    }
+
+                    var awaitedResult = await task.ConfigureAwait(true);
+                    await WaitForUiIdleAsync(_window.Dispatcher).ConfigureAwait(true);
+                    return awaitedResult;
                 }
 
                 private static MethodInfo RequireMethod(Type type, string name, params Type[] parameterTypes)

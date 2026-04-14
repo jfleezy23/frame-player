@@ -550,6 +550,9 @@
             <MenuItem x:Name="ClearLoopPointsMenuItem"
                       Header="_Clear Loop Points"
                       Click="ClearLoopPointsMenuItem_Click" />
+            <MenuItem x:Name="SaveLoopAsClipMenuItem"
+                      Header="_Save Loop As Clip..."
+                      Click="SaveLoopAsClipMenuItem_Click" />
             <Separator Style="{StaticResource TitleBarMenuSeparatorStyle}" />
             <MenuItem x:Name="UseGpuAccelerationMenuItem"
                       Header="Use _GPU Acceleration"
