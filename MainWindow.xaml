@@ -771,6 +771,9 @@
                     <MenuItem Header="Video Info..."
                               Tag="pane-primary"
                               Click="VideoPaneVideoInfoMenuItem_Click" />
+                    <MenuItem Header="Save Loop As Clip..."
+                              Tag="pane-primary"
+                              Click="PaneSaveLoopAsClipMenuItem_Click" />
                   </ContextMenu>
                 </Border.ContextMenu>
                 <Image x:Name="CustomVideoSurface"
@@ -999,6 +1002,9 @@
                     <MenuItem Header="Video Info..."
                               Tag="pane-compare-a"
                               Click="VideoPaneVideoInfoMenuItem_Click" />
+                    <MenuItem Header="Save Loop As Clip..."
+                              Tag="pane-compare-a"
+                              Click="PaneSaveLoopAsClipMenuItem_Click" />
                   </ContextMenu>
                 </Border.ContextMenu>
                 <Image x:Name="CompareVideoSurface"

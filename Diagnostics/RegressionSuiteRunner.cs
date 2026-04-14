@@ -2315,6 +2315,169 @@ namespace FramePlayer.Diagnostics
                             await controller.ClearLoopPointsAsync().ConfigureAwait(true);
                         }
 
+                        await controller.SetCompareModeAsync(true).ConfigureAwait(true);
+                        await controller.OpenAsync(filePath, "pane-compare-a").ConfigureAwait(true);
+                        await controller.CommitPaneSliderSeekAsync("pane-primary", "click", controller.GetSliderTargetFromRatio(0.20d)).ConfigureAwait(true);
+                        await controller.SetPaneLoopMarkerAsync("pane-primary", LoopPlaybackMarkerEndpoint.In).ConfigureAwait(true);
+                        await controller.CommitPaneSliderSeekAsync("pane-primary", "click", controller.GetSliderTargetFromRatio(0.22d)).ConfigureAwait(true);
+                        await controller.SetPaneLoopMarkerAsync("pane-primary", LoopPlaybackMarkerEndpoint.Out).ConfigureAwait(true);
+                        await controller.CommitPaneSliderSeekAsync("pane-compare-a", "click", controller.GetSliderTargetFromRatio(0.40d)).ConfigureAwait(true);
+                        await controller.SetPaneLoopMarkerAsync("pane-compare-a", LoopPlaybackMarkerEndpoint.In).ConfigureAwait(true);
+                        await controller.CommitPaneSliderSeekAsync("pane-compare-a", "click", controller.GetSliderTargetFromRatio(0.42d)).ConfigureAwait(true);
+                        await controller.SetPaneLoopMarkerAsync("pane-compare-a", LoopPlaybackMarkerEndpoint.Out).ConfigureAwait(true);
+
+                        var primaryPaneLoopUi = controller.CapturePaneLoopUiSnapshot("pane-primary");
+                        var comparePaneLoopUi = controller.CapturePaneLoopUiSnapshot("pane-compare-a");
+                        var paneLocalLoopsIndependent = !primaryPaneLoopUi.IsInvalid &&
+                                                        !comparePaneLoopUi.IsInvalid &&
+                                                        !double.IsNaN(primaryPaneLoopUi.InPosition) &&
+                                                        !double.IsNaN(primaryPaneLoopUi.OutPosition) &&
+                                                        !double.IsNaN(comparePaneLoopUi.InPosition) &&
+                                                        !double.IsNaN(comparePaneLoopUi.OutPosition) &&
+                                                        Math.Abs(primaryPaneLoopUi.InPosition - comparePaneLoopUi.InPosition) > 0.01d;
+                        checks.Add(paneLocalLoopsIndependent
+                            ? Pass(
+                                filePath,
+                                "ui",
+                                "coverage",
+                                "ui-loop-pane-local-independent",
+                                string.Format(
+                                    CultureInfo.InvariantCulture,
+                                    "Primary and Compare sliders rendered independent pane-local loop boxes ({0:0.###} vs {1:0.###} seconds).",
+                                    primaryPaneLoopUi.InPosition,
+                                    comparePaneLoopUi.InPosition))
+                            : Fail(
+                                filePath,
+                                "ui",
+                                "coverage",
+                                "ui-loop-pane-local-independent",
+                                string.Format(
+                                    CultureInfo.InvariantCulture,
+                                    "Pane-local loop boxes did not stay independent. Primary status='{0}' in={1} out={2}; Compare status='{3}' in={4} out={5}.",
+                                    primaryPaneLoopUi.StatusText,
+                                    primaryPaneLoopUi.InPosition,
+                                    primaryPaneLoopUi.OutPosition,
+                                    comparePaneLoopUi.StatusText,
+                                    comparePaneLoopUi.InPosition,
+                                    comparePaneLoopUi.OutPosition)));
+
+                        var primaryPaneExportOutputPath = Path.Combine(
+                            Path.GetTempPath(),
+                            "frameplayer-loop-export-primary-" + Guid.NewGuid().ToString("N") + ".mp4");
+                        try
+                        {
+                            var primaryPaneExport = await controller.ExportLoopClipAsync(primaryPaneExportOutputPath, "pane-primary").ConfigureAwait(true);
+                            if (primaryPaneExport == null)
+                            {
+                                checks.Add(Warning(
+                                    filePath,
+                                    "ui",
+                                    "coverage",
+                                    "ui-loop-export-pane-primary-skipped",
+                                    "Primary pane clip export was skipped because the export tools were unavailable or the pane loop state changed before export."));
+                            }
+                            else if (!primaryPaneExport.Succeeded)
+                            {
+                                checks.Add(Fail(
+                                    filePath,
+                                    "ui",
+                                    "lifecycle",
+                                    "ui-loop-export-pane-primary",
+                                    "Primary pane clip export failed: " + primaryPaneExport.Message));
+                            }
+                            else
+                            {
+                                checks.Add(File.Exists(primaryPaneExportOutputPath)
+                                    ? Pass(
+                                        filePath,
+                                        "ui",
+                                        "lifecycle",
+                                        "ui-loop-export-pane-primary",
+                                        "Primary pane clip export produced an MP4 output file.")
+                                    : Fail(
+                                        filePath,
+                                        "ui",
+                                        "lifecycle",
+                                        "ui-loop-export-pane-primary",
+                                        "Primary pane clip export reported success but did not produce the expected output file."));
+                            }
+                        }
+                        finally
+                        {
+                            if (File.Exists(primaryPaneExportOutputPath))
+                            {
+                                File.Delete(primaryPaneExportOutputPath);
+                            }
+                        }
+
+                        var comparePaneExportOutputPath = Path.Combine(
+                            Path.GetTempPath(),
+                            "frameplayer-loop-export-compare-" + Guid.NewGuid().ToString("N") + ".mp4");
+                        try
+                        {
+                            var comparePaneExport = await controller.ExportLoopClipAsync(comparePaneExportOutputPath, "pane-compare-a").ConfigureAwait(true);
+                            if (comparePaneExport == null)
+                            {
+                                checks.Add(Warning(
+                                    filePath,
+                                    "ui",
+                                    "coverage",
+                                    "ui-loop-export-pane-compare-skipped",
+                                    "Compare pane clip export was skipped because the export tools were unavailable or the pane loop state changed before export."));
+                            }
+                            else if (!comparePaneExport.Succeeded)
+                            {
+                                checks.Add(Fail(
+                                    filePath,
+                                    "ui",
+                                    "lifecycle",
+                                    "ui-loop-export-pane-compare",
+                                    "Compare pane clip export failed: " + comparePaneExport.Message));
+                            }
+                            else
+                            {
+                                checks.Add(File.Exists(comparePaneExportOutputPath)
+                                    ? Pass(
+                                        filePath,
+                                        "ui",
+                                        "lifecycle",
+                                        "ui-loop-export-pane-compare",
+                                        "Compare pane clip export produced an MP4 output file.")
+                                    : Fail(
+                                        filePath,
+                                        "ui",
+                                        "lifecycle",
+                                        "ui-loop-export-pane-compare",
+                                        "Compare pane clip export reported success but did not produce the expected output file."));
+
+                                var paneLoopStartDeltaSeconds = Math.Abs(primaryPaneLoopUi.InPosition - comparePaneLoopUi.InPosition);
+                                var paneExportIndependent = comparePaneExport.Plan != null &&
+                                                            paneLoopStartDeltaSeconds > 0.001d &&
+                                                            comparePaneExport.Plan.StartTime.TotalSeconds >= comparePaneLoopUi.InPosition - 0.25d &&
+                                                            comparePaneExport.Plan.StartTime.TotalSeconds <= comparePaneLoopUi.InPosition + 0.25d;
+                                checks.Add(paneExportIndependent
+                                    ? Pass(
+                                        filePath,
+                                        "ui",
+                                        "correctness",
+                                        "ui-loop-export-pane-independence",
+                                        "Compare pane clip export respected the compare pane's own loop range instead of the primary pane range.")
+                                    : Fail(
+                                        filePath,
+                                        "ui",
+                                        "correctness",
+                                        "ui-loop-export-pane-independence",
+                                        "Compare pane clip export did not line up with the compare pane's pane-local loop range."));
+                            }
+                        }
+                        finally
+                        {
+                            if (File.Exists(comparePaneExportOutputPath))
+                            {
+                                File.Delete(comparePaneExportOutputPath);
+                            }
+                        }
+
                         await controller.ClearLoopPointsAsync("pane-primary").ConfigureAwait(true);
                         await controller.ClearLoopPointsAsync("pane-compare-a").ConfigureAwait(true);
                         await controller.SetCompareModeAsync(false).ConfigureAwait(true);
