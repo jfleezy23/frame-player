@@ -27,6 +27,16 @@ namespace FramePlayer.Diagnostics
         private static readonly TimeSpan IndexReadyTimeout = TimeSpan.FromSeconds(30d);
         private static readonly TimeSpan UiSeekWarningThreshold = TimeSpan.FromMilliseconds(2000d);
         private static readonly TimeSpan PlaybackDelay = TimeSpan.FromMilliseconds(500d);
+        private static readonly TimeSpan LoopUiReadyTimeout = TimeSpan.FromSeconds(5d);
+        private static readonly string[] SupportedVideoExtensions =
+        {
+            ".avi",
+            ".mov",
+            ".m4v",
+            ".mp4",
+            ".mkv",
+            ".wmv"
+        };
         private static readonly string[] StaleRuntimeFiles =
         {
             "avcodec-61.dll",
@@ -117,11 +127,29 @@ namespace FramePlayer.Diagnostics
                     throw new FileNotFoundException("The requested media file was not found.", fullPath);
                 }
 
+                if (!IsSupportedVideoFile(fullPath))
+                {
+                    Trace("Skipping unsupported regression media file: " + fullPath);
+                    continue;
+                }
+
                 if (seen.Add(fullPath))
                 {
                     yield return fullPath;
                 }
             }
+        }
+
+        private static bool IsSupportedVideoFile(string filePath)
+        {
+            var extension = Path.GetExtension(filePath);
+            if (string.IsNullOrWhiteSpace(extension))
+            {
+                return false;
+            }
+
+            return SupportedVideoExtensions.Any(
+                supportedExtension => extension.Equals(supportedExtension, StringComparison.OrdinalIgnoreCase));
         }
 
         private static async Task<RegressionFileReport> RunFileAsync(string filePath, CancellationToken cancellationToken)
@@ -2081,7 +2109,7 @@ namespace FramePlayer.Diagnostics
                         await controller.StepFrameAsync(2).ConfigureAwait(true);
                         var loopEndSnapshot = controller.CaptureSnapshot();
                         await controller.SetSharedLoopMarkerAsync(LoopPlaybackMarkerEndpoint.Out).ConfigureAwait(true);
-                        var sharedLoopUi = controller.CaptureMainLoopUiSnapshot();
+                        var sharedLoopUi = await controller.WaitForLoopUiReadyAsync(null, LoopUiReadyTimeout, cancellationToken).ConfigureAwait(true);
                         var sharedLoopReady = !sharedLoopUi.IsInvalid &&
                                               !sharedLoopUi.IsInPending &&
                                               !sharedLoopUi.IsOutPending &&
@@ -2342,8 +2370,8 @@ namespace FramePlayer.Diagnostics
                         await controller.CommitPaneSliderSeekAsync("pane-compare-a", "click", controller.GetSliderTargetFromRatio(0.42d)).ConfigureAwait(true);
                         await controller.SetPaneLoopMarkerAsync("pane-compare-a", LoopPlaybackMarkerEndpoint.Out).ConfigureAwait(true);
 
-                        var primaryPaneLoopUi = controller.CapturePaneLoopUiSnapshot("pane-primary");
-                        var comparePaneLoopUi = controller.CapturePaneLoopUiSnapshot("pane-compare-a");
+                        var primaryPaneLoopUi = await controller.WaitForLoopUiReadyAsync("pane-primary", LoopUiReadyTimeout, cancellationToken).ConfigureAwait(true);
+                        var comparePaneLoopUi = await controller.WaitForLoopUiReadyAsync("pane-compare-a", LoopUiReadyTimeout, cancellationToken).ConfigureAwait(true);
                         var paneLocalLoopsIndependent = !primaryPaneLoopUi.IsInvalid &&
                                                         !comparePaneLoopUi.IsInvalid &&
                                                         !double.IsNaN(primaryPaneLoopUi.InPosition) &&
@@ -3050,6 +3078,35 @@ namespace FramePlayer.Diagnostics
                     return new IndexReadyUiResult(finalEngine.IsGlobalFrameIndexAvailable, stopwatch.Elapsed.TotalMilliseconds, finalEngine.IndexedFrameCount);
                 }
 
+                public async Task<LoopUiSnapshot> WaitForLoopUiReadyAsync(string paneId, TimeSpan timeout, CancellationToken cancellationToken)
+                {
+                    var stopwatch = Stopwatch.StartNew();
+                    LoopUiSnapshot lastSnapshot = null;
+                    while (stopwatch.Elapsed < timeout)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        lastSnapshot = string.IsNullOrWhiteSpace(paneId)
+                            ? CaptureMainLoopUiSnapshot()
+                            : CapturePaneLoopUiSnapshot(paneId);
+                        if (IsLoopUiReady(lastSnapshot))
+                        {
+                            return lastSnapshot;
+                        }
+
+                        await Task.Delay(50, cancellationToken).ConfigureAwait(true);
+                    }
+
+                    return lastSnapshot ?? new LoopUiSnapshot
+                    {
+                        StatusText = string.Empty,
+                        InPosition = double.NaN,
+                        OutPosition = double.NaN,
+                        IsInPending = true,
+                        IsOutPending = true,
+                        IsInvalid = true
+                    };
+                }
+
                 public async Task StepFrameAsync(int delta)
                 {
                     await InvokeTaskAsync(_stepFrameAsyncMethod, delta).ConfigureAwait(true);
@@ -3164,6 +3221,17 @@ namespace FramePlayer.Diagnostics
                         IsOutPending = loopOverlay != null && loopOverlay.IsOutPending,
                         IsInvalid = loopOverlay != null && loopOverlay.IsInvalid
                     };
+                }
+
+                private static bool IsLoopUiReady(LoopUiSnapshot snapshot)
+                {
+                    return snapshot != null &&
+                           !snapshot.IsInvalid &&
+                           !snapshot.IsInPending &&
+                           !snapshot.IsOutPending &&
+                           !double.IsNaN(snapshot.InPosition) &&
+                           !double.IsNaN(snapshot.OutPosition) &&
+                           snapshot.OutPosition >= snapshot.InPosition;
                 }
 
                 private FfmpegReviewEngine GetEngine()
