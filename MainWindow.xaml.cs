@@ -37,7 +37,6 @@ namespace FramePlayer
         private const double CompareModePreferredMinWindowWidth = 1180d;
         private const int ControlModifiedFrameStep = 10;
         private const int ShiftModifiedFrameStep = 100;
-        private const int DefaultWindowCornerRadius = 14;
         private const int DwmaWindowCornerPreference = 33;
         private static readonly TimeSpan SeekJump = TimeSpan.FromSeconds(5);
         private static readonly TimeSpan FrameStepInitialDelay = TimeSpan.FromMilliseconds(550);
@@ -546,22 +545,6 @@ namespace FramePlayer
                 : "Primary pane";
         }
 
-        private string GetActiveLoopPlaybackPaneId(ReviewWorkspaceSnapshot workspaceSnapshot = null)
-        {
-            if (!IsCompareModeEnabled || string.IsNullOrWhiteSpace(_activeLoopPlaybackPaneId))
-            {
-                return null;
-            }
-
-            var snapshot = workspaceSnapshot ?? _workspaceCoordinator.GetWorkspaceSnapshot();
-            ReviewWorkspacePaneSnapshot paneSnapshot;
-            return snapshot != null &&
-                   snapshot.TryGetPane(_activeLoopPlaybackPaneId, out paneSnapshot) &&
-                   PaneHasLoadedMedia(paneSnapshot)
-                ? _activeLoopPlaybackPaneId
-                : null;
-        }
-
         private static bool PaneHasLoadedMedia(ReviewWorkspacePaneSnapshot paneSnapshot)
         {
             return paneSnapshot != null &&
@@ -778,7 +761,7 @@ namespace FramePlayer
 
             long currentFrameIndex = 0L;
             bool isAbsoluteFrameIndex = false;
-            var hasFrameIdentity = TryGetCurrentEngineFrameIndex(paneId, out currentFrameIndex, out isAbsoluteFrameIndex);
+            var hasFrameIdentity = TryGetPaneCurrentEngineFrameIndex(paneId, out currentFrameIndex, out isAbsoluteFrameIndex);
             if (!frameNumberTextBox.IsKeyboardFocusWithin)
             {
                 frameNumberTextBox.Text = hasFrameIdentity && isAbsoluteFrameIndex
@@ -811,7 +794,7 @@ namespace FramePlayer
                 var pendingFrameMessage = _buildVariant.UsesZeroIndexedFrameDisplay
                     ? "The current frame number is pending while the background index finishes. The visible frame is correct, but the absolute zero-indexed frame label is not ready yet."
                     : "The current frame number is pending while the background index finishes. The visible frame is correct, but the absolute frame label is not ready yet.";
-                var pendingMaxFrameIndex = GetMaxFrameIndex(paneId);
+                var pendingMaxFrameIndex = GetPaneMaxFrameIndex(paneId);
                 if (pendingMaxFrameIndex >= 0)
                 {
                     var lastFrameNumber = GetDisplayedTotalFrameValue(pendingMaxFrameIndex + 1L);
@@ -825,7 +808,7 @@ namespace FramePlayer
                 return pendingFrameMessage + " You can still type a frame number and press Enter.";
             }
 
-            var maxFrameIndex = GetMaxFrameIndex(paneId);
+            var maxFrameIndex = GetPaneMaxFrameIndex(paneId);
             if (maxFrameIndex >= 0)
             {
                 var lastFrameNumber = GetDisplayedTotalFrameValue(maxFrameIndex + 1L);
@@ -896,7 +879,7 @@ namespace FramePlayer
                 : TimeSpan.Zero;
         }
 
-        private bool TryGetCurrentEngineFrameIndex(string paneId, out long frameIndex, out bool isAbsoluteFrameIndex)
+        private bool TryGetPaneCurrentEngineFrameIndex(string paneId, out long frameIndex, out bool isAbsoluteFrameIndex)
         {
             frameIndex = 0L;
             isAbsoluteFrameIndex = false;
@@ -913,7 +896,7 @@ namespace FramePlayer
             return true;
         }
 
-        private long GetMaxFrameIndex(string paneId)
+        private long GetPaneMaxFrameIndex(string paneId)
         {
             var ffmpegEngine = GetEngineForPane(paneId) as FfmpegReviewEngine;
             if (ffmpegEngine != null && ffmpegEngine.IsGlobalFrameIndexAvailable && ffmpegEngine.IndexedFrameCount > 0L)
@@ -1115,57 +1098,6 @@ namespace FramePlayer
             }
 
             return "Compare: Time-based only";
-        }
-
-        private string BuildComparePanePositionText(ReviewWorkspacePaneSnapshot paneSnapshot)
-        {
-            if (paneSnapshot != null &&
-                paneSnapshot.HasAbsoluteFrameIdentity &&
-                paneSnapshot.FrameIndex.HasValue)
-            {
-                return string.Format(
-                    CultureInfo.InvariantCulture,
-                    "frame {0}",
-                    GetDisplayedFrameNumber(paneSnapshot.FrameIndex.Value));
-            }
-
-            return "time " + FormatTime(paneSnapshot != null
-                ? paneSnapshot.PresentationTime
-                : TimeSpan.Zero);
-        }
-
-        private static string BuildCompareFrameAvailabilityText(
-            ReviewWorkspacePaneSnapshot primaryPaneSnapshot,
-            ReviewWorkspacePaneSnapshot comparePaneSnapshot)
-        {
-            var leftHasFrameIdentity = primaryPaneSnapshot != null && primaryPaneSnapshot.HasAbsoluteFrameIdentity;
-            var rightHasFrameIdentity = comparePaneSnapshot != null && comparePaneSnapshot.HasAbsoluteFrameIdentity;
-            if (!leftHasFrameIdentity && !rightHasFrameIdentity)
-            {
-                return "Frame identity unavailable on both panes.";
-            }
-
-            if (!leftHasFrameIdentity)
-            {
-                return "Frame identity unavailable on the left pane.";
-            }
-
-            if (!rightHasFrameIdentity)
-            {
-                return "Frame identity unavailable on the right pane.";
-            }
-
-            return "Frame identity unavailable.";
-        }
-
-        private static string FormatSignedFrameDelta(long frameDelta)
-        {
-            if (frameDelta > 0)
-            {
-                return "+" + frameDelta.ToString(CultureInfo.InvariantCulture);
-            }
-
-            return frameDelta.ToString(CultureInfo.InvariantCulture);
         }
 
         private static string GetComparePaneSideLabel(string paneId)
@@ -2170,11 +2102,6 @@ namespace FramePlayer
             }
         }
 
-        private Task StartPlaybackAsync()
-        {
-            return StartPlaybackAsync((SynchronizedOperationScope?)null, null);
-        }
-
         private async Task StartPlaybackAsync(
             SynchronizedOperationScope? operationScope,
             string loopPlaybackPaneId = null)
@@ -2543,7 +2470,7 @@ namespace FramePlayer
                 return;
             }
 
-            var maxFrameIndex = GetMaxFrameIndex(paneId);
+            var maxFrameIndex = GetPaneMaxFrameIndex(paneId);
             var targetFrameIndex = GetFrameIndexFromDisplayedFrameNumber(requestedFrameNumber);
             if (maxFrameIndex >= 0 && targetFrameIndex > maxFrameIndex)
             {
@@ -3031,18 +2958,6 @@ namespace FramePlayer
             return _buildVariant.UsesZeroIndexedFrameDisplay
                 ? "Type a zero-indexed frame number and press Enter."
                 : "Type a frame number and press Enter.";
-        }
-
-        private static string GetAudioSummaryText(VideoMediaInfo mediaInfo)
-        {
-            if (mediaInfo == null || !mediaInfo.HasAudioStream)
-            {
-                return "none";
-            }
-
-            return mediaInfo.IsAudioPlaybackAvailable
-                ? "enabled"
-                : "stream present, playback unavailable";
         }
 
         private static string GetAudioTooltipText(VideoMediaInfo mediaInfo)

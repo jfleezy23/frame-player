@@ -14,6 +14,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using FFmpeg.AutoGen;
+using FramePlayer.Core.Coordination;
 using FramePlayer.Core.Models;
 using FramePlayer.Controls;
 using FramePlayer.Engines.FFmpeg;
@@ -158,7 +159,7 @@ namespace FramePlayer.Diagnostics
             var engineResult = await RunEngineChecksAsync(filePath, cancellationToken).ConfigureAwait(false);
             Trace("Engine checks complete: " + filePath);
             Trace("UI checks starting: " + filePath);
-            var uiResult = await MainWindowRegressionHarness.RunAsync(
+            var uiResult = await MainWindowRegressionHarness.RunInMainWindowAsync(
                     filePath,
                     true,
                     cancellationToken)
@@ -1835,7 +1836,7 @@ namespace FramePlayer.Diagnostics
 
         private static class MainWindowRegressionHarness
         {
-            internal static Task<UiRegressionResult> RunAsync(
+            internal static Task<UiRegressionResult> RunInMainWindowAsync(
                 string filePath,
                 bool runPlaybackLifecycleChecks,
                 CancellationToken cancellationToken)
@@ -2836,7 +2837,7 @@ namespace FramePlayer.Diagnostics
                     _commitSliderSeekAsyncMethod = RequireMethod(windowType, "CommitSliderSeekAsync", typeof(string), typeof(TimeSpan));
                     _commitPaneSliderSeekAsyncMethod = RequireMethod(windowType, "CommitPaneSliderSeekAsync", typeof(string), typeof(string), typeof(TimeSpan));
                     _stepFrameAsyncMethod = RequireMethod(windowType, "StepFrameAsync", typeof(int));
-                    _startPlaybackAsyncMethod = RequireMethod(windowType, "StartPlaybackAsync");
+                    _startPlaybackAsyncMethod = RequireMethod(windowType, "StartPlaybackAsync", typeof(SynchronizedOperationScope?), typeof(string));
                     _pausePlaybackAsyncMethod = RequireMethod(windowType, "PausePlaybackAsync", typeof(bool));
                     _buildVideoInfoSnapshotMethod = RequireMethod(windowType, "BuildVideoInfoSnapshot", typeof(string), typeof(VideoMediaInfo));
                     _setLoopMarkerMethod = RequireMethod(windowType, "SetLoopMarker", typeof(LoopPlaybackMarkerEndpoint));
@@ -2885,7 +2886,7 @@ namespace FramePlayer.Diagnostics
 
                 public async Task StartPlaybackAsync()
                 {
-                    await InvokeTaskAsync(_startPlaybackAsyncMethod).ConfigureAwait(true);
+                    await InvokeTaskAsync(_startPlaybackAsyncMethod, null, null).ConfigureAwait(true);
                     await WaitForUiIdleAsync(_window.Dispatcher).ConfigureAwait(true);
                 }
 
