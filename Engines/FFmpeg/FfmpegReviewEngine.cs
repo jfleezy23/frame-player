@@ -1529,45 +1529,9 @@ namespace FramePlayer.Engines.FFmpeg
             DecodedFrameBuffer nextFrame,
             CancellationToken cancellationToken)
         {
-            var audioSession = _audioPlaybackSession;
-            if (audioSession != null && audioSession.IsActive && nextFrame != null)
+            if (TryWaitForPlaybackFrameDueUsingAudioClock(nextFrame, cancellationToken))
             {
-                LastPlaybackUsedAudioClock = true;
-                _lastAudioSubmittedBytes = Math.Max(_lastAudioSubmittedBytes, audioSession.SubmittedAudioBytes);
-                var waitStopwatch = Stopwatch.StartNew();
-                var lastObservedAudioPosition = audioSession.PlaybackPosition;
-                var lastObservedAudioAdvance = waitStopwatch.Elapsed;
-                while (true)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    _lastAudioSubmittedBytes = Math.Max(_lastAudioSubmittedBytes, audioSession.SubmittedAudioBytes);
-
-                    var audioPosition = audioSession.PlaybackPosition;
-                    if (audioPosition > lastObservedAudioPosition + AudioClockProgressTolerance)
-                    {
-                        lastObservedAudioPosition = audioPosition;
-                        lastObservedAudioAdvance = waitStopwatch.Elapsed;
-                    }
-
-                    var remaining = nextFrame.Descriptor.PresentationTime - audioPosition;
-                    if (remaining <= TimeSpan.Zero)
-                    {
-                        return;
-                    }
-
-                    if (waitStopwatch.Elapsed - lastObservedAudioAdvance >= AudioClockStallTolerance)
-                    {
-                        break;
-                    }
-
-                    var wait = remaining > TimeSpan.FromMilliseconds(10d)
-                        ? TimeSpan.FromMilliseconds(10d)
-                        : remaining;
-                    if (cancellationToken.WaitHandle.WaitOne(wait))
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                    }
-                }
+                return;
             }
 
             LastPlaybackUsedAudioClock = LastPlaybackUsedAudioClock && _lastAudioSubmittedBytes > 0L;
@@ -1575,6 +1539,54 @@ namespace FramePlayer.Engines.FFmpeg
             if (cancellationToken.WaitHandle.WaitOne(delay))
             {
                 cancellationToken.ThrowIfCancellationRequested();
+            }
+        }
+
+        private bool TryWaitForPlaybackFrameDueUsingAudioClock(
+            DecodedFrameBuffer nextFrame,
+            CancellationToken cancellationToken)
+        {
+            var audioSession = _audioPlaybackSession;
+            if (audioSession == null || !audioSession.IsActive || nextFrame == null)
+            {
+                return false;
+            }
+
+            LastPlaybackUsedAudioClock = true;
+            _lastAudioSubmittedBytes = Math.Max(_lastAudioSubmittedBytes, audioSession.SubmittedAudioBytes);
+            var waitStopwatch = Stopwatch.StartNew();
+            var lastObservedAudioPosition = audioSession.PlaybackPosition;
+            var lastObservedAudioAdvance = waitStopwatch.Elapsed;
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                _lastAudioSubmittedBytes = Math.Max(_lastAudioSubmittedBytes, audioSession.SubmittedAudioBytes);
+
+                var audioPosition = audioSession.PlaybackPosition;
+                if (audioPosition > lastObservedAudioPosition + AudioClockProgressTolerance)
+                {
+                    lastObservedAudioPosition = audioPosition;
+                    lastObservedAudioAdvance = waitStopwatch.Elapsed;
+                }
+
+                var remaining = nextFrame.Descriptor.PresentationTime - audioPosition;
+                if (remaining <= TimeSpan.Zero)
+                {
+                    return true;
+                }
+
+                if (waitStopwatch.Elapsed - lastObservedAudioAdvance >= AudioClockStallTolerance)
+                {
+                    return false;
+                }
+
+                var wait = remaining > TimeSpan.FromMilliseconds(10d)
+                    ? TimeSpan.FromMilliseconds(10d)
+                    : remaining;
+                if (cancellationToken.WaitHandle.WaitOne(wait))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
             }
         }
 

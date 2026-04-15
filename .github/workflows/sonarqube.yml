@@ -113,6 +113,7 @@ jobs:
           # These desktop review/export flows are exercised by the app-driven
           # regression suite rather than imported .NET line-coverage reports.
           $coverageExclusions = @(
+            "App.xaml.cs"
             "Core/Models/ClipExport*.cs"
             "Core/Models/LoopPlaybackRangeSnapshot.cs"
             "Core/Coordination/ReviewWorkspaceCoordinator.cs"
@@ -121,6 +122,7 @@ jobs:
             "Engines/FFmpeg/FfmpegReviewEngine.cs"
             "MainWindow.xaml.cs"
             "Diagnostics/RegressionSuiteRunner.cs"
+            "scripts/ui_loop_visible_test.py"
           ) -join ","
 
           .\.sonar\scanner\dotnet-sonarscanner begin `

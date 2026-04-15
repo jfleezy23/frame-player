@@ -17,6 +17,10 @@ This change finishes the timeline-context looping and clipping pass and hardens 
 - Added a tracked visible UI verifier at `scripts/ui_loop_visible_test.py` that drives the real timeline context menu and proves repeated loop wraps.
 - Expanded the hidden regression harness so loop playback must survive repeated wraps instead of just one.
 - Preserved the no-marker `Loop Playback` path for full-media restart, so enabling loop without A/B markers still wraps at end-of-media instead of stopping after one pass.
+- Cleared the follow-up bot feedback:
+  - fixed the remaining boundary-path full-media loop restart guard
+  - simplified the new timeline-loop helpers and audio-clock wait path to satisfy Sonar maintainability checks
+  - aligned Sonar coverage exclusions with the app-driven verification files (`App.xaml.cs` and `scripts/ui_loop_visible_test.py`)
 
 ## Root Cause
 
@@ -43,12 +47,12 @@ The fix realigns playback state before resumed playback when a seek was satisfie
 
 - Default backend: `artifacts/regression-loop-export-full-corpus-20260414/regression-suite-report.json`
   - `9` supported files
-  - `440` checks
-  - `427` pass / `13` warning / `0` fail
+  - `458` checks
+  - `445` pass / `13` warning / `0` fail
 - Forced CPU backend: `artifacts/regression-loop-export-full-corpus-20260414-cpu/regression-suite-report.json`
   - `9` supported files
-  - `440` checks
-  - `427` pass / `13` warning / `0` fail
+  - `458` checks
+  - `445` pass / `13` warning / `0` fail
 
 ### Targeted Audio-Bearing App Regression
 

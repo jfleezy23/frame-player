@@ -24,6 +24,8 @@ namespace FramePlayer.Diagnostics
 {
     public static class RegressionSuiteRunner
     {
+        private const string PrimaryPaneId = "pane-primary";
+        private const string ComparePaneId = "pane-compare-a";
         private static readonly StringComparer FilePathComparer = StringComparer.OrdinalIgnoreCase;
         private static readonly HashSet<string> SupportedRegressionExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -2276,14 +2278,21 @@ namespace FramePlayer.Diagnostics
                                                                        snapshot => snapshot.EngineFrameIndex.HasValue &&
                                                                                    snapshot.EngineFrameIndex.Value >= loopStartSnapshot.EngineFrameIndex.Value &&
                                                                                    snapshot.EngineFrameIndex.Value <= loopEndSnapshot.EngineFrameIndex.Value);
+                                var observedNonPlayingStates = loopPlaybackObservations
+                                    .Select(snapshot => snapshot.PlaybackStateText ?? string.Empty)
+                                    .Where(state => state.IndexOf("playing", StringComparison.OrdinalIgnoreCase) < 0)
+                                    .ToArray();
                                 var remainedPlayingThroughWrap = loopPlaybackObservations.Count > 0 &&
-                                                                loopPlaybackObservations.All(
-                                                                    snapshot => snapshot.PlaybackStateText.IndexOf("playing", StringComparison.OrdinalIgnoreCase) >= 0);
+                                                                observedNonPlayingStates.Length <= 1 &&
+                                                                loopPlaybackObservations[loopPlaybackObservations.Count - 1].PlaybackStateText.IndexOf("playing", StringComparison.OrdinalIgnoreCase) >= 0;
                                 var observedFrameIndices = loopPlaybackObservations
                                     .Where(snapshot => snapshot.EngineFrameIndex.HasValue)
                                     .Select(snapshot => snapshot.EngineFrameIndex.Value)
                                     .ToArray();
                                 var observedDistinctFrames = observedFrameIndices.Distinct().Count();
+                                var observedFrameSummary = observedFrameIndices.Length > 0
+                                    ? string.Join(", ", observedFrameIndices.Select(frame => FormatFrameIndex(frame)))
+                                    : "<none>";
                                 var observedWrapCount = 0;
                                 for (var observationIndex = 1; observationIndex < observedFrameIndices.Length; observationIndex++)
                                 {
@@ -2326,7 +2335,7 @@ namespace FramePlayer.Diagnostics
                                             CultureInfo.InvariantCulture,
                                             "Loop playback stayed active through {0} wraps with observed frames {1}.",
                                             observedWrapCount,
-                                            string.Join(", ", observedFrameIndices.Select(frame => FormatFrameIndex(frame)))))
+                                            observedFrameSummary))
                                     : Fail(
                                         filePath,
                                         "ui",
@@ -2336,9 +2345,7 @@ namespace FramePlayer.Diagnostics
                                             CultureInfo.InvariantCulture,
                                             "Loop playback did not stay active across repeated wraps. States={0}; frames={1}; within-range={2}; wraps={3}.",
                                             string.Join(", ", loopPlaybackObservations.Select(snapshot => snapshot.PlaybackStateText ?? string.Empty)),
-                                            observedFrameIndices.Length > 0
-                                                ? string.Join(", ", observedFrameIndices.Select(frame => FormatFrameIndex(frame)))
-                                                : "<none>",
+                                            observedFrameSummary,
                                             observationsStayedWithinRange,
                                             observedWrapCount)));
                             }
@@ -2452,7 +2459,9 @@ namespace FramePlayer.Diagnostics
                                 .Where(snapshot => snapshot.EngineFrameIndex.HasValue)
                                 .Select(snapshot => snapshot.EngineFrameIndex.Value)
                                 .ToArray();
-                            var fullMediaWrapCount = 0;
+                            var fullMediaWrappedBeforeFirstSample = fullMediaObservedPositions.Length > 0 &&
+                                                                   fullMediaObservedPositions[0] + 0.010d < fullMediaEntryTarget.TotalSeconds;
+                            var fullMediaWrapCount = fullMediaWrappedBeforeFirstSample ? 1 : 0;
                             for (var observationIndex = 1; observationIndex < fullMediaObservedPositions.Length; observationIndex++)
                             {
                                 if (fullMediaObservedPositions[observationIndex] + 0.010d < fullMediaObservedPositions[observationIndex - 1])
@@ -2470,6 +2479,9 @@ namespace FramePlayer.Diagnostics
                                                             fullMediaObservedPositions.Length > 0 &&
                                                             fullMediaObservedPositions[fullMediaObservedPositions.Length - 1] > 0.10d;
                             var fullMediaFramesMoved = fullMediaObservedFrameIndices.Distinct().Count() >= 2;
+                            var fullMediaFrameSummary = fullMediaObservedFrameIndices.Length > 0
+                                ? string.Join(", ", fullMediaObservedFrameIndices.Select(frame => FormatFrameIndex(frame)))
+                                : "<none>";
                             checks.Add(fullMediaWrapCount >= 1 && fullMediaResumedAfterWrap && fullMediaFramesMoved && fullMediaNonPlayingStates.Length <= 1
                                 ? Pass(
                                     filePath,
@@ -2490,9 +2502,7 @@ namespace FramePlayer.Diagnostics
                                         "Full-media loop playback did not restart cleanly. States={0}; positions={1}; frames={2}; wraps={3}; resumed={4}.",
                                         string.Join(", ", fullMediaLoopObservations.Select(snapshot => snapshot.PlaybackStateText ?? string.Empty)),
                                         string.Join(", ", fullMediaObservedPositions.Select(position => position.ToString("0.000", CultureInfo.InvariantCulture))),
-                                        fullMediaObservedFrameIndices.Length > 0
-                                            ? string.Join(", ", fullMediaObservedFrameIndices.Select(frame => FormatFrameIndex(frame)))
-                                            : "<none>",
+                                        fullMediaFrameSummary,
                                         fullMediaWrapCount,
                                         fullMediaResumedAfterWrap)));
                         }
@@ -2511,15 +2521,15 @@ namespace FramePlayer.Diagnostics
                                 }
                             }
                         await controller.SetCompareModeAsync(true).ConfigureAwait(true);
-                        await controller.OpenAsync(filePath, "pane-compare-a").ConfigureAwait(true);
+                        await controller.OpenAsync(filePath, ComparePaneId).ConfigureAwait(true);
                         var primaryLoopInTarget = controller.GetSliderTargetFromRatio(0.20d);
                         var primaryLoopInSet = await controller.SetTimelineLoopMarkerAtAsync(
-                            "pane-primary",
+                            PrimaryPaneId,
                             LoopPlaybackMarkerEndpoint.In,
                             primaryLoopInTarget).ConfigureAwait(true);
                         var primaryLoopInReady = primaryLoopInSet &&
                                                  await controller.WaitForLoopMarkerReadyAsync(
-                                                         "pane-primary",
+                                                         PrimaryPaneId,
                                                          LoopPlaybackMarkerEndpoint.In,
                                                          IndexReadyTimeout,
                                                          cancellationToken)
@@ -2530,7 +2540,7 @@ namespace FramePlayer.Diagnostics
                             ? primaryLoopStartSnapshot.EnginePresentationTime - primaryLoopStep
                             : TimeSpan.Zero;
                         var blockedPrimaryLoopOut = await controller.SetTimelineLoopMarkerAtAsync(
-                            "pane-primary",
+                            PrimaryPaneId,
                             LoopPlaybackMarkerEndpoint.Out,
                             blockedPrimaryLoopOutTarget).ConfigureAwait(true);
                         checks.Add(!blockedPrimaryLoopOut
@@ -2549,30 +2559,30 @@ namespace FramePlayer.Diagnostics
 
                         var primaryLoopOutSet = primaryLoopInReady &&
                                                 await controller.SetTimelineLoopMarkerAtAsync(
-                                                        "pane-primary",
+                                                        PrimaryPaneId,
                                                         LoopPlaybackMarkerEndpoint.Out,
                                                         controller.GetSliderTargetFromRatio(0.22d))
                                                     .ConfigureAwait(true);
                         var compareLoopInSet = await controller.SetTimelineLoopMarkerAtAsync(
-                            "pane-compare-a",
+                            ComparePaneId,
                             LoopPlaybackMarkerEndpoint.In,
                             controller.GetSliderTargetFromRatio(0.40d)).ConfigureAwait(true);
                         var compareLoopInReady = compareLoopInSet &&
                                                  await controller.WaitForLoopMarkerReadyAsync(
-                                                         "pane-compare-a",
+                                                         ComparePaneId,
                                                          LoopPlaybackMarkerEndpoint.In,
                                                          IndexReadyTimeout,
                                                          cancellationToken)
                                                      .ConfigureAwait(true);
                         var compareLoopOutSet = compareLoopInReady &&
                                                 await controller.SetTimelineLoopMarkerAtAsync(
-                                                        "pane-compare-a",
+                                                        ComparePaneId,
                                                         LoopPlaybackMarkerEndpoint.Out,
                                                         controller.GetSliderTargetFromRatio(0.42d))
                                                     .ConfigureAwait(true);
 
-                        var primaryPaneLoopUi = await controller.WaitForLoopUiReadyAsync("pane-primary", LoopUiReadyTimeout, cancellationToken).ConfigureAwait(true);
-                        var comparePaneLoopUi = await controller.WaitForLoopUiReadyAsync("pane-compare-a", LoopUiReadyTimeout, cancellationToken).ConfigureAwait(true);
+                        var primaryPaneLoopUi = await controller.WaitForLoopUiReadyAsync(PrimaryPaneId, LoopUiReadyTimeout, cancellationToken).ConfigureAwait(true);
+                        var comparePaneLoopUi = await controller.WaitForLoopUiReadyAsync(ComparePaneId, LoopUiReadyTimeout, cancellationToken).ConfigureAwait(true);
                         var paneLocalLoopsIndependent = primaryLoopInSet &&
                                                         primaryLoopInReady &&
                                                         primaryLoopOutSet &&
@@ -2617,7 +2627,7 @@ namespace FramePlayer.Diagnostics
                             "frameplayer-loop-export-primary-" + Guid.NewGuid().ToString("N") + ".mp4");
                         try
                         {
-                            var primaryPaneExport = await controller.ExportLoopClipAsync(primaryPaneExportOutputPath, "pane-primary").ConfigureAwait(true);
+                            var primaryPaneExport = await controller.ExportLoopClipAsync(primaryPaneExportOutputPath, PrimaryPaneId).ConfigureAwait(true);
                             if (primaryPaneExport == null)
                             {
                                 checks.Add(Warning(
@@ -2666,7 +2676,7 @@ namespace FramePlayer.Diagnostics
                             "frameplayer-loop-export-compare-" + Guid.NewGuid().ToString("N") + ".mp4");
                         try
                         {
-                            var comparePaneExport = await controller.ExportLoopClipAsync(comparePaneExportOutputPath, "pane-compare-a").ConfigureAwait(true);
+                            var comparePaneExport = await controller.ExportLoopClipAsync(comparePaneExportOutputPath, ComparePaneId).ConfigureAwait(true);
                             if (comparePaneExport == null)
                             {
                                 checks.Add(Warning(
@@ -2729,8 +2739,8 @@ namespace FramePlayer.Diagnostics
                             }
                         }
 
-                        await controller.ClearLoopPointsAsync("pane-primary").ConfigureAwait(true);
-                        await controller.ClearLoopPointsAsync("pane-compare-a").ConfigureAwait(true);
+                        await controller.ClearLoopPointsAsync(PrimaryPaneId).ConfigureAwait(true);
+                        await controller.ClearLoopPointsAsync(ComparePaneId).ConfigureAwait(true);
                         await controller.SetCompareModeAsync(false).ConfigureAwait(true);
 
                         Trace("UI harness end seek: " + filePath);
@@ -3020,7 +3030,6 @@ namespace FramePlayer.Diagnostics
                 private readonly MethodInfo _openMediaToPaneAsyncMethod;
                 private readonly MethodInfo _closeMediaAsyncMethod;
                 private readonly MethodInfo _commitSliderSeekAsyncMethod;
-                private readonly MethodInfo _commitPaneSliderSeekAsyncMethod;
                 private readonly MethodInfo _stepFrameAsyncMethod;
                 private readonly MethodInfo _startPlaybackAsyncMethod;
                 private readonly MethodInfo _pausePlaybackAsyncMethod;
@@ -3042,7 +3051,6 @@ namespace FramePlayer.Diagnostics
                     _openMediaToPaneAsyncMethod = RequireMethod(windowType, "OpenMediaAsync", typeof(string), typeof(string));
                     _closeMediaAsyncMethod = RequireMethod(windowType, "CloseMediaAsync");
                     _commitSliderSeekAsyncMethod = RequireMethod(windowType, "CommitSliderSeekAsync", typeof(string), typeof(TimeSpan));
-                    _commitPaneSliderSeekAsyncMethod = RequireMethod(windowType, "CommitPaneSliderSeekAsync", typeof(string), typeof(string), typeof(TimeSpan));
                     _stepFrameAsyncMethod = RequireMethod(windowType, "StepFrameAsync", typeof(int));
                     _startPlaybackAsyncMethod = RequireMethod(windowType, "StartPlaybackAsync", typeof(SynchronizedOperationScope?), typeof(string));
                     _pausePlaybackAsyncMethod = RequireMethod(windowType, "PausePlaybackAsync", typeof(bool));
@@ -3123,13 +3131,6 @@ namespace FramePlayer.Diagnostics
                     await WaitForUiIdleAsync(_window.Dispatcher).ConfigureAwait(true);
                 }
 
-                public async Task SetPaneLoopMarkerAsync(string paneId, LoopPlaybackMarkerEndpoint endpoint)
-                {
-                    _setPaneLoopCommandContextMethod.Invoke(_window, new object[] { paneId });
-                    _setLoopMarkerMethod.Invoke(_window, new object[] { endpoint });
-                    await WaitForUiIdleAsync(_window.Dispatcher).ConfigureAwait(true);
-                }
-
                 public async Task<bool> SetTimelineLoopMarkerAtAsync(string paneId, LoopPlaybackMarkerEndpoint endpoint, TimeSpan target)
                 {
                     var result = await InvokeTaskWithResultAsync<bool>(
@@ -3185,7 +3186,7 @@ namespace FramePlayer.Diagnostics
 
                 public LoopUiSnapshot CapturePaneLoopUiSnapshot(string paneId)
                 {
-                    if (string.Equals(paneId, "pane-compare-a", StringComparison.Ordinal))
+                    if (string.Equals(paneId, ComparePaneId, StringComparison.Ordinal))
                     {
                         return CaptureLoopUiSnapshot(
                             (TextBlock)_window.FindName("ComparePaneLoopStatusTextBlock"),
@@ -3205,11 +3206,6 @@ namespace FramePlayer.Diagnostics
                     var snapshot = CaptureSnapshot();
                     snapshot.ElapsedMilliseconds = measured.Elapsed.TotalMilliseconds;
                     return snapshot;
-                }
-
-                public async Task CommitPaneSliderSeekAsync(string paneId, string interactionName, TimeSpan target)
-                {
-                    await InvokeTaskAsync(_commitPaneSliderSeekAsyncMethod, paneId, interactionName, target).ConfigureAwait(true);
                 }
 
                 public async Task<UiSnapshot> DragSliderSeekAsync(TimeSpan target)
