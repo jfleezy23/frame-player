@@ -2424,6 +2424,77 @@ namespace FramePlayer.Diagnostics
                                                 durationDelta)));
                                 }
                             }
+
+                            await controller.ClearLoopPointsAsync().ConfigureAwait(true);
+                            var fullMediaLeadSeconds = Math.Max(0.25d, Math.Min(0.75d, controller.SliderMaximumSeconds * 0.05d));
+                            var fullMediaEntryTarget = TimeSpan.FromSeconds(Math.Max(0d, controller.SliderMaximumSeconds - fullMediaLeadSeconds));
+                            Trace("UI harness full-media loop playback smoke: " + filePath);
+                            var fullMediaEntrySeek = await controller.CommitSliderSeekAsync("click", fullMediaEntryTarget).ConfigureAwait(true);
+                            checks.Add(EvaluateUiFrameTruth(
+                                filePath,
+                                "ui-loop-full-media-entry-seek",
+                                fullMediaEntrySeek,
+                                fullMediaEntryTarget,
+                                false,
+                                fullMediaEntrySeek.ElapsedMilliseconds));
+                            await controller.StartPlaybackAsync().ConfigureAwait(true);
+                            var fullMediaLoopObservations = new List<UiSnapshot>();
+                            for (var observationIndex = 0; observationIndex < 6; observationIndex++)
+                            {
+                                await Task.Delay(250, cancellationToken).ConfigureAwait(true);
+                                fullMediaLoopObservations.Add(controller.CaptureSnapshot());
+                            }
+                            await controller.PausePlaybackAsync().ConfigureAwait(true);
+                            var fullMediaObservedPositions = fullMediaLoopObservations
+                                .Select(snapshot => snapshot.EnginePresentationTime.TotalSeconds)
+                                .ToArray();
+                            var fullMediaObservedFrameIndices = fullMediaLoopObservations
+                                .Where(snapshot => snapshot.EngineFrameIndex.HasValue)
+                                .Select(snapshot => snapshot.EngineFrameIndex.Value)
+                                .ToArray();
+                            var fullMediaWrapCount = 0;
+                            for (var observationIndex = 1; observationIndex < fullMediaObservedPositions.Length; observationIndex++)
+                            {
+                                if (fullMediaObservedPositions[observationIndex] + 0.010d < fullMediaObservedPositions[observationIndex - 1])
+                                {
+                                    fullMediaWrapCount++;
+                                }
+                            }
+
+                            var fullMediaNonPlayingStates = fullMediaLoopObservations
+                                .Select(snapshot => snapshot.PlaybackStateText ?? string.Empty)
+                                .Where(state => state.IndexOf("playing", StringComparison.OrdinalIgnoreCase) < 0)
+                                .ToArray();
+                            var fullMediaResumedAfterWrap = fullMediaLoopObservations.Count > 0 &&
+                                                            fullMediaLoopObservations[fullMediaLoopObservations.Count - 1].PlaybackStateText.IndexOf("playing", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                                                            fullMediaObservedPositions.Length > 0 &&
+                                                            fullMediaObservedPositions[fullMediaObservedPositions.Length - 1] > 0.10d;
+                            var fullMediaFramesMoved = fullMediaObservedFrameIndices.Distinct().Count() >= 2;
+                            checks.Add(fullMediaWrapCount >= 1 && fullMediaResumedAfterWrap && fullMediaFramesMoved && fullMediaNonPlayingStates.Length <= 1
+                                ? Pass(
+                                    filePath,
+                                    "ui",
+                                    "lifecycle",
+                                    "ui-loop-full-media-playback-wrap",
+                                    string.Format(
+                                        CultureInfo.InvariantCulture,
+                                        "Full-media loop playback restarted across the end boundary with positions {0}.",
+                                        string.Join(", ", fullMediaObservedPositions.Select(position => position.ToString("0.000", CultureInfo.InvariantCulture)))))
+                                : Fail(
+                                    filePath,
+                                    "ui",
+                                    "lifecycle",
+                                    "ui-loop-full-media-playback-wrap",
+                                    string.Format(
+                                        CultureInfo.InvariantCulture,
+                                        "Full-media loop playback did not restart cleanly. States={0}; positions={1}; frames={2}; wraps={3}; resumed={4}.",
+                                        string.Join(", ", fullMediaLoopObservations.Select(snapshot => snapshot.PlaybackStateText ?? string.Empty)),
+                                        string.Join(", ", fullMediaObservedPositions.Select(position => position.ToString("0.000", CultureInfo.InvariantCulture))),
+                                        fullMediaObservedFrameIndices.Length > 0
+                                            ? string.Join(", ", fullMediaObservedFrameIndices.Select(frame => FormatFrameIndex(frame)))
+                                            : "<none>",
+                                        fullMediaWrapCount,
+                                        fullMediaResumedAfterWrap)));
                         }
                         finally
                             {

@@ -16,6 +16,7 @@ This change finishes the timeline-context looping and clipping pass and hardens 
 - Added startup `--open-file` support so visible UI automation can launch directly into a media file.
 - Added a tracked visible UI verifier at `scripts/ui_loop_visible_test.py` that drives the real timeline context menu and proves repeated loop wraps.
 - Expanded the hidden regression harness so loop playback must survive repeated wraps instead of just one.
+- Preserved the no-marker `Loop Playback` path for full-media restart, so enabling loop without A/B markers still wraps at end-of-media instead of stopping after one pass.
 
 ## Root Cause
 
@@ -58,6 +59,16 @@ The fix realigns playback state before resumed playback when a seek was satisfie
   - `ui-loop-main-playback-multiwrap`
   - `ui-loop-export-main`
   - `ui-loop-export-main-duration`
+
+### Targeted Full-Media Loop Regression
+
+- `artifacts/regression-full-media-loop-fix/01-Audio_Video_Sync_23_98_HEVC_1080p-by_PhotoJoseph/regression-suite-report.json`
+- `58` checks
+- `56` pass / `2` warning / `0` fail
+- Includes passing:
+  - `ui-loop-full-media-playback-wrap`
+  - `ui-loop-main-playback-multiwrap`
+  - `ui-loop-export-main`
 
 ## Remaining Warnings
 

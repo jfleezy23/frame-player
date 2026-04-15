@@ -5421,19 +5421,7 @@ namespace FramePlayer
 
             var scope = ResolveLoopPlaybackScope(e.CurrentWorkspace);
             var previousTargetPanes = GetLoopTargetPanes(e.PreviousWorkspace, scope);
-            ReviewPaneState[] currentTargetPanes;
-            LoopPlaybackPaneRangeSnapshot[] targetPaneRanges;
-            bool isInvalidRange;
-            if (!TryGetLoopTargetPaneRangesForPlayback(
-                    e.CurrentWorkspace,
-                    scope,
-                    out currentTargetPanes,
-                    out targetPaneRanges,
-                    out isInvalidRange) ||
-                isInvalidRange)
-            {
-                return false;
-            }
+            var currentTargetPanes = GetLoopTargetPanes(e.CurrentWorkspace, scope);
 
             if (previousTargetPanes.Length == 0 || currentTargetPanes.Length == 0)
             {
@@ -5455,7 +5443,21 @@ namespace FramePlayer
                 return currentTargetPanes.All(pane => IsSessionAtPlaybackEnd(pane.Session));
             }
 
-            return HaveLoopTargetPanesReachedBoundary(currentTargetPanes, targetPaneRanges);
+            ReviewPaneState[] resolvedTargetPanes;
+            LoopPlaybackPaneRangeSnapshot[] targetPaneRanges;
+            bool isInvalidRange;
+            if (!TryGetLoopTargetPaneRangesForPlayback(
+                    e.CurrentWorkspace,
+                    scope,
+                    out resolvedTargetPanes,
+                    out targetPaneRanges,
+                    out isInvalidRange) ||
+                isInvalidRange)
+            {
+                return false;
+            }
+
+            return HaveLoopTargetPanesReachedBoundary(resolvedTargetPanes, targetPaneRanges);
         }
 
         private bool ShouldRestartLoopPlaybackAtBoundary(MultiVideoWorkspaceState workspaceState)
