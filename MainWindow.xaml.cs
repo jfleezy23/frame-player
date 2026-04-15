@@ -4166,9 +4166,9 @@ namespace FramePlayer
 
                 loopRange = PromotePendingLoopRangeFromIndexedFrameIdentity(
                     loopRange,
-                    paneSnapshot != null ? paneSnapshot.PaneId : string.Empty,
-                    paneSnapshot != null ? paneSnapshot.SessionId : string.Empty,
-                    paneSnapshot != null ? paneSnapshot.DisplayLabel : string.Empty,
+                    paneSnapshot.PaneId,
+                    paneSnapshot.SessionId,
+                    paneSnapshot.DisplayLabel,
                     engine);
                 if (loopRange.HasPendingMarkers)
                 {
@@ -4223,9 +4223,9 @@ namespace FramePlayer
 
             paneLoopRange = PromotePendingLoopRangeFromIndexedFrameIdentity(
                 paneLoopRange,
-                targetPaneSnapshot != null ? targetPaneSnapshot.PaneId : string.Empty,
-                targetPaneSnapshot != null ? targetPaneSnapshot.SessionId : string.Empty,
-                targetPaneSnapshot != null ? targetPaneSnapshot.DisplayLabel : string.Empty,
+                targetPaneSnapshot.PaneId,
+                targetPaneSnapshot.SessionId,
+                targetPaneSnapshot.DisplayLabel,
                 paneEngine);
             if (paneLoopRange.HasPendingMarkers)
             {
