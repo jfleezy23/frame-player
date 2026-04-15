@@ -40,6 +40,8 @@ These checks improve detection and consistency, but they are not a guarantee tha
 
 This repository includes an internal security review note in [SECURITY_REVIEW.md](SECURITY_REVIEW.md). That document is supplemental background, not the intake path for new sensitive disclosures.
 
+Maintainer-facing workflow and branch-protection expectations are documented in [docs/security-quality-baseline.md](docs/security-quality-baseline.md).
+
 ## Disclosure Expectations
 
 - Please give the maintainer a reasonable opportunity to investigate and remediate before public disclosure.
