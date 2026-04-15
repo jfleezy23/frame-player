@@ -160,7 +160,7 @@ namespace FramePlayer.Diagnostics
             Trace("UI checks starting: " + filePath);
             var uiResult = await MainWindowRegressionHarness.RunAsync(
                     filePath,
-                    !engineResult.MediaProfile.HasAudioStream,
+                    true,
                     cancellationToken)
                 .ConfigureAwait(false);
             Trace("UI checks complete: " + filePath);
