@@ -12,10 +12,18 @@ namespace FramePlayer
     {
         public static string RuntimeDirectory { get; private set; }
         public static string RuntimeValidationMessage { get; private set; }
+        public static string StartupOpenFilePath { get; private set; }
 
         public static bool HasBundledFfmpegRuntime
         {
             get { return !string.IsNullOrWhiteSpace(RuntimeDirectory); }
+        }
+
+        public static string ConsumeStartupOpenFilePath()
+        {
+            var path = StartupOpenFilePath;
+            StartupOpenFilePath = string.Empty;
+            return path;
         }
 
         protected override async void OnStartup(StartupEventArgs e)
@@ -50,6 +58,7 @@ namespace FramePlayer
 
             base.OnStartup(e);
             ConfigureBundledRuntime();
+            StartupOpenFilePath = ResolveStartupOpenFilePath(e.Args);
         }
 
         private static void ConfigureBundledRuntime()
@@ -94,6 +103,37 @@ namespace FramePlayer
             catch
             {
             }
+        }
+
+        private static string ResolveStartupOpenFilePath(string[] args)
+        {
+            if (args == null || args.Length == 0)
+            {
+                return string.Empty;
+            }
+
+            for (var index = 0; index < args.Length; index++)
+            {
+                var argument = args[index];
+                if (string.IsNullOrWhiteSpace(argument))
+                {
+                    continue;
+                }
+
+                if (string.Equals(argument, "--open-file", StringComparison.OrdinalIgnoreCase) &&
+                    index + 1 < args.Length &&
+                    File.Exists(args[index + 1]))
+                {
+                    return args[index + 1];
+                }
+
+                if (!argument.StartsWith("-", StringComparison.Ordinal) && File.Exists(argument))
+                {
+                    return argument;
+                }
+            }
+
+            return string.Empty;
         }
     }
 }
