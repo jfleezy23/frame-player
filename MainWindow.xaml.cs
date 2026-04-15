@@ -37,7 +37,6 @@ namespace FramePlayer
         private const double CompareModePreferredMinWindowWidth = 1180d;
         private const int ControlModifiedFrameStep = 10;
         private const int ShiftModifiedFrameStep = 100;
-        private const int DefaultWindowCornerRadius = 14;
         private const int DwmaWindowCornerPreference = 33;
         private static readonly TimeSpan SeekJump = TimeSpan.FromSeconds(5);
         private static readonly TimeSpan FrameStepInitialDelay = TimeSpan.FromMilliseconds(550);
@@ -546,22 +545,6 @@ namespace FramePlayer
                 : "Primary pane";
         }
 
-        private string GetActiveLoopPlaybackPaneId(ReviewWorkspaceSnapshot workspaceSnapshot = null)
-        {
-            if (!IsCompareModeEnabled || string.IsNullOrWhiteSpace(_activeLoopPlaybackPaneId))
-            {
-                return null;
-            }
-
-            var snapshot = workspaceSnapshot ?? _workspaceCoordinator.GetWorkspaceSnapshot();
-            ReviewWorkspacePaneSnapshot paneSnapshot;
-            return snapshot != null &&
-                   snapshot.TryGetPane(_activeLoopPlaybackPaneId, out paneSnapshot) &&
-                   PaneHasLoadedMedia(paneSnapshot)
-                ? _activeLoopPlaybackPaneId
-                : null;
-        }
-
         private static bool PaneHasLoadedMedia(ReviewWorkspacePaneSnapshot paneSnapshot)
         {
             return paneSnapshot != null &&
@@ -778,7 +761,7 @@ namespace FramePlayer
 
             long currentFrameIndex = 0L;
             bool isAbsoluteFrameIndex = false;
-            var hasFrameIdentity = TryGetCurrentEngineFrameIndex(paneId, out currentFrameIndex, out isAbsoluteFrameIndex);
+            var hasFrameIdentity = TryGetPaneCurrentEngineFrameIndex(paneId, out currentFrameIndex, out isAbsoluteFrameIndex);
             if (!frameNumberTextBox.IsKeyboardFocusWithin)
             {
                 frameNumberTextBox.Text = hasFrameIdentity && isAbsoluteFrameIndex
@@ -811,7 +794,7 @@ namespace FramePlayer
                 var pendingFrameMessage = _buildVariant.UsesZeroIndexedFrameDisplay
                     ? "The current frame number is pending while the background index finishes. The visible frame is correct, but the absolute zero-indexed frame label is not ready yet."
                     : "The current frame number is pending while the background index finishes. The visible frame is correct, but the absolute frame label is not ready yet.";
-                var pendingMaxFrameIndex = GetMaxFrameIndex(paneId);
+                var pendingMaxFrameIndex = GetPaneMaxFrameIndex(paneId);
                 if (pendingMaxFrameIndex >= 0)
                 {
                     var lastFrameNumber = GetDisplayedTotalFrameValue(pendingMaxFrameIndex + 1L);
@@ -825,7 +808,7 @@ namespace FramePlayer
                 return pendingFrameMessage + " You can still type a frame number and press Enter.";
             }
 
-            var maxFrameIndex = GetMaxFrameIndex(paneId);
+            var maxFrameIndex = GetPaneMaxFrameIndex(paneId);
             if (maxFrameIndex >= 0)
             {
                 var lastFrameNumber = GetDisplayedTotalFrameValue(maxFrameIndex + 1L);
@@ -896,7 +879,7 @@ namespace FramePlayer
                 : TimeSpan.Zero;
         }
 
-        private bool TryGetCurrentEngineFrameIndex(string paneId, out long frameIndex, out bool isAbsoluteFrameIndex)
+        private bool TryGetPaneCurrentEngineFrameIndex(string paneId, out long frameIndex, out bool isAbsoluteFrameIndex)
         {
             frameIndex = 0L;
             isAbsoluteFrameIndex = false;
@@ -913,7 +896,7 @@ namespace FramePlayer
             return true;
         }
 
-        private long GetMaxFrameIndex(string paneId)
+        private long GetPaneMaxFrameIndex(string paneId)
         {
             var ffmpegEngine = GetEngineForPane(paneId) as FfmpegReviewEngine;
             if (ffmpegEngine != null && ffmpegEngine.IsGlobalFrameIndexAvailable && ffmpegEngine.IndexedFrameCount > 0L)
@@ -1115,57 +1098,6 @@ namespace FramePlayer
             }
 
             return "Compare: Time-based only";
-        }
-
-        private string BuildComparePanePositionText(ReviewWorkspacePaneSnapshot paneSnapshot)
-        {
-            if (paneSnapshot != null &&
-                paneSnapshot.HasAbsoluteFrameIdentity &&
-                paneSnapshot.FrameIndex.HasValue)
-            {
-                return string.Format(
-                    CultureInfo.InvariantCulture,
-                    "frame {0}",
-                    GetDisplayedFrameNumber(paneSnapshot.FrameIndex.Value));
-            }
-
-            return "time " + FormatTime(paneSnapshot != null
-                ? paneSnapshot.PresentationTime
-                : TimeSpan.Zero);
-        }
-
-        private static string BuildCompareFrameAvailabilityText(
-            ReviewWorkspacePaneSnapshot primaryPaneSnapshot,
-            ReviewWorkspacePaneSnapshot comparePaneSnapshot)
-        {
-            var leftHasFrameIdentity = primaryPaneSnapshot != null && primaryPaneSnapshot.HasAbsoluteFrameIdentity;
-            var rightHasFrameIdentity = comparePaneSnapshot != null && comparePaneSnapshot.HasAbsoluteFrameIdentity;
-            if (!leftHasFrameIdentity && !rightHasFrameIdentity)
-            {
-                return "Frame identity unavailable on both panes.";
-            }
-
-            if (!leftHasFrameIdentity)
-            {
-                return "Frame identity unavailable on the left pane.";
-            }
-
-            if (!rightHasFrameIdentity)
-            {
-                return "Frame identity unavailable on the right pane.";
-            }
-
-            return "Frame identity unavailable.";
-        }
-
-        private static string FormatSignedFrameDelta(long frameDelta)
-        {
-            if (frameDelta > 0)
-            {
-                return "+" + frameDelta.ToString(CultureInfo.InvariantCulture);
-            }
-
-            return frameDelta.ToString(CultureInfo.InvariantCulture);
         }
 
         private static string GetComparePaneSideLabel(string paneId)
@@ -2170,11 +2102,6 @@ namespace FramePlayer
             }
         }
 
-        private Task StartPlaybackAsync()
-        {
-            return StartPlaybackAsync((SynchronizedOperationScope?)null, null);
-        }
-
         private async Task StartPlaybackAsync(
             SynchronizedOperationScope? operationScope,
             string loopPlaybackPaneId = null)
@@ -2543,7 +2470,7 @@ namespace FramePlayer
                 return;
             }
 
-            var maxFrameIndex = GetMaxFrameIndex(paneId);
+            var maxFrameIndex = GetPaneMaxFrameIndex(paneId);
             var targetFrameIndex = GetFrameIndexFromDisplayedFrameNumber(requestedFrameNumber);
             if (maxFrameIndex >= 0 && targetFrameIndex > maxFrameIndex)
             {
@@ -3031,18 +2958,6 @@ namespace FramePlayer
             return _buildVariant.UsesZeroIndexedFrameDisplay
                 ? "Type a zero-indexed frame number and press Enter."
                 : "Type a frame number and press Enter.";
-        }
-
-        private static string GetAudioSummaryText(VideoMediaInfo mediaInfo)
-        {
-            if (mediaInfo == null || !mediaInfo.HasAudioStream)
-            {
-                return "none";
-            }
-
-            return mediaInfo.IsAudioPlaybackAvailable
-                ? "enabled"
-                : "stream present, playback unavailable";
         }
 
         private static string GetAudioTooltipText(VideoMediaInfo mediaInfo)
@@ -4249,7 +4164,12 @@ namespace FramePlayer
                     return false;
                 }
 
-                loopRange = PromotePendingLoopRangeForClipExport(loopRange, paneSnapshot, engine);
+                loopRange = PromotePendingLoopRangeFromIndexedFrameIdentity(
+                    loopRange,
+                    paneSnapshot.PaneId,
+                    paneSnapshot.SessionId,
+                    paneSnapshot.DisplayLabel,
+                    engine);
                 if (loopRange.HasPendingMarkers)
                 {
                     failureMessage = "Clip export is disabled while the shared loop range is still pending exact frame identity.";
@@ -4301,7 +4221,12 @@ namespace FramePlayer
                 return false;
             }
 
-            paneLoopRange = PromotePendingLoopRangeForClipExport(paneLoopRange, targetPaneSnapshot, paneEngine);
+            paneLoopRange = PromotePendingLoopRangeFromIndexedFrameIdentity(
+                paneLoopRange,
+                targetPaneSnapshot.PaneId,
+                targetPaneSnapshot.SessionId,
+                targetPaneSnapshot.DisplayLabel,
+                paneEngine);
             if (paneLoopRange.HasPendingMarkers)
             {
                 failureMessage = paneLabel + " clip export is disabled while pane-local markers are still pending exact frame identity.";
@@ -4324,9 +4249,11 @@ namespace FramePlayer
             return true;
         }
 
-        private static LoopPlaybackPaneRangeSnapshot PromotePendingLoopRangeForClipExport(
+        private static LoopPlaybackPaneRangeSnapshot PromotePendingLoopRangeFromIndexedFrameIdentity(
             LoopPlaybackPaneRangeSnapshot loopRange,
-            ReviewWorkspacePaneSnapshot paneSnapshot,
+            string paneId,
+            string sessionId,
+            string displayLabel,
             FfmpegReviewEngine engine)
         {
             if (loopRange == null || engine == null || !loopRange.HasPendingMarkers)
@@ -4334,22 +4261,32 @@ namespace FramePlayer
                 return loopRange;
             }
 
-            var paneId = paneSnapshot != null ? paneSnapshot.PaneId : loopRange.PaneId;
-            var sessionId = paneSnapshot != null ? paneSnapshot.SessionId : loopRange.SessionId;
-            var displayLabel = paneSnapshot != null ? paneSnapshot.DisplayLabel : loopRange.DisplayLabel;
-            var promotedLoopIn = PromotePendingLoopAnchorForClipExport(loopRange.LoopIn, paneId, sessionId, displayLabel, engine);
-            var promotedLoopOut = PromotePendingLoopAnchorForClipExport(loopRange.LoopOut, paneId, sessionId, displayLabel, engine);
+            var effectivePaneId = string.IsNullOrWhiteSpace(paneId) ? loopRange.PaneId : paneId;
+            var effectiveSessionId = string.IsNullOrWhiteSpace(sessionId) ? loopRange.SessionId : sessionId;
+            var effectiveDisplayLabel = string.IsNullOrWhiteSpace(displayLabel) ? loopRange.DisplayLabel : displayLabel;
+            var promotedLoopIn = PromotePendingLoopAnchorFromIndexedFrameIdentity(
+                loopRange.LoopIn,
+                effectivePaneId,
+                effectiveSessionId,
+                effectiveDisplayLabel,
+                engine);
+            var promotedLoopOut = PromotePendingLoopAnchorFromIndexedFrameIdentity(
+                loopRange.LoopOut,
+                effectivePaneId,
+                effectiveSessionId,
+                effectiveDisplayLabel,
+                engine);
             return new LoopPlaybackPaneRangeSnapshot(
-                paneId,
-                sessionId,
-                displayLabel,
+                effectivePaneId,
+                effectiveSessionId,
+                effectiveDisplayLabel,
                 loopRange.CurrentFilePath,
                 loopRange.Duration,
                 promotedLoopIn,
                 promotedLoopOut);
         }
 
-        private static LoopPlaybackAnchorSnapshot PromotePendingLoopAnchorForClipExport(
+        private static LoopPlaybackAnchorSnapshot PromotePendingLoopAnchorFromIndexedFrameIdentity(
             LoopPlaybackAnchorSnapshot anchor,
             string paneId,
             string sessionId,
@@ -4376,7 +4313,7 @@ namespace FramePlayer
                 string.IsNullOrWhiteSpace(paneId) ? anchor.PaneId : paneId,
                 string.IsNullOrWhiteSpace(sessionId) ? anchor.SessionId : sessionId,
                 string.IsNullOrWhiteSpace(displayLabel) ? anchor.DisplayLabel : displayLabel,
-                resolvedPresentationTime > TimeSpan.Zero ? resolvedPresentationTime : anchor.PresentationTime,
+                resolvedPresentationTime,
                 new LoopPlaybackFrameIdentitySnapshot(
                     absoluteFrameIndex,
                     true,
@@ -4773,7 +4710,30 @@ namespace FramePlayer
             }
 
             var engine = GetEngineForPane(paneSnapshot.PaneId) as FfmpegReviewEngine;
-            return PromotePendingLoopRangeForClipExport(paneRange, paneSnapshot, engine);
+            return PromotePendingLoopRangeFromIndexedFrameIdentity(
+                paneRange,
+                paneSnapshot.PaneId,
+                paneSnapshot.SessionId,
+                paneSnapshot.DisplayLabel,
+                engine);
+        }
+
+        private LoopPlaybackPaneRangeSnapshot PromotePendingPaneLoopRangeForPlayback(
+            ReviewPaneState paneState,
+            LoopPlaybackPaneRangeSnapshot paneRange)
+        {
+            if (paneState == null || paneRange == null || !paneRange.HasPendingMarkers)
+            {
+                return paneRange;
+            }
+
+            var engine = GetEngineForPane(paneState.PaneId) as FfmpegReviewEngine;
+            return PromotePendingLoopRangeFromIndexedFrameIdentity(
+                paneRange,
+                paneState.PaneId,
+                paneState.SessionId,
+                paneState.DisplayLabel,
+                engine);
         }
 
         private bool TryGetPaneLoopControls(
@@ -4818,7 +4778,7 @@ namespace FramePlayer
                 return false;
             }
 
-            paneRange = paneState.LoopRange;
+            paneRange = PromotePendingPaneLoopRangeForPlayback(paneState, paneState.LoopRange);
             return true;
         }
 
@@ -5076,7 +5036,7 @@ namespace FramePlayer
             LoopPlaybackPaneRangeSnapshot[] targetPaneRanges;
             bool hasPendingMarkers;
             bool isInvalidRange;
-            if (!TryGetLoopTargetPaneRanges(sharedRange, currentTargetPanes, out targetPaneRanges, out hasPendingMarkers, out isInvalidRange) ||
+            if (!TryGetResolvedLoopTargetPaneRanges(sharedRange, currentTargetPanes, out targetPaneRanges, out hasPendingMarkers, out isInvalidRange) ||
                 hasPendingMarkers ||
                 isInvalidRange)
             {
@@ -5134,7 +5094,7 @@ namespace FramePlayer
             LoopPlaybackPaneRangeSnapshot[] targetPaneRanges;
             bool hasPendingMarkers;
             bool isInvalidRange;
-            if (!TryGetLoopTargetPaneRanges(sharedRange, targetPanes, out targetPaneRanges, out hasPendingMarkers, out isInvalidRange) ||
+            if (!TryGetResolvedLoopTargetPaneRanges(sharedRange, targetPanes, out targetPaneRanges, out hasPendingMarkers, out isInvalidRange) ||
                 hasPendingMarkers ||
                 isInvalidRange)
             {
@@ -5270,7 +5230,7 @@ namespace FramePlayer
             LoopPlaybackPaneRangeSnapshot[] targetPaneRanges;
             bool hasPendingMarkers;
             bool isInvalidRange;
-            if (!TryGetLoopTargetPaneRanges(sharedRange, targetPanes, out targetPaneRanges, out hasPendingMarkers, out isInvalidRange) ||
+            if (!TryGetResolvedLoopTargetPaneRanges(sharedRange, targetPanes, out targetPaneRanges, out hasPendingMarkers, out isInvalidRange) ||
                 hasPendingMarkers ||
                 isInvalidRange)
             {
@@ -5291,6 +5251,41 @@ namespace FramePlayer
             }
 
             return restartTargets.Count > 0;
+        }
+
+        private bool TryGetResolvedLoopTargetPaneRanges(
+            LoopPlaybackRangeSnapshot sharedRange,
+            ReviewPaneState[] targetPanes,
+            out LoopPlaybackPaneRangeSnapshot[] paneRanges,
+            out bool hasPendingMarkers,
+            out bool isInvalidRange)
+        {
+            if (!TryGetLoopTargetPaneRanges(sharedRange, targetPanes, out paneRanges, out hasPendingMarkers, out isInvalidRange))
+            {
+                return false;
+            }
+
+            paneRanges = paneRanges ?? Array.Empty<LoopPlaybackPaneRangeSnapshot>();
+            hasPendingMarkers = false;
+            isInvalidRange = false;
+            for (var index = 0; index < paneRanges.Length; index++)
+            {
+                var paneRange = paneRanges[index];
+                paneRanges[index] = PromotePendingPaneLoopRangeForPlayback(
+                    index < targetPanes.Length ? targetPanes[index] : null,
+                    paneRange);
+
+                paneRange = paneRanges[index];
+                if (paneRange == null)
+                {
+                    continue;
+                }
+
+                hasPendingMarkers |= paneRange.HasPendingMarkers;
+                isInvalidRange |= paneRange.IsInvalidRange;
+            }
+
+            return true;
         }
 
         private SynchronizedOperationScope ResolveLoopPlaybackScope(MultiVideoWorkspaceState workspaceState)

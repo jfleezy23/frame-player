@@ -54,7 +54,12 @@ Known non-blocking warnings remain honest-state warnings rather than silent fail
 
 - pre-index seek can still land on time before absolute frame identity is ready
 - the UI still withholds a numeric frame claim in that pending window
-- hidden-window timed playback is still skipped for some audio-bearing corpus cases while engine-level playback and export checks still run
+
+Follow-up regression hardening after the `v1.6.0` cut also removed the old hidden-window audio-bearing playback exemption:
+
+- supported audio-bearing corpus files now run the same hidden-window timed playback and loop playback checks as video-only files
+- full-corpus clip export remains covered on the supported container set `.avi`, `.mov`, `.m4v`, `.mp4`, `.mkv`, and `.wmv`
+- unsupported `.ts` corpus entries remain intentionally excluded from the active supported surface
 
 ## Release Guidance
 

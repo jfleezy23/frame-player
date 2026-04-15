@@ -33,6 +33,12 @@ Release: `1.6.0`
 - Try at least one video with audio and confirm audio starts during playback.
 - If possible, try one video-only clip and confirm playback still works without audio errors.
 
+## Automated regression coverage
+
+- The supported full-corpus regression path now runs hidden-window timed playback, loop playback, and clip export coverage for both audio-bearing and video-only files.
+- Full-corpus trim/export coverage is expected on the active supported container set: `.avi`, `.mov`, `.m4v`, `.mp4`, `.mkv`, and `.wmv`.
+- `.ts` remains intentionally outside the active supported surface and is skipped by the full-corpus regression suite instead of counted as a product failure.
+
 ## Known limitations
 
 - GPU decode is opportunistic, not guaranteed: unsupported runtime, codec, driver, or device combinations must stay on CPU decode.
