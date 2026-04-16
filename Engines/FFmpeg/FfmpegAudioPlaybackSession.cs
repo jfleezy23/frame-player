@@ -15,7 +15,6 @@ namespace FramePlayer.Engines.FFmpeg
 
         private readonly string _filePath;
         private readonly TimeSpan _startPosition;
-        private readonly CancellationToken _cancellationToken;
         private readonly IAudioOutputFactory _audioOutputFactory;
         private AVFormatContext* _formatContext;
         private AVCodecContext* _codecContext;
@@ -39,7 +38,6 @@ namespace FramePlayer.Engines.FFmpeg
         {
             _filePath = filePath ?? throw new ArgumentNullException(nameof(filePath));
             _startPosition = startPosition < TimeSpan.Zero ? TimeSpan.Zero : startPosition;
-            _cancellationToken = cancellationToken;
             _audioOutputFactory = audioOutputFactory ?? throw new ArgumentNullException(nameof(audioOutputFactory));
             _audioStreamIndex = -1;
         }

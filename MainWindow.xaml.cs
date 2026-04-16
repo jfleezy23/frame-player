@@ -33,6 +33,8 @@ namespace FramePlayer
         private const double DefaultFramesPerSecond = 30.0;
         private const string PrimaryPaneId = "pane-primary";
         private const string ComparePaneId = "pane-compare-a";
+        private const string PrimaryPaneDisplayLabel = "Primary pane";
+        private const string ComparePaneDisplayLabel = "Compare pane";
         private const string CompareSessionId = "compare-a";
         private const string DefaultCompareAlignmentStatus = "Last align: none";
         private const double CompareModePreferredMinWindowWidth = 1180d;
@@ -572,8 +574,8 @@ namespace FramePlayer
             }
 
             return string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
-                ? "Compare pane"
-                : "Primary pane";
+                ? ComparePaneDisplayLabel
+                : PrimaryPaneDisplayLabel;
         }
 
         private static bool PaneHasLoadedMedia(ReviewWorkspacePaneSnapshot paneSnapshot)
@@ -4002,8 +4004,8 @@ namespace FramePlayer
                 UpdateLoopUi();
 
                 var paneLabel = string.Equals(loopContextPaneId, ComparePaneId, StringComparison.Ordinal)
-                    ? "Compare pane"
-                    : "Primary pane";
+                    ? ComparePaneDisplayLabel
+                    : PrimaryPaneDisplayLabel;
                 var paneAnchor = endpoint == LoopPlaybackMarkerEndpoint.In
                     ? (paneRange != null ? paneRange.LoopIn : null)
                     : (paneRange != null ? paneRange.LoopOut : null);
@@ -4095,8 +4097,8 @@ namespace FramePlayer
                     CultureInfo.InvariantCulture,
                     "{0} loop points {1}.",
                     string.Equals(loopContextPaneId, ComparePaneId, StringComparison.Ordinal)
-                        ? "Compare pane"
-                        : "Primary pane",
+                        ? ComparePaneDisplayLabel
+                        : PrimaryPaneDisplayLabel,
                     paneRange != null && paneRange.HasAnyMarkers ? "cleared" : "already clear"));
                 LogInfo(string.Format(
                     CultureInfo.InvariantCulture,
@@ -5022,8 +5024,8 @@ namespace FramePlayer
         private static string GetPaneDisplayLabel(string paneId)
         {
             return string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
-                ? "Compare pane"
-                : "Primary pane";
+                ? ComparePaneDisplayLabel
+                : PrimaryPaneDisplayLabel;
         }
 
         private void UpdateLoopUi()
@@ -5148,7 +5150,7 @@ namespace FramePlayer
                     loopStatusTextBlock.ToolTip = string.Format(
                         CultureInfo.InvariantCulture,
                         "{0} loop playback status. With no pane-local A/B markers, pane playback loops the full media only when loop playback is enabled.",
-                        string.Equals(paneId, ComparePaneId, StringComparison.Ordinal) ? "Compare pane" : "Primary pane");
+                        GetPaneDisplayLabel(paneId));
                 }
 
                 return;
@@ -5198,8 +5200,8 @@ namespace FramePlayer
         private static string BuildPaneLoopStatusToolTip(string paneId, LoopPlaybackPaneRangeSnapshot paneRange)
         {
             var paneLabel = string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
-                ? "Compare pane"
-                : "Primary pane";
+                ? ComparePaneDisplayLabel
+                : PrimaryPaneDisplayLabel;
             if (paneRange == null || !paneRange.HasAnyMarkers)
             {
                 return paneLabel + " loop playback status.";

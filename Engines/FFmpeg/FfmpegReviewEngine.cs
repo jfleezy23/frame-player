@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
@@ -9,6 +10,7 @@ using FramePlayer.Core.Abstractions;
 using FramePlayer.Core.Events;
 using FramePlayer.Core.Models;
 using FramePlayer.Services;
+using ServiceRuntimeEnvironment = FramePlayer.Services.RuntimeEnvironment;
 
 namespace FramePlayer.Engines.FFmpeg
 {
@@ -20,6 +22,7 @@ namespace FramePlayer.Engines.FFmpeg
         private const int GpuOperationalQueueDepth = 2;
         private const int AvCodecHwConfigMethodHwDeviceContext = 0x01;
         private const int AvCodecHwConfigMethodHwFramesContext = 0x02;
+        private const string StreamStartAnchorStrategy = "stream-start";
         private static readonly TimeSpan MinimumPlaybackDelay = TimeSpan.FromMilliseconds(1d);
         private static readonly TimeSpan AudioClockStallTolerance = TimeSpan.FromMilliseconds(250d);
         private static readonly TimeSpan AudioClockProgressTolerance = TimeSpan.FromMilliseconds(2d);
@@ -28,7 +31,6 @@ namespace FramePlayer.Engines.FFmpeg
         // Frame stepping must be cache- or decode-based rather than timestamp math.
         // Backward stepping should first use cached decoded frames, then seek to the prior
         // keyframe and decode forward until the requested display-order frame is reconstructed.
-        private static readonly Type FfmpegBindingsAnchor = typeof(ffmpeg);
         private const string OutputPixelFormatName = "bgra";
 
         private readonly object _playbackSync = new object();
@@ -66,6 +68,7 @@ namespace FramePlayer.Engines.FFmpeg
         private AVBufferRef* _hardwareDeviceContext;
         private AVPixelFormat _hardwarePixelFormat;
         private FfmpegFrameConverter _frameConverter;
+        [SuppressMessage("Code Smell", "S1450", Justification = "FFmpeg stores the callback on unmanaged codec state; this field roots the delegate for the lifetime of the codec context.")]
         private AVCodecContext_get_format _hardwareGetFormatCallback;
         private CancellationTokenSource _playbackCancellationSource;
         private Task _playbackTask;
@@ -312,7 +315,7 @@ namespace FramePlayer.Engines.FFmpeg
 
         public double LastSeekForwardCacheWarmMilliseconds { get; private set; }
 
-        public string LastSeekMode { get; private set; } = string.Empty;
+        public string LastSeekMode { get; private set; }
 
         public double LastCacheRefillMilliseconds { get; private set; }
 
@@ -729,7 +732,7 @@ namespace FramePlayer.Engines.FFmpeg
             LastFrameAdvanceWasCacheHit = false;
             IsPlaying = false;
             RecordNoCacheRefill("step-backward-reconstruction", afterLanding: true);
-            SetOperationInstrumentation(false, reconstructionSeekTimestamp > 0L ? "timestamp-backtrack" : "stream-start", null);
+            SetOperationInstrumentation(false, reconstructionSeekTimestamp > 0L ? "timestamp-backtrack" : StreamStartAnchorStrategy, null);
 
             if (!reconstruction.HasPreviousFrame)
             {
@@ -843,12 +846,12 @@ namespace FramePlayer.Engines.FFmpeg
             SetOperationInstrumentation(
                 false,
                 fallbackFrameIndexAbsolute
-                    ? "stream-start"
+                    ? StreamStartAnchorStrategy
                     : "timestamp-seek-pending-index",
                 null);
             seekStopwatch.Stop();
             LastSeekMode = fallbackFrameIndexAbsolute
-                ? "stream-start"
+                ? StreamStartAnchorStrategy
                 : "timestamp-seek-pending-index";
             LastSeekTotalMilliseconds = seekStopwatch.Elapsed.TotalMilliseconds;
             OnStateChanged();
@@ -931,7 +934,7 @@ namespace FramePlayer.Engines.FFmpeg
                     ? (wasClampedToLastIndexedFrame
                         ? indexedTargetEntry.SeekAnchorStrategy + "-clamped"
                         : indexedTargetEntry.SeekAnchorStrategy)
-                    : "stream-start",
+                    : StreamStartAnchorStrategy,
                 indexedTargetEntry != null
                     ? (long?)indexedTargetEntry.SeekAnchorFrameIndex
                     : null);
@@ -2823,9 +2826,9 @@ namespace FramePlayer.Engines.FFmpeg
                 return;
             }
 
-            if (!string.IsNullOrWhiteSpace(RuntimeEnvironment.CurrentRuntimeDirectory))
+            if (!string.IsNullOrWhiteSpace(ServiceRuntimeEnvironment.CurrentRuntimeDirectory))
             {
-                ffmpeg.RootPath = RuntimeEnvironment.CurrentRuntimeDirectory;
+                ffmpeg.RootPath = ServiceRuntimeEnvironment.CurrentRuntimeDirectory;
                 return;
             }
 
