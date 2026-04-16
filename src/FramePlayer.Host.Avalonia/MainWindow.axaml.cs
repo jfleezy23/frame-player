@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
@@ -193,10 +194,20 @@ namespace FramePlayer.Host.Avalonia
             _hostController.Refresh();
         }
 
+        private async void RewindButton_Click(object sender, RoutedEventArgs e)
+        {
+            await SeekFocusedPaneBySecondsAsync(-5d);
+        }
+
         private async void NextFrameButton_Click(object sender, RoutedEventArgs e)
         {
             await _hostController.StepForwardAsync();
             _hostController.Refresh();
+        }
+
+        private async void FastForwardButton_Click(object sender, RoutedEventArgs e)
+        {
+            await SeekFocusedPaneBySecondsAsync(5d);
         }
 
         private void SetLoopAButton_Click(object sender, RoutedEventArgs e)
@@ -361,6 +372,50 @@ namespace FramePlayer.Host.Avalonia
             _hostController.Refresh();
         }
 
+        private void PaneFrameTextBox_GotFocus(object sender, RoutedEventArgs e)
+        {
+            var textBox = sender as TextBox;
+            if (textBox != null)
+            {
+                textBox.SelectAll();
+            }
+        }
+
+        private async void PaneFrameTextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Enter)
+            {
+                return;
+            }
+
+            var textBox = sender as TextBox;
+            var paneId = textBox != null ? GetPaneIdFromTag(textBox.Tag) : string.Empty;
+            if (textBox == null || string.IsNullOrWhiteSpace(paneId))
+            {
+                return;
+            }
+
+            long requestedFrameNumber;
+            if (!long.TryParse(textBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out requestedFrameNumber) ||
+                requestedFrameNumber <= 0)
+            {
+                SetActionStatus("Enter a 1-based frame number and press Enter.", isError: true);
+                return;
+            }
+
+            if (!TryFocusPane(paneId) || !_hostController.CurrentViewState.Transport.CanSeek)
+            {
+                return;
+            }
+
+            await _hostController.SeekToFrameAsync(requestedFrameNumber - 1L);
+            _hostController.Refresh();
+            SetActionStatus(
+                GetPaneDisplayLabel(paneId) + " moved to frame " +
+                requestedFrameNumber.ToString(CultureInfo.InvariantCulture) + ".");
+            e.Handled = true;
+        }
+
         private void HostController_ViewStateChanged(object sender, ReviewWorkspaceViewStateChangedEventArgs e)
         {
             Dispatcher.UIThread.Post(() => RefreshUi(e.Current));
@@ -427,7 +482,9 @@ namespace FramePlayer.Host.Avalonia
             CloseButton.IsEnabled = transport.CanCloseMedia;
             PlayPauseButton.IsEnabled = transport.CanTogglePlayPause;
             PreviousFrameButton.IsEnabled = transport.CanStepBackward;
+            RewindButton.IsEnabled = transport.CanSeek;
             NextFrameButton.IsEnabled = transport.CanStepForward;
+            FastForwardButton.IsEnabled = transport.CanSeek;
             SetLoopAButton.IsEnabled = effectiveLoopState.CanSetMarkers;
             SetLoopBButton.IsEnabled = effectiveLoopState.CanSetMarkers;
             ClearLoopButton.IsEnabled = effectiveLoopState.CanClearMarkers;
@@ -1015,6 +1072,26 @@ namespace FramePlayer.Host.Avalonia
                 : snapshot.PrimaryPaneId;
         }
 
+        private async Task SeekFocusedPaneBySecondsAsync(double deltaSeconds)
+        {
+            var viewState = _hostController.CurrentViewState;
+            var paneState = FindPaneViewState(viewState, GetFocusedPaneId(_workspaceCoordinator.GetWorkspaceSnapshot()));
+            if (paneState == null || !paneState.IsMediaOpen || !viewState.Transport.CanSeek)
+            {
+                return;
+            }
+
+            var targetSeconds = paneState.CurrentPosition.TotalSeconds + deltaSeconds;
+            if (paneState.Duration > TimeSpan.Zero)
+            {
+                targetSeconds = Math.Min(paneState.Duration.TotalSeconds, targetSeconds);
+            }
+
+            targetSeconds = Math.Max(0d, targetSeconds);
+            await _hostController.SeekToTimeAsync(TimeSpan.FromSeconds(targetSeconds));
+            _hostController.Refresh();
+        }
+
         private static string GetPaneIdFromSender(object sender)
         {
             var control = sender as Control;
@@ -1094,6 +1171,7 @@ namespace FramePlayer.Host.Avalonia
             TextBlock loopStatusTextBlock;
             TextBlock durationTextBlock;
             TextBlock frameStatusTextBlock;
+            TextBox frameTextBox;
             Button usePaneButton;
             Button openPaneButton;
             if (!TryGetPaneControls(
@@ -1109,6 +1187,7 @@ namespace FramePlayer.Host.Avalonia
                 out loopStatusTextBlock,
                 out durationTextBlock,
                 out frameStatusTextBlock,
+                out frameTextBox,
                 out usePaneButton,
                 out openPaneButton))
             {
@@ -1150,6 +1229,14 @@ namespace FramePlayer.Host.Avalonia
                 loopStatusTextBlock,
                 paneState != null && paneState.Loop != null ? paneState.Loop.ToolTip : "No loop markers are active.");
             frameStatusTextBlock.Text = BuildPaneFrameStatus(paneState);
+            frameTextBox.IsEnabled = paneHasLoadedMedia;
+            ToolTip.SetTip(frameTextBox, "Enter a 1-based frame number and press Enter.");
+            if (!frameTextBox.IsFocused)
+            {
+                frameTextBox.Text = paneState != null && paneState.FrameIndex.HasValue
+                    ? (paneState.FrameIndex.Value + 1L).ToString(CultureInfo.InvariantCulture)
+                    : string.Empty;
+            }
 
             _suppressSliderUpdate = true;
             try
@@ -1224,6 +1311,7 @@ namespace FramePlayer.Host.Avalonia
             out TextBlock loopStatusTextBlock,
             out TextBlock durationTextBlock,
             out TextBlock frameStatusTextBlock,
+            out TextBox frameTextBox,
             out Button usePaneButton,
             out Button openPaneButton)
         {
@@ -1240,6 +1328,7 @@ namespace FramePlayer.Host.Avalonia
                 loopStatusTextBlock = CompareLoopStatusTextBlock;
                 durationTextBlock = CompareDurationTextBlock;
                 frameStatusTextBlock = CompareFrameStatusTextBlock;
+                frameTextBox = ComparePaneFrameTextBox;
                 usePaneButton = UseComparePaneButton;
                 openPaneButton = OpenComparePaneButton;
                 return true;
@@ -1256,6 +1345,7 @@ namespace FramePlayer.Host.Avalonia
             loopStatusTextBlock = PrimaryLoopStatusTextBlock;
             durationTextBlock = PrimaryDurationTextBlock;
             frameStatusTextBlock = PrimaryFrameStatusTextBlock;
+            frameTextBox = PrimaryPaneFrameTextBox;
             usePaneButton = UsePrimaryPaneButton;
             openPaneButton = OpenPrimaryPaneButton;
             return true;

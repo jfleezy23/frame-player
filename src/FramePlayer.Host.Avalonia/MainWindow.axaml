@@ -212,7 +212,7 @@
                 </Grid>
 
                 <Grid Grid.Row="1"
-                      ColumnDefinitions="*,Auto"
+                      ColumnDefinitions="*,Auto,Auto"
                       ColumnSpacing="10">
                   <TextBlock x:Name="PrimaryFrameStatusTextBlock"
                              VerticalAlignment="Center"
@@ -226,6 +226,21 @@
                              FontSize="11"
                              Text="Loop: off"
                              TextTrimming="CharacterEllipsis" />
+                  <StackPanel Grid.Column="2"
+                              Orientation="Horizontal"
+                              Spacing="6"
+                              VerticalAlignment="Center">
+                    <TextBlock VerticalAlignment="Center"
+                               Foreground="{StaticResource MutedBrush}"
+                               FontSize="11"
+                               Text="Frame" />
+                    <TextBox x:Name="PrimaryPaneFrameTextBox"
+                             Width="76"
+                             HorizontalContentAlignment="Right"
+                             Tag="pane-primary"
+                             GotFocus="PaneFrameTextBox_GotFocus"
+                             KeyDown="PaneFrameTextBox_KeyDown" />
+                  </StackPanel>
                 </Grid>
               </Grid>
             </Border>
@@ -340,7 +355,7 @@
                 </Grid>
 
                 <Grid Grid.Row="1"
-                      ColumnDefinitions="*,Auto"
+                      ColumnDefinitions="*,Auto,Auto"
                       ColumnSpacing="10">
                   <TextBlock x:Name="CompareFrameStatusTextBlock"
                              VerticalAlignment="Center"
@@ -354,6 +369,21 @@
                              FontSize="11"
                              Text="Loop: off"
                              TextTrimming="CharacterEllipsis" />
+                  <StackPanel Grid.Column="2"
+                              Orientation="Horizontal"
+                              Spacing="6"
+                              VerticalAlignment="Center">
+                    <TextBlock VerticalAlignment="Center"
+                               Foreground="{StaticResource MutedBrush}"
+                               FontSize="11"
+                               Text="Frame" />
+                    <TextBox x:Name="ComparePaneFrameTextBox"
+                             Width="76"
+                             HorizontalContentAlignment="Right"
+                             Tag="pane-compare-a"
+                             GotFocus="PaneFrameTextBox_GotFocus"
+                             KeyDown="PaneFrameTextBox_KeyDown" />
+                  </StackPanel>
                 </Grid>
               </Grid>
             </Border>
@@ -447,10 +477,18 @@
                   Width="92"
                   Content="Prev Frame"
                   Click="PreviousFrameButton_Click" />
+          <Button x:Name="RewindButton"
+                  Width="88"
+                  Content="-5s"
+                  Click="RewindButton_Click" />
           <Button x:Name="PlayPauseButton"
                   Width="92"
                   Content="Play"
                   Click="PlayPauseButton_Click" />
+          <Button x:Name="FastForwardButton"
+                  Width="88"
+                  Content="+5s"
+                  Click="FastForwardButton_Click" />
           <Button x:Name="NextFrameButton"
                   Margin="0"
                   Width="92"
