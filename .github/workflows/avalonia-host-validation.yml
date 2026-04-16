@@ -1,0 +1,49 @@
+name: Avalonia Host Validation
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  avalonia-validation:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+          - os: macos-13
+            rid: osx-x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.420
+
+      - name: Restore Avalonia host
+        run: dotnet restore src/FramePlayer.Host.Avalonia/FramePlayer.Host.Avalonia.csproj
+
+      - name: Build Avalonia host
+        run: dotnet build src/FramePlayer.Host.Avalonia/FramePlayer.Host.Avalonia.csproj -c Release --no-restore
+
+      - name: Publish engineering build
+        run: dotnet publish src/FramePlayer.Host.Avalonia/FramePlayer.Host.Avalonia.csproj -c Release -r ${{ matrix.rid }} --self-contained false -o artifacts/avalonia-${{ matrix.rid }}
+
+      - name: Upload published output
+        uses: actions/upload-artifact@v7
+        with:
+          name: avalonia-${{ matrix.rid }}
+          path: artifacts/avalonia-${{ matrix.rid }}/**
+          if-no-files-found: error

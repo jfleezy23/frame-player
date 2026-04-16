@@ -97,6 +97,10 @@
 
     <StackPanel Grid.Row="3" Margin="0,16,0,0" Spacing="4">
       <TextBlock x:Name="PlaybackStatusTextBlock" FontWeight="SemiBold" Text="Ready for review playback." />
+      <TextBlock x:Name="ActionStatusTextBlock"
+                 Foreground="#9BB0C7"
+                 Text=""
+                 TextWrapping="Wrap" />
       <TextBlock x:Name="MediaSummaryTextBlock" Foreground="#7C8CA0" Text="" />
       <TextBlock x:Name="FrameStatusTextBlock" Foreground="#7C8CA0" Text="Frame --" />
     </StackPanel>

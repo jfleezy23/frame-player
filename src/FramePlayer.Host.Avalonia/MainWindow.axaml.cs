@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using FramePlayer.Core.Abstractions;
@@ -21,6 +22,8 @@ namespace FramePlayer.Host.Avalonia
     public sealed partial class MainWindow : Window
     {
         private static readonly TimeSpan LoopGuardTolerance = TimeSpan.FromMilliseconds(100);
+        private static readonly IBrush ActionStatusInfoBrush = new SolidColorBrush(Color.Parse("#9BB0C7"));
+        private static readonly IBrush ActionStatusErrorBrush = new SolidColorBrush(Color.Parse("#F29BA7"));
 
         private readonly ClipExportService _clipExportService;
         private readonly ReviewWorkspaceHostController _hostController;
@@ -35,6 +38,8 @@ namespace FramePlayer.Host.Avalonia
         private bool _loopPlaybackEnabled;
         private bool _isLoopRestartInFlight;
         private bool _suppressSliderUpdate;
+        private string _lastActionMessage = string.Empty;
+        private bool _lastActionIsError;
 
         public MainWindow()
         {
@@ -124,6 +129,7 @@ namespace FramePlayer.Host.Avalonia
         {
             await _hostController.CloseAsync();
             _hostController.Refresh();
+            SetActionStatus("Media closed.");
         }
 
         private async void PlayPauseButton_Click(object sender, RoutedEventArgs e)
@@ -170,23 +176,32 @@ namespace FramePlayer.Host.Avalonia
         private void LoopPlaybackButton_Click(object sender, RoutedEventArgs e)
         {
             _loopPlaybackEnabled = !_loopPlaybackEnabled;
-            LoopPlaybackButton.Content = _loopPlaybackEnabled
-                ? "Loop Playback: On"
-                : "Loop Playback: Off";
+            UpdateLoopPlaybackButtonContent();
+            SetActionStatus(BuildLoopPlaybackStatusMessage());
         }
 
         private async void ExportClipButton_Click(object sender, RoutedEventArgs e)
         {
-            var seedRequest = BuildSeedClipExportRequest();
-            if (seedRequest == null)
+            ClipExportRequest seedRequest;
+            string failureMessage;
+            if (!TryBuildSeedClipExportRequest(out seedRequest, out failureMessage))
             {
+                SetActionStatus(failureMessage, isError: true);
+                return;
+            }
+
+            await PausePlaybackForExportAsync();
+
+            if (!TryBuildSeedClipExportRequest(out seedRequest, out failureMessage))
+            {
+                SetActionStatus(failureMessage, isError: true);
                 return;
             }
 
             var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
             {
                 Title = "Save Loop As Clip",
-                SuggestedFileName = Path.GetFileNameWithoutExtension(seedRequest.SourceFilePath) + "-clip.mp4",
+                SuggestedFileName = BuildSuggestedClipFileName(seedRequest),
                 DefaultExtension = "mp4",
                 FileTypeChoices = new[]
                 {
@@ -202,17 +217,30 @@ namespace FramePlayer.Host.Avalonia
                 return;
             }
 
-            var request = new ClipExportRequest(
-                seedRequest.SourceFilePath,
-                outputPath,
-                seedRequest.DisplayLabel,
-                seedRequest.PaneId,
-                seedRequest.IsPaneLocal,
-                seedRequest.SessionSnapshot,
-                seedRequest.LoopRange,
-                seedRequest.IndexedFrameTimeResolver);
-            await _clipExportService.ExportAsync(request);
-            _hostController.Refresh();
+            SetActionStatus("Exporting clip...");
+
+            try
+            {
+                var request = CreateOutputClipExportRequest(seedRequest, outputPath);
+                var exportResult = await _clipExportService.ExportAsync(request);
+                _hostController.Refresh();
+
+                if (exportResult != null && exportResult.Succeeded)
+                {
+                    SetActionStatus(BuildClipExportSuccessMessage(exportResult));
+                    return;
+                }
+
+                SetActionStatus(
+                    exportResult != null
+                        ? SanitizeActionMessage(exportResult.Message)
+                        : "Clip export failed.",
+                    isError: true);
+            }
+            catch (Exception ex)
+            {
+                SetActionStatus("Clip export failed. " + SanitizeActionMessage(ex.Message), isError: true);
+            }
         }
 
         private async void OpenRecentButton_Click(object sender, RoutedEventArgs e)
@@ -227,6 +255,7 @@ namespace FramePlayer.Host.Avalonia
             {
                 _hostController.RemoveRecentFile(entry.FilePath);
                 RefreshUi(_hostController.CurrentViewState);
+                SetActionStatus("That recent file no longer exists, so it was removed from the list.", isError: true);
                 return;
             }
 
@@ -237,6 +266,7 @@ namespace FramePlayer.Host.Avalonia
         {
             _hostController.ClearRecentFiles();
             RefreshUi(_hostController.CurrentViewState);
+            SetActionStatus("Recent files cleared.");
         }
 
         private async void PositionSlider_PropertyChanged(object sender, AvaloniaPropertyChangedEventArgs e)
@@ -287,27 +317,9 @@ namespace FramePlayer.Host.Avalonia
         private async void PositionTimer_Tick(object sender, EventArgs e)
         {
             if (_loopPlaybackEnabled &&
-                !_isLoopRestartInFlight &&
-                _hostController.CurrentViewState.Transport.IsPlaying)
+                ShouldRestartLoopPlaybackAtBoundary())
             {
-                var loopRange = ResolveFocusedLoopRange();
-                if (loopRange != null &&
-                    loopRange.HasLoopIn &&
-                    loopRange.HasLoopOut &&
-                    !loopRange.IsInvalidRange &&
-                    _workspaceCoordinator.CurrentSession.Position.PresentationTime >= loopRange.EffectiveEndTime + LoopGuardTolerance)
-                {
-                    _isLoopRestartInFlight = true;
-                    try
-                    {
-                        await _hostController.SeekToTimeAsync(loopRange.EffectiveStartTime);
-                        await _hostController.PlayAsync();
-                    }
-                    finally
-                    {
-                        _isLoopRestartInFlight = false;
-                    }
-                }
+                await RestartLoopPlaybackAsync();
             }
 
             RefreshUi(_hostController.CurrentViewState);
@@ -328,8 +340,11 @@ namespace FramePlayer.Host.Avalonia
             SetLoopAButton.IsEnabled = viewState != null && viewState.Loop.CanSetMarkers;
             SetLoopBButton.IsEnabled = viewState != null && viewState.Loop.CanSetMarkers;
             ClearLoopButton.IsEnabled = viewState != null && viewState.Loop.CanClearMarkers;
+            LoopPlaybackButton.IsEnabled = transport.CanControlTransport;
             ExportClipButton.IsEnabled = viewState != null && viewState.Export.CanExportCurrentLoop;
+            ToolTip.SetTip(ExportClipButton, viewState != null ? viewState.Export.StatusText : string.Empty);
             PlayPauseButton.Content = transport.IsPlaying ? "Pause" : "Play";
+            UpdateLoopPlaybackButtonContent();
 
             PlaybackStatusTextBlock.Text = viewState != null ? viewState.PlaybackMessage : "Ready.";
             MediaSummaryTextBlock.Text = viewState != null ? viewState.MediaSummary : string.Empty;
@@ -358,13 +373,22 @@ namespace FramePlayer.Host.Avalonia
                 EmptySurfaceText.IsVisible = true;
             }
 
+            UpdateActionStatusPresentation();
             RefreshRecentFilesUi(recentFiles, recentEntries);
         }
 
-        private ClipExportRequest BuildSeedClipExportRequest()
+        private bool TryBuildSeedClipExportRequest(out ClipExportRequest request, out string failureMessage)
         {
+            request = null;
             var session = _workspaceCoordinator.CurrentSession ?? ReviewSessionSnapshot.Empty;
             var loopRange = ResolveFocusedLoopRange();
+            var viewState = _hostController.CurrentViewState ?? ReviewWorkspaceViewState.Empty;
+            if (!viewState.Export.IsToolingAvailable)
+            {
+                failureMessage = viewState.Export.StatusText;
+                return false;
+            }
+
             if (!session.IsMediaOpen ||
                 loopRange == null ||
                 !loopRange.HasLoopIn ||
@@ -372,11 +396,14 @@ namespace FramePlayer.Host.Avalonia
                 loopRange.HasPendingMarkers ||
                 loopRange.IsInvalidRange)
             {
-                return null;
+                failureMessage = !string.IsNullOrWhiteSpace(viewState.Export.StatusText)
+                    ? viewState.Export.StatusText
+                    : "Set an exact A/B loop before exporting a clip.";
+                return false;
             }
 
             var snapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
-            return new ClipExportRequest(
+            request = new ClipExportRequest(
                 session.CurrentFilePath,
                 string.Empty,
                 session.DisplayLabel,
@@ -385,6 +412,8 @@ namespace FramePlayer.Host.Avalonia
                 session,
                 loopRange,
                 new IndexedFrameTimeResolverAdapter(_videoReviewEngine as FfmpegReviewEngine));
+            failureMessage = string.Empty;
+            return true;
         }
 
         private LoopPlaybackPaneRangeSnapshot ResolveFocusedLoopRange()
@@ -458,6 +487,10 @@ namespace FramePlayer.Host.Avalonia
 
             await _hostController.OpenAsync(filePath);
             _hostController.Refresh();
+            SetActionStatus(string.Format(
+                CultureInfo.InvariantCulture,
+                "Opened {0}.",
+                Path.GetFileName(filePath)));
         }
 
         private void RefreshRecentFilesUi(RecentFilesCommandState recentFiles, System.Collections.Generic.IReadOnlyList<RecentFileViewState> recentEntries)
@@ -481,6 +514,265 @@ namespace FramePlayer.Host.Avalonia
             var hasSelection = RecentFilesListBox != null && RecentFilesListBox.SelectedItem is RecentFileViewState;
             OpenRecentButton.IsEnabled = hasSelection;
             ClearRecentButton.IsEnabled = recentFiles != null && recentFiles.CanClear;
+        }
+
+        private async Task PausePlaybackForExportAsync()
+        {
+            if (!_hostController.CurrentViewState.Transport.IsPlaying)
+            {
+                return;
+            }
+
+            await _hostController.PauseAsync();
+            _hostController.Refresh();
+        }
+
+        private async Task RestartLoopPlaybackAsync()
+        {
+            if (_isLoopRestartInFlight)
+            {
+                return;
+            }
+
+            _isLoopRestartInFlight = true;
+            try
+            {
+                var session = _workspaceCoordinator.CurrentSession ?? ReviewSessionSnapshot.Empty;
+                var loopRange = ResolveFocusedLoopRange();
+                var restartTime = TimeSpan.Zero;
+                var statusMessage = "Loop playback restarted from the beginning.";
+
+                if (loopRange != null && loopRange.HasAnyMarkers && !loopRange.IsInvalidRange)
+                {
+                    restartTime = loopRange.EffectiveStartTime;
+                    statusMessage = loopRange.HasPendingMarkers
+                        ? "Loop playback restarted from the pending A/B range."
+                        : "Loop playback restarted from loop-in.";
+                }
+
+                await _hostController.PauseAsync();
+                await _hostController.SeekToTimeAsync(restartTime);
+                await _hostController.PlayAsync();
+                _hostController.Refresh();
+
+                if (session.IsMediaOpen)
+                {
+                    SetActionStatus(statusMessage);
+                }
+            }
+            catch (Exception ex)
+            {
+                SetActionStatus("Loop playback restart failed. " + SanitizeActionMessage(ex.Message), isError: true);
+            }
+            finally
+            {
+                _isLoopRestartInFlight = false;
+            }
+        }
+
+        private bool ShouldRestartLoopPlaybackAtBoundary()
+        {
+            if (!_loopPlaybackEnabled || _isLoopRestartInFlight)
+            {
+                return false;
+            }
+
+            var session = _workspaceCoordinator.CurrentSession ?? ReviewSessionSnapshot.Empty;
+            if (session.PlaybackState != ReviewPlaybackState.Playing)
+            {
+                return false;
+            }
+
+            var loopRange = ResolveFocusedLoopRange();
+            if (loopRange == null || !loopRange.HasAnyMarkers)
+            {
+                return IsSessionAtPlaybackEnd(session);
+            }
+
+            if (loopRange.IsInvalidRange)
+            {
+                return false;
+            }
+
+            return HasReachedLoopEnd(session, loopRange);
+        }
+
+        private static bool HasReachedLoopEnd(ReviewSessionSnapshot session, LoopPlaybackPaneRangeSnapshot loopRange)
+        {
+            if (session == null || !session.IsMediaOpen || loopRange == null)
+            {
+                return false;
+            }
+
+            if (loopRange.LoopOut != null)
+            {
+                if (loopRange.LoopOut.HasAbsoluteFrameIdentity &&
+                    session.HasAbsoluteFrameIdentity &&
+                    session.Position.FrameIndex.GetValueOrDefault() >= loopRange.LoopOut.AbsoluteFrameIndex.GetValueOrDefault())
+                {
+                    return true;
+                }
+
+                return session.Position.PresentationTime >= loopRange.LoopOut.PresentationTime + GetLoopBoundaryGuardTolerance(session);
+            }
+
+            return IsSessionAtPlaybackEnd(session);
+        }
+
+        private static bool IsSessionAtPlaybackEnd(ReviewSessionSnapshot session)
+        {
+            if (session == null || !session.IsMediaOpen || session.MediaInfo.Duration <= TimeSpan.Zero)
+            {
+                return false;
+            }
+
+            var tolerance = GetLoopBoundaryGuardTolerance(session);
+            var endThreshold = session.MediaInfo.Duration - tolerance;
+            if (endThreshold < TimeSpan.Zero)
+            {
+                endThreshold = TimeSpan.Zero;
+            }
+
+            return session.Position.PresentationTime >= endThreshold;
+        }
+
+        private static TimeSpan GetLoopBoundaryGuardTolerance(ReviewSessionSnapshot session)
+        {
+            var stepToleranceTicks = session != null && session.MediaInfo.PositionStep > TimeSpan.Zero
+                ? session.MediaInfo.PositionStep.Ticks * 2L
+                : 0L;
+            return TimeSpan.FromTicks(Math.Max(stepToleranceTicks, LoopGuardTolerance.Ticks));
+        }
+
+        private void UpdateLoopPlaybackButtonContent()
+        {
+            LoopPlaybackButton.Content = _loopPlaybackEnabled
+                ? "Loop Playback: On"
+                : "Loop Playback: Off";
+        }
+
+        private string BuildLoopPlaybackStatusMessage()
+        {
+            if (!_loopPlaybackEnabled)
+            {
+                return "Loop playback disabled.";
+            }
+
+            var loopRange = ResolveFocusedLoopRange();
+            if (loopRange == null || !loopRange.HasAnyMarkers)
+            {
+                return "Loop playback enabled for the full media range.";
+            }
+
+            if (loopRange.IsInvalidRange)
+            {
+                return "Loop playback enabled, but the current A/B range is invalid.";
+            }
+
+            return loopRange.HasPendingMarkers
+                ? "Loop playback enabled, but the current A/B range is still pending exact frame identity."
+                : "Loop playback enabled for the current A/B range.";
+        }
+
+        private static ClipExportRequest CreateOutputClipExportRequest(ClipExportRequest seedRequest, string outputPath)
+        {
+            return new ClipExportRequest(
+                seedRequest.SourceFilePath,
+                outputPath,
+                seedRequest.DisplayLabel,
+                seedRequest.PaneId,
+                seedRequest.IsPaneLocal,
+                seedRequest.SessionSnapshot,
+                seedRequest.LoopRange,
+                seedRequest.IndexedFrameTimeResolver);
+        }
+
+        private static string BuildSuggestedClipFileName(ClipExportRequest request)
+        {
+            var baseName = string.IsNullOrWhiteSpace(request.SourceFilePath)
+                ? "clip"
+                : Path.GetFileNameWithoutExtension(request.SourceFilePath);
+            var startSegment = request.LoopRange != null && request.LoopRange.LoopIn != null
+                ? FormatClipFileNameTime(request.LoopRange.LoopIn.PresentationTime)
+                : "start";
+            var endSegment = request.LoopRange != null && request.LoopRange.LoopOut != null
+                ? FormatClipFileNameTime(request.LoopRange.LoopOut.PresentationTime)
+                : "end";
+
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}-{1}-{2}.mp4",
+                SanitizeFileNameSegment(baseName),
+                startSegment,
+                endSegment);
+        }
+
+        private static string FormatClipFileNameTime(TimeSpan value)
+        {
+            if (value < TimeSpan.Zero)
+            {
+                value = TimeSpan.Zero;
+            }
+
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "{0:00}{1:00}{2:00}-{3:000}",
+                (int)value.TotalHours,
+                value.Minutes,
+                value.Seconds,
+                value.Milliseconds);
+        }
+
+        private static string SanitizeFileNameSegment(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return "clip";
+            }
+
+            var invalidCharacters = Path.GetInvalidFileNameChars();
+            var sanitized = new string(value.Select(character => invalidCharacters.Contains(character) ? '-' : character).ToArray()).Trim();
+            return string.IsNullOrWhiteSpace(sanitized) ? "clip" : sanitized;
+        }
+
+        private static string BuildClipExportSuccessMessage(ClipExportResult exportResult)
+        {
+            var duration = exportResult.ProbedDuration.HasValue
+                ? exportResult.ProbedDuration.Value
+                : exportResult.Plan.Duration;
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "Clip exported to {0} ({1}).",
+                Path.GetFileName(exportResult.Plan.OutputFilePath),
+                FormatTime(duration));
+        }
+
+        private static string SanitizeActionMessage(string message)
+        {
+            return (message ?? string.Empty)
+                .Replace(Environment.NewLine, " ")
+                .Trim();
+        }
+
+        private void SetActionStatus(string message, bool isError = false)
+        {
+            _lastActionMessage = message ?? string.Empty;
+            _lastActionIsError = isError && !string.IsNullOrWhiteSpace(_lastActionMessage);
+            UpdateActionStatusPresentation();
+        }
+
+        private void UpdateActionStatusPresentation()
+        {
+            if (ActionStatusTextBlock == null)
+            {
+                return;
+            }
+
+            ActionStatusTextBlock.Text = _lastActionMessage;
+            ActionStatusTextBlock.IsVisible = !string.IsNullOrWhiteSpace(_lastActionMessage);
+            ActionStatusTextBlock.Foreground = _lastActionIsError
+                ? ActionStatusErrorBrush
+                : ActionStatusInfoBrush;
         }
     }
 }

@@ -63,8 +63,8 @@ Current preview surface:
 - frame step
 - timeline seek
 - set loop A/B
-- basic loop playback restart
-- save current loop as clip
+- loop playback restart with full-media fallback and pause/seek/play restarts
+- save current loop as clip with pause-before-export, suggested clip names, and actionable status messages
 - startup open-file handling
 - recent files panel backed by a cross-platform file catalog
 - display decoded frames via `AvaloniaFrameBufferPresenter`
@@ -91,6 +91,9 @@ Validated locally on April 15, 2026:
 - Avalonia preview host:
   - `dotnet build src/FramePlayer.Host.Avalonia/FramePlayer.Host.Avalonia.csproj -c Debug`
   - result: success
+- Avalonia validation workflow:
+  - `.github/workflows/avalonia-host-validation.yml`
+  - result: validates Avalonia engineering builds on Windows and macOS runners, including published output artifacts
 
 ## What Still Needs Another Pass
 
@@ -99,5 +102,4 @@ Validated locally on April 15, 2026:
 - harden the Avalonia preview host with real parity coverage instead of manual preview-host wiring only
 - add RID-aware publish/test packaging for the new hosts
 - stage actual macOS FFmpeg runtime/tool bundles under the new RID manifest layout
-- add macOS validation for the Avalonia host
 - move compare-mode behavior into the shared host-controller/application layer after single-pane parity is proven
