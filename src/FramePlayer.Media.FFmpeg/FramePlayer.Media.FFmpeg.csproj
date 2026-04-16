@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>FramePlayer.Media.FFmpeg</AssemblyName>
+    <RootNamespace>FramePlayer</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FramePlayer.Core\FramePlayer.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FFmpeg.AutoGen" Version="8.0.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\Engines\FFmpeg\*.cs" Link="Engines\FFmpeg\%(Filename)%(Extension)" />
+    <Compile Include="..\..\Services\AppPreferences.cs" Link="Services\AppPreferences.cs" />
+    <Compile Include="..\..\Services\AppPreferencesService.cs" Link="Services\AppPreferencesService.cs" />
+    <Compile Include="..\..\Services\ClipExportService.cs" Link="Services\ClipExportService.cs" />
+    <Compile Include="..\..\Services\DecodedFrameBudgetCoordinator.cs" Link="Services\DecodedFrameBudgetCoordinator.cs" />
+    <Compile Include="..\..\Services\ExportToolsManifestService.cs" Link="Services\ExportToolsManifestService.cs" />
+    <Compile Include="..\..\Services\FfmpegReviewEngineOptionsProvider.cs" Link="Services\FfmpegReviewEngineOptionsProvider.cs" />
+    <Compile Include="..\..\Services\RuntimeManifestService.cs" Link="Services\RuntimeManifestService.cs" />
+    <Compile Include="..\..\Services\RuntimeEnvironment.cs" Link="Services\RuntimeEnvironment.cs" />
+    <Compile Include="..\..\Services\VideoReviewEngineFactory.cs" Link="Services\VideoReviewEngineFactory.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\Runtime\runtime-manifest.json"
+                      Link="Runtime\runtime-manifest.json"
+                      LogicalName="FramePlayer.Runtime.runtime-manifest.json" />
+    <EmbeddedResource Include="..\..\Runtime\export-tools-manifest.json"
+                      Link="Runtime\export-tools-manifest.json"
+                      LogicalName="FramePlayer.Runtime.export-tools-manifest.json" />
+  </ItemGroup>
+</Project>

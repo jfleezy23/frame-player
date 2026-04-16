@@ -68,6 +68,7 @@ namespace FramePlayer
             if (!RuntimeManifestService.TryValidateRuntimeDirectory(baseDirectory, out validationMessage))
             {
                 RuntimeDirectory = string.Empty;
+                RuntimeEnvironment.CurrentRuntimeDirectory = string.Empty;
                 RuntimeValidationMessage = string.IsNullOrWhiteSpace(validationMessage)
                     ? "The bundled FFmpeg runtime could not be validated."
                     : validationMessage;
@@ -75,6 +76,7 @@ namespace FramePlayer
             }
 
             RuntimeDirectory = baseDirectory;
+            RuntimeEnvironment.CurrentRuntimeDirectory = RuntimeDirectory;
             RuntimeValidationMessage = string.Empty;
             ffmpeg.RootPath = baseDirectory;
             StartGpuWarmupIfEnabled();

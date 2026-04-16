@@ -1,0 +1,67 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="FramePlayer.Host.Avalonia.MainWindow"
+        Width="1280"
+        Height="860"
+        MinWidth="960"
+        MinHeight="720"
+        Title="Frame Player (Avalonia Preview)">
+  <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="16">
+    <StackPanel Orientation="Horizontal" Spacing="8">
+      <Button x:Name="OpenButton" Content="Open" Click="OpenButton_Click" />
+      <Button x:Name="PlayPauseButton" Content="Play" Click="PlayPauseButton_Click" />
+      <Button x:Name="PreviousFrameButton" Content="Prev Frame" Click="PreviousFrameButton_Click" />
+      <Button x:Name="NextFrameButton" Content="Next Frame" Click="NextFrameButton_Click" />
+      <Button x:Name="SetLoopAButton" Content="Set A" Click="SetLoopAButton_Click" />
+      <Button x:Name="SetLoopBButton" Content="Set B" Click="SetLoopBButton_Click" />
+      <Button x:Name="ClearLoopButton" Content="Clear Loop" Click="ClearLoopButton_Click" />
+      <Button x:Name="LoopPlaybackButton" Content="Loop Playback: Off" Click="LoopPlaybackButton_Click" />
+      <Button x:Name="ExportClipButton" Content="Save Loop As Clip" Click="ExportClipButton_Click" />
+    </StackPanel>
+
+    <Border Grid.Row="1"
+            Margin="0,16,0,16"
+            CornerRadius="12"
+            Background="#111822"
+            BorderBrush="#263342"
+            BorderThickness="1">
+      <Grid>
+        <Image x:Name="VideoImage" Stretch="Uniform" />
+        <TextBlock x:Name="EmptySurfaceText"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"
+                   Foreground="#9BB0C7"
+                   FontSize="20"
+                   Text="Open a supported file to start the Avalonia preview host." />
+      </Grid>
+    </Border>
+
+    <StackPanel Grid.Row="2" Spacing="8">
+      <Slider x:Name="PositionSlider"
+              Minimum="0"
+              Maximum="1"
+              TickFrequency="0.04"
+              PropertyChanged="PositionSlider_PropertyChanged" />
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <TextBlock x:Name="CurrentPositionTextBlock"
+                   VerticalAlignment="Center"
+                   Text="00:00:00.000" />
+        <TextBlock x:Name="LoopStatusTextBlock"
+                   Grid.Column="1"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"
+                   Text="Loop: off" />
+        <TextBlock x:Name="DurationTextBlock"
+                   Grid.Column="2"
+                   VerticalAlignment="Center"
+                   Text="00:00:00.000" />
+      </Grid>
+    </StackPanel>
+
+    <StackPanel Grid.Row="3" Margin="0,16,0,0" Spacing="4">
+      <TextBlock x:Name="PlaybackStatusTextBlock" FontWeight="SemiBold" Text="Ready for review playback." />
+      <TextBlock x:Name="MediaSummaryTextBlock" Foreground="#7C8CA0" Text="" />
+      <TextBlock x:Name="FrameStatusTextBlock" Foreground="#7C8CA0" Text="Frame --" />
+    </StackPanel>
+  </Grid>
+</Window>

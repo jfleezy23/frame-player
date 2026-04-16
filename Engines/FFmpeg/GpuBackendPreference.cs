@@ -1,6 +1,6 @@
 namespace FramePlayer.Engines.FFmpeg
 {
-    internal enum GpuBackendPreference
+    public enum GpuBackendPreference
     {
         Auto,
         Disabled,

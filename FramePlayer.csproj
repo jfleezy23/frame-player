@@ -80,11 +80,22 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Core\Abstractions\IVideoReviewEngine.cs" />
+    <Compile Include="Core\Abstractions\IAudioOutput.cs" />
+    <Compile Include="Core\Abstractions\IAudioOutputFactory.cs" />
+    <Compile Include="Core\Abstractions\IIndexedFrameTimeResolver.cs" />
     <Compile Include="Core\Events\FramePresentedEventArgs.cs" />
     <Compile Include="Core\Events\ReviewSessionChangedEventArgs.cs" />
     <Compile Include="Core\Events\ReviewWorkspacePreparationChangedEventArgs.cs" />
     <Compile Include="Core\Events\ReviewWorkspaceChangedEventArgs.cs" />
     <Compile Include="Core\Events\VideoReviewEngineStateChangedEventArgs.cs" />
+    <Compile Include="Core\Hosting\ExportCommandState.cs" />
+    <Compile Include="Core\Hosting\LoopCommandState.cs" />
+    <Compile Include="Core\Hosting\PaneViewState.cs" />
+    <Compile Include="Core\Hosting\ReviewHostCapabilities.cs" />
+    <Compile Include="Core\Hosting\ReviewWorkspaceHostController.cs" />
+    <Compile Include="Core\Hosting\ReviewWorkspaceViewState.cs" />
+    <Compile Include="Core\Hosting\ReviewWorkspaceViewStateChangedEventArgs.cs" />
+    <Compile Include="Core\Hosting\TransportCommandState.cs" />
     <Compile Include="Core\Coordination\MultiVideoWorkspaceState.cs" />
     <Compile Include="Core\Coordination\ReviewWorkspacePreparationPhase.cs" />
     <Compile Include="Core\Coordination\ReviewWorkspacePreparationState.cs" />
@@ -125,6 +136,7 @@
     <Compile Include="Engines\FFmpeg\FfmpegReviewEngineOptions.cs" />
     <Compile Include="Engines\FFmpeg\FfmpegReviewEngine.cs" />
     <Compile Include="Engines\FFmpeg\GpuBackendPreference.cs" />
+    <Compile Include="Engines\FFmpeg\WinMmAudioOutputFactory.cs" />
     <Compile Include="Engines\FFmpeg\WinMmAudioOutput.cs" />
     <Compile Include="MainWindow.xaml.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
@@ -140,6 +152,7 @@
     <Compile Include="Services\FrameSurfaceGeometry.cs" />
     <Compile Include="Services\FfmpegReviewEngineOptionsProvider.cs" />
     <Compile Include="Services\RecentFilesService.cs" />
+    <Compile Include="Services\RuntimeEnvironment.cs" />
     <Compile Include="Services\VideoReviewEngineFactory.cs" />
     <Compile Include="Services\WpfFrameBufferPresenter.cs" />
     <Compile Include="Controls\LoopRangeOverlay.cs" />

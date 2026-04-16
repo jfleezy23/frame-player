@@ -9,7 +9,7 @@ using FramePlayer.Core.Models;
 
 namespace FramePlayer.Services
 {
-    internal sealed class ClipExportService
+    public sealed class ClipExportService
     {
         private const string ToolsFolderName = "ffmpeg-tools";
         private static readonly TimeSpan MinimumFallbackFrameStep = TimeSpan.FromMilliseconds(1d);
@@ -207,10 +207,10 @@ namespace FramePlayer.Services
                 return TimeSpan.Zero;
             }
 
-            var engine = request.Engine;
-            if (engine != null &&
+            var indexedFrameTimeResolver = request.IndexedFrameTimeResolver;
+            if (indexedFrameTimeResolver != null &&
                 loopOut.AbsoluteFrameIndex.HasValue &&
-                engine.TryGetIndexedPresentationTime(loopOut.AbsoluteFrameIndex.Value + 1L, out var nextIndexedTime))
+                indexedFrameTimeResolver.TryGetIndexedPresentationTime(loopOut.AbsoluteFrameIndex.Value + 1L, out var nextIndexedTime))
             {
                 boundaryStrategy = "next-indexed-frame";
                 return ClampTime(nextIndexedTime, mediaDuration);

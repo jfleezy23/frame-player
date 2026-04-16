@@ -12,7 +12,7 @@ using FramePlayer.Services;
 
 namespace FramePlayer.Engines.FFmpeg
 {
-    public unsafe sealed class FfmpegReviewEngine : IVideoReviewEngine
+    public unsafe sealed class FfmpegReviewEngine : IVideoReviewEngine, IIndexedFrameTimeResolver
     {
         private const int DefaultCachedPreviousFrameCount = 10;
         private const int DefaultCachedForwardFrameCount = 1;
@@ -36,6 +36,7 @@ namespace FramePlayer.Engines.FFmpeg
         private readonly FfmpegDecodedFrameCache _frameCache;
         private readonly FfmpegReviewEngineOptionsProvider _optionsProvider;
         private readonly DecodedFrameBudgetCoordinator _budgetCoordinator;
+        private readonly IAudioOutputFactory _audioOutputFactory;
         private readonly string _paneId;
         private FfmpegGlobalFrameIndex _globalFrameIndex;
         private FfmpegAudioPlaybackSession _audioPlaybackSession;
@@ -89,7 +90,7 @@ namespace FramePlayer.Engines.FFmpeg
         {
         }
 
-        internal FfmpegReviewEngine(FfmpegReviewEngineOptionsProvider optionsProvider)
+        public FfmpegReviewEngine(FfmpegReviewEngineOptionsProvider optionsProvider)
             : this(optionsProvider, null, "pane-primary")
         {
         }
@@ -97,11 +98,13 @@ namespace FramePlayer.Engines.FFmpeg
         internal FfmpegReviewEngine(
             FfmpegReviewEngineOptionsProvider optionsProvider,
             DecodedFrameBudgetCoordinator budgetCoordinator,
-            string paneId)
+            string paneId,
+            IAudioOutputFactory audioOutputFactory = null)
         {
             _optionsProvider = optionsProvider;
             _frameCache = new FfmpegDecodedFrameCache(DefaultCachedPreviousFrameCount, DefaultCachedForwardFrameCount);
             _budgetCoordinator = budgetCoordinator ?? new DecodedFrameBudgetCoordinator();
+            _audioOutputFactory = audioOutputFactory ?? WinMmAudioOutputFactory.Instance;
             _paneId = string.IsNullOrWhiteSpace(paneId)
                 ? "pane-" + Guid.NewGuid().ToString("N")
                 : paneId;
@@ -209,7 +212,7 @@ namespace FramePlayer.Engines.FFmpeg
             get { return _lastAudioErrorMessage; }
         }
 
-        internal FfmpegAudioStreamInfo AudioStreamInfo
+        public FfmpegAudioStreamInfo AudioStreamInfo
         {
             get { return _audioStreamInfo ?? FfmpegAudioStreamInfo.None; }
         }
@@ -245,7 +248,7 @@ namespace FramePlayer.Engines.FFmpeg
             }
         }
 
-        internal bool TryGetIndexedPresentationTime(long absoluteFrameIndex, out TimeSpan presentationTime)
+        public bool TryGetIndexedPresentationTime(long absoluteFrameIndex, out TimeSpan presentationTime)
         {
             FfmpegGlobalFrameIndexEntry entry;
             if (_globalFrameIndex != null &&
@@ -260,7 +263,7 @@ namespace FramePlayer.Engines.FFmpeg
             return false;
         }
 
-        internal bool TryResolveIndexedFrameIdentity(
+        public bool TryResolveIndexedFrameIdentity(
             long? presentationTimestamp,
             long? decodeTimestamp,
             out long absoluteFrameIndex,
@@ -1366,7 +1369,11 @@ namespace FramePlayer.Engines.FFmpeg
 
             try
             {
-                var session = FfmpegAudioPlaybackSession.Start(_currentFilePath, startPosition, cancellationToken);
+                var session = FfmpegAudioPlaybackSession.Start(
+                    _currentFilePath,
+                    startPosition,
+                    cancellationToken,
+                    _audioOutputFactory);
                 LastPlaybackUsedAudioClock = session.IsActive;
                 return session;
             }
@@ -2816,9 +2823,9 @@ namespace FramePlayer.Engines.FFmpeg
                 return;
             }
 
-            if (!string.IsNullOrWhiteSpace(App.RuntimeDirectory))
+            if (!string.IsNullOrWhiteSpace(RuntimeEnvironment.CurrentRuntimeDirectory))
             {
-                ffmpeg.RootPath = App.RuntimeDirectory;
+                ffmpeg.RootPath = RuntimeEnvironment.CurrentRuntimeDirectory;
                 return;
             }
 

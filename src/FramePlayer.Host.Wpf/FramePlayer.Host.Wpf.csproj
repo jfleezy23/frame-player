@@ -1,0 +1,89 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>FramePlayer</AssemblyName>
+    <RootNamespace>FramePlayer</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <EnableDefaultPageItems>false</EnableDefaultPageItems>
+    <ApplicationIcon>..\..\Assets\FramePlayer.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FramePlayer.Core\FramePlayer.Core.csproj" />
+    <ProjectReference Include="..\FramePlayer.Media.FFmpeg\FramePlayer.Media.FFmpeg.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ApplicationDefinition Include="..\..\App.xaml" Link="App.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </ApplicationDefinition>
+    <Page Include="..\..\AboutWindow.xaml" Link="AboutWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="..\..\HelpWindow.xaml" Link="HelpWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="..\..\MainWindow.xaml" Link="MainWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="..\..\VideoInfoWindow.xaml" Link="VideoInfoWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+
+    <Compile Include="..\..\AboutWindow.xaml.cs" Link="AboutWindow.xaml.cs">
+      <DependentUpon>AboutWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="..\..\App.xaml.cs" Link="App.xaml.cs">
+      <DependentUpon>App.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="..\..\HelpWindow.xaml.cs" Link="HelpWindow.xaml.cs">
+      <DependentUpon>HelpWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="..\..\MainWindow.xaml.cs" Link="MainWindow.xaml.cs">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="..\..\VideoInfoWindow.xaml.cs" Link="VideoInfoWindow.xaml.cs">
+      <DependentUpon>VideoInfoWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="..\..\Controls\LoopRangeOverlay.cs" Link="Controls\LoopRangeOverlay.cs" />
+    <Compile Include="..\..\Diagnostics\*.cs" Link="Diagnostics\%(Filename)%(Extension)" />
+    <Compile Include="..\..\Properties\AssemblyInfo.cs" Link="Properties\AssemblyInfo.cs" />
+    <Compile Include="..\..\Services\BuildVariantInfo.cs" Link="Services\BuildVariantInfo.cs" />
+    <Compile Include="..\..\Services\DiagnosticLogService.cs" Link="Services\DiagnosticLogService.cs" />
+    <Compile Include="..\..\Services\FrameSurfaceGeometry.cs" Link="Services\FrameSurfaceGeometry.cs" />
+    <Compile Include="..\..\Services\RecentFilesService.cs" Link="Services\RecentFilesService.cs" />
+    <Compile Include="..\..\Services\WpfFrameBufferPresenter.cs" Link="Services\WpfFrameBufferPresenter.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\Runtime\runtime-manifest.json"
+                      Link="Runtime\runtime-manifest.json"
+                      LogicalName="FramePlayer.Runtime.runtime-manifest.json" />
+    <EmbeddedResource Include="..\..\Runtime\export-tools-manifest.json"
+                      Link="Runtime\export-tools-manifest.json"
+                      LogicalName="FramePlayer.Runtime.export-tools-manifest.json" />
+    <Content Include="..\..\Runtime\ffmpeg\*.dll">
+      <Link>%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\Runtime\ffmpeg-tools\*.*">
+      <Link>ffmpeg-tools\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <None Include="..\..\Assets\FramePlayer.ico" Link="Assets\FramePlayer.ico" />
+    <None Include="..\..\LICENSE" Link="LICENSE">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\..\THIRD_PARTY_NOTICES.md" Link="THIRD_PARTY_NOTICES.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+</Project>

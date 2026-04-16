@@ -4,7 +4,7 @@ using FFmpeg.AutoGen;
 
 namespace FramePlayer.Engines.FFmpeg
 {
-    internal static unsafe class FfmpegHardwareDeviceCache
+    public static unsafe class FfmpegHardwareDeviceCache
     {
         private static readonly object VulkanDeviceSync = new object();
         private static AVBufferRef* _sharedVulkanDeviceContext;

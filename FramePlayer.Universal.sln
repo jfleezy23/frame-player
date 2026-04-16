@@ -1,0 +1,48 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{29D3EE25-0307-4797-A64E-378E9298623F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FramePlayer.Core", "src\FramePlayer.Core\FramePlayer.Core.csproj", "{4B52A6F7-C9F6-4C44-926B-E08E56044D65}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FramePlayer.Media.FFmpeg", "src\FramePlayer.Media.FFmpeg\FramePlayer.Media.FFmpeg.csproj", "{A3335753-51B1-4056-9A7C-DC2997828FC4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FramePlayer.Host.Wpf", "src\FramePlayer.Host.Wpf\FramePlayer.Host.Wpf.csproj", "{2B9CA622-92A9-4580-A7D7-97466406C9A1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FramePlayer.Host.Avalonia", "src\FramePlayer.Host.Avalonia\FramePlayer.Host.Avalonia.csproj", "{7AFE8819-65E5-4787-9BD5-27BA275EE332}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{4B52A6F7-C9F6-4C44-926B-E08E56044D65}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4B52A6F7-C9F6-4C44-926B-E08E56044D65}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4B52A6F7-C9F6-4C44-926B-E08E56044D65}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4B52A6F7-C9F6-4C44-926B-E08E56044D65}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A3335753-51B1-4056-9A7C-DC2997828FC4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A3335753-51B1-4056-9A7C-DC2997828FC4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A3335753-51B1-4056-9A7C-DC2997828FC4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A3335753-51B1-4056-9A7C-DC2997828FC4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2B9CA622-92A9-4580-A7D7-97466406C9A1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2B9CA622-92A9-4580-A7D7-97466406C9A1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2B9CA622-92A9-4580-A7D7-97466406C9A1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2B9CA622-92A9-4580-A7D7-97466406C9A1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7AFE8819-65E5-4787-9BD5-27BA275EE332}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7AFE8819-65E5-4787-9BD5-27BA275EE332}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7AFE8819-65E5-4787-9BD5-27BA275EE332}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7AFE8819-65E5-4787-9BD5-27BA275EE332}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{4B52A6F7-C9F6-4C44-926B-E08E56044D65} = {29D3EE25-0307-4797-A64E-378E9298623F}
+		{A3335753-51B1-4056-9A7C-DC2997828FC4} = {29D3EE25-0307-4797-A64E-378E9298623F}
+		{2B9CA622-92A9-4580-A7D7-97466406C9A1} = {29D3EE25-0307-4797-A64E-378E9298623F}
+		{7AFE8819-65E5-4787-9BD5-27BA275EE332} = {29D3EE25-0307-4797-A64E-378E9298623F}
+	EndGlobalSection
+EndGlobal

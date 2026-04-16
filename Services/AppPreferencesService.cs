@@ -6,7 +6,7 @@ using System.Text;
 
 namespace FramePlayer.Services
 {
-    internal sealed class AppPreferencesService
+    public sealed class AppPreferencesService
     {
         private readonly string _storagePath;
 

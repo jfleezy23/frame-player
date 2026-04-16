@@ -1,6 +1,6 @@
 namespace FramePlayer.Engines.FFmpeg
 {
-    internal sealed class FfmpegAudioStreamInfo
+    public sealed class FfmpegAudioStreamInfo
     {
         public static FfmpegAudioStreamInfo None { get; } =
             new FfmpegAudioStreamInfo(false, false, -1, string.Empty, 0, 0);

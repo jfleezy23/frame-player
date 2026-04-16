@@ -1,6 +1,6 @@
 namespace FramePlayer.Engines.FFmpeg
 {
-    internal sealed class FfmpegReviewEngineOptions
+    public sealed class FfmpegReviewEngineOptions
     {
         public static FfmpegReviewEngineOptions Default { get; } =
             new FfmpegReviewEngineOptions(GpuBackendPreference.Auto, null);

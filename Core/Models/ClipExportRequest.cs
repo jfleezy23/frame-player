@@ -1,5 +1,5 @@
 using System;
-using FramePlayer.Engines.FFmpeg;
+using FramePlayer.Core.Abstractions;
 
 namespace FramePlayer.Core.Models
 {
@@ -13,7 +13,7 @@ namespace FramePlayer.Core.Models
             bool isPaneLocal,
             ReviewSessionSnapshot sessionSnapshot,
             LoopPlaybackPaneRangeSnapshot loopRange,
-            FfmpegReviewEngine engine)
+            IIndexedFrameTimeResolver indexedFrameTimeResolver)
         {
             SourceFilePath = sourceFilePath ?? string.Empty;
             OutputFilePath = outputFilePath ?? string.Empty;
@@ -22,7 +22,7 @@ namespace FramePlayer.Core.Models
             IsPaneLocal = isPaneLocal;
             SessionSnapshot = sessionSnapshot ?? ReviewSessionSnapshot.Empty;
             LoopRange = loopRange;
-            Engine = engine;
+            IndexedFrameTimeResolver = indexedFrameTimeResolver;
         }
 
         public string SourceFilePath { get; }
@@ -39,6 +39,6 @@ namespace FramePlayer.Core.Models
 
         public LoopPlaybackPaneRangeSnapshot LoopRange { get; }
 
-        public FfmpegReviewEngine Engine { get; }
+        public IIndexedFrameTimeResolver IndexedFrameTimeResolver { get; }
     }
 }

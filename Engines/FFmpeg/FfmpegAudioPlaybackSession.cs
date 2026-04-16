@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using FFmpeg.AutoGen;
+using FramePlayer.Core.Abstractions;
 
 namespace FramePlayer.Engines.FFmpeg
 {
@@ -15,13 +16,14 @@ namespace FramePlayer.Engines.FFmpeg
         private readonly string _filePath;
         private readonly TimeSpan _startPosition;
         private readonly CancellationToken _cancellationToken;
+        private readonly IAudioOutputFactory _audioOutputFactory;
         private AVFormatContext* _formatContext;
         private AVCodecContext* _codecContext;
         private AVStream* _audioStream;
         private AVPacket* _packet;
         private AVFrame* _decodedFrame;
         private SwrContext* _resampler;
-        private WinMmAudioOutput _audioOutput;
+        private IAudioOutput _audioOutput;
         private Task _decodeTask;
         private long _submittedAudioBytesSnapshot;
         private int _audioStreamIndex;
@@ -32,11 +34,13 @@ namespace FramePlayer.Engines.FFmpeg
         private FfmpegAudioPlaybackSession(
             string filePath,
             TimeSpan startPosition,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            IAudioOutputFactory audioOutputFactory)
         {
             _filePath = filePath ?? throw new ArgumentNullException(nameof(filePath));
             _startPosition = startPosition < TimeSpan.Zero ? TimeSpan.Zero : startPosition;
             _cancellationToken = cancellationToken;
+            _audioOutputFactory = audioOutputFactory ?? throw new ArgumentNullException(nameof(audioOutputFactory));
             _audioStreamIndex = -1;
         }
 
@@ -72,9 +76,10 @@ namespace FramePlayer.Engines.FFmpeg
         public static FfmpegAudioPlaybackSession Start(
             string filePath,
             TimeSpan startPosition,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            IAudioOutputFactory audioOutputFactory)
         {
-            var session = new FfmpegAudioPlaybackSession(filePath, startPosition, cancellationToken);
+            var session = new FfmpegAudioPlaybackSession(filePath, startPosition, cancellationToken, audioOutputFactory);
             try
             {
                 session.Open();
@@ -189,7 +194,7 @@ namespace FramePlayer.Engines.FFmpeg
 
             _outputSampleRate = _codecContext->sample_rate > 0 ? _codecContext->sample_rate : 48000;
             InitializeResampler();
-            _audioOutput = new WinMmAudioOutput(_outputSampleRate, OutputChannelCount, OutputBitsPerSample);
+            _audioOutput = _audioOutputFactory.Create(_outputSampleRate, OutputChannelCount, OutputBitsPerSample);
 
             StreamInfo = new FfmpegAudioStreamInfo(
                 true,

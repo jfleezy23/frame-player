@@ -19,6 +19,7 @@ using System.Windows.Interop;
 using FramePlayer.Core.Abstractions;
 using FramePlayer.Core.Coordination;
 using FramePlayer.Core.Events;
+using FramePlayer.Core.Hosting;
 using FramePlayer.Core.Models;
 using FramePlayer.Controls;
 using FramePlayer.Engines.FFmpeg;
@@ -53,6 +54,7 @@ namespace FramePlayer
         private readonly ClipExportService _clipExportService;
         private readonly DiagnosticLogService _diagnosticLogService;
         private readonly FfmpegReviewEngineOptionsProvider _ffmpegReviewEngineOptionsProvider;
+        private readonly ReviewWorkspaceHostController _hostController;
         private readonly RecentFilesService _recentFilesService;
         private readonly ReviewSessionCoordinator _sessionCoordinator;
         private readonly VideoReviewEngineFactory _videoReviewEngineFactory;
@@ -242,10 +244,12 @@ namespace FramePlayer
             _videoReviewEngine = CreateVideoReviewEngine(PrimaryPaneId);
             _sessionCoordinator = new ReviewSessionCoordinator(_videoReviewEngine);
             _workspaceCoordinator = new ReviewWorkspaceCoordinator(_videoReviewEngine, _sessionCoordinator);
+            _hostController = new ReviewWorkspaceHostController(_workspaceCoordinator, BuildHostCapabilities());
             _workspaceCoordinator.WorkspaceChanged += ReviewWorkspaceCoordinator_WorkspaceChanged;
             _workspaceCoordinator.PreparationStateChanged += ReviewWorkspaceCoordinator_PreparationStateChanged;
             _videoReviewEngine.FramePresented += VideoReviewEngine_FramePresented;
             _lastMediaErrorMessage = string.Empty;
+            _hostController.SetLastMediaErrorMessage(_lastMediaErrorMessage);
             ApplySessionSnapshot(_workspaceCoordinator.CurrentSession);
 
             _positionTimer = new DispatcherTimer
@@ -1977,6 +1981,7 @@ namespace FramePlayer
             LogInfo("Session ended.");
             _positionTimer.Stop();
             _frameStepRepeatTimer.Stop();
+            _hostController.Dispose();
             _workspaceCoordinator.WorkspaceChanged -= ReviewWorkspaceCoordinator_WorkspaceChanged;
             _workspaceCoordinator.PreparationStateChanged -= ReviewWorkspaceCoordinator_PreparationStateChanged;
             _workspaceCoordinator.Dispose();
@@ -2731,23 +2736,27 @@ namespace FramePlayer
 
         private void UpdateTransportState()
         {
-            var canControl = _isMediaLoaded;
-            var canPlay = canControl && _buildVariant.SupportsTimedPlayback;
+            _hostController.UpdateCapabilities(BuildHostCapabilities());
+            _hostController.SetLastMediaErrorMessage(_lastMediaErrorMessage);
+            var viewState = _hostController.CurrentViewState;
+            var transportState = viewState.Transport;
+            var canControl = transportState.CanControlTransport;
+            var canPlay = transportState.CanTogglePlayPause;
 
             PlayPauseButton.IsEnabled = canPlay;
             OverlayPlayPauseButton.IsEnabled = canPlay;
             PlayPauseMenuItem.IsEnabled = canPlay;
-            RewindButton.IsEnabled = canControl;
-            FastForwardButton.IsEnabled = canControl;
-            PreviousFrameButton.IsEnabled = canControl;
-            NextFrameButton.IsEnabled = canControl;
-            CloseVideoMenuItem.IsEnabled = canControl;
-            VideoInfoMenuItem.IsEnabled = canControl;
+            RewindButton.IsEnabled = transportState.CanSeek;
+            FastForwardButton.IsEnabled = transportState.CanSeek;
+            PreviousFrameButton.IsEnabled = transportState.CanStepBackward;
+            NextFrameButton.IsEnabled = transportState.CanStepForward;
+            CloseVideoMenuItem.IsEnabled = transportState.CanCloseMedia;
+            VideoInfoMenuItem.IsEnabled = transportState.CanInspectMedia;
             SetLoopInMenuItem.IsEnabled = canControl;
             SetLoopOutMenuItem.IsEnabled = canControl;
             ClearLoopPointsMenuItem.IsEnabled = canControl;
-            PositionSlider.IsEnabled = canControl;
-            FrameNumberTextBox.IsEnabled = canControl;
+            PositionSlider.IsEnabled = transportState.CanSeek;
+            FrameNumberTextBox.IsEnabled = transportState.CanSeek;
             ToggleFullScreenButton.IsEnabled = canControl;
             OverlayToggleFullScreenButton.IsEnabled = canControl;
             FullscreenControlBar.IsEnabled = canControl;
@@ -2757,12 +2766,7 @@ namespace FramePlayer
 
             if (!_isMediaLoaded)
             {
-                SetPlaybackMessage(
-                    !string.IsNullOrWhiteSpace(_lastMediaErrorMessage)
-                        ? "The last action did not complete."
-                        : App.HasBundledFfmpegRuntime
-                            ? _buildVariant.StatusText
-                            : "Bundled playback runtime is missing.");
+                SetPlaybackMessage(viewState.PlaybackMessage);
                 SetMediaSummary(string.IsNullOrWhiteSpace(_lastMediaErrorMessage)
                     ? string.Empty
                     : _lastMediaErrorMessage);
@@ -2779,22 +2783,8 @@ namespace FramePlayer
                 return;
             }
 
-            if (_buildVariant.SupportsTimedPlayback)
-            {
-                SetPlaybackMessage(_isPlaying
-                    ? "Playing"
-                    : "Paused");
-            }
-            else
-            {
-                SetPlaybackMessage(_buildVariant.PlaybackCapabilityText);
-            }
-
-            SetMediaSummary(string.Format(
-                CultureInfo.InvariantCulture,
-                "Sample rate {0:0.###} fps | Interval {1}",
-                _framesPerSecond,
-                FormatStepDuration(_positionStep)));
+            SetPlaybackMessage(viewState.PlaybackMessage);
+            SetMediaSummary(viewState.MediaSummary);
             MediaSummaryTextBlock.ToolTip = string.Format(
                 CultureInfo.InvariantCulture,
                 "{0}. Frame rate {1:0.###} fps, frame step {2}, duration {3}. Audio: {4}.",
@@ -2808,6 +2798,18 @@ namespace FramePlayer
             UpdateCacheStatusFromEngine();
             UpdateFullScreenButtonIcon();
             UpdateWorkspacePanePresentation();
+        }
+
+        private ReviewHostCapabilities BuildHostCapabilities()
+        {
+            return new ReviewHostCapabilities(
+                _buildVariant.SupportsTimedPlayback,
+                App.HasBundledFfmpegRuntime,
+                _clipExportService.IsBundledToolingAvailable,
+                _buildVariant.StatusText,
+                "Bundled playback runtime is missing.",
+                _buildVariant.PlaybackCapabilityText,
+                _clipExportService.GetToolAvailabilityMessage());
         }
 
         private void UpdatePlayPauseToggleVisuals()

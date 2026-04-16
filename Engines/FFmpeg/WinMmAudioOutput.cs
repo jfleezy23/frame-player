@@ -2,10 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading;
+using FramePlayer.Core.Abstractions;
 
 namespace FramePlayer.Engines.FFmpeg
 {
-    internal sealed class WinMmAudioOutput : IDisposable
+    internal sealed class WinMmAudioOutput : IAudioOutput
     {
         private const int WaveMapper = -1;
         private const int CallbackNull = 0;

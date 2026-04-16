@@ -3,7 +3,7 @@ using FramePlayer.Engines.FFmpeg;
 
 namespace FramePlayer.Services
 {
-    internal sealed class FfmpegReviewEngineOptionsProvider
+    public sealed class FfmpegReviewEngineOptionsProvider
     {
         private readonly AppPreferencesService _preferencesService;
         private AppPreferences _preferences;

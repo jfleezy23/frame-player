@@ -1,6 +1,6 @@
 namespace FramePlayer.Services
 {
-    internal sealed class AppPreferences
+    public sealed class AppPreferences
     {
         public static AppPreferences Default { get; } = new AppPreferences(true);
 

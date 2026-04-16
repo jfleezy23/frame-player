@@ -9,7 +9,7 @@ using System.Security.Cryptography;
 
 namespace FramePlayer.Services
 {
-    internal static class RuntimeManifestService
+    public static class RuntimeManifestService
     {
         private const string ResourceName = "FramePlayer.Runtime.runtime-manifest.json";
         private static readonly Lazy<RuntimeManifest> Manifest = new Lazy<RuntimeManifest>(LoadManifest);
