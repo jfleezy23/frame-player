@@ -192,7 +192,7 @@ namespace FramePlayer.Core.Hosting
                 panes);
         }
 
-        private PaneViewState BuildPaneState(ReviewPaneState pane)
+        private static PaneViewState BuildPaneState(ReviewPaneState pane)
         {
             var session = pane != null ? pane.Session ?? ReviewSessionSnapshot.Empty : ReviewSessionSnapshot.Empty;
             var loopState = BuildLoopState(pane != null ? pane.LoopRange : null, session.IsMediaOpen);
