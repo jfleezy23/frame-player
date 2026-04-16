@@ -21,6 +21,8 @@ namespace FramePlayer.Engines.FFmpeg
         private const int AvCodecHwConfigMethodHwDeviceContext = 0x01;
         private const int AvCodecHwConfigMethodHwFramesContext = 0x02;
         private static readonly TimeSpan MinimumPlaybackDelay = TimeSpan.FromMilliseconds(1d);
+        private static readonly TimeSpan AudioClockStallTolerance = TimeSpan.FromMilliseconds(250d);
+        private static readonly TimeSpan AudioClockProgressTolerance = TimeSpan.FromMilliseconds(2d);
 
         // Decoded display-order frame identity is the source of truth for this engine.
         // Frame stepping must be cache- or decode-based rather than timestamp math.
@@ -69,6 +71,7 @@ namespace FramePlayer.Engines.FFmpeg
         private CancellationTokenSource _indexBuildCancellationSource;
         private Task _indexBuildTask;
         private long _lastAudioSubmittedBytes;
+        private bool _playbackStartNeedsDecoderRealignment;
         private int _indexBuildGeneration;
         private bool _isGlobalFrameIndexBuildInProgress;
         private bool _hardwareDecodeFormatSelected;
@@ -506,6 +509,16 @@ namespace FramePlayer.Engines.FFmpeg
                 {
                     return Task.CompletedTask;
                 }
+            }
+
+            RealignPlaybackStartStateIfNeeded();
+
+            lock (_playbackSync)
+            {
+                if (IsPlaying)
+                {
+                    return Task.CompletedTask;
+                }
 
                 _lastErrorMessage = string.Empty;
                 LastFrameSeekWasCacheHit = false;
@@ -762,6 +775,7 @@ namespace FramePlayer.Engines.FFmpeg
                 if (_frameCache.TryMoveToAbsoluteFrameIndex(indexedTargetEntry.AbsoluteFrameIndex, out cachedSeekFrame))
                 {
                     SetCurrentFrame(cachedSeekFrame);
+                    _playbackStartNeedsDecoderRealignment = true;
                     LastSeekLandedAtOrAfterTarget = landedAtOrAfterTarget;
                     LastFrameAdvanceWasCacheHit = false;
                     LastFrameSeekWasCacheHit = false;
@@ -783,6 +797,7 @@ namespace FramePlayer.Engines.FFmpeg
                 {
                     _frameCache.LoadWindow(indexedWindow.WindowFrames, indexedWindow.CurrentIndex);
                     SetCurrentFrame(_frameCache.Current);
+                    _playbackStartNeedsDecoderRealignment = false;
                     LastSeekLandedAtOrAfterTarget = landedAtOrAfterTarget;
                     LastFrameAdvanceWasCacheHit = false;
                     LastFrameSeekWasCacheHit = false;
@@ -815,6 +830,7 @@ namespace FramePlayer.Engines.FFmpeg
 
             _frameCache.Reset(landedFrame);
             SetCurrentFrame(landedFrame);
+            _playbackStartNeedsDecoderRealignment = false;
             LastSeekForwardCacheWarmMilliseconds = 0d;
             LastSeekLandedAtOrAfterTarget = landedAtOrAfterTarget;
             LastFrameAdvanceWasCacheHit = false;
@@ -875,6 +891,7 @@ namespace FramePlayer.Engines.FFmpeg
                 LastFrameAdvanceWasCacheHit = false;
                 IsPlaying = false;
                 SetCurrentFrame(cachedFrame);
+                _playbackStartNeedsDecoderRealignment = true;
                 RecordNoCacheRefill("seek-frame-cache-hit", afterLanding: true);
                 SetOperationInstrumentation(
                     IsGlobalFrameIndexAvailable,
@@ -898,6 +915,7 @@ namespace FramePlayer.Engines.FFmpeg
 
             _frameCache.LoadWindow(reconstruction.WindowFrames, reconstruction.CurrentIndex);
             SetCurrentFrame(_frameCache.Current);
+            _playbackStartNeedsDecoderRealignment = false;
             LastFrameSeekWasCacheHit = false;
             LastFrameAdvanceWasCacheHit = false;
             IsPlaying = false;
@@ -1381,6 +1399,54 @@ namespace FramePlayer.Engines.FFmpeg
             }
         }
 
+        private void RealignPlaybackStartStateIfNeeded()
+        {
+            if (!_playbackStartNeedsDecoderRealignment || !IsMediaOpen || _currentFrame == null)
+            {
+                return;
+            }
+
+            var currentFrame = _currentFrame;
+            var cancellationToken = CancellationToken.None;
+
+            if (currentFrame.Descriptor != null &&
+                currentFrame.Descriptor.IsFrameIndexAbsolute &&
+                currentFrame.Descriptor.FrameIndex.HasValue &&
+                IsGlobalFrameIndexAvailable)
+            {
+                FfmpegGlobalFrameIndexEntry indexedEntry;
+                if (_globalFrameIndex.TryGetByAbsoluteFrameIndex(currentFrame.Descriptor.FrameIndex.Value, out indexedEntry))
+                {
+                    var indexedWindow = MaterializeIndexedFrameWindow(indexedEntry, cancellationToken);
+                    if (indexedWindow != null)
+                    {
+                        _frameCache.LoadWindow(indexedWindow.WindowFrames, indexedWindow.CurrentIndex);
+                        SetCurrentFrame(_frameCache.Current);
+                        _playbackStartNeedsDecoderRealignment = false;
+                        return;
+                    }
+                }
+            }
+
+            var target = currentFrame.Descriptor != null
+                ? currentFrame.Descriptor.PresentationTime
+                : _position.PresentationTime;
+            var targetTimestamp = FfmpegNativeHelpers.ToStreamTimestamp(target, _videoStreamTimeBase);
+            SeekToStreamTimestamp(targetTimestamp, targetTimestamp <= 0L);
+
+            bool landedAtOrAfterTarget;
+            var landedFrame = DecodeFrameAtOrAfterTarget(target, targetTimestamp, cancellationToken, out landedAtOrAfterTarget);
+            if (landedFrame == null)
+            {
+                throw new InvalidOperationException("No displayable frame could be decoded while realigning playback state.");
+            }
+
+            _frameCache.Reset(landedFrame);
+            SetCurrentFrame(landedFrame);
+            PrimeForwardCache(cancellationToken, "playback-start-realign", afterLanding: true);
+            _playbackStartNeedsDecoderRealignment = false;
+        }
+
         private bool TryPreparePlaybackFrame(
             CancellationToken cancellationToken,
             out DecodedFrameBuffer frame,
@@ -1463,30 +1529,9 @@ namespace FramePlayer.Engines.FFmpeg
             DecodedFrameBuffer nextFrame,
             CancellationToken cancellationToken)
         {
-            var audioSession = _audioPlaybackSession;
-            if (audioSession != null && audioSession.IsActive && nextFrame != null)
+            if (TryWaitForPlaybackFrameDueUsingAudioClock(nextFrame, cancellationToken))
             {
-                LastPlaybackUsedAudioClock = true;
-                _lastAudioSubmittedBytes = Math.Max(_lastAudioSubmittedBytes, audioSession.SubmittedAudioBytes);
-                while (true)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    _lastAudioSubmittedBytes = Math.Max(_lastAudioSubmittedBytes, audioSession.SubmittedAudioBytes);
-
-                    var remaining = nextFrame.Descriptor.PresentationTime - audioSession.PlaybackPosition;
-                    if (remaining <= TimeSpan.Zero)
-                    {
-                        return;
-                    }
-
-                    var wait = remaining > TimeSpan.FromMilliseconds(10d)
-                        ? TimeSpan.FromMilliseconds(10d)
-                        : remaining;
-                    if (cancellationToken.WaitHandle.WaitOne(wait))
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                    }
-                }
+                return;
             }
 
             LastPlaybackUsedAudioClock = LastPlaybackUsedAudioClock && _lastAudioSubmittedBytes > 0L;
@@ -1494,6 +1539,54 @@ namespace FramePlayer.Engines.FFmpeg
             if (cancellationToken.WaitHandle.WaitOne(delay))
             {
                 cancellationToken.ThrowIfCancellationRequested();
+            }
+        }
+
+        private bool TryWaitForPlaybackFrameDueUsingAudioClock(
+            DecodedFrameBuffer nextFrame,
+            CancellationToken cancellationToken)
+        {
+            var audioSession = _audioPlaybackSession;
+            if (audioSession == null || !audioSession.IsActive || nextFrame == null)
+            {
+                return false;
+            }
+
+            LastPlaybackUsedAudioClock = true;
+            _lastAudioSubmittedBytes = Math.Max(_lastAudioSubmittedBytes, audioSession.SubmittedAudioBytes);
+            var waitStopwatch = Stopwatch.StartNew();
+            var lastObservedAudioPosition = audioSession.PlaybackPosition;
+            var lastObservedAudioAdvance = waitStopwatch.Elapsed;
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                _lastAudioSubmittedBytes = Math.Max(_lastAudioSubmittedBytes, audioSession.SubmittedAudioBytes);
+
+                var audioPosition = audioSession.PlaybackPosition;
+                if (audioPosition > lastObservedAudioPosition + AudioClockProgressTolerance)
+                {
+                    lastObservedAudioPosition = audioPosition;
+                    lastObservedAudioAdvance = waitStopwatch.Elapsed;
+                }
+
+                var remaining = nextFrame.Descriptor.PresentationTime - audioPosition;
+                if (remaining <= TimeSpan.Zero)
+                {
+                    return true;
+                }
+
+                if (waitStopwatch.Elapsed - lastObservedAudioAdvance >= AudioClockStallTolerance)
+                {
+                    return false;
+                }
+
+                var wait = remaining > TimeSpan.FromMilliseconds(10d)
+                    ? TimeSpan.FromMilliseconds(10d)
+                    : remaining;
+                if (cancellationToken.WaitHandle.WaitOne(wait))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
             }
         }
 

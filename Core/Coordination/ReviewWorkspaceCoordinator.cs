@@ -468,9 +468,73 @@ namespace FramePlayer.Core.Coordination
                 paneResults));
         }
 
+        public async Task SeekToPaneTimesAsync(
+            IReadOnlyDictionary<string, TimeSpan> panePositions,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            if (panePositions == null)
+            {
+                throw new ArgumentNullException(nameof(panePositions));
+            }
+
+            if (panePositions.Count == 0)
+            {
+                return;
+            }
+
+            var focusedBinding = GetFocusedBinding();
+            var paneResults = new List<ReviewWorkspacePaneOperationResult>();
+            for (var index = 0; index < _paneBindings.Count; index++)
+            {
+                var binding = _paneBindings[index];
+                TimeSpan position;
+                if (!panePositions.TryGetValue(binding.PaneId, out position))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    await binding.SessionCoordinator.Engine
+                        .SeekToTimeAsync(position < TimeSpan.Zero ? TimeSpan.Zero : position, cancellationToken)
+                        .ConfigureAwait(false);
+                    paneResults.Add(CreateSucceededPaneOperationResult(
+                        binding,
+                        binding.SessionCoordinator.CurrentSession ?? ReviewSessionSnapshot.Empty,
+                        null));
+                }
+                catch (Exception exception)
+                {
+                    paneResults.Add(CreateFailedPaneOperationResult(
+                        binding,
+                        binding.SessionCoordinator.CurrentSession ?? ReviewSessionSnapshot.Empty,
+                        exception.Message,
+                        exception,
+                        null));
+                }
+            }
+
+            ThrowIfOperationFailed(new ReviewWorkspaceOperationResult(
+                "seek-pane-times",
+                SynchronizedOperationScope.AllPanes,
+                focusedBinding.PaneId,
+                paneResults));
+        }
+
         public ReviewSessionSnapshot RefreshFromEngine()
         {
             return GetFocusedBinding().SessionCoordinator.RefreshFromEngine();
+        }
+
+        public ReviewWorkspaceSnapshot RefreshWorkspaceFromEngines()
+        {
+            for (var index = 0; index < _paneBindings.Count; index++)
+            {
+                _paneBindings[index].SessionCoordinator.RefreshFromEngine();
+            }
+
+            RefreshWorkspace();
+            return BuildWorkspaceSnapshot(CurrentWorkspace ?? MultiVideoWorkspaceState.Empty);
         }
 
         public ReviewSessionSnapshot Reset(string currentFilePath = "")

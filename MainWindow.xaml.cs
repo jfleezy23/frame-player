@@ -187,6 +187,19 @@ namespace FramePlayer
             public FfmpegReviewEngine Engine { get; }
         }
 
+        private sealed class TimelineContextCommandTarget
+        {
+            public TimelineContextCommandTarget(string paneId, TimeSpan target)
+            {
+                PaneId = string.IsNullOrWhiteSpace(paneId) ? string.Empty : paneId;
+                Target = target < TimeSpan.Zero ? TimeSpan.Zero : target;
+            }
+
+            public string PaneId { get; }
+
+            public TimeSpan Target { get; }
+        }
+
         public MainWindow()
         {
             InitializeComponent();
@@ -269,6 +282,7 @@ namespace FramePlayer
             UpdateTransportState();
             UpdateWorkspacePanePresentation();
             SourceInitialized += MainWindow_SourceInitialized;
+            Loaded += MainWindow_Loaded;
 
             LogInfo(string.Format(
                 CultureInfo.InvariantCulture,
@@ -280,6 +294,19 @@ namespace FramePlayer
                 App.HasBundledFfmpegRuntime
                     ? "Bundled runtime verified."
                     : GetRuntimeStatusMessage()));
+        }
+
+        private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
+        {
+            Loaded -= MainWindow_Loaded;
+
+            if (string.IsNullOrWhiteSpace(App.StartupOpenFilePath) || !File.Exists(App.StartupOpenFilePath))
+            {
+                return;
+            }
+
+            var startupOpenFilePath = App.ConsumeStartupOpenFilePath();
+            await OpenMediaAsync(startupOpenFilePath, PrimaryPaneId);
         }
 
         private IVideoReviewEngine CreateVideoReviewEngine(string paneId)
@@ -1356,6 +1383,58 @@ namespace FramePlayer
             await ExportLoopClipAsync(null, paneId);
         }
 
+        private async void TimelineSetLoopPositionAMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            TimelineContextCommandTarget contextTarget;
+            if (!TryGetTimelineContextCommandTarget(sender, out contextTarget))
+            {
+                return;
+            }
+
+            await SetTimelineLoopMarkerAtAsync(
+                contextTarget.PaneId,
+                LoopPlaybackMarkerEndpoint.In,
+                contextTarget.Target);
+        }
+
+        private async void TimelineSetLoopPositionBMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            TimelineContextCommandTarget contextTarget;
+            if (!TryGetTimelineContextCommandTarget(sender, out contextTarget))
+            {
+                return;
+            }
+
+            await SetTimelineLoopMarkerAtAsync(
+                contextTarget.PaneId,
+                LoopPlaybackMarkerEndpoint.Out,
+                contextTarget.Target);
+        }
+
+        private async void TimelineSaveLoopAsClipMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            TimelineContextCommandTarget contextTarget;
+            if (!TryGetTimelineContextCommandTarget(sender, out contextTarget))
+            {
+                return;
+            }
+
+            // Let the popup close before showing the save dialog from a timeline context menu.
+            await Dispatcher.Yield(DispatcherPriority.Background);
+            await ExportLoopClipAsync(null, string.IsNullOrWhiteSpace(contextTarget.PaneId) ? null : contextTarget.PaneId);
+        }
+
+        private void TimelineLoopPlaybackMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            var menuItem = sender as MenuItem;
+            if (menuItem == null || LoopPlaybackMenuItem == null)
+            {
+                return;
+            }
+
+            LoopPlaybackMenuItem.IsChecked = menuItem.IsChecked;
+        }
+
         private void ToggleFullScreenButton_Click(object sender, RoutedEventArgs e)
         {
             ToggleFullScreen();
@@ -1479,16 +1558,48 @@ namespace FramePlayer
         private static bool TryMoveSliderToPoint(Slider slider, MouseButtonEventArgs e, out TimeSpan target)
         {
             target = TimeSpan.Zero;
+            if (slider == null || e == null)
+            {
+                return false;
+            }
+
+            double value;
+            if (!TryGetSliderValueFromPoint(slider, e.GetPosition(slider), out value))
+            {
+                return false;
+            }
+
+            slider.Value = value;
+            target = TimeSpan.FromSeconds(value);
+            return true;
+        }
+
+        private static bool TryGetSliderTargetFromPoint(Slider slider, Point point, out TimeSpan target)
+        {
+            target = TimeSpan.Zero;
+
+            double value;
+            if (!TryGetSliderValueFromPoint(slider, point, out value))
+            {
+                return false;
+            }
+
+            target = TimeSpan.FromSeconds(value);
+            return true;
+        }
+
+        private static bool TryGetSliderValueFromPoint(Slider slider, Point point, out double value)
+        {
+            value = 0d;
             if (slider == null || slider.Maximum <= slider.Minimum)
             {
                 return false;
             }
 
             var track = slider.Template.FindName("PART_Track", slider) as Track;
-            double value;
             if (track != null)
             {
-                value = track.ValueFromPoint(e.GetPosition(track));
+                value = track.ValueFromPoint(slider.TranslatePoint(point, track));
             }
             else
             {
@@ -1497,7 +1608,6 @@ namespace FramePlayer
                     return false;
                 }
 
-                var point = e.GetPosition(slider);
                 var ratio = Math.Max(0d, Math.Min(1d, point.X / slider.ActualWidth));
                 if (slider.FlowDirection == FlowDirection.RightToLeft)
                 {
@@ -1508,8 +1618,6 @@ namespace FramePlayer
             }
 
             value = Math.Max(slider.Minimum, Math.Min(slider.Maximum, value));
-            slider.Value = value;
-            target = TimeSpan.FromSeconds(value);
             return true;
         }
 
@@ -3908,7 +4016,7 @@ namespace FramePlayer
                 {
                     SetPlaybackMessage(string.Format(
                         CultureInfo.InvariantCulture,
-                        "{0} loop {1} set pending at {2}. Pane-local repeat will wait for exact frame identity.",
+                        "{0} loop {1} set pending at {2}. Pane-local repeat will stay time-bounded and upgrade to exact frame identity when ready.",
                         paneLabel,
                         endpointLabel,
                         FormatTime(paneAnchor.PresentationTime)));
@@ -3952,7 +4060,7 @@ namespace FramePlayer
             {
                 SetPlaybackMessage(string.Format(
                     CultureInfo.InvariantCulture,
-                    "Loop {0} set pending at {1}. A/B repeat will wait for exact frame identity.",
+                    "Loop {0} set pending at {1}. A/B repeat will stay time-bounded and upgrade to exact frame identity when ready.",
                     endpointLabel,
                     FormatTime(anchor.PresentationTime)));
             }
@@ -4105,6 +4213,416 @@ namespace FramePlayer
             }
         }
 
+        private bool TryResolveTimelineLoopCommandContext(
+            string paneId,
+            out ReviewWorkspaceSnapshot workspaceSnapshot,
+            out ReviewWorkspacePaneSnapshot paneSnapshot,
+            out LoopPlaybackPaneRangeSnapshot loopRange,
+            out string failureMessage)
+        {
+            workspaceSnapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
+            paneSnapshot = null;
+            loopRange = null;
+            failureMessage = string.Empty;
+
+            var normalizedPaneId = string.IsNullOrWhiteSpace(paneId) ? string.Empty : paneId;
+            if (string.IsNullOrWhiteSpace(normalizedPaneId))
+            {
+                return TryResolveSharedTimelineLoopCommandContext(
+                    workspaceSnapshot,
+                    out workspaceSnapshot,
+                    out paneSnapshot,
+                    out loopRange,
+                    out failureMessage);
+            }
+
+            return TryResolvePaneTimelineLoopCommandContext(
+                workspaceSnapshot,
+                normalizedPaneId,
+                out paneSnapshot,
+                out loopRange,
+                out failureMessage);
+        }
+
+        private bool CanOfferTimelineLoopMarkerAtTarget(
+            string paneId,
+            LoopPlaybackMarkerEndpoint endpoint,
+            TimeSpan target,
+            out string toolTip)
+        {
+            ReviewWorkspaceSnapshot workspaceSnapshot;
+            ReviewWorkspacePaneSnapshot paneSnapshot;
+            LoopPlaybackPaneRangeSnapshot loopRange;
+            string failureMessage;
+            if (!TryResolveTimelineLoopCommandContext(
+                    paneId,
+                    out workspaceSnapshot,
+                    out paneSnapshot,
+                    out loopRange,
+                    out failureMessage))
+            {
+                toolTip = failureMessage;
+                return false;
+            }
+
+            string currentLabel;
+            string oppositeLabel;
+            GetTimelineLoopMarkerLabels(endpoint, out currentLabel, out oppositeLabel);
+            var oppositeAnchor = GetOppositeTimelineLoopMarker(loopRange, endpoint);
+            if (oppositeAnchor == null)
+            {
+                toolTip = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0} at the clicked timeline frame ({1}).",
+                    currentLabel,
+                    FormatTime(target));
+                return true;
+            }
+
+            if (oppositeAnchor.IsPending)
+            {
+                toolTip = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0} is disabled until {1} has exact frame identity.",
+                    currentLabel,
+                    oppositeLabel);
+                return false;
+            }
+
+            if (!IsTimelineLoopMarkerTimeOrderValid(endpoint, target, oppositeAnchor.PresentationTime))
+            {
+                toolTip = GetTimelineLoopMarkerOrderFailure(endpoint);
+                return false;
+            }
+
+            toolTip = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} at the clicked timeline frame ({1}).",
+                currentLabel,
+                FormatTime(target));
+            return true;
+        }
+
+        private bool TryValidateTimelineLoopMarkerCandidateAtCurrentPosition(
+            string paneId,
+            LoopPlaybackMarkerEndpoint endpoint,
+            out string failureMessage)
+        {
+            ReviewWorkspaceSnapshot workspaceSnapshot;
+            ReviewWorkspacePaneSnapshot paneSnapshot;
+            LoopPlaybackPaneRangeSnapshot loopRange;
+            if (!TryResolveTimelineLoopCommandContext(
+                    paneId,
+                    out workspaceSnapshot,
+                    out paneSnapshot,
+                    out loopRange,
+                    out failureMessage))
+            {
+                return false;
+            }
+
+            string currentLabel;
+            string oppositeLabel;
+            GetTimelineLoopMarkerLabels(endpoint, out currentLabel, out oppositeLabel);
+            var oppositeAnchor = GetOppositeTimelineLoopMarker(loopRange, endpoint);
+            if (oppositeAnchor == null)
+            {
+                failureMessage = string.Empty;
+                return true;
+            }
+
+            if (!TryValidateTimelineLoopMarkerAnchor(
+                    oppositeAnchor,
+                    currentLabel,
+                    oppositeLabel,
+                    out failureMessage))
+            {
+                return false;
+            }
+
+            long currentFrameIndex;
+            if (!TryGetTimelineLoopMarkerFrameIndex(paneSnapshot, currentLabel, out currentFrameIndex, out failureMessage))
+            {
+                return false;
+            }
+
+            var oppositeFrameIndex = oppositeAnchor.AbsoluteFrameIndex.GetValueOrDefault();
+            return TryValidateTimelineLoopMarkerFrameOrder(
+                endpoint,
+                currentFrameIndex,
+                oppositeFrameIndex,
+                out failureMessage);
+        }
+
+        private bool TryResolveSharedTimelineLoopCommandContext(
+            ReviewWorkspaceSnapshot workspaceSnapshot,
+            out ReviewWorkspaceSnapshot resolvedWorkspaceSnapshot,
+            out ReviewWorkspacePaneSnapshot paneSnapshot,
+            out LoopPlaybackPaneRangeSnapshot loopRange,
+            out string failureMessage)
+        {
+            resolvedWorkspaceSnapshot = workspaceSnapshot;
+            paneSnapshot = null;
+            loopRange = null;
+            failureMessage = string.Empty;
+
+            if (IsCompareModeEnabled)
+            {
+                failureMessage = "Use the Primary or Compare timeline while two-pane compare is enabled.";
+                return false;
+            }
+
+            var evaluation = PromotePendingLoopEvaluationForUi(
+                EvaluateSharedLoopRange(workspaceSnapshot, GetRequestedOperationScope()));
+            resolvedWorkspaceSnapshot = evaluation != null
+                ? evaluation.WorkspaceSnapshot
+                : workspaceSnapshot;
+            paneSnapshot = resolvedWorkspaceSnapshot != null
+                ? resolvedWorkspaceSnapshot.FocusedPane ?? resolvedWorkspaceSnapshot.PrimaryPane
+                : null;
+            if (paneSnapshot == null || !PaneHasLoadedMedia(paneSnapshot))
+            {
+                failureMessage = "Load a video before using the main timeline A/B menu.";
+                return false;
+            }
+
+            loopRange = evaluation != null
+                ? evaluation.FocusedPaneRange
+                : null;
+            return true;
+        }
+
+        private bool TryResolvePaneTimelineLoopCommandContext(
+            ReviewWorkspaceSnapshot workspaceSnapshot,
+            string paneId,
+            out ReviewWorkspacePaneSnapshot paneSnapshot,
+            out LoopPlaybackPaneRangeSnapshot loopRange,
+            out string failureMessage)
+        {
+            paneSnapshot = null;
+            loopRange = null;
+            failureMessage = string.Empty;
+
+            if (!IsCompareModeEnabled)
+            {
+                failureMessage = "Pane-local timeline A/B commands are only available in two-pane compare.";
+                return false;
+            }
+
+            if (workspaceSnapshot == null ||
+                !workspaceSnapshot.TryGetPane(paneId, out paneSnapshot) ||
+                !PaneHasLoadedMedia(paneSnapshot))
+            {
+                failureMessage = GetPaneDisplayLabel(paneId) + " is not ready for timeline A/B commands.";
+                return false;
+            }
+
+            loopRange = PromotePendingPaneLoopRangeForUi(
+                workspaceSnapshot,
+                paneId,
+                GetPaneLocalLoopRange(workspaceSnapshot, paneId));
+            return true;
+        }
+
+        private static LoopPlaybackAnchorSnapshot GetOppositeTimelineLoopMarker(
+            LoopPlaybackPaneRangeSnapshot loopRange,
+            LoopPlaybackMarkerEndpoint endpoint)
+        {
+            if (loopRange == null)
+            {
+                return null;
+            }
+
+            return endpoint == LoopPlaybackMarkerEndpoint.In
+                ? loopRange.LoopOut
+                : loopRange.LoopIn;
+        }
+
+        private static void GetTimelineLoopMarkerLabels(
+            LoopPlaybackMarkerEndpoint endpoint,
+            out string currentLabel,
+            out string oppositeLabel)
+        {
+            if (endpoint == LoopPlaybackMarkerEndpoint.In)
+            {
+                currentLabel = "Position A";
+                oppositeLabel = "position B";
+                return;
+            }
+
+            currentLabel = "Position B";
+            oppositeLabel = "position A";
+        }
+
+        private static bool TryValidateTimelineLoopMarkerAnchor(
+            LoopPlaybackAnchorSnapshot oppositeAnchor,
+            string currentLabel,
+            string oppositeLabel,
+            out string failureMessage)
+        {
+            failureMessage = string.Empty;
+            if (oppositeAnchor == null)
+            {
+                return true;
+            }
+
+            if (!oppositeAnchor.IsPending)
+            {
+                return true;
+            }
+
+            failureMessage = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} is disabled until {1} has exact frame identity.",
+                currentLabel,
+                oppositeLabel);
+            return false;
+        }
+
+        private static bool TryGetTimelineLoopMarkerFrameIndex(
+            ReviewWorkspacePaneSnapshot paneSnapshot,
+            string currentLabel,
+            out long frameIndex,
+            out string failureMessage)
+        {
+            frameIndex = 0L;
+            failureMessage = string.Empty;
+            if (paneSnapshot == null ||
+                !paneSnapshot.HasAbsoluteFrameIdentity ||
+                !paneSnapshot.FrameIndex.HasValue)
+            {
+                failureMessage = currentLabel + " is disabled until the clicked frame has exact frame identity.";
+                return false;
+            }
+
+            frameIndex = paneSnapshot.FrameIndex.Value;
+            return true;
+        }
+
+        private static bool TryValidateTimelineLoopMarkerFrameOrder(
+            LoopPlaybackMarkerEndpoint endpoint,
+            long currentFrameIndex,
+            long oppositeFrameIndex,
+            out string failureMessage)
+        {
+            failureMessage = string.Empty;
+            if (endpoint == LoopPlaybackMarkerEndpoint.In &&
+                currentFrameIndex > oppositeFrameIndex)
+            {
+                failureMessage = "Position A must be on or before position B.";
+                return false;
+            }
+
+            if (endpoint == LoopPlaybackMarkerEndpoint.Out &&
+                currentFrameIndex < oppositeFrameIndex)
+            {
+                failureMessage = "Position B must be on or after position A.";
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool IsTimelineLoopMarkerTimeOrderValid(
+            LoopPlaybackMarkerEndpoint endpoint,
+            TimeSpan target,
+            TimeSpan oppositeTarget)
+        {
+            return endpoint == LoopPlaybackMarkerEndpoint.In
+                ? target <= oppositeTarget
+                : target >= oppositeTarget;
+        }
+
+        private static string GetTimelineLoopMarkerOrderFailure(LoopPlaybackMarkerEndpoint endpoint)
+        {
+            return endpoint == LoopPlaybackMarkerEndpoint.In
+                ? "Position A must be on or before position B."
+                : "Position B must be on or after position A.";
+        }
+
+        private async Task<bool> SetTimelineLoopMarkerAtAsync(
+            string paneId,
+            LoopPlaybackMarkerEndpoint endpoint,
+            TimeSpan target)
+        {
+            var normalizedPaneId = string.IsNullOrWhiteSpace(paneId) ? string.Empty : paneId;
+
+            string toolTip;
+            if (!CanOfferTimelineLoopMarkerAtTarget(normalizedPaneId, endpoint, target, out toolTip))
+            {
+                if (!string.IsNullOrWhiteSpace(toolTip))
+                {
+                    SetPlaybackMessage(toolTip);
+                    LogWarning(toolTip);
+                }
+
+                return false;
+            }
+
+            var pauseScope = IsCompareModeEnabled
+                ? SynchronizedOperationScope.AllPanes
+                : GetRequestedOperationScope();
+            await PausePlaybackAsync(logAction: false, operationScope: pauseScope);
+
+            if (string.IsNullOrWhiteSpace(normalizedPaneId))
+            {
+                SetSharedLoopCommandContext();
+                await SeekToAsync(target, "timeline context menu");
+            }
+            else
+            {
+                if (!TrySelectPaneForPaneCommand(normalizedPaneId))
+                {
+                    return false;
+                }
+
+                SetPaneLoopCommandContext(normalizedPaneId);
+                await SeekPaneToAsync(normalizedPaneId, target, GetPaneDisplayLabel(normalizedPaneId).ToLowerInvariant() + " timeline context menu");
+            }
+
+            string failureMessage;
+            if (!TryValidateTimelineLoopMarkerCandidateAtCurrentPosition(normalizedPaneId, endpoint, out failureMessage))
+            {
+                if (!string.IsNullOrWhiteSpace(failureMessage))
+                {
+                    SetPlaybackMessage(failureMessage);
+                    LogWarning(failureMessage);
+                }
+
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(normalizedPaneId))
+            {
+                SetSharedLoopCommandContext();
+            }
+            else
+            {
+                SetPaneLoopCommandContext(normalizedPaneId);
+            }
+
+            SetLoopMarker(endpoint);
+            FocusPreferredVideoSurface();
+            return true;
+        }
+
+        private static bool TryGetTimelineContextCommandTarget(object sender, out TimelineContextCommandTarget contextTarget)
+        {
+            contextTarget = null;
+
+            var menuItem = sender as MenuItem;
+            var contextMenu = menuItem != null
+                ? ItemsControl.ItemsControlFromItemContainer(menuItem) as ContextMenu
+                : sender as ContextMenu;
+            if (contextMenu == null)
+            {
+                return false;
+            }
+
+            contextTarget = contextMenu.Tag as TimelineContextCommandTarget;
+            return contextTarget != null;
+        }
+
         private bool TryResolveClipExportTarget(
             ReviewWorkspaceSnapshot workspaceSnapshot,
             string requestedPaneId,
@@ -4250,6 +4768,21 @@ namespace FramePlayer
         }
 
         private static LoopPlaybackPaneRangeSnapshot PromotePendingLoopRangeFromIndexedFrameIdentity(
+            LoopPlaybackPaneRangeSnapshot loopRange,
+            string paneId,
+            string sessionId,
+            string displayLabel,
+            FfmpegReviewEngine engine)
+        {
+            return PromotePendingLoopRange(
+                loopRange,
+                paneId,
+                sessionId,
+                displayLabel,
+                engine);
+        }
+
+        private static LoopPlaybackPaneRangeSnapshot PromotePendingLoopRange(
             LoopPlaybackPaneRangeSnapshot loopRange,
             string paneId,
             string sessionId,
@@ -4677,7 +5210,7 @@ namespace FramePlayer
 
             if (paneRange.HasPendingMarkers)
             {
-                return paneLabel + " loop markers are pending exact frame identity. Pane-local A/B repeat will wait until the engine proves those frames.";
+                return paneLabel + " loop markers are pending exact frame identity. Pane-local repeat will stay time-bounded and upgrade to exact frame restarts when the engine proves those frames.";
             }
 
             return paneLabel + " pane-local A/B loop range.";
@@ -4948,7 +5481,7 @@ namespace FramePlayer
 
             if (evaluation.HasPendingMarkers)
             {
-                return "One or more loop markers are still pending exact frame identity. The UI will keep showing the range, but A/B repeat will not start until the engine proves those frames.";
+                return "One or more loop markers are still pending exact frame identity. The UI will keep showing the range, and A/B repeat will stay time-bounded until the engine upgrades the restart points to exact frames.";
             }
 
             return IsLoopPlaybackEnabled
@@ -4984,6 +5517,7 @@ namespace FramePlayer
             ReviewPaneState currentPaneState;
             if (TryGetActivePaneLoopPlaybackTarget(e.CurrentWorkspace, out currentPaneState, out paneLoopRange))
             {
+                paneLoopRange = PromotePendingPaneLoopRangeForPlayback(currentPaneState, paneLoopRange);
                 if (e.PreviousWorkspace == null ||
                     !e.PreviousWorkspace.TryGetPane(currentPaneState.PaneId, out previousPaneState) ||
                     previousPaneState == null)
@@ -4991,8 +5525,9 @@ namespace FramePlayer
                     return false;
                 }
 
-                if (previousPaneState.Session.PlaybackState != ReviewPlaybackState.Playing ||
-                    currentPaneState.Session.PlaybackState == ReviewPlaybackState.Playing)
+                var wasPlaying = previousPaneState.Session.PlaybackState == ReviewPlaybackState.Playing;
+                var isPlaying = currentPaneState.Session.PlaybackState == ReviewPlaybackState.Playing;
+                if (!wasPlaying && !isPlaying)
                 {
                     return false;
                 }
@@ -5002,25 +5537,22 @@ namespace FramePlayer
                     return IsSessionAtPlaybackEnd(currentPaneState.Session);
                 }
 
-                return !paneLoopRange.HasPendingMarkers &&
-                       !paneLoopRange.IsInvalidRange &&
+                return !paneLoopRange.IsInvalidRange &&
                        HasReachedLoopEnd(currentPaneState.Session, paneLoopRange);
             }
 
             var scope = ResolveLoopPlaybackScope(e.CurrentWorkspace);
             var previousTargetPanes = GetLoopTargetPanes(e.PreviousWorkspace, scope);
             var currentTargetPanes = GetLoopTargetPanes(e.CurrentWorkspace, scope);
+
             if (previousTargetPanes.Length == 0 || currentTargetPanes.Length == 0)
             {
                 return false;
             }
 
-            if (!previousTargetPanes.Any(pane => pane.Session.PlaybackState == ReviewPlaybackState.Playing))
-            {
-                return false;
-            }
-
-            if (currentTargetPanes.Any(pane => pane.Session.PlaybackState == ReviewPlaybackState.Playing))
+            var anyTargetWasPlaying = previousTargetPanes.Any(pane => pane.Session.PlaybackState == ReviewPlaybackState.Playing);
+            var anyTargetIsPlaying = currentTargetPanes.Any(pane => pane.Session.PlaybackState == ReviewPlaybackState.Playing);
+            if (!anyTargetWasPlaying && !anyTargetIsPlaying)
             {
                 return false;
             }
@@ -5033,17 +5565,21 @@ namespace FramePlayer
                 return currentTargetPanes.All(pane => IsSessionAtPlaybackEnd(pane.Session));
             }
 
+            ReviewPaneState[] resolvedTargetPanes;
             LoopPlaybackPaneRangeSnapshot[] targetPaneRanges;
-            bool hasPendingMarkers;
             bool isInvalidRange;
-            if (!TryGetResolvedLoopTargetPaneRanges(sharedRange, currentTargetPanes, out targetPaneRanges, out hasPendingMarkers, out isInvalidRange) ||
-                hasPendingMarkers ||
+            if (!TryGetLoopTargetPaneRangesForPlayback(
+                    e.CurrentWorkspace,
+                    scope,
+                    out resolvedTargetPanes,
+                    out targetPaneRanges,
+                    out isInvalidRange) ||
                 isInvalidRange)
             {
                 return false;
             }
 
-            return HaveLoopTargetPanesReachedBoundary(currentTargetPanes, targetPaneRanges);
+            return HaveLoopTargetPanesReachedBoundary(resolvedTargetPanes, targetPaneRanges);
         }
 
         private bool ShouldRestartLoopPlaybackAtBoundary(MultiVideoWorkspaceState workspaceState)
@@ -5061,10 +5597,10 @@ namespace FramePlayer
             LoopPlaybackPaneRangeSnapshot paneLoopRange;
             if (TryGetActivePaneLoopPlaybackTarget(workspaceState, out paneState, out paneLoopRange))
             {
+                paneLoopRange = PromotePendingPaneLoopRangeForPlayback(paneState, paneLoopRange);
                 if (paneState.Session.PlaybackState != ReviewPlaybackState.Playing ||
                     paneLoopRange == null ||
                     !paneLoopRange.HasAnyMarkers ||
-                    paneLoopRange.HasPendingMarkers ||
                     paneLoopRange.IsInvalidRange)
                 {
                     return false;
@@ -5073,7 +5609,15 @@ namespace FramePlayer
                 return HasReachedLoopEnd(paneState.Session, paneLoopRange);
             }
 
-            if (!_isPlaying)
+            var scope = ResolveLoopPlaybackScope(workspaceState);
+            var currentTargetPanes = GetLoopTargetPanes(workspaceState, scope);
+            if (currentTargetPanes.Length == 0)
+            {
+                return false;
+            }
+
+            var anyTargetIsPlaying = currentTargetPanes.Any(pane => pane.Session.PlaybackState == ReviewPlaybackState.Playing);
+            if (!_isPlaying && !anyTargetIsPlaying)
             {
                 return false;
             }
@@ -5081,21 +5625,13 @@ namespace FramePlayer
             var sharedRange = workspaceState.SharedLoopRange ?? LoopPlaybackRangeSnapshot.Empty;
             if (!sharedRange.HasMarkers)
             {
-                return false;
+                return currentTargetPanes.All(pane => IsSessionAtPlaybackEnd(pane.Session));
             }
 
-            var scope = ResolveLoopPlaybackScope(workspaceState);
-            var targetPanes = GetLoopTargetPanes(workspaceState, scope);
-            if (targetPanes.Length == 0)
-            {
-                return false;
-            }
-
+            ReviewPaneState[] targetPanes;
             LoopPlaybackPaneRangeSnapshot[] targetPaneRanges;
-            bool hasPendingMarkers;
             bool isInvalidRange;
-            if (!TryGetResolvedLoopTargetPaneRanges(sharedRange, targetPanes, out targetPaneRanges, out hasPendingMarkers, out isInvalidRange) ||
-                hasPendingMarkers ||
+            if (!TryGetLoopTargetPaneRangesForPlayback(workspaceState, scope, out targetPanes, out targetPaneRanges, out isInvalidRange) ||
                 isInvalidRange)
             {
                 return false;
@@ -5119,29 +5655,34 @@ namespace FramePlayer
                 LoopPlaybackPaneRangeSnapshot paneLoopRange;
                 if (TryGetActivePaneLoopPlaybackTarget(workspaceState, out paneState, out paneLoopRange))
                 {
-                    long restartFrameIndex = 0L;
-                    var usePaneRangeRestart = paneLoopRange != null &&
+                    paneLoopRange = PromotePendingPaneLoopRangeForPlayback(paneState, paneLoopRange);
+                    var canRestartPaneRange = paneLoopRange != null &&
                                               paneLoopRange.HasAnyMarkers &&
-                                              !paneLoopRange.HasPendingMarkers &&
-                                              !paneLoopRange.IsInvalidRange &&
-                                              paneLoopRange.TryGetRestartFrameIndex(out restartFrameIndex);
+                                              !paneLoopRange.IsInvalidRange;
+                    var paneRestartTime = TimeSpan.Zero;
+                    var paneCacheMessage = "Cache: looping pane to start...";
+                    var paneRestartLogMessage = "Pane-local loop playback restarted from the beginning.";
+                    if (canRestartPaneRange)
+                    {
+                        paneRestartTime = paneLoopRange.EffectiveStartTime;
+                        paneCacheMessage = "Cache: looping pane to loop-in...";
+                        paneRestartLogMessage = "Pane-local loop playback restarted from loop-in.";
+                    }
 
                     _suppressLoopRestart = true;
                     await RunWithCacheStatusAsync(
-                        usePaneRangeRestart ? "Cache: looping pane to loop-in..." : "Cache: looping pane to start...",
+                        paneCacheMessage,
                         async () =>
                         {
                             await _workspaceCoordinator.PausePaneAsync(paneState.PaneId);
-                            if (usePaneRangeRestart)
-                            {
-                                await _workspaceCoordinator.SeekPaneToFrameAsync(paneState.PaneId, restartFrameIndex);
-                                return;
-                            }
-
-                            await _workspaceCoordinator.SeekPaneToTimeAsync(paneState.PaneId, TimeSpan.Zero);
+                            await _workspaceCoordinator.SeekPaneToTimeAsync(
+                                paneState.PaneId,
+                                paneRestartTime);
                         });
                     await _workspaceCoordinator.PlayPaneAsync(paneState.PaneId);
+                    _workspaceCoordinator.RefreshWorkspaceFromEngines();
                     ApplySessionSnapshot(_workspaceCoordinator.RefreshFromEngine());
+                    UpdateWorkspacePanePresentation();
                     UpdateTransportState();
 
                     var paneEngine = GetEngineForPane(paneState.PaneId);
@@ -5149,9 +5690,7 @@ namespace FramePlayer
                     {
                         _lastPlaybackScope = SynchronizedOperationScope.FocusedPane;
                         _suppressLoopRestart = false;
-                        LogInfo(usePaneRangeRestart
-                            ? "Pane-local loop playback restarted from loop-in."
-                            : "Pane-local loop playback restarted from the beginning.");
+                        LogInfo(paneRestartLogMessage);
                     }
                     else
                     {
@@ -5162,32 +5701,36 @@ namespace FramePlayer
                 }
 
                 var scope = ResolveLoopPlaybackScope(workspaceState);
-                Dictionary<string, long> restartTargets;
-                var useRangeRestart = TryBuildLoopRestartFrameTargets(workspaceState, scope, out restartTargets);
+                Dictionary<string, TimeSpan> restartTimeTargets = null;
+                var useRangeTimeRestart = TryBuildLoopRestartTimeTargets(workspaceState, scope, out restartTimeTargets);
 
                 _suppressLoopRestart = true;
                 await RunWithCacheStatusAsync(
-                    useRangeRestart ? "Cache: looping to loop-in..." : "Cache: looping to start...",
+                    useRangeTimeRestart
+                        ? "Cache: looping to loop-in..."
+                        : "Cache: looping to start...",
                     async () =>
                     {
                         await _workspaceCoordinator.PauseAsync(scope);
-                        if (useRangeRestart)
+                        if (useRangeTimeRestart)
                         {
-                            await _workspaceCoordinator.SeekToPaneFramesAsync(restartTargets);
+                            await _workspaceCoordinator.SeekToPaneTimesAsync(restartTimeTargets);
                             return;
                         }
 
                         await _workspaceCoordinator.SeekToTimeAsync(TimeSpan.Zero, scope);
                     });
                 await _workspaceCoordinator.PlayAsync(scope);
+                _workspaceCoordinator.RefreshWorkspaceFromEngines();
                 ApplySessionSnapshot(_workspaceCoordinator.RefreshFromEngine());
+                UpdateWorkspacePanePresentation();
                 UpdateTransportState();
 
                 if (_isPlaying)
                 {
                     _lastPlaybackScope = scope;
                     _suppressLoopRestart = false;
-                    LogInfo(useRangeRestart
+                    LogInfo(useRangeTimeRestart
                         ? "Loop playback restarted from loop-in."
                         : "Loop playback restarted from the beginning.");
                 }
@@ -5205,87 +5748,37 @@ namespace FramePlayer
             }
             finally
             {
+                _suppressLoopRestart = false;
                 _isLoopRestartInFlight = false;
             }
         }
 
-        private bool TryBuildLoopRestartFrameTargets(
+        private bool TryBuildLoopRestartTimeTargets(
             MultiVideoWorkspaceState workspaceState,
             SynchronizedOperationScope scope,
-            out Dictionary<string, long> restartTargets)
+            out Dictionary<string, TimeSpan> restartTargets)
         {
             restartTargets = null;
-            if (workspaceState == null)
-            {
-                return false;
-            }
 
-            var sharedRange = workspaceState.SharedLoopRange ?? LoopPlaybackRangeSnapshot.Empty;
-            if (!sharedRange.HasMarkers)
-            {
-                return false;
-            }
-
-            var targetPanes = GetLoopTargetPanes(workspaceState, scope);
+            ReviewPaneState[] targetPanes;
             LoopPlaybackPaneRangeSnapshot[] targetPaneRanges;
-            bool hasPendingMarkers;
             bool isInvalidRange;
-            if (!TryGetResolvedLoopTargetPaneRanges(sharedRange, targetPanes, out targetPaneRanges, out hasPendingMarkers, out isInvalidRange) ||
-                hasPendingMarkers ||
+            if (!TryGetLoopTargetPaneRangesForPlayback(workspaceState, scope, out targetPanes, out targetPaneRanges, out isInvalidRange) ||
                 isInvalidRange)
             {
                 return false;
             }
 
-            restartTargets = new Dictionary<string, long>(StringComparer.Ordinal);
+            restartTargets = new Dictionary<string, TimeSpan>(StringComparer.Ordinal);
             for (var index = 0; index < targetPanes.Length; index++)
             {
-                long restartFrameIndex;
-                if (!targetPaneRanges[index].TryGetRestartFrameIndex(out restartFrameIndex))
-                {
-                    restartTargets = null;
-                    return false;
-                }
-
-                restartTargets[targetPanes[index].PaneId] = restartFrameIndex;
+                var paneRange = targetPaneRanges[index];
+                restartTargets[targetPanes[index].PaneId] = paneRange != null && paneRange.HasLoopIn
+                    ? paneRange.EffectiveStartTime
+                    : TimeSpan.Zero;
             }
 
             return restartTargets.Count > 0;
-        }
-
-        private bool TryGetResolvedLoopTargetPaneRanges(
-            LoopPlaybackRangeSnapshot sharedRange,
-            ReviewPaneState[] targetPanes,
-            out LoopPlaybackPaneRangeSnapshot[] paneRanges,
-            out bool hasPendingMarkers,
-            out bool isInvalidRange)
-        {
-            if (!TryGetLoopTargetPaneRanges(sharedRange, targetPanes, out paneRanges, out hasPendingMarkers, out isInvalidRange))
-            {
-                return false;
-            }
-
-            paneRanges = paneRanges ?? Array.Empty<LoopPlaybackPaneRangeSnapshot>();
-            hasPendingMarkers = false;
-            isInvalidRange = false;
-            for (var index = 0; index < paneRanges.Length; index++)
-            {
-                var paneRange = paneRanges[index];
-                paneRanges[index] = PromotePendingPaneLoopRangeForPlayback(
-                    index < targetPanes.Length ? targetPanes[index] : null,
-                    paneRange);
-
-                paneRange = paneRanges[index];
-                if (paneRange == null)
-                {
-                    continue;
-                }
-
-                hasPendingMarkers |= paneRange.HasPendingMarkers;
-                isInvalidRange |= paneRange.IsInvalidRange;
-            }
-
-            return true;
         }
 
         private SynchronizedOperationScope ResolveLoopPlaybackScope(MultiVideoWorkspaceState workspaceState)
@@ -5414,6 +5907,41 @@ namespace FramePlayer
             return true;
         }
 
+        private bool TryGetLoopTargetPaneRangesForPlayback(
+            MultiVideoWorkspaceState workspaceState,
+            SynchronizedOperationScope scope,
+            out ReviewPaneState[] targetPanes,
+            out LoopPlaybackPaneRangeSnapshot[] paneRanges,
+            out bool isInvalidRange)
+        {
+            targetPanes = GetLoopTargetPanes(workspaceState, scope);
+            paneRanges = Array.Empty<LoopPlaybackPaneRangeSnapshot>();
+            isInvalidRange = false;
+            if (workspaceState == null || targetPanes.Length == 0)
+            {
+                return false;
+            }
+
+            var sharedRange = workspaceState.SharedLoopRange ?? LoopPlaybackRangeSnapshot.Empty;
+            bool ignoredPendingMarkers;
+            if (!TryGetLoopTargetPaneRanges(sharedRange, targetPanes, out paneRanges, out ignoredPendingMarkers, out isInvalidRange))
+            {
+                return false;
+            }
+
+            var promotedPaneRanges = new LoopPlaybackPaneRangeSnapshot[paneRanges.Length];
+            isInvalidRange = false;
+            for (var index = 0; index < paneRanges.Length; index++)
+            {
+                var promotedPaneRange = PromotePendingPaneLoopRangeForPlayback(targetPanes[index], paneRanges[index]);
+                promotedPaneRanges[index] = promotedPaneRange;
+                isInvalidRange |= promotedPaneRange != null && promotedPaneRange.IsInvalidRange;
+            }
+
+            paneRanges = promotedPaneRanges;
+            return true;
+        }
+
         private static bool HaveLoopTargetPanesReachedBoundary(
             ReviewPaneState[] targetPanes,
             IReadOnlyList<LoopPlaybackPaneRangeSnapshot> paneRanges)
@@ -5445,9 +5973,10 @@ namespace FramePlayer
                 return false;
             }
 
-            if (paneRange.LoopOut != null && paneRange.LoopOut.HasAbsoluteFrameIdentity)
+            if (paneRange.LoopOut != null)
             {
-                if (session.HasAbsoluteFrameIdentity &&
+                if (paneRange.LoopOut.HasAbsoluteFrameIdentity &&
+                    session.HasAbsoluteFrameIdentity &&
                     session.Position.FrameIndex.GetValueOrDefault() >= paneRange.LoopOut.AbsoluteFrameIndex.GetValueOrDefault())
                 {
                     return true;
@@ -5556,6 +6085,75 @@ namespace FramePlayer
 
             TrySelectPaneForShell(paneId);
             UpdateWorkspacePanePresentation();
+        }
+
+        private void TimelinePositionSlider_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+        {
+            var slider = sender as Slider;
+            if (slider == null || slider.ContextMenu == null)
+            {
+                return;
+            }
+
+            var paneId = GetPaneIdFromSender(slider);
+            if (string.IsNullOrWhiteSpace(paneId))
+            {
+                SetSharedLoopCommandContext();
+            }
+            else
+            {
+                TrySelectPaneForShell(paneId);
+                SetPaneLoopCommandContext(paneId);
+                UpdateWorkspacePanePresentation();
+            }
+
+            var target = TimeSpan.FromSeconds(slider.Value);
+            TimeSpan clickedTarget;
+            if (TryGetSliderTargetFromPoint(slider, Mouse.GetPosition(slider), out clickedTarget))
+            {
+                target = clickedTarget;
+            }
+
+            slider.ContextMenu.Tag = new TimelineContextCommandTarget(paneId, target);
+
+            var menuItems = slider.ContextMenu.Items.OfType<MenuItem>().ToArray();
+            if (menuItems.Length < 4)
+            {
+                return;
+            }
+
+            string toolTip;
+            var canSetPositionA = CanOfferTimelineLoopMarkerAtTarget(
+                paneId,
+                LoopPlaybackMarkerEndpoint.In,
+                target,
+                out toolTip);
+            menuItems[0].IsEnabled = canSetPositionA;
+            menuItems[0].ToolTip = toolTip;
+
+            var canSetPositionB = CanOfferTimelineLoopMarkerAtTarget(
+                paneId,
+                LoopPlaybackMarkerEndpoint.Out,
+                target,
+                out toolTip);
+            menuItems[1].IsEnabled = canSetPositionB;
+            menuItems[1].ToolTip = toolTip;
+            menuItems[2].IsChecked = IsLoopPlaybackEnabled;
+            menuItems[2].ToolTip = "Enable or disable A/B loop playback for the current transport scope.";
+
+            bool canExport;
+            if (string.IsNullOrWhiteSpace(paneId) && IsCompareModeEnabled)
+            {
+                canExport = false;
+                toolTip = "Use the Primary or Compare timeline while two-pane compare is enabled.";
+            }
+            else
+            {
+                canExport = CanExportLoopClip(_workspaceCoordinator.GetWorkspaceSnapshot(), paneId, out toolTip);
+            }
+
+            menuItems[3].IsEnabled = canExport;
+            menuItems[3].ToolTip = toolTip;
         }
 
         private void VideoPane_ContextMenuOpening(object sender, ContextMenuEventArgs e)

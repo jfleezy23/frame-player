@@ -848,7 +848,23 @@
                             Maximum="1"
                             Tag="pane-primary"
                             IsMoveToPointEnabled="False"
-                            ValueChanged="PanePositionSlider_ValueChanged" />
+                            ContextMenuOpening="TimelinePositionSlider_ContextMenuOpening"
+                            ValueChanged="PanePositionSlider_ValueChanged">
+                      <Slider.ContextMenu>
+                        <ContextMenu>
+                          <MenuItem Header="Set Position A Here"
+                                    Click="TimelineSetLoopPositionAMenuItem_Click" />
+                          <MenuItem Header="Set Position B Here"
+                                    Click="TimelineSetLoopPositionBMenuItem_Click" />
+                          <MenuItem Header="Loop Playback"
+                                    IsCheckable="True"
+                                    Click="TimelineLoopPlaybackMenuItem_Click" />
+                          <Separator />
+                          <MenuItem Header="Save Loop As Clip..."
+                                    Click="TimelineSaveLoopAsClipMenuItem_Click" />
+                        </ContextMenu>
+                      </Slider.ContextMenu>
+                    </Slider>
                     <controls:LoopRangeOverlay x:Name="PrimaryPaneLoopRangeOverlay"
                                                Maximum="{Binding ElementName=PrimaryPanePositionSlider, Path=Maximum}"
                                                IsHitTestVisible="False" />
@@ -1079,7 +1095,23 @@
                             Maximum="1"
                             Tag="pane-compare-a"
                             IsMoveToPointEnabled="False"
-                            ValueChanged="PanePositionSlider_ValueChanged" />
+                            ContextMenuOpening="TimelinePositionSlider_ContextMenuOpening"
+                            ValueChanged="PanePositionSlider_ValueChanged">
+                      <Slider.ContextMenu>
+                        <ContextMenu>
+                          <MenuItem Header="Set Position A Here"
+                                    Click="TimelineSetLoopPositionAMenuItem_Click" />
+                          <MenuItem Header="Set Position B Here"
+                                    Click="TimelineSetLoopPositionBMenuItem_Click" />
+                          <MenuItem Header="Loop Playback"
+                                    IsCheckable="True"
+                                    Click="TimelineLoopPlaybackMenuItem_Click" />
+                          <Separator />
+                          <MenuItem Header="Save Loop As Clip..."
+                                    Click="TimelineSaveLoopAsClipMenuItem_Click" />
+                        </ContextMenu>
+                      </Slider.ContextMenu>
+                    </Slider>
                     <controls:LoopRangeOverlay x:Name="ComparePaneLoopRangeOverlay"
                                                Maximum="{Binding ElementName=ComparePanePositionSlider, Path=Maximum}"
                                                IsHitTestVisible="False" />
@@ -1253,7 +1285,23 @@
                     Minimum="0"
                     Maximum="1"
                     IsMoveToPointEnabled="False"
-                    ValueChanged="PositionSlider_ValueChanged" />
+                    ContextMenuOpening="TimelinePositionSlider_ContextMenuOpening"
+                    ValueChanged="PositionSlider_ValueChanged">
+              <Slider.ContextMenu>
+                <ContextMenu>
+                  <MenuItem Header="Set Position A Here"
+                            Click="TimelineSetLoopPositionAMenuItem_Click" />
+                  <MenuItem Header="Set Position B Here"
+                            Click="TimelineSetLoopPositionBMenuItem_Click" />
+                  <MenuItem Header="Loop Playback"
+                            IsCheckable="True"
+                            Click="TimelineLoopPlaybackMenuItem_Click" />
+                  <Separator />
+                  <MenuItem Header="Save Loop As Clip..."
+                            Click="TimelineSaveLoopAsClipMenuItem_Click" />
+                </ContextMenu>
+              </Slider.ContextMenu>
+            </Slider>
             <controls:LoopRangeOverlay x:Name="PositionLoopRangeOverlay"
                                        Maximum="{Binding ElementName=PositionSlider, Path=Maximum}"
                                        IsHitTestVisible="False" />

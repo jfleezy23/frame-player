@@ -19,6 +19,8 @@ Release: `1.6.0`
 - Disable `Playback > Use GPU Acceleration`, reopen the same file, and confirm the app stays correct on the CPU path.
 - Press Play, confirm visible playback advances, then press Pause.
 - Set `[` and `]` in single-pane mode, enable `Playback > Loop Playback`, and confirm playback loops the boxed range instead of the full clip.
+- Right-click the main timeline and confirm `Set Position A Here`, `Set Position B Here`, `Loop Playback`, and `Save Loop As Clip...` all work from the timeline menu.
+- On the main timeline, confirm `Set Position B Here` is blocked when the clicked target lands before position A, and that the menu enables once the clicked target is at or after A.
 - With a valid reviewed main-loop range, use `Playback > Save Loop As Clip...` and confirm an MP4 clip is written with duration close to the selected A/B window.
 - Set a loop marker before indexing is ready on a large file and confirm the loop status stays visibly pending instead of pretending the range is finalized.
 - Seek by time and confirm playback/review state remains coherent.
@@ -28,6 +30,7 @@ Release: `1.6.0`
 - Open two panes and confirm both panes stay responsive while stepping and seeking together.
 - In two-pane mode, confirm the main transport controls both panes together while the pane-local sliders and frame boxes still operate on their own panes.
 - In two-pane mode, set different pane-local loop boxes on Primary and Compare and confirm each pane slider shows its own boxed range instead of sharing one loop box.
+- In two-pane mode, confirm only the Primary and Compare pane timelines expose pane-local `Set Position A Here`, `Set Position B Here`, `Loop Playback`, and `Save Loop As Clip...` actions.
 - In two-pane mode, right-click each pane and use `Save Loop As Clip...` to confirm Primary and Compare can each export their own pane-local loop as separate MP4 clips.
 - Right-click the primary pane and the compare pane, open `Video Info...` from both, and confirm two inspector windows can stay open at once with the correct pane-specific FFmpeg metadata.
 - Try at least one video with audio and confirm audio starts during playback.
@@ -55,8 +58,10 @@ Release: `1.6.0`
 ## Build and shortcut
 
 - Test drop executable: `bin\TestDrop\FramePlayer.exe`
+- Startup-open helper for visible UI automation: `bin\TestDrop\FramePlayer.exe --open-file <absolute-media-path>`
 - Release archive: `artifacts\FramePlayer-CustomFFmpeg-<product-version>.zip`
 - Test-drop build script: `scripts\Build-TestDrop.ps1`
+- Live visible loop verifier: `scripts\ui_loop_visible_test.py`
 - Desktop shortcut name: `Frame Player`
 - Shortcut refresh script: `scripts\Create-Comparison-Shortcuts.ps1`
 
