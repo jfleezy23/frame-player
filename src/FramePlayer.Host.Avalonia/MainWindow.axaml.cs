@@ -8,6 +8,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
@@ -53,6 +54,19 @@ namespace FramePlayer.Host.Avalonia
         private bool _suppressSliderUpdate;
         private string _lastActionMessage = string.Empty;
         private bool _lastActionIsError;
+
+        private sealed class TimelineContextCommandTarget
+        {
+            public TimelineContextCommandTarget(string paneId, TimeSpan target)
+            {
+                PaneId = string.IsNullOrWhiteSpace(paneId) ? string.Empty : paneId;
+                Target = target < TimeSpan.Zero ? TimeSpan.Zero : target;
+            }
+
+            public string PaneId { get; }
+
+            public TimeSpan Target { get; }
+        }
 
         public MainWindow()
         {
@@ -262,91 +276,244 @@ namespace FramePlayer.Host.Avalonia
 
         private async void ExportClipButton_Click(object sender, RoutedEventArgs e)
         {
-            ClipExportRequest seedRequest;
-            string failureMessage;
-            if (!TryBuildSeedClipExportRequest(out seedRequest, out failureMessage))
-            {
-                SetActionStatus(failureMessage, isError: true);
-                return;
-            }
-
-            await PausePlaybackForExportAsync();
-
-            if (!TryBuildSeedClipExportRequest(out seedRequest, out failureMessage))
-            {
-                SetActionStatus(failureMessage, isError: true);
-                return;
-            }
-
-            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-            {
-                Title = "Save Loop As Clip",
-                SuggestedFileName = BuildSuggestedClipFileName(seedRequest),
-                DefaultExtension = "mp4",
-                FileTypeChoices = new[]
-                {
-                    new FilePickerFileType("MP4 Video")
-                    {
-                        Patterns = new[] { "*.mp4" }
-                    }
-                }
-            });
-            var outputPath = file != null ? file.TryGetLocalPath() : string.Empty;
-            if (string.IsNullOrWhiteSpace(outputPath))
-            {
-                return;
-            }
-
-            SetActionStatus("Exporting clip...");
-
-            try
-            {
-                var request = CreateOutputClipExportRequest(seedRequest, outputPath);
-                var exportResult = await _clipExportService.ExportAsync(request);
-                _hostController.Refresh();
-
-                if (exportResult != null && exportResult.Succeeded)
-                {
-                    SetActionStatus(BuildClipExportSuccessMessage(exportResult));
-                    return;
-                }
-
-                SetActionStatus(
-                    exportResult != null
-                        ? SanitizeActionMessage(exportResult.Message)
-                        : "Clip export failed.",
-                    isError: true);
-            }
-            catch (Exception ex)
-            {
-                SetActionStatus("Clip export failed. " + SanitizeActionMessage(ex.Message), isError: true);
-            }
+            await ExportLoopClipAsync(null);
         }
 
-        private async void OpenRecentButton_Click(object sender, RoutedEventArgs e)
+        private async void PaneStepBackButton_Click(object sender, RoutedEventArgs e)
         {
-            var entry = RecentFilesListBox.SelectedItem as RecentFileViewState;
-            if (entry == null)
+            var paneId = GetPaneIdFromSender(sender);
+            if (!TryFocusPane(paneId))
             {
                 return;
             }
 
-            if (!File.Exists(entry.FilePath))
-            {
-                _hostController.RemoveRecentFile(entry.FilePath);
-                RefreshUi(_hostController.CurrentViewState);
-                SetActionStatus("That recent file no longer exists, so it was removed from the list.", isError: true);
-                return;
-            }
-
-            await OpenMediaAsync(entry.FilePath, GetFocusedOrPrimaryPaneId());
+            await _hostController.StepBackwardAsync();
+            _hostController.Refresh();
         }
 
-        private void ClearRecentButton_Click(object sender, RoutedEventArgs e)
+        private async void PanePlayPauseButton_Click(object sender, RoutedEventArgs e)
+        {
+            var paneId = GetPaneIdFromSender(sender);
+            if (!TryFocusPane(paneId))
+            {
+                return;
+            }
+
+            if (_hostController.CurrentViewState.Transport.IsPlaying)
+            {
+                await _hostController.PauseAsync();
+            }
+            else
+            {
+                await _hostController.PlayAsync();
+            }
+
+            _hostController.Refresh();
+        }
+
+        private async void PaneStepForwardButton_Click(object sender, RoutedEventArgs e)
+        {
+            var paneId = GetPaneIdFromSender(sender);
+            if (!TryFocusPane(paneId))
+            {
+                return;
+            }
+
+            await _hostController.StepForwardAsync();
+            _hostController.Refresh();
+        }
+
+        private void VideoSurface_ContextRequested(object sender, ContextRequestedEventArgs e)
+        {
+            var host = sender as Control;
+            var paneId = GetPaneIdFromSender(sender);
+            if (host == null || string.IsNullOrWhiteSpace(paneId))
+            {
+                return;
+            }
+
+            TryFocusPane(paneId);
+
+            var menuItems = host.ContextMenu != null
+                ? host.ContextMenu.Items.OfType<MenuItem>().ToArray()
+                : Array.Empty<MenuItem>();
+            if (menuItems.Length > 0)
+            {
+                var transport = _hostController.CurrentViewState.Transport;
+                menuItems[0].IsEnabled = transport != null && transport.CanInspectMedia;
+                ToolTip.SetTip(menuItems[0], transport != null && transport.CanInspectMedia
+                    ? "Show file, stream, and timing details for the selected pane."
+                    : "Load media into the selected pane before opening video info.");
+            }
+
+            if (menuItems.Length > 1)
+            {
+                string toolTip;
+                var canExport = CanExportFocusedLoop(out toolTip);
+                menuItems[1].IsEnabled = canExport;
+                ToolTip.SetTip(menuItems[1], toolTip);
+            }
+        }
+
+        private void TimelineSlider_ContextRequested(object sender, ContextRequestedEventArgs e)
+        {
+            var slider = sender as Slider;
+            var paneId = GetPaneIdFromSender(sender);
+            if (slider == null)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(paneId))
+            {
+                TryFocusPane(paneId);
+            }
+
+            var target = ResolveTimelineContextTarget(slider, e);
+            var menuItems = slider.ContextMenu != null
+                ? slider.ContextMenu.Items.OfType<MenuItem>().ToArray()
+                : Array.Empty<MenuItem>();
+            if (menuItems.Length < 4)
+            {
+                return;
+            }
+
+            var contextTarget = new TimelineContextCommandTarget(paneId, target);
+            for (var index = 0; index < menuItems.Length; index++)
+            {
+                menuItems[index].Tag = contextTarget;
+            }
+
+            string toolTip;
+            var canSetPositionA = CanOfferTimelineLoopMarkerAtTarget(
+                paneId,
+                LoopPlaybackMarkerEndpoint.In,
+                target,
+                out toolTip);
+            menuItems[0].IsEnabled = canSetPositionA;
+            ToolTip.SetTip(menuItems[0], toolTip);
+
+            var canSetPositionB = CanOfferTimelineLoopMarkerAtTarget(
+                paneId,
+                LoopPlaybackMarkerEndpoint.Out,
+                target,
+                out toolTip);
+            menuItems[1].IsEnabled = canSetPositionB;
+            ToolTip.SetTip(menuItems[1], toolTip);
+
+            menuItems[2].IsEnabled = _hostController.CurrentViewState.Transport.CanControlTransport;
+            menuItems[2].IsChecked = IsLoopPlaybackEnabledForPane(paneId);
+            ToolTip.SetTip(menuItems[2], "Enable or disable A/B loop playback for the selected pane.");
+
+            var canExport = CanExportFocusedLoop(out toolTip);
+            menuItems[3].IsEnabled = canExport;
+            ToolTip.SetTip(menuItems[3], toolTip);
+        }
+
+        private async void VideoInfoMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            var paneId = GetPaneIdFromSender(sender);
+            await Task.Yield();
+            await ShowVideoInfoAsync(paneId);
+        }
+
+        private async void PaneSaveLoopAsClipMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            var paneId = GetPaneIdFromSender(sender);
+            await Task.Yield();
+            await ExportLoopClipAsync(paneId);
+        }
+
+        private async void TimelineSetLoopPositionAMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            TimelineContextCommandTarget contextTarget;
+            if (!TryGetTimelineContextCommandTarget(sender, out contextTarget))
+            {
+                return;
+            }
+
+            await SetTimelineLoopMarkerAtAsync(
+                contextTarget.PaneId,
+                LoopPlaybackMarkerEndpoint.In,
+                contextTarget.Target);
+        }
+
+        private async void TimelineSetLoopPositionBMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            TimelineContextCommandTarget contextTarget;
+            if (!TryGetTimelineContextCommandTarget(sender, out contextTarget))
+            {
+                return;
+            }
+
+            await SetTimelineLoopMarkerAtAsync(
+                contextTarget.PaneId,
+                LoopPlaybackMarkerEndpoint.Out,
+                contextTarget.Target);
+        }
+
+        private void TimelineLoopPlaybackMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            var menuItem = sender as MenuItem;
+            if (menuItem == null)
+            {
+                return;
+            }
+
+            var contextTarget = menuItem.Tag as TimelineContextCommandTarget;
+            var paneId = contextTarget != null ? contextTarget.PaneId : GetFocusedOrPrimaryPaneId();
+            if (!string.IsNullOrWhiteSpace(paneId))
+            {
+                TryFocusPane(paneId);
+            }
+
+            var resolvedPaneId = GetFocusedOrPrimaryPaneId();
+            if (string.IsNullOrWhiteSpace(resolvedPaneId))
+            {
+                return;
+            }
+
+            if (menuItem.IsChecked)
+            {
+                _loopPlaybackEnabledPaneIds.Add(resolvedPaneId);
+            }
+            else
+            {
+                _loopPlaybackEnabledPaneIds.Remove(resolvedPaneId);
+            }
+
+            UpdateLoopPlaybackButtonContent(_hostController.CurrentViewState);
+            SetActionStatus(BuildLoopPlaybackStatusMessage());
+        }
+
+        private async void TimelineSaveLoopAsClipMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            TimelineContextCommandTarget contextTarget;
+            if (!TryGetTimelineContextCommandTarget(sender, out contextTarget))
+            {
+                return;
+            }
+
+            await Task.Yield();
+            await ExportLoopClipAsync(contextTarget.PaneId);
+        }
+
+        private async void RecentFileMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            var menuItem = sender as MenuItem;
+            await OpenRecentFileAsync(menuItem != null ? menuItem.Tag as string : string.Empty);
+        }
+
+        private void ClearRecentFilesMenuItem_Click(object sender, RoutedEventArgs e)
         {
             _hostController.ClearRecentFiles();
-            RefreshUi(_hostController.CurrentViewState);
+            _hostController.Refresh();
             SetActionStatus("Recent files cleared.");
+        }
+
+        private void ExitMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            Close();
         }
 
         private async void PanePositionSlider_PropertyChanged(object sender, AvaloniaPropertyChangedEventArgs e)
@@ -434,13 +601,6 @@ namespace FramePlayer.Host.Avalonia
             await OpenMediaAsync(startupOpenFilePath, PrimaryPaneId);
         }
 
-        private void RecentFilesListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            UpdateRecentFileButtonState(_hostController.CurrentViewState != null
-                ? _hostController.CurrentViewState.RecentFiles
-                : RecentFilesCommandState.Empty);
-        }
-
         private void VideoReviewEngine_FramePresented(object sender, FramePresentedEventArgs e)
         {
             Dispatcher.UIThread.Post(() =>
@@ -478,8 +638,9 @@ namespace FramePlayer.Host.Avalonia
             string exportToolTip;
             var canExport = CanExportFocusedLoop(out exportToolTip);
 
-            OpenCompareButton.IsEnabled = true;
-            CloseButton.IsEnabled = transport.CanCloseMedia;
+            OpenCompareMenuItem.IsEnabled = true;
+            CloseFocusedMenuItem.IsEnabled = transport.CanCloseMedia;
+            VideoInfoMenuActionItem.IsEnabled = transport.CanInspectMedia;
             PlayPauseButton.IsEnabled = transport.CanTogglePlayPause;
             PreviousFrameButton.IsEnabled = transport.CanStepBackward;
             RewindButton.IsEnabled = transport.CanSeek;
@@ -496,6 +657,12 @@ namespace FramePlayer.Host.Avalonia
             UpdateCompareModeVisualState();
             UpdateLoopPlaybackButtonContent(viewState);
 
+            var currentFilePath = viewState != null ? viewState.CurrentFilePath : string.Empty;
+            CurrentFileTextBlock.Text = string.IsNullOrWhiteSpace(currentFilePath)
+                ? "No file loaded"
+                : Path.GetFileName(currentFilePath);
+            ToolTip.SetTip(CurrentFileTextBlock, currentFilePath);
+            CompareStatusTextBlock.Text = BuildCompareStatusText(viewState);
             FocusedPaneTextBlock.Text = "Focused Pane: " + GetFocusedPaneDisplayLabel(viewState);
             PlaybackStatusTextBlock.Text = viewState != null ? viewState.PlaybackMessage : "Ready.";
             MediaSummaryTextBlock.Text = viewState != null ? viewState.MediaSummary : string.Empty;
@@ -505,7 +672,7 @@ namespace FramePlayer.Host.Avalonia
             RefreshPaneUi(viewState, ComparePaneId);
 
             UpdateActionStatusPresentation();
-            RefreshRecentFilesUi(recentFiles, recentEntries);
+            RefreshRecentFilesMenu(recentFiles, recentEntries);
         }
 
         private bool TryBuildSeedClipExportRequest(out ClipExportRequest request, out string failureMessage)
@@ -680,28 +847,192 @@ namespace FramePlayer.Host.Avalonia
             return files[0].TryGetLocalPath() ?? string.Empty;
         }
 
-        private void RefreshRecentFilesUi(RecentFilesCommandState recentFiles, IReadOnlyList<RecentFileViewState> recentEntries)
+        private void RefreshRecentFilesMenu(RecentFilesCommandState recentFiles, IReadOnlyList<RecentFileViewState> recentEntries)
         {
-            var selectedPath = (RecentFilesListBox.SelectedItem as RecentFileViewState)?.FilePath;
-            RecentFilesListBox.ItemsSource = recentEntries;
-            RecentFilesStatusTextBlock.Text = recentFiles != null ? recentFiles.StatusText : "No recent files.";
-            RecentFilesStatusTextBlock.IsVisible = recentEntries == null || recentEntries.Count == 0;
-            RecentFilesPanel.IsVisible = recentEntries != null && recentEntries.Count > 0;
+            var menuItems = new List<object>();
+            var safeEntries = recentEntries ?? Array.Empty<RecentFileViewState>();
 
-            if (!string.IsNullOrWhiteSpace(selectedPath) && recentEntries != null)
+            if (safeEntries.Count == 0)
             {
-                RecentFilesListBox.SelectedItem = recentEntries.FirstOrDefault(
-                    entry => string.Equals(entry.FilePath, selectedPath, StringComparison.OrdinalIgnoreCase));
+                menuItems.Add(new MenuItem
+                {
+                    Header = recentFiles != null && !string.IsNullOrWhiteSpace(recentFiles.StatusText)
+                        ? recentFiles.StatusText
+                        : "No recent files.",
+                    IsEnabled = false
+                });
+            }
+            else
+            {
+                for (var index = 0; index < safeEntries.Count; index++)
+                {
+                    var entry = safeEntries[index];
+                    var item = new MenuItem
+                    {
+                        Header = entry.DisplayLabel,
+                        Tag = entry.FilePath
+                    };
+                    ToolTip.SetTip(item, entry.ToolTip);
+                    item.Click += RecentFileMenuItem_Click;
+                    menuItems.Add(item);
+                }
+
+                menuItems.Add(new Separator());
+
+                var clearItem = new MenuItem
+                {
+                    Header = "_Clear Recent Files",
+                    IsEnabled = recentFiles != null && recentFiles.CanClear
+                };
+                clearItem.Click += ClearRecentFilesMenuItem_Click;
+                menuItems.Add(clearItem);
             }
 
-            UpdateRecentFileButtonState(recentFiles);
+            RecentFilesMenuItem.ItemsSource = menuItems;
         }
 
-        private void UpdateRecentFileButtonState(RecentFilesCommandState recentFiles)
+        private async Task OpenRecentFileAsync(string filePath)
         {
-            var hasSelection = RecentFilesListBox != null && RecentFilesListBox.SelectedItem is RecentFileViewState;
-            OpenRecentButton.IsEnabled = hasSelection;
-            ClearRecentButton.IsEnabled = recentFiles != null && recentFiles.CanClear;
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                return;
+            }
+
+            if (!File.Exists(filePath))
+            {
+                _hostController.RemoveRecentFile(filePath);
+                _hostController.Refresh();
+                SetActionStatus("That recent file no longer exists, so it was removed from the list.", isError: true);
+                return;
+            }
+
+            await OpenMediaAsync(filePath, GetFocusedOrPrimaryPaneId());
+        }
+
+        private async Task ExportLoopClipAsync(string paneId)
+        {
+            if (!string.IsNullOrWhiteSpace(paneId) && !TryFocusPane(paneId))
+            {
+                return;
+            }
+
+            ClipExportRequest seedRequest;
+            string failureMessage;
+            if (!TryBuildSeedClipExportRequest(out seedRequest, out failureMessage))
+            {
+                SetActionStatus(failureMessage, isError: true);
+                return;
+            }
+
+            await PausePlaybackForExportAsync();
+
+            if (!TryBuildSeedClipExportRequest(out seedRequest, out failureMessage))
+            {
+                SetActionStatus(failureMessage, isError: true);
+                return;
+            }
+
+            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "Save Loop As Clip",
+                SuggestedFileName = BuildSuggestedClipFileName(seedRequest),
+                DefaultExtension = "mp4",
+                FileTypeChoices = new[]
+                {
+                    new FilePickerFileType("MP4 Video")
+                    {
+                        Patterns = new[] { "*.mp4" }
+                    }
+                }
+            });
+            var outputPath = file != null ? file.TryGetLocalPath() : string.Empty;
+            if (string.IsNullOrWhiteSpace(outputPath))
+            {
+                return;
+            }
+
+            SetActionStatus("Exporting clip...");
+
+            try
+            {
+                var request = CreateOutputClipExportRequest(seedRequest, outputPath);
+                var exportResult = await _clipExportService.ExportAsync(request);
+                _hostController.Refresh();
+
+                if (exportResult != null && exportResult.Succeeded)
+                {
+                    SetActionStatus(BuildClipExportSuccessMessage(exportResult));
+                    return;
+                }
+
+                SetActionStatus(
+                    exportResult != null
+                        ? SanitizeActionMessage(exportResult.Message)
+                        : "Clip export failed.",
+                    isError: true);
+            }
+            catch (Exception ex)
+            {
+                SetActionStatus("Clip export failed. " + SanitizeActionMessage(ex.Message), isError: true);
+            }
+        }
+
+        private async Task ShowVideoInfoAsync(string paneId)
+        {
+            if (!string.IsNullOrWhiteSpace(paneId) && !TryFocusPane(paneId))
+            {
+                return;
+            }
+
+            var focusedPaneId = GetFocusedOrPrimaryPaneId();
+            var transport = _hostController.CurrentViewState.Transport;
+            if (string.IsNullOrWhiteSpace(focusedPaneId) || transport == null || !transport.CanInspectMedia)
+            {
+                SetActionStatus("Load media into the selected pane before opening video info.", isError: true);
+                return;
+            }
+
+            var paneLabel = GetFocusedPaneDisplayLabel();
+            var engine = GetEngineForPane(focusedPaneId) as FfmpegReviewEngine;
+            var mediaInfo = engine != null ? engine.MediaInfo ?? VideoMediaInfo.Empty : VideoMediaInfo.Empty;
+            if (mediaInfo == null || string.IsNullOrWhiteSpace(mediaInfo.FilePath))
+            {
+                SetActionStatus("Video info is unavailable until media is loaded into the selected pane.", isError: true);
+                return;
+            }
+
+            var dialog = new Window
+            {
+                Title = paneLabel + " Video Info",
+                Width = 680,
+                Height = 720,
+                MinWidth = 560,
+                MinHeight = 520,
+                Background = new SolidColorBrush(Color.Parse("#171C22")),
+                Foreground = Brushes.White,
+                Content = new Border
+                {
+                    Padding = new Thickness(16d),
+                    Child = new ScrollViewer
+                    {
+                        Content = new TextBox
+                        {
+                            Text = BuildVideoInfoText(paneLabel, mediaInfo),
+                            AcceptsReturn = true,
+                            IsReadOnly = true,
+                            TextWrapping = TextWrapping.Wrap,
+                            Background = new SolidColorBrush(Color.Parse("#10151B")),
+                            Foreground = Brushes.White,
+                            BorderBrush = new SolidColorBrush(Color.Parse("#2D3743")),
+                            BorderThickness = new Thickness(1d),
+                            HorizontalAlignment = HorizontalAlignment.Stretch,
+                            VerticalAlignment = VerticalAlignment.Stretch
+                        }
+                    }
+                }
+            };
+
+            await dialog.ShowDialog(this);
         }
 
         private async Task PausePlaybackForExportAsync()
@@ -1024,6 +1355,7 @@ namespace FramePlayer.Host.Avalonia
         private void UpdateCompareModeVisualState()
         {
             ComparePaneBorder.IsVisible = _isCompareModeEnabled;
+            CompareStatusBorder.IsVisible = _isCompareModeEnabled;
             UseComparePaneButton.IsVisible = _isCompareModeEnabled;
             OpenComparePaneButton.IsVisible = _isCompareModeEnabled;
             if (PaneHostGrid != null && PaneHostGrid.ColumnDefinitions.Count > 1)
@@ -1158,12 +1490,349 @@ namespace FramePlayer.Host.Avalonia
             return false;
         }
 
+        private string BuildCompareStatusText(ReviewWorkspaceViewState viewState)
+        {
+            var primaryState = FindPaneViewState(viewState, PrimaryPaneId);
+            var compareState = FindPaneViewState(viewState, ComparePaneId);
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "Compare: Primary {0} | Compare {1} | Focused pane: {2}. Loop and export stay bound to the selected pane.",
+                BuildComparePaneStatus(primaryState),
+                BuildComparePaneStatus(compareState),
+                GetFocusedPaneDisplayLabel(viewState));
+        }
+
+        private static string BuildComparePaneStatus(PaneViewState paneState)
+        {
+            if (!PaneHasLoadedMedia(paneState))
+            {
+                return "not loaded";
+            }
+
+            return paneState.PlaybackState == ReviewPlaybackState.Playing
+                ? "playing"
+                : "paused";
+        }
+
+        private static string BuildPanePlaybackStateText(PaneViewState paneState)
+        {
+            if (!PaneHasLoadedMedia(paneState))
+            {
+                return "No video loaded";
+            }
+
+            switch (paneState.PlaybackState)
+            {
+                case ReviewPlaybackState.Playing:
+                    return paneState.IsFocused ? "Playing | Focused" : "Playing";
+                case ReviewPlaybackState.Paused:
+                    return paneState.IsFocused ? "Paused | Focused" : "Paused";
+                default:
+                    return paneState.IsFocused ? "Ready | Focused" : "Ready";
+            }
+        }
+
+        private TimeSpan ResolveTimelineContextTarget(Slider slider, ContextRequestedEventArgs e)
+        {
+            var maximum = Math.Max(slider.Minimum, slider.Maximum);
+            var targetSeconds = slider.Value;
+            Point point;
+            if (e != null && e.TryGetPosition(slider, out point) && slider.Bounds.Width > 0d)
+            {
+                var ratio = Math.Max(0d, Math.Min(1d, point.X / slider.Bounds.Width));
+                targetSeconds = slider.Minimum + ((maximum - slider.Minimum) * ratio);
+            }
+
+            targetSeconds = Math.Max(slider.Minimum, Math.Min(maximum, targetSeconds));
+            return TimeSpan.FromSeconds(targetSeconds);
+        }
+
+        private LoopPlaybackPaneRangeSnapshot ResolveLoopRangeForPane(ReviewWorkspaceSnapshot snapshot, string paneId)
+        {
+            snapshot = snapshot ?? ReviewWorkspaceSnapshot.Empty;
+            var resolvedPaneId = string.IsNullOrWhiteSpace(paneId)
+                ? GetFocusedPaneId(snapshot)
+                : paneId;
+
+            ReviewWorkspacePaneSnapshot paneSnapshot;
+            if (!string.IsNullOrWhiteSpace(resolvedPaneId) &&
+                snapshot.TryGetPane(resolvedPaneId, out paneSnapshot) &&
+                paneSnapshot != null)
+            {
+                if (_isCompareModeEnabled)
+                {
+                    return paneSnapshot.LoopRange;
+                }
+
+                LoopPlaybackPaneRangeSnapshot sharedPaneRange;
+                if (snapshot.SharedLoopRange != null &&
+                    snapshot.SharedLoopRange.TryGetPaneRange(resolvedPaneId, out sharedPaneRange))
+                {
+                    return sharedPaneRange;
+                }
+
+                if (paneSnapshot.LoopRange != null && paneSnapshot.LoopRange.HasAnyMarkers)
+                {
+                    return paneSnapshot.LoopRange;
+                }
+            }
+
+            return snapshot.SharedLoopRange != null && snapshot.SharedLoopRange.PaneRanges.Count > 0
+                ? snapshot.SharedLoopRange.PaneRanges[0]
+                : null;
+        }
+
+        private bool CanOfferTimelineLoopMarkerAtTarget(
+            string paneId,
+            LoopPlaybackMarkerEndpoint endpoint,
+            TimeSpan target,
+            out string toolTip)
+        {
+            var snapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
+            var resolvedPaneId = string.IsNullOrWhiteSpace(paneId)
+                ? GetFocusedPaneId(snapshot)
+                : paneId;
+
+            ReviewWorkspacePaneSnapshot paneSnapshot;
+            if (string.IsNullOrWhiteSpace(resolvedPaneId) ||
+                !snapshot.TryGetPane(resolvedPaneId, out paneSnapshot) ||
+                !PaneHasLoadedMedia(paneSnapshot))
+            {
+                toolTip = "Load media into the selected pane before setting loop markers from the timeline.";
+                return false;
+            }
+
+            var loopRange = ResolveLoopRangeForPane(snapshot, resolvedPaneId);
+            var currentLabel = endpoint == LoopPlaybackMarkerEndpoint.In ? "Set Position A" : "Set Position B";
+            var oppositeLabel = endpoint == LoopPlaybackMarkerEndpoint.In ? "Position B" : "Position A";
+            var oppositeAnchor = endpoint == LoopPlaybackMarkerEndpoint.In
+                ? loopRange != null ? loopRange.LoopOut : null
+                : loopRange != null ? loopRange.LoopIn : null;
+
+            if (oppositeAnchor != null && oppositeAnchor.IsPending)
+            {
+                toolTip = currentLabel + " is unavailable until " + oppositeLabel + " resolves exact frame identity.";
+                return false;
+            }
+
+            if (oppositeAnchor != null && !IsTimelineLoopMarkerTimeOrderValid(endpoint, target, oppositeAnchor.PresentationTime))
+            {
+                toolTip = GetTimelineLoopMarkerOrderFailure(endpoint);
+                return false;
+            }
+
+            toolTip = currentLabel + " at " + FormatTime(target) + ".";
+            return true;
+        }
+
+        private async Task SetTimelineLoopMarkerAtAsync(
+            string paneId,
+            LoopPlaybackMarkerEndpoint endpoint,
+            TimeSpan target)
+        {
+            if (!string.IsNullOrWhiteSpace(paneId) && !TryFocusPane(paneId))
+            {
+                return;
+            }
+
+            string toolTip;
+            if (!CanOfferTimelineLoopMarkerAtTarget(paneId, endpoint, target, out toolTip))
+            {
+                SetActionStatus(toolTip, isError: true);
+                return;
+            }
+
+            if (_hostController.CurrentViewState.Transport.IsPlaying)
+            {
+                await _hostController.PauseAsync();
+            }
+
+            await _hostController.SeekToTimeAsync(target);
+            _hostController.Refresh();
+
+            if (ShouldUsePaneLocalLoopCommands())
+            {
+                _hostController.SetPaneLoopMarker(GetFocusedOrPrimaryPaneId(), endpoint);
+            }
+            else
+            {
+                _hostController.SetSharedLoopMarker(endpoint, SynchronizedOperationScope.FocusedPane);
+            }
+
+            _hostController.Refresh();
+            SetActionStatus(
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0} set at {1} on the {2} timeline.",
+                    endpoint == LoopPlaybackMarkerEndpoint.In ? "Position A" : "Position B",
+                    FormatTime(target),
+                    GetFocusedPaneDisplayLabel().ToLowerInvariant()));
+        }
+
+        private static bool IsTimelineLoopMarkerTimeOrderValid(
+            LoopPlaybackMarkerEndpoint endpoint,
+            TimeSpan target,
+            TimeSpan oppositeTarget)
+        {
+            return endpoint == LoopPlaybackMarkerEndpoint.In
+                ? target <= oppositeTarget
+                : target >= oppositeTarget;
+        }
+
+        private static string GetTimelineLoopMarkerOrderFailure(LoopPlaybackMarkerEndpoint endpoint)
+        {
+            return endpoint == LoopPlaybackMarkerEndpoint.In
+                ? "Position A must be on or before position B."
+                : "Position B must be on or after position A.";
+        }
+
+        private static bool TryGetTimelineContextCommandTarget(object sender, out TimelineContextCommandTarget contextTarget)
+        {
+            contextTarget = (sender as MenuItem)?.Tag as TimelineContextCommandTarget;
+            return contextTarget != null;
+        }
+
+        private static string BuildVideoInfoText(string paneLabel, VideoMediaInfo mediaInfo)
+        {
+            var text = new System.Text.StringBuilder();
+            text.AppendLine(paneLabel + " Video");
+            text.AppendLine(new string('=', paneLabel.Length + 6));
+            text.AppendLine();
+            text.AppendLine("File");
+            text.AppendLine("----");
+            text.AppendLine(FormatInspectorText(mediaInfo.FilePath));
+            text.AppendLine();
+            text.AppendLine("Summary");
+            text.AppendLine("-------");
+            text.AppendLine("Duration: " + FormatInspectorDuration(mediaInfo.Duration));
+            text.AppendLine("Frame rate: " + FormatInspectorFrameRate(mediaInfo.FramesPerSecond));
+            text.AppendLine("Display resolution: " + FormatInspectorResolution(mediaInfo.DisplayWidth, mediaInfo.DisplayHeight));
+            text.AppendLine("Display aspect: " + FormatInspectorRatio(
+                mediaInfo.DisplayAspectRatioNumerator,
+                mediaInfo.DisplayAspectRatioDenominator));
+            text.AppendLine();
+            text.AppendLine("Video");
+            text.AppendLine("-----");
+            text.AppendLine("Codec: " + FormatInspectorText(mediaInfo.VideoCodecName));
+            text.AppendLine("Coded resolution: " + FormatInspectorResolution(mediaInfo.PixelWidth, mediaInfo.PixelHeight));
+            text.AppendLine("Source pixel format: " + FormatInspectorText(mediaInfo.SourcePixelFormatName));
+            text.AppendLine("Bit depth: " + FormatInspectorBitDepth(mediaInfo.VideoBitDepth));
+            text.AppendLine("Bitrate: " + FormatInspectorBitRate(mediaInfo.VideoBitRate));
+            text.AppendLine("Color space: " + FormatInspectorText(mediaInfo.VideoColorSpace));
+            text.AppendLine("Color range: " + FormatInspectorText(mediaInfo.VideoColorRange));
+            text.AppendLine("Primaries: " + FormatInspectorText(mediaInfo.VideoColorPrimaries));
+            text.AppendLine("Transfer: " + FormatInspectorText(mediaInfo.VideoColorTransfer));
+            text.AppendLine();
+            text.AppendLine("Audio");
+            text.AppendLine("-----");
+            text.AppendLine("Has audio stream: " + (mediaInfo.HasAudioStream ? "Yes" : "No"));
+            text.AppendLine("Audio playback available: " + (mediaInfo.IsAudioPlaybackAvailable ? "Yes" : "No"));
+            text.AppendLine("Codec: " + FormatInspectorText(mediaInfo.AudioCodecName));
+            text.AppendLine("Sample rate: " + FormatInspectorSampleRate(mediaInfo.AudioSampleRate));
+            text.AppendLine("Channels: " + FormatInspectorChannelCount(mediaInfo.AudioChannelCount));
+            text.AppendLine("Bit depth: " + FormatInspectorBitDepth(mediaInfo.AudioBitDepth));
+            text.AppendLine("Bitrate: " + FormatInspectorBitRate(mediaInfo.AudioBitRate));
+            text.AppendLine();
+            text.AppendLine("Advanced");
+            text.AppendLine("--------");
+            text.AppendLine("Video stream index: " + FormatInspectorIndex(mediaInfo.VideoStreamIndex));
+            text.AppendLine("Audio stream index: " + FormatInspectorIndex(mediaInfo.AudioStreamIndex));
+            text.AppendLine("Nominal frame rate: " + FormatInspectorFraction(
+                mediaInfo.NominalFrameRateNumerator,
+                mediaInfo.NominalFrameRateDenominator));
+            text.AppendLine("Stream time base: " + FormatInspectorFraction(
+                mediaInfo.StreamTimeBaseNumerator,
+                mediaInfo.StreamTimeBaseDenominator));
+            text.AppendLine("Position step: " + FormatInspectorDuration(mediaInfo.PositionStep));
+            return text.ToString().Trim();
+        }
+
+        private static string FormatInspectorDuration(TimeSpan duration)
+        {
+            return duration > TimeSpan.Zero ? FormatTime(duration) : "Unknown";
+        }
+
+        private static string FormatInspectorFrameRate(double framesPerSecond)
+        {
+            return framesPerSecond > 0d
+                ? string.Format(CultureInfo.InvariantCulture, "{0:0.###} fps", framesPerSecond)
+                : "Unknown";
+        }
+
+        private static string FormatInspectorResolution(int width, int height)
+        {
+            return width > 0 && height > 0
+                ? string.Format(CultureInfo.InvariantCulture, "{0} x {1}", width, height)
+                : "Unknown";
+        }
+
+        private static string FormatInspectorResolution(int? width, int? height)
+        {
+            return width.HasValue && height.HasValue
+                ? FormatInspectorResolution(width.Value, height.Value)
+                : "Unknown";
+        }
+
+        private static string FormatInspectorRatio(int? numerator, int? denominator)
+        {
+            return numerator.HasValue &&
+                   denominator.HasValue &&
+                   numerator.Value > 0 &&
+                   denominator.Value > 0
+                ? string.Format(CultureInfo.InvariantCulture, "{0}:{1}", numerator.Value, denominator.Value)
+                : "Unknown";
+        }
+
+        private static string FormatInspectorText(string value)
+        {
+            return string.IsNullOrWhiteSpace(value) ? "Unknown" : value;
+        }
+
+        private static string FormatInspectorBitDepth(int? value)
+        {
+            return value.HasValue && value.Value > 0
+                ? string.Format(CultureInfo.InvariantCulture, "{0}-bit", value.Value)
+                : "Unknown";
+        }
+
+        private static string FormatInspectorBitRate(long? value)
+        {
+            return value.HasValue && value.Value > 0L
+                ? string.Format(CultureInfo.InvariantCulture, "{0:N0} bps", value.Value)
+                : "Unknown";
+        }
+
+        private static string FormatInspectorSampleRate(int value)
+        {
+            return value > 0
+                ? string.Format(CultureInfo.InvariantCulture, "{0:N0} Hz", value)
+                : "Unknown";
+        }
+
+        private static string FormatInspectorChannelCount(int value)
+        {
+            return value > 0 ? value.ToString(CultureInfo.InvariantCulture) : "Unknown";
+        }
+
+        private static string FormatInspectorIndex(int value)
+        {
+            return value >= 0 ? value.ToString(CultureInfo.InvariantCulture) : "Unknown";
+        }
+
+        private static string FormatInspectorFraction(int numerator, int denominator)
+        {
+            return numerator > 0 && denominator > 0
+                ? string.Format(CultureInfo.InvariantCulture, "{0}/{1}", numerator, denominator)
+                : "Unknown";
+        }
+
         private void RefreshPaneUi(ReviewWorkspaceViewState viewState, string paneId)
         {
             Border paneBorder;
             Border emptySurfaceOverlay;
             TextBlock paneTitleTextBlock;
             TextBlock paneFileTextBlock;
+            TextBlock paneStateTextBlock;
             TextBlock emptySurfaceTextBlock;
             Image videoImage;
             Slider positionSlider;
@@ -1172,6 +1841,9 @@ namespace FramePlayer.Host.Avalonia
             TextBlock durationTextBlock;
             TextBlock frameStatusTextBlock;
             TextBox frameTextBox;
+            Button stepBackButton;
+            Button playPauseButton;
+            Button stepForwardButton;
             Button usePaneButton;
             Button openPaneButton;
             if (!TryGetPaneControls(
@@ -1180,6 +1852,7 @@ namespace FramePlayer.Host.Avalonia
                 out emptySurfaceOverlay,
                 out paneTitleTextBlock,
                 out paneFileTextBlock,
+                out paneStateTextBlock,
                 out emptySurfaceTextBlock,
                 out videoImage,
                 out positionSlider,
@@ -1188,6 +1861,9 @@ namespace FramePlayer.Host.Avalonia
                 out durationTextBlock,
                 out frameStatusTextBlock,
                 out frameTextBox,
+                out stepBackButton,
+                out playPauseButton,
+                out stepForwardButton,
                 out usePaneButton,
                 out openPaneButton))
             {
@@ -1196,6 +1872,11 @@ namespace FramePlayer.Host.Avalonia
 
             var paneState = FindPaneViewState(viewState, paneId);
             var paneHasLoadedMedia = PaneHasLoadedMedia(paneState);
+            if (string.Equals(paneId, PrimaryPaneId, StringComparison.Ordinal))
+            {
+                PrimaryPaneHeaderBorder.IsVisible = _isCompareModeEnabled;
+            }
+
             paneBorder.BorderBrush = paneState != null && paneState.IsFocused
                 ? SelectedPaneBrush
                 : IdlePaneBrush;
@@ -1211,10 +1892,17 @@ namespace FramePlayer.Host.Avalonia
             paneFileTextBlock.Text = paneHasLoadedMedia
                 ? Path.GetFileName(paneState.CurrentFilePath)
                 : string.Empty;
+            paneStateTextBlock.Text = BuildPanePlaybackStateText(paneState);
             ToolTip.SetTip(paneFileTextBlock, paneHasLoadedMedia ? paneState.CurrentFilePath : string.Empty);
 
             usePaneButton.IsEnabled = !string.Equals(paneId, ComparePaneId, StringComparison.Ordinal) || _isCompareModeEnabled;
             openPaneButton.IsEnabled = !string.Equals(paneId, ComparePaneId, StringComparison.Ordinal) || _isCompareModeEnabled;
+            stepBackButton.IsEnabled = paneHasLoadedMedia;
+            playPauseButton.IsEnabled = paneHasLoadedMedia;
+            stepForwardButton.IsEnabled = paneHasLoadedMedia;
+            playPauseButton.Content = paneState != null && paneState.PlaybackState == ReviewPlaybackState.Playing
+                ? "Pause"
+                : "Play";
 
             currentPositionTextBlock.Text = paneHasLoadedMedia
                 ? FormatTime(paneState.CurrentPosition)
@@ -1304,6 +1992,7 @@ namespace FramePlayer.Host.Avalonia
             out Border emptySurfaceOverlay,
             out TextBlock paneTitleTextBlock,
             out TextBlock paneFileTextBlock,
+            out TextBlock paneStateTextBlock,
             out TextBlock emptySurfaceTextBlock,
             out Image videoImage,
             out Slider positionSlider,
@@ -1312,6 +2001,9 @@ namespace FramePlayer.Host.Avalonia
             out TextBlock durationTextBlock,
             out TextBlock frameStatusTextBlock,
             out TextBox frameTextBox,
+            out Button stepBackButton,
+            out Button playPauseButton,
+            out Button stepForwardButton,
             out Button usePaneButton,
             out Button openPaneButton)
         {
@@ -1321,6 +2013,7 @@ namespace FramePlayer.Host.Avalonia
                 emptySurfaceOverlay = CompareEmptySurfaceOverlay;
                 paneTitleTextBlock = ComparePaneTitleTextBlock;
                 paneFileTextBlock = ComparePaneFileTextBlock;
+                paneStateTextBlock = ComparePaneStateTextBlock;
                 emptySurfaceTextBlock = CompareEmptySurfaceText;
                 videoImage = CompareVideoImage;
                 positionSlider = ComparePositionSlider;
@@ -1329,6 +2022,9 @@ namespace FramePlayer.Host.Avalonia
                 durationTextBlock = CompareDurationTextBlock;
                 frameStatusTextBlock = CompareFrameStatusTextBlock;
                 frameTextBox = ComparePaneFrameTextBox;
+                stepBackButton = ComparePaneStepBackButton;
+                playPauseButton = ComparePanePlayPauseButton;
+                stepForwardButton = ComparePaneStepForwardButton;
                 usePaneButton = UseComparePaneButton;
                 openPaneButton = OpenComparePaneButton;
                 return true;
@@ -1338,6 +2034,7 @@ namespace FramePlayer.Host.Avalonia
             emptySurfaceOverlay = PrimaryEmptySurfaceOverlay;
             paneTitleTextBlock = PrimaryPaneTitleTextBlock;
             paneFileTextBlock = PrimaryPaneFileTextBlock;
+            paneStateTextBlock = PrimaryPaneStateTextBlock;
             emptySurfaceTextBlock = PrimaryEmptySurfaceText;
             videoImage = PrimaryVideoImage;
             positionSlider = PrimaryPositionSlider;
@@ -1346,6 +2043,9 @@ namespace FramePlayer.Host.Avalonia
             durationTextBlock = PrimaryDurationTextBlock;
             frameStatusTextBlock = PrimaryFrameStatusTextBlock;
             frameTextBox = PrimaryPaneFrameTextBox;
+            stepBackButton = PrimaryPaneStepBackButton;
+            playPauseButton = PrimaryPanePlayPauseButton;
+            stepForwardButton = PrimaryPaneStepForwardButton;
             usePaneButton = UsePrimaryPaneButton;
             openPaneButton = OpenPrimaryPaneButton;
             return true;
@@ -1366,6 +2066,14 @@ namespace FramePlayer.Host.Avalonia
             return _isCompareModeEnabled;
         }
 
+        private bool IsLoopPlaybackEnabledForPane(string paneId)
+        {
+            var resolvedPaneId = string.IsNullOrWhiteSpace(paneId)
+                ? GetFocusedPaneId(_workspaceCoordinator.GetWorkspaceSnapshot())
+                : paneId;
+            return !string.IsNullOrWhiteSpace(resolvedPaneId) && _loopPlaybackEnabledPaneIds.Contains(resolvedPaneId);
+        }
+
         private bool IsLoopPlaybackEnabledForFocusedPane()
         {
             return IsLoopPlaybackEnabledForFocusedPane(_hostController.CurrentViewState);
@@ -1373,8 +2081,7 @@ namespace FramePlayer.Host.Avalonia
 
         private bool IsLoopPlaybackEnabledForFocusedPane(ReviewWorkspaceViewState viewState)
         {
-            var paneId = GetFocusedPaneId(_workspaceCoordinator.GetWorkspaceSnapshot());
-            return !string.IsNullOrWhiteSpace(paneId) && _loopPlaybackEnabledPaneIds.Contains(paneId);
+            return IsLoopPlaybackEnabledForPane(GetFocusedPaneId(_workspaceCoordinator.GetWorkspaceSnapshot()));
         }
     }
 }
