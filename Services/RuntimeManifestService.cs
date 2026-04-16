@@ -33,24 +33,12 @@ namespace FramePlayer.Services
                 return false;
             }
 
-            foreach (var file in manifest.Files)
-            {
-                var filePath = Path.Combine(runtimeDirectory, file.Key);
-                if (!File.Exists(filePath))
-                {
-                    errorMessage = "The FFmpeg runtime is missing " + file.Key + ".";
-                    return false;
-                }
-
-                var actualHash = BundledManifestSupport.ComputeSha256(filePath);
-                if (!string.Equals(actualHash, file.Value, StringComparison.OrdinalIgnoreCase))
-                {
-                    errorMessage = "The FFmpeg runtime failed integrity validation for " + file.Key + ".";
-                    return false;
-                }
-            }
-
-            return true;
+            return BundledManifestSupport.TryValidateManifestFiles(
+                runtimeDirectory,
+                manifest.Files,
+                fileName => "The FFmpeg runtime is missing " + fileName + ".",
+                fileName => "The FFmpeg runtime failed integrity validation for " + fileName + ".",
+                out errorMessage);
         }
 
         public static string GetExpectedAssetName()

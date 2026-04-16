@@ -235,7 +235,7 @@ namespace FramePlayer.Core.Hosting
             return new ExportCommandState(true, true, "The current loop is ready to export.");
         }
 
-        private LoopCommandState BuildLoopState(LoopPlaybackPaneRangeSnapshot loopRange, bool canControl)
+        private static LoopCommandState BuildLoopState(LoopPlaybackPaneRangeSnapshot loopRange, bool canControl)
         {
             if (loopRange == null || !loopRange.HasAnyMarkers)
             {

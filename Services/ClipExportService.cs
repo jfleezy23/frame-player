@@ -98,7 +98,7 @@ namespace FramePlayer.Services
                 ? request.SessionSnapshot.MediaInfo.Duration
                 : TimeSpan.Zero;
             var startTime = ClampTime(loopRange.LoopIn.PresentationTime, mediaDuration);
-            var endBoundaryStrategy = "position-step";
+            string endBoundaryStrategy;
             var endTimeExclusive = BuildExclusiveEndTime(
                 request,
                 loopRange.LoopOut,
@@ -134,7 +134,7 @@ namespace FramePlayer.Services
             return await ExportPlanAsync(plan, cancellationToken).ConfigureAwait(false);
         }
 
-        public async Task<ClipExportResult> ExportPlanAsync(ClipExportPlan plan, CancellationToken cancellationToken = default(CancellationToken))
+        public static async Task<ClipExportResult> ExportPlanAsync(ClipExportPlan plan, CancellationToken cancellationToken = default(CancellationToken))
         {
             if (plan == null)
             {

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -49,6 +50,43 @@ namespace FramePlayer.Services
                 var hashBytes = sha256.ComputeHash(stream);
                 return string.Concat(hashBytes.Select(hashByte => hashByte.ToString("x2")));
             }
+        }
+
+        public static bool TryValidateManifestFiles(
+            string directoryPath,
+            IReadOnlyDictionary<string, string> expectedFiles,
+            Func<string, string> buildMissingFileMessage,
+            Func<string, string> buildInvalidHashMessage,
+            out string errorMessage)
+        {
+            errorMessage = string.Empty;
+            if (expectedFiles == null || expectedFiles.Count == 0)
+            {
+                return false;
+            }
+
+            foreach (var entry in expectedFiles)
+            {
+                var filePath = Path.Combine(directoryPath, entry.Key);
+                if (!File.Exists(filePath))
+                {
+                    errorMessage = buildMissingFileMessage != null
+                        ? buildMissingFileMessage(entry.Key)
+                        : string.Empty;
+                    return false;
+                }
+
+                var actualHash = ComputeSha256(filePath);
+                if (!string.Equals(actualHash, entry.Value, StringComparison.OrdinalIgnoreCase))
+                {
+                    errorMessage = buildInvalidHashMessage != null
+                        ? buildInvalidHashMessage(entry.Key)
+                        : string.Empty;
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         public static TManifest GetManifest<TManifest>(

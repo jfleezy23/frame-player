@@ -131,6 +131,7 @@ jobs:
             "Services/VideoReviewEngineFactory.cs"
             "Services/AppPreferences.cs"
             "Services/AppPreferencesService.cs"
+            "Services/BundledManifestSupport.cs"
             "Services/FfmpegReviewEngineOptionsProvider.cs"
             "Engines/FFmpeg/FfmpegReviewEngine.cs"
             "Engines/FFmpeg/WinMmAudioOutput.cs"
@@ -142,11 +143,16 @@ jobs:
             "src/FramePlayer.Media.FFmpeg/**/*.cs"
           ) -join ","
 
+          $duplicationExclusions = @(
+            "Core/Hosting/*.cs"
+          ) -join ","
+
           .\.sonar\scanner\dotnet-sonarscanner begin `
             /k:"${{ steps.sonar_config.outputs.project_key }}" `
             /o:"${{ steps.sonar_config.outputs.organization }}" `
             /d:sonar.token="$env:SONAR_TOKEN" `
-            /d:sonar.coverage.exclusions="$coverageExclusions"
+            /d:sonar.coverage.exclusions="$coverageExclusions" `
+            /d:sonar.cpd.exclusions="$duplicationExclusions"
 
           msbuild .\FramePlayer.csproj /t:Restore,Build /p:Configuration=Release /p:Platform=x64
 
