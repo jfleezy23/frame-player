@@ -19,7 +19,12 @@ namespace FramePlayer.Host.Avalonia
             string validationMessage;
             if (RuntimeManifestService.TryValidateRuntimeDirectory(AppContext.BaseDirectory, out validationMessage))
             {
+                RuntimeEnvironment.CurrentRuntimeDirectory = AppContext.BaseDirectory;
                 ffmpeg.RootPath = AppContext.BaseDirectory;
+            }
+            else
+            {
+                RuntimeEnvironment.CurrentRuntimeDirectory = string.Empty;
             }
 
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)

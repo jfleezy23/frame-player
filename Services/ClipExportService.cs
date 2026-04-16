@@ -296,7 +296,9 @@ namespace FramePlayer.Services
         {
             var toolsDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ToolsFolderName);
             string errorMessage;
-            if (!ExportToolsManifestService.TryValidateToolsDirectory(toolsDirectory, out errorMessage))
+            string ffmpegPath;
+            string ffprobePath;
+            if (!ExportToolsManifestService.TryGetToolPaths(toolsDirectory, out ffmpegPath, out ffprobePath, out errorMessage))
             {
                 return new ToolAvailability(
                     false,
@@ -306,18 +308,6 @@ namespace FramePlayer.Services
                     string.IsNullOrWhiteSpace(errorMessage)
                         ? "The bundled FFmpeg export tools are unavailable."
                         : errorMessage);
-            }
-
-            var ffmpegPath = Path.Combine(toolsDirectory, "ffmpeg.exe");
-            var ffprobePath = Path.Combine(toolsDirectory, "ffprobe.exe");
-            if (!File.Exists(ffmpegPath) || !File.Exists(ffprobePath))
-            {
-                return new ToolAvailability(
-                    false,
-                    toolsDirectory,
-                    ffmpegPath,
-                    ffprobePath,
-                    "The bundled FFmpeg export tools are incomplete.");
             }
 
             return new ToolAvailability(

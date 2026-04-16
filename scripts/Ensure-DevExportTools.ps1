@@ -1,6 +1,7 @@
 param(
     [string]$ManifestPath = "",
-    [switch]$Required
+    [switch]$Required,
+    [string]$RuntimeIdentifier = "win-x64"
 )
 
 $ErrorActionPreference = "Stop"
@@ -92,7 +93,7 @@ function Complete-BestEffort {
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $resolvedManifestPath = if ([string]::IsNullOrWhiteSpace($ManifestPath)) {
-    Join-Path $repoRoot "Runtime\export-tools-manifest.json"
+    Join-Path $repoRoot ("Runtime\manifests\{0}\export-tools-manifest.json" -f $RuntimeIdentifier)
 }
 else {
     $ManifestPath
@@ -104,10 +105,22 @@ if (-not (Test-Path -LiteralPath $resolvedManifestPath)) {
 
 $manifest = Get-Content -LiteralPath $resolvedManifestPath -Raw | ConvertFrom-Json
 $expectedFileHashes = Get-ManifestFileHashes -Manifest $manifest
-$requiredToolFiles = @("ffmpeg.exe", "ffprobe.exe")
+$ffmpegExecutable = if ([string]::IsNullOrWhiteSpace($manifest.ffmpegExecutable)) {
+    if ($RuntimeIdentifier -like "win-*") { "ffmpeg.exe" } else { "ffmpeg" }
+}
+else {
+    [string]$manifest.ffmpegExecutable
+}
+$ffprobeExecutable = if ([string]::IsNullOrWhiteSpace($manifest.ffprobeExecutable)) {
+    if ($RuntimeIdentifier -like "win-*") { "ffprobe.exe" } else { "ffprobe" }
+}
+else {
+    [string]$manifest.ffprobeExecutable
+}
+$requiredToolFiles = @($ffmpegExecutable, $ffprobeExecutable)
 
 if ($expectedFileHashes.Count -eq 0) {
-    Complete-BestEffort "Export-tools manifest does not yet contain pinned file hashes. Build the tool bundle locally with .\scripts\ffmpeg\Build-FFmpeg-Tools-8.1.ps1 and update Runtime\export-tools-manifest.json."
+    Complete-BestEffort "Export-tools manifest does not yet contain pinned file hashes. Build the tool bundle locally with .\scripts\ffmpeg\Build-FFmpeg-Tools-8.1.ps1 and update Runtime\manifests\$RuntimeIdentifier\export-tools-manifest.json."
 }
 
 $missingManifestFiles = $requiredToolFiles | Where-Object { -not $expectedFileHashes.ContainsKey($_) }

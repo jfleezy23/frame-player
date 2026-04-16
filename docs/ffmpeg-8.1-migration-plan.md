@@ -5,7 +5,7 @@ This is a historical migration checkpoint. The FFmpeg 8.1 runtime is now the act
 ## Current Runtime Integration
 
 - The app loads FFmpeg in-process through `FFmpeg.AutoGen`; `App.xaml.cs` sets `ffmpeg.RootPath` to the application base directory after runtime validation succeeds.
-- `Runtime\runtime-manifest.json` is embedded in the app and is the runtime integrity source of truth. `RuntimeManifestService` validates every DLL listed under `files` by SHA256 before allowing the runtime path to be used.
+- `Runtime\manifests\win-x64\runtime-manifest.json` is embedded in the app and is the runtime integrity source of truth. `RuntimeManifestService` validates every DLL listed under `files` by SHA256 before allowing the runtime path to be used.
 - `scripts\Ensure-DevRuntime.ps1` downloads the manifest asset, verifies the archive hash, extracts an `ffmpeg` folder, copies `*.dll` into `Runtime\ffmpeg`, and verifies per-DLL hashes.
 - `FramePlayer.csproj` copies `Runtime\ffmpeg\*.dll` to the build output, but its MSBuild conditions currently assume the old `avcodec-61.dll` name.
 - Current tracked runtime metadata names the old 7-era DLL majors: `avcodec-61`, `avdevice-61`, `avfilter-10`, `avformat-61`, `avutil-59`, `swresample-5`, and `swscale-8`.
@@ -64,7 +64,7 @@ The current manifest also ships `libavfilter` and `libavdevice`, but the app doe
    - Package the runtime into an `ffmpeg` folder layout matching the current app runtime archive contract.
    - Generate archive and per-DLL SHA256 hashes.
 3. App integration pass:
-   - Update `Runtime\runtime-manifest.json` to the self-built FFmpeg 8.1 archive and DLL filenames.
+   - Update `Runtime\manifests\win-x64\runtime-manifest.json` to the self-built FFmpeg 8.1 archive and DLL filenames.
    - Update `FramePlayer.csproj` runtime-existence checks away from `avcodec-61.dll`.
    - Update `FFmpeg.AutoGen` only if required and fix narrow compile-time API compatibility issues.
    - Update `Runtime\README.md`, `README.md`, `TESTING_NOTES.md`, and `THIRD_PARTY_NOTICES.md` with the new source-built runtime provenance.

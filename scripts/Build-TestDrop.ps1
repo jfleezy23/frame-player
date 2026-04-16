@@ -145,10 +145,11 @@ $resolvedIntermediateDirectory = Assert-PathWithin -Path $resolvedIntermediateDi
 $ensureRuntimeScript = Join-Path $PSScriptRoot "Ensure-DevRuntime.ps1"
 $ensureExportToolsScript = Join-Path $PSScriptRoot "Ensure-DevExportTools.ps1"
 $msbuildPath = Resolve-MSBuildPath
-$manifestPath = Join-Path $repoRoot "Runtime\runtime-manifest.json"
+$runtimeIdentifier = "win-x64"
+$manifestPath = Join-Path $repoRoot ("Runtime\manifests\{0}\runtime-manifest.json" -f $runtimeIdentifier)
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 $expectedRuntimeFiles = Get-ManifestFileHashes -Manifest $manifest
-$exportToolsManifestPath = Join-Path $repoRoot "Runtime\export-tools-manifest.json"
+$exportToolsManifestPath = Join-Path $repoRoot ("Runtime\manifests\{0}\export-tools-manifest.json" -f $runtimeIdentifier)
 $exportToolsManifest = if (Test-Path -LiteralPath $exportToolsManifestPath) {
     Get-Content -LiteralPath $exportToolsManifestPath -Raw | ConvertFrom-Json
 }

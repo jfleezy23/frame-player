@@ -8,6 +8,8 @@
   "tag": "",
   "assetUrl": "",
   "assetSha256": "c6d1962c57287c6e9442243e5d13c202aaaa24d36b5e80a0f8f2498ffffd4508",
+  "ffmpegExecutable": "ffmpeg.exe",
+  "ffprobeExecutable": "ffprobe.exe",
   "files": {
     "avcodec-62.dll": "0686de5731863e3b513062b735777739f4780306a2500b8b72c0fa29861b05a6",
     "avfilter-11.dll": "44f4f4977fff9ca80228f9bdafa01f18127b4317140de07c64ef5468758c8df3",

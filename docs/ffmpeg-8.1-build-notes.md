@@ -71,10 +71,10 @@ Both paths are intentionally ignored by git. `scripts\Ensure-DevRuntime.ps1` res
 
 ## Current Restore Model
 
-- `Runtime\runtime-manifest.json` records the expected FFmpeg 8.1 DLL hashes, archive filename, archive SHA256, and source-build provenance.
+- `Runtime\manifests\win-x64\runtime-manifest.json` records the expected FFmpeg 8.1 DLL hashes, archive filename, archive SHA256, and source-build provenance.
 - `scripts\Ensure-DevRuntime.ps1` restores `Runtime\ffmpeg\` from `Runtime\ffmpeg-8.1-candidate\` or `artifacts\FramePlayer-ffmpeg-runtime-x64.zip` before attempting any remote download path.
 - If neither local source exists, the script downloads the pinned runtime from the verified `v1.5.0` release asset currently declared in the manifest and validates both the archive SHA256 and extracted DLL hashes.
-- `Runtime\runtime-manifest.json` now also records that the current source-built runtime targets FFmpeg Vulkan hardware-device support while still requiring a system Vulkan loader at runtime.
+- `Runtime\manifests\win-x64\runtime-manifest.json` now also records that the current source-built runtime targets FFmpeg Vulkan hardware-device support while still requiring a system Vulkan loader at runtime.
 
 ## Windows CI
 
@@ -85,7 +85,7 @@ GitHub Actions Windows CI now runs compile validation only on clean runners:
 msbuild .\FramePlayer.csproj /t:Restore,Build /p:Configuration=Release /p:Platform=x64
 ```
 
-This is intentional and now supported. Clean GitHub runners do not have staged local FFmpeg runtime artifacts, so the workflow restores the runtime from the verified `v1.5.0` release asset currently recorded in `Runtime\runtime-manifest.json`.
+This is intentional and now supported. Clean GitHub runners do not have staged local FFmpeg runtime artifacts, so the workflow restores the runtime from the verified `v1.5.0` release asset currently recorded in `Runtime\manifests\win-x64\runtime-manifest.json`.
 
 ## Still Needed Beyond Clean-Runner Restore
 

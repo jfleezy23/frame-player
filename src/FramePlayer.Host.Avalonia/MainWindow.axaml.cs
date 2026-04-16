@@ -45,14 +45,18 @@ namespace FramePlayer.Host.Avalonia
             _videoReviewEngine = _videoReviewEngineFactory.Create("pane-primary");
             _sessionCoordinator = new ReviewSessionCoordinator(_videoReviewEngine);
             _workspaceCoordinator = new ReviewWorkspaceCoordinator(_videoReviewEngine, _sessionCoordinator);
+            string runtimeValidationMessage;
+            var hasBundledRuntime = RuntimeManifestService.TryValidateRuntimeDirectory(AppContext.BaseDirectory, out runtimeValidationMessage);
             _hostController = new ReviewWorkspaceHostController(
                 _workspaceCoordinator,
                 new ReviewHostCapabilities(
                     supportsTimedPlayback: true,
-                    hasBundledRuntime: true,
+                    hasBundledRuntime: hasBundledRuntime,
                     exportToolingAvailable: _clipExportService.IsBundledToolingAvailable,
                     idleStatusText: "Avalonia preview host ready.",
-                    runtimeMissingStatusText: "Bundled playback runtime is missing.",
+                    runtimeMissingStatusText: string.IsNullOrWhiteSpace(runtimeValidationMessage)
+                        ? "Bundled playback runtime is missing."
+                        : runtimeValidationMessage,
                     timedPlaybackCapabilityText: "Timed playback is unavailable in this host.",
                     exportToolingStatusText: _clipExportService.GetToolAvailabilityMessage()));
 

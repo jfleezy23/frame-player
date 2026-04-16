@@ -65,12 +65,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="..\..\Runtime\runtime-manifest.json"
-                      Link="Runtime\runtime-manifest.json"
-                      LogicalName="FramePlayer.Runtime.runtime-manifest.json" />
-    <EmbeddedResource Include="..\..\Runtime\export-tools-manifest.json"
-                      Link="Runtime\export-tools-manifest.json"
-                      LogicalName="FramePlayer.Runtime.export-tools-manifest.json" />
+    <EmbeddedResource Include="..\..\Runtime\manifests\win-x64\runtime-manifest.json"
+                      Link="Runtime\manifests\win-x64\runtime-manifest.json"
+                      LogicalName="FramePlayer.Runtime.manifests.win-x64.runtime-manifest.json" />
+    <EmbeddedResource Include="..\..\Runtime\manifests\win-x64\export-tools-manifest.json"
+                      Link="Runtime\manifests\win-x64\export-tools-manifest.json"
+                      LogicalName="FramePlayer.Runtime.manifests.win-x64.export-tools-manifest.json" />
     <Content Include="..\..\Runtime\ffmpeg\*.dll">
       <Link>%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

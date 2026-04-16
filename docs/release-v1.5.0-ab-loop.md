@@ -33,7 +33,7 @@ This note documents the current `v1.5.0` release. It is the maintainer-facing su
 
 - Product version: `v1.5.0`
 - Current published clean-runner bootstrap asset: `v1.5.0`
-- `Runtime\runtime-manifest.json` is pinned to the verified `v1.5.0` runtime asset and should stay aligned with the published archive SHA256 and DLL hashes.
+- `Runtime\manifests\win-x64\runtime-manifest.json` is pinned to the verified `v1.5.0` runtime asset and should stay aligned with the published archive SHA256 and DLL hashes.
 
 ## Validation Evidence
 

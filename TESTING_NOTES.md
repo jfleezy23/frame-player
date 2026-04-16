@@ -49,11 +49,11 @@ Release: `1.6.0`
 - Playback is still an MVP path: no audio device selection, volume controls, advanced drift correction, or frame dropping/catch-up behavior.
 - Cache/index status is intentionally coarse (`building` / `ready`) and may change quickly on short clips.
 - Large files still require a full-file frame index scan, but that work now happens in the background after the first frame is visible.
-- The pinned FFmpeg runtime is `n8.1-frameplayer-source`, recorded in `Runtime\runtime-manifest.json`.
+- The pinned FFmpeg runtime is `n8.1-frameplayer-source`, recorded in `Runtime\manifests\win-x64\runtime-manifest.json`.
 - The runtime was built from the official FFmpeg source tag `n8.1` and is restored locally from the self-built candidate/archive produced by `scripts\ffmpeg\Build-FFmpeg-8.1.ps1`.
 - The packaged runtime also requires `libwinpthread-1.dll`; it must ship beside `FramePlayer.exe` with the FFmpeg DLL set.
-- Clip export uses a separate `ffmpeg-tools` folder beside the app output and depends on the hashes recorded in `Runtime\export-tools-manifest.json`.
-- Clean-runner bootstrap restores from the verified `v1.5.0` runtime release asset recorded in `Runtime\runtime-manifest.json`.
+- Clip export uses a separate `ffmpeg-tools` folder beside the app output and depends on the hashes recorded in `Runtime\manifests\win-x64\export-tools-manifest.json`.
+- Clean-runner bootstrap restores from the verified `v1.5.0` runtime release asset recorded in `Runtime\manifests\win-x64\runtime-manifest.json`.
 
 ## Build and shortcut
 

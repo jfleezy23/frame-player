@@ -678,7 +678,7 @@ $buildScript = Join-Path $PSScriptRoot "Build-TestDrop.ps1"
 $buildResult = & $buildScript -Configuration $Configuration -ArtifactPath $regressionArtifactPath -RequireExportTools
 
 $assemblyPath = $buildResult.ExecutablePath
-$manifestPath = Join-Path $projectRoot "Runtime\runtime-manifest.json"
+$manifestPath = Join-Path $projectRoot "Runtime\manifests\win-x64\runtime-manifest.json"
 $csvPath = Join-Path $outputDirectory "regression-suite-checks.csv"
 $markdownPath = Join-Path $outputDirectory "regression-suite-summary.md"
 $fileReports = New-Object System.Collections.Generic.List[object]

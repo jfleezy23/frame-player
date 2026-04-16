@@ -203,8 +203,12 @@
       <Link>ffmpeg-tools\%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <EmbeddedResource Include="Runtime\runtime-manifest.json" />
-    <EmbeddedResource Include="Runtime\export-tools-manifest.json" />
+    <EmbeddedResource Include="Runtime\manifests\win-x64\runtime-manifest.json">
+      <LogicalName>FramePlayer.Runtime.manifests.win-x64.runtime-manifest.json</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Runtime\manifests\win-x64\export-tools-manifest.json">
+      <LogicalName>FramePlayer.Runtime.manifests.win-x64.export-tools-manifest.json</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
   <Target Name="EnsureBundledRuntime" BeforeTargets="PrepareForBuild"
           Condition="'$(OS)' == 'Windows_NT' and '$(SkipRuntimeBootstrap)' != 'true' and !Exists('Runtime\\ffmpeg\\avcodec-62.dll')">

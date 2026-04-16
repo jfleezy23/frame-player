@@ -10,11 +10,11 @@ For local development:
 4. Then run `.\scripts\Ensure-DevExportTools.ps1`
 5. Or run `.\scripts\Build-FramePlayer.ps1`, which restores the runtime first, attempts to restore export tools when they are pinned, and then builds the app
 
-The runtime is pinned through `Runtime\runtime-manifest.json`.
+The runtime is pinned through `Runtime\manifests\win-x64\runtime-manifest.json`.
 The active runtime is the self-built FFmpeg 8.1 line staged locally by `scripts\ffmpeg\Build-FFmpeg-8.1.ps1`.
 `scripts\Ensure-DevRuntime.ps1` restores `Runtime\ffmpeg\` from the local candidate folder or local runtime archive before attempting any download fallback.
 Packaged builds must include `libwinpthread-1.dll` beside the FFmpeg DLLs and `FramePlayer.exe`.
-The separate clip-export tool bundle is pinned through `Runtime\export-tools-manifest.json` and restored to `Runtime\ffmpeg-tools\`.
+The separate clip-export tool bundle is pinned through `Runtime\manifests\win-x64\export-tools-manifest.json` and restored to `Runtime\ffmpeg-tools\`.
 
 Current pinned FFmpeg runtime version: `n8.1-frameplayer-source`.
 Current pinned FFmpeg export-tools version: `n8.1-frameplayer-export-tools`.

@@ -29,7 +29,7 @@ This note documents the `v1.7.0` release. It is the maintainer-facing summary of
 
 - Product version: `v1.7.0`
 - Current published clean-runner bootstrap asset: `v1.5.0`
-- `Runtime\runtime-manifest.json` remains pinned to the verified runtime bundle because the playback DLL payload itself did not change for this release.
+- `Runtime\manifests\win-x64\runtime-manifest.json` remains pinned to the verified runtime bundle because the playback DLL payload itself did not change for this release.
 
 ## Validation Evidence
 

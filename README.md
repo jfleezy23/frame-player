@@ -61,8 +61,8 @@ The shipped app is packaged with the FFmpeg runtime DLLs next to `FramePlayer.ex
 - Current release: `v1.6.0`
 - Pinned FFmpeg runtime version: `n8.1-frameplayer-source`
 - Runtime provenance: built from the official FFmpeg source tag `n8.1` at commit `9047fa1b084f76b1b4d065af2d743df1b40dfb56`
-- Runtime hashes and source-build metadata are recorded in `Runtime\\runtime-manifest.json` and `docs\\ffmpeg-8.1-build-notes.md`
-- Export-tool hashes and source-build metadata are recorded in `Runtime\\export-tools-manifest.json`
+- Runtime hashes and source-build metadata are recorded per RID under `Runtime\\manifests\\<rid>\\runtime-manifest.json` and `docs\\ffmpeg-8.1-build-notes.md`
+- Export-tool hashes and source-build metadata are recorded per RID under `Runtime\\manifests\\<rid>\\export-tools-manifest.json`
 - The current source-build path enables FFmpeg's Vulkan hardware-device support, but actual GPU acceleration still depends on a system Vulkan loader/driver at runtime
 - There is no FFmpeg folder picker in the UI
 - Playback and frame stepping do not call `ffmpeg.exe` or `ffprobe.exe`; reviewed clip export uses a separate bundled `ffmpeg-tools\\ffmpeg.exe` / `ffmpeg-tools\\ffprobe.exe` toolset
@@ -150,7 +150,7 @@ GitHub Actions Windows CI is compile validation on a clean runner. The workflow 
 - The standard build output is in `bin\Release`
 - The packaged test-drop output used for release verification is `bin\TestDrop`
 - The portable release archive is written to `artifacts\FramePlayer-CustomFFmpeg-<product-version>.zip`
-- The runtime bootstrap is pinned through `Runtime\runtime-manifest.json`
+- The runtime bootstrap is pinned through `Runtime\manifests\win-x64\runtime-manifest.json`
 - The active runtime is the self-built FFmpeg 8.1 line staged by `scripts\ffmpeg\Build-FFmpeg-8.1.ps1`
 - The current release note is `docs\release-v1.6.0-loop-export.md`
 

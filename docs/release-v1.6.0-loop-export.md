@@ -20,13 +20,13 @@ This note documents the current `v1.6.0` release. It is the maintainer-facing su
 
 - Export is still one clip at a time with a fixed MP4 output contract.
 - No batch export, preset chooser, alternate container/codec chooser, or side-by-side comparison render ships in `v1.6.0`.
-- The pinned FFmpeg runtime bootstrap asset in `Runtime\runtime-manifest.json` still points at the verified `v1.5.0` runtime release because the runtime DLL set itself did not change for this product cut.
+- The pinned FFmpeg runtime bootstrap asset in `Runtime\manifests\win-x64\runtime-manifest.json` still points at the verified `v1.5.0` runtime release because the runtime DLL set itself did not change for this product cut.
 
 ## Runtime And CI Truth
 
 - Product version: `v1.6.0`
 - Current published clean-runner bootstrap asset: `v1.5.0`
-- `Runtime\runtime-manifest.json` remains pinned to the verified `v1.5.0` runtime asset and should stay aligned with the published archive SHA256 and DLL hashes until the runtime bundle itself changes.
+- `Runtime\manifests\win-x64\runtime-manifest.json` remains pinned to the verified `v1.5.0` runtime asset and should stay aligned with the published archive SHA256 and DLL hashes until the runtime bundle itself changes.
 
 ## Validation Evidence
 

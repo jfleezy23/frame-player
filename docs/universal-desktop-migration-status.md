@@ -42,6 +42,15 @@ The current WPF host now consumes the host controller for transport state and pl
 
 `ClipExportRequest` no longer depends directly on `FfmpegReviewEngine`. That removes one of the biggest blockers to a real `Core -> Media` dependency flow.
 
+### RID-aware runtime packaging
+
+- `Runtime/manifests/win-x64/runtime-manifest.json`
+- `Runtime/manifests/win-x64/export-tools-manifest.json`
+- `Services/RuntimeManifestService.cs`
+- `Services/ExportToolsManifestService.cs`
+
+The app no longer assumes a single embedded Windows runtime manifest. Runtime and export-tool validation now resolve by the current RID, and the Avalonia host declares `win-x64`, `osx-x64`, and `osx-arm64` publish identifiers even though only `win-x64` is bundled today.
+
 ## Avalonia Preview Host
 
 `src/FramePlayer.Host.Avalonia` is a real desktop host scaffold, not just an empty shell.
@@ -86,5 +95,6 @@ Validated locally on April 15, 2026:
 - replace DPAPI-backed recent-files and diagnostics persistence with a host-neutral store abstraction
 - harden the Avalonia preview host with real parity coverage instead of manual preview-host wiring only
 - add RID-aware publish/test packaging for the new hosts
+- stage actual macOS FFmpeg runtime/tool bundles under the new RID manifest layout
 - add macOS validation for the Avalonia host
 - move compare-mode behavior into the shared host-controller/application layer after single-pane parity is proven

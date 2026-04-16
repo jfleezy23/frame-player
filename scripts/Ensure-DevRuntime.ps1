@@ -1,5 +1,6 @@
 param(
-    [string]$ManifestPath = ""
+    [string]$ManifestPath = "",
+    [string]$RuntimeIdentifier = "win-x64"
 )
 
 $ErrorActionPreference = "Stop"
@@ -77,7 +78,7 @@ function Test-RuntimeIntegrity {
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $resolvedManifestPath = if ([string]::IsNullOrWhiteSpace($ManifestPath)) {
-    Join-Path $repoRoot "Runtime\runtime-manifest.json"
+    Join-Path $repoRoot ("Runtime\manifests\{0}\runtime-manifest.json" -f $RuntimeIdentifier)
 }
 else {
     $ManifestPath
@@ -101,7 +102,7 @@ $requiredRuntimeFiles = @(
 
 $missingRequiredManifestFiles = $requiredRuntimeFiles | Where-Object { -not $expectedFileHashes.ContainsKey($_) }
 if ($missingRequiredManifestFiles.Count -gt 0) {
-    throw "Runtime manifest appears stale or mismatched for the FFmpeg 8.1 runtime. Missing required file hash entries: $($missingRequiredManifestFiles -join ', '). Update Runtime\\runtime-manifest.json to the current FFmpeg 8.1 runtime metadata."
+    throw "Runtime manifest appears stale or mismatched for the FFmpeg 8.1 runtime. Missing required file hash entries: $($missingRequiredManifestFiles -join ', '). Update Runtime\\manifests\\$RuntimeIdentifier\\runtime-manifest.json to the current FFmpeg 8.1 runtime metadata."
 }
 
 $runtimeRoot = Join-Path $repoRoot "Runtime"
