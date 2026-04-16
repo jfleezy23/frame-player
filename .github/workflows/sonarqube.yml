@@ -139,6 +139,7 @@ jobs:
             "MainWindow.xaml.cs"
             "Diagnostics/RegressionSuiteRunner.cs"
             "scripts/ui_loop_visible_test.py"
+            "scripts/avalonia_launch_smoke.py"
             "src/FramePlayer.Host.Avalonia/**/*.cs"
             "src/FramePlayer.Media.FFmpeg/**/*.cs"
           ) -join ","
