@@ -2,43 +2,31 @@ namespace FramePlayer.Core.Hosting
 {
     public sealed class LoopCommandState
     {
-        public static LoopCommandState Empty { get; } =
-            new LoopCommandState(false, false, false, false, false, false, "Loop: off", "No loop markers are active.");
-
-        public LoopCommandState(
-            bool canSetMarkers,
-            bool canClearMarkers,
-            bool hasAnyMarkers,
-            bool hasReadyRange,
-            bool hasPendingMarkers,
-            bool isInvalidRange,
-            string statusText,
-            string toolTip)
+        public LoopCommandState()
         {
-            CanSetMarkers = canSetMarkers;
-            CanClearMarkers = canClearMarkers;
-            HasAnyMarkers = hasAnyMarkers;
-            HasReadyRange = hasReadyRange;
-            HasPendingMarkers = hasPendingMarkers;
-            IsInvalidRange = isInvalidRange;
-            StatusText = statusText ?? string.Empty;
-            ToolTip = toolTip ?? string.Empty;
+            StatusText = "Loop: off";
+            ToolTip = "No loop markers are active.";
         }
 
-        public bool CanSetMarkers { get; }
+        public static LoopCommandState Empty
+        {
+            get { return new LoopCommandState(); }
+        }
 
-        public bool CanClearMarkers { get; }
+        public bool CanSetMarkers { get; set; }
 
-        public bool HasAnyMarkers { get; }
+        public bool CanClearMarkers { get; set; }
 
-        public bool HasReadyRange { get; }
+        public bool HasAnyMarkers { get; set; }
 
-        public bool HasPendingMarkers { get; }
+        public bool HasReadyRange { get; set; }
 
-        public bool IsInvalidRange { get; }
+        public bool HasPendingMarkers { get; set; }
 
-        public string StatusText { get; }
+        public bool IsInvalidRange { get; set; }
 
-        public string ToolTip { get; }
+        public string StatusText { get; set; }
+
+        public string ToolTip { get; set; }
     }
 }

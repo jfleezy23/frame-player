@@ -2704,7 +2704,7 @@ namespace FramePlayer
             var clearItem = new MenuItem
             {
                 Header = "_Clear Recent Files",
-                IsEnabled = recentFilesState != null && recentFilesState.CanClear
+                IsEnabled = recentFilesState.CanClear
             };
             clearItem.Click += ClearRecentFilesMenuItem_Click;
             RecentFilesMenuItem.Items.Add(clearItem);

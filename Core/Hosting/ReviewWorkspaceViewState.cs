@@ -5,66 +5,46 @@ namespace FramePlayer.Core.Hosting
 {
     public sealed class ReviewWorkspaceViewState
     {
-        public static ReviewWorkspaceViewState Empty { get; } =
-            new ReviewWorkspaceViewState(
-                string.Empty,
-                string.Empty,
-                string.Empty,
-                string.Empty,
-                string.Empty,
-                string.Empty,
-                TransportCommandState.Disabled,
-                LoopCommandState.Empty,
-                ExportCommandState.Empty,
-                RecentFilesCommandState.Empty,
-                Array.Empty<PaneViewState>());
-
-        public ReviewWorkspaceViewState(
-            string primaryPaneId,
-            string activePaneId,
-            string focusedPaneId,
-            string currentFilePath,
-            string playbackMessage,
-            string mediaSummary,
-            TransportCommandState transport,
-            LoopCommandState loop,
-            ExportCommandState export,
-            RecentFilesCommandState recentFiles,
-            IReadOnlyList<PaneViewState> panes)
+        public ReviewWorkspaceViewState()
         {
-            PrimaryPaneId = primaryPaneId ?? string.Empty;
-            ActivePaneId = activePaneId ?? string.Empty;
-            FocusedPaneId = focusedPaneId ?? string.Empty;
-            CurrentFilePath = currentFilePath ?? string.Empty;
-            PlaybackMessage = playbackMessage ?? string.Empty;
-            MediaSummary = mediaSummary ?? string.Empty;
-            Transport = transport ?? TransportCommandState.Disabled;
-            Loop = loop ?? LoopCommandState.Empty;
-            Export = export ?? ExportCommandState.Empty;
-            RecentFiles = recentFiles ?? RecentFilesCommandState.Empty;
-            Panes = panes ?? Array.Empty<PaneViewState>();
+            PrimaryPaneId = string.Empty;
+            ActivePaneId = string.Empty;
+            FocusedPaneId = string.Empty;
+            CurrentFilePath = string.Empty;
+            PlaybackMessage = string.Empty;
+            MediaSummary = string.Empty;
+            Transport = TransportCommandState.Disabled;
+            Loop = LoopCommandState.Empty;
+            Export = ExportCommandState.Empty;
+            RecentFiles = RecentFilesCommandState.Empty;
+            Panes = Array.Empty<PaneViewState>();
         }
 
-        public string PrimaryPaneId { get; }
+        public static ReviewWorkspaceViewState Empty
+        {
+            get { return new ReviewWorkspaceViewState(); }
+        }
 
-        public string ActivePaneId { get; }
+        public string PrimaryPaneId { get; set; }
 
-        public string FocusedPaneId { get; }
+        public string ActivePaneId { get; set; }
 
-        public string CurrentFilePath { get; }
+        public string FocusedPaneId { get; set; }
 
-        public string PlaybackMessage { get; }
+        public string CurrentFilePath { get; set; }
 
-        public string MediaSummary { get; }
+        public string PlaybackMessage { get; set; }
 
-        public TransportCommandState Transport { get; }
+        public string MediaSummary { get; set; }
 
-        public LoopCommandState Loop { get; }
+        public TransportCommandState Transport { get; set; }
 
-        public ExportCommandState Export { get; }
+        public LoopCommandState Loop { get; set; }
 
-        public RecentFilesCommandState RecentFiles { get; }
+        public ExportCommandState Export { get; set; }
 
-        public IReadOnlyList<PaneViewState> Panes { get; }
+        public RecentFilesCommandState RecentFiles { get; set; }
+
+        public IReadOnlyList<PaneViewState> Panes { get; set; }
     }
 }

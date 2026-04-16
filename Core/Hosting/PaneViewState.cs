@@ -5,60 +5,40 @@ namespace FramePlayer.Core.Hosting
 {
     public sealed class PaneViewState
     {
-        public PaneViewState(
-            string paneId,
-            string displayLabel,
-            bool isPrimary,
-            bool isActive,
-            bool isFocused,
-            bool isMediaOpen,
-            string currentFilePath,
-            ReviewPlaybackState playbackState,
-            TimeSpan currentPosition,
-            TimeSpan duration,
-            long? frameIndex,
-            bool isFrameIndexAbsolute,
-            LoopCommandState loop)
+        public PaneViewState()
         {
-            PaneId = paneId ?? string.Empty;
-            DisplayLabel = displayLabel ?? string.Empty;
-            IsPrimary = isPrimary;
-            IsActive = isActive;
-            IsFocused = isFocused;
-            IsMediaOpen = isMediaOpen;
-            CurrentFilePath = currentFilePath ?? string.Empty;
-            PlaybackState = playbackState;
-            CurrentPosition = currentPosition < TimeSpan.Zero ? TimeSpan.Zero : currentPosition;
-            Duration = duration > TimeSpan.Zero ? duration : TimeSpan.Zero;
-            FrameIndex = frameIndex;
-            IsFrameIndexAbsolute = isFrameIndexAbsolute;
-            Loop = loop ?? LoopCommandState.Empty;
+            PaneId = string.Empty;
+            DisplayLabel = string.Empty;
+            CurrentFilePath = string.Empty;
+            CurrentPosition = TimeSpan.Zero;
+            Duration = TimeSpan.Zero;
+            Loop = LoopCommandState.Empty;
         }
 
-        public string PaneId { get; }
+        public string PaneId { get; set; }
 
-        public string DisplayLabel { get; }
+        public string DisplayLabel { get; set; }
 
-        public bool IsPrimary { get; }
+        public bool IsPrimary { get; set; }
 
-        public bool IsActive { get; }
+        public bool IsActive { get; set; }
 
-        public bool IsFocused { get; }
+        public bool IsFocused { get; set; }
 
-        public bool IsMediaOpen { get; }
+        public bool IsMediaOpen { get; set; }
 
-        public string CurrentFilePath { get; }
+        public string CurrentFilePath { get; set; }
 
-        public ReviewPlaybackState PlaybackState { get; }
+        public ReviewPlaybackState PlaybackState { get; set; }
 
-        public TimeSpan CurrentPosition { get; }
+        public TimeSpan CurrentPosition { get; set; }
 
-        public TimeSpan Duration { get; }
+        public TimeSpan Duration { get; set; }
 
-        public long? FrameIndex { get; }
+        public long? FrameIndex { get; set; }
 
-        public bool IsFrameIndexAbsolute { get; }
+        public bool IsFrameIndexAbsolute { get; set; }
 
-        public LoopCommandState Loop { get; }
+        public LoopCommandState Loop { get; set; }
     }
 }

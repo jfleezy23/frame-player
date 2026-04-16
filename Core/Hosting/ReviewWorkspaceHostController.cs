@@ -199,15 +199,17 @@ namespace FramePlayer.Core.Hosting
             var canControl = session.IsMediaOpen;
             var canTogglePlayPause = canControl && _capabilities.SupportsTimedPlayback;
 
-            var transportState = new TransportCommandState(
-                canControl,
-                canTogglePlayPause,
-                canControl,
-                canControl,
-                canControl,
-                canControl,
-                canControl,
-                session.PlaybackState == ReviewPlaybackState.Playing);
+            var transportState = new TransportCommandState
+            {
+                CanControlTransport = canControl,
+                CanTogglePlayPause = canTogglePlayPause,
+                CanStepBackward = canControl,
+                CanStepForward = canControl,
+                CanSeek = canControl,
+                CanCloseMedia = canControl,
+                CanInspectMedia = canControl,
+                IsPlaying = session.PlaybackState == ReviewPlaybackState.Playing
+            };
 
             var focusedLoopRange = focusedPane != null && focusedPane.LoopRange != null
                 ? focusedPane.LoopRange
@@ -220,38 +222,46 @@ namespace FramePlayer.Core.Hosting
                 .Select(BuildPaneState)
                 .ToArray();
 
-            return new ReviewWorkspaceViewState(
-                workspaceSnapshot.PrimaryPaneId,
-                workspaceSnapshot.ActivePaneId,
-                workspaceSnapshot.FocusedPaneId,
-                session.CurrentFilePath,
-                BuildPlaybackMessage(session),
-                BuildMediaSummary(session),
-                transportState,
-                loopState,
-                exportState,
-                recentFilesState,
-                panes);
+            return new ReviewWorkspaceViewState
+            {
+                PrimaryPaneId = workspaceSnapshot.PrimaryPaneId ?? string.Empty,
+                ActivePaneId = workspaceSnapshot.ActivePaneId ?? string.Empty,
+                FocusedPaneId = workspaceSnapshot.FocusedPaneId ?? string.Empty,
+                CurrentFilePath = session.CurrentFilePath ?? string.Empty,
+                PlaybackMessage = BuildPlaybackMessage(session),
+                MediaSummary = BuildMediaSummary(session),
+                Transport = transportState,
+                Loop = loopState,
+                Export = exportState,
+                RecentFiles = recentFilesState,
+                Panes = panes
+            };
         }
 
         private static PaneViewState BuildPaneState(ReviewPaneState pane)
         {
             var session = pane != null ? pane.Session ?? ReviewSessionSnapshot.Empty : ReviewSessionSnapshot.Empty;
             var loopState = BuildLoopState(pane != null ? pane.LoopRange : null, session.IsMediaOpen);
-            return new PaneViewState(
-                pane != null ? pane.PaneId : string.Empty,
-                pane != null ? pane.DisplayLabel : string.Empty,
-                pane != null && pane.IsPrimary,
-                pane != null && pane.IsActive,
-                pane != null && pane.IsFocused,
-                session.IsMediaOpen,
-                session.CurrentFilePath,
-                session.PlaybackState,
-                session.Position.PresentationTime,
-                session.MediaInfo.Duration,
-                session.Position.FrameIndex,
-                session.Position.IsFrameIndexAbsolute,
-                loopState);
+            return new PaneViewState
+            {
+                PaneId = pane != null ? pane.PaneId ?? string.Empty : string.Empty,
+                DisplayLabel = pane != null ? pane.DisplayLabel ?? string.Empty : string.Empty,
+                IsPrimary = pane != null && pane.IsPrimary,
+                IsActive = pane != null && pane.IsActive,
+                IsFocused = pane != null && pane.IsFocused,
+                IsMediaOpen = session.IsMediaOpen,
+                CurrentFilePath = session.CurrentFilePath ?? string.Empty,
+                PlaybackState = session.PlaybackState,
+                CurrentPosition = session.Position.PresentationTime < TimeSpan.Zero
+                    ? TimeSpan.Zero
+                    : session.Position.PresentationTime,
+                Duration = session.MediaInfo.Duration > TimeSpan.Zero
+                    ? session.MediaInfo.Duration
+                    : TimeSpan.Zero,
+                FrameIndex = session.Position.FrameIndex,
+                IsFrameIndexAbsolute = session.Position.IsFrameIndexAbsolute,
+                Loop = loopState
+            };
         }
 
         private ExportCommandState BuildExportState(LoopCommandState loopState)
@@ -309,60 +319,56 @@ namespace FramePlayer.Core.Hosting
         {
             if (loopRange == null || !loopRange.HasAnyMarkers)
             {
-                return new LoopCommandState(
-                    canControl,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    "Loop: off",
-                    "No loop markers are active.");
+                return new LoopCommandState
+                {
+                    CanSetMarkers = canControl
+                };
             }
 
             if (loopRange.IsInvalidRange)
             {
-                return new LoopCommandState(
-                    canControl,
-                    true,
-                    true,
-                    false,
-                    loopRange.HasPendingMarkers,
-                    true,
-                    "Loop: invalid",
-                    "Loop-out currently lands before loop-in.");
+                return new LoopCommandState
+                {
+                    CanSetMarkers = canControl,
+                    CanClearMarkers = true,
+                    HasAnyMarkers = true,
+                    HasPendingMarkers = loopRange.HasPendingMarkers,
+                    IsInvalidRange = true,
+                    StatusText = "Loop: invalid",
+                    ToolTip = "Loop-out currently lands before loop-in."
+                };
             }
 
             if (loopRange.HasPendingMarkers)
             {
-                return new LoopCommandState(
-                    canControl,
-                    true,
-                    true,
-                    false,
-                    true,
-                    false,
-                    string.Format(
+                return new LoopCommandState
+                {
+                    CanSetMarkers = canControl,
+                    CanClearMarkers = true,
+                    HasAnyMarkers = true,
+                    HasPendingMarkers = true,
+                    StatusText = string.Format(
                         CultureInfo.InvariantCulture,
                         "Loop: pending ({0} -> {1})",
                         FormatTime(loopRange.EffectiveStartTime),
                         FormatTime(loopRange.EffectiveEndTime)),
-                    "Loop markers are time-bounded now and will upgrade to exact frame identity when indexing completes.");
+                    ToolTip = "Loop markers are time-bounded now and will upgrade to exact frame identity when indexing completes."
+                };
             }
 
-            return new LoopCommandState(
-                canControl,
-                true,
-                true,
-                loopRange.HasLoopIn && loopRange.HasLoopOut,
-                false,
-                false,
-                string.Format(
+            return new LoopCommandState
+            {
+                CanSetMarkers = canControl,
+                CanClearMarkers = true,
+                HasAnyMarkers = true,
+                HasReadyRange = loopRange.HasLoopIn && loopRange.HasLoopOut,
+                StatusText = string.Format(
                     CultureInfo.InvariantCulture,
                     "Loop: {0} -> {1}",
                     FormatTime(loopRange.EffectiveStartTime),
                     FormatTime(loopRange.EffectiveEndTime)),
-                "Loop markers are ready for exact reviewed playback and export.");
+                ToolTip = "Loop markers are ready for exact reviewed playback and export."
+            };
         }
 
         private string BuildPlaybackMessage(ReviewSessionSnapshot session)
