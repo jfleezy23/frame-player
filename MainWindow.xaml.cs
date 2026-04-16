@@ -3108,6 +3108,31 @@ namespace FramePlayer
                 : format + " detected, but playback is unavailable";
         }
 
+        private static string GetLastCacheRefillText(FfmpegReviewEngine ffmpegEngine)
+        {
+            if (ffmpegEngine == null)
+            {
+                return UnavailableText;
+            }
+
+            var refillReasonText = string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason)
+                ? NoneText
+                : ffmpegEngine.LastCacheRefillReason;
+            var refillModeText = string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillMode)
+                ? "none"
+                : ffmpegEngine.LastCacheRefillMode;
+            var afterLandingText = ffmpegEngine.LastCacheRefillAfterLanding ? "yes" : "no";
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}, {1:0.0} ms, mode {2}, after landing {3}, forward {4}->{5}",
+                refillReasonText,
+                ffmpegEngine.LastCacheRefillMilliseconds,
+                refillModeText,
+                afterLandingText,
+                ffmpegEngine.LastCacheRefillStartingForwardCount,
+                ffmpegEngine.LastCacheRefillCompletedForwardCount);
+        }
+
         private long GetTotalFrameCount()
         {
             var ffmpegEngine = GetFocusedFfmpegEngine();
@@ -6512,17 +6537,7 @@ namespace FramePlayer
                             ffmpegEngine.MaxForwardCachedFrameCount,
                             ffmpegEngine.ApproximateCachedFrameBytes / 1048576d)
                         : UnavailableText),
-                    "Last cache refill: " + (ffmpegEngine != null
-                        ? string.Format(
-                            CultureInfo.InvariantCulture,
-                            "{0}, {1:0.0} ms, mode {2}, after landing {3}, forward {4}->{5}",
-                            string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason) ? NoneText : ffmpegEngine.LastCacheRefillReason,
-                            ffmpegEngine.LastCacheRefillMilliseconds,
-                            string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillMode) ? "none" : ffmpegEngine.LastCacheRefillMode,
-                            ffmpegEngine.LastCacheRefillAfterLanding ? "yes" : "no",
-                            ffmpegEngine.LastCacheRefillStartingForwardCount,
-                            ffmpegEngine.LastCacheRefillCompletedForwardCount)
-                        : UnavailableText),
+                    "Last cache refill: " + GetLastCacheRefillText(ffmpegEngine),
                     "Open timing: " + (ffmpegEngine != null
                         ? string.Format(
                             CultureInfo.InvariantCulture,
