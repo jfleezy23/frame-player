@@ -2,214 +2,398 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:hosting="using:FramePlayer.Core.Hosting"
         x:Class="FramePlayer.Host.Avalonia.MainWindow"
-        Width="1440"
+        Width="1380"
         Height="900"
-        MinWidth="1100"
+        MinWidth="1120"
         MinHeight="760"
-        Title="Frame Player (Avalonia Preview)">
-  <Grid RowDefinitions="Auto,*,Auto" Margin="16">
-    <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                  VerticalScrollBarVisibility="Disabled">
-      <StackPanel Orientation="Horizontal" Spacing="8">
-        <Button x:Name="OpenButton" Content="Open Focused" Click="OpenButton_Click" />
-        <Button x:Name="OpenCompareButton" Content="Open Compare" Click="OpenCompareButton_Click" />
-        <CheckBox x:Name="CompareModeCheckBox"
-                  VerticalAlignment="Center"
-                  Content="Two-Pane Compare"
-                  Click="CompareModeCheckBox_Click" />
-        <TextBlock x:Name="FocusedPaneTextBlock"
-                   VerticalAlignment="Center"
-                   Margin="8,0,4,0"
-                   FontWeight="SemiBold"
-                   Text="Focused Pane: Primary" />
-        <Button x:Name="CloseButton" Content="Close Focused" Click="CloseButton_Click" />
-        <Button x:Name="PlayPauseButton" Content="Play" Click="PlayPauseButton_Click" />
-        <Button x:Name="PreviousFrameButton" Content="Prev Frame" Click="PreviousFrameButton_Click" />
-        <Button x:Name="NextFrameButton" Content="Next Frame" Click="NextFrameButton_Click" />
-        <Button x:Name="SetLoopAButton" Content="Set A" Click="SetLoopAButton_Click" />
-        <Button x:Name="SetLoopBButton" Content="Set B" Click="SetLoopBButton_Click" />
-        <Button x:Name="ClearLoopButton" Content="Clear Loop" Click="ClearLoopButton_Click" />
-        <Button x:Name="LoopPlaybackButton" Content="Loop Playback: Off" Click="LoopPlaybackButton_Click" />
-        <Button x:Name="ExportClipButton" Content="Save Loop As Clip" Click="ExportClipButton_Click" />
-      </StackPanel>
-    </ScrollViewer>
+        Title="Frame Player (Avalonia Preview)"
+        Background="#171C22"
+        Foreground="#F3F4F6">
+  <Window.Resources>
+    <SolidColorBrush x:Key="PanelBrush" Color="#21252B" />
+    <SolidColorBrush x:Key="PanelBorderBrush" Color="#31363F" />
+    <SolidColorBrush x:Key="AccentBrush" Color="#5AA9E6" />
+    <SolidColorBrush x:Key="MutedBrush" Color="#B7BDC6" />
+    <SolidColorBrush x:Key="PaneChromeBrush" Color="#171C22" />
+    <SolidColorBrush x:Key="PaneChromeBorderBrush" Color="#28313B" />
+    <SolidColorBrush x:Key="PaneSurfaceBrush" Color="#0B1017" />
+    <SolidColorBrush x:Key="PaneSurfaceBorderBrush" Color="#263342" />
+    <SolidColorBrush x:Key="OverlayBrush" Color="#CC11161C" />
+  </Window.Resources>
 
-    <Grid Grid.Row="1" Margin="0,16,0,16" ColumnDefinitions="*,320" ColumnSpacing="16">
-      <Grid x:Name="PaneHostGrid" ColumnDefinitions="*,0" ColumnSpacing="16">
+  <Window.Styles>
+    <Style Selector="Button">
+      <Setter Property="Margin" Value="0,0,6,0" />
+      <Setter Property="Padding" Value="11,7" />
+      <Setter Property="Background" Value="#2A2F37" />
+      <Setter Property="Foreground" Value="#F3F4F6" />
+      <Setter Property="BorderBrush" Value="#3B424D" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="MinHeight" Value="30" />
+    </Style>
+    <Style Selector="Button:pointerover">
+      <Setter Property="Background" Value="#343B45" />
+      <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+    </Style>
+    <Style Selector="Button:pressed">
+      <Setter Property="Background" Value="#1F242A" />
+    </Style>
+    <Style Selector="Button:disabled">
+      <Setter Property="Opacity" Value="0.45" />
+    </Style>
+    <Style Selector="ListBox">
+      <Setter Property="Background" Value="#171C22" />
+      <Setter Property="BorderBrush" Value="#31363F" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Foreground" Value="#F3F4F6" />
+    </Style>
+  </Window.Styles>
+
+  <Grid RowDefinitions="Auto,*,Auto,Auto,Auto"
+        RowSpacing="10"
+        Margin="10">
+    <Border Background="{StaticResource PanelBrush}"
+            BorderBrush="{StaticResource PanelBorderBrush}"
+            BorderThickness="1"
+            CornerRadius="10"
+            Padding="12,10">
+      <Grid RowDefinitions="Auto,Auto"
+            RowSpacing="8"
+            ColumnDefinitions="*,Auto"
+            ColumnSpacing="16">
+        <StackPanel>
+          <TextBlock FontSize="20"
+                     FontWeight="SemiBold"
+                     Text="Frame Player" />
+          <TextBlock Foreground="{StaticResource MutedBrush}"
+                     FontSize="12"
+                     Text="Avalonia host aligned toward the classic review layout." />
+        </StackPanel>
+
+        <StackPanel Grid.Column="1"
+                    Orientation="Horizontal"
+                    Spacing="8"
+                    VerticalAlignment="Center">
+          <Button x:Name="OpenButton"
+                  Content="Open Video"
+                  Click="OpenButton_Click" />
+          <Button x:Name="OpenCompareButton"
+                  Content="Open Compare"
+                  Click="OpenCompareButton_Click" />
+          <Button x:Name="CloseButton"
+                  Content="Close Focused"
+                  Click="CloseButton_Click" />
+        </StackPanel>
+
+        <StackPanel Grid.Row="1"
+                    Grid.ColumnSpan="2"
+                    Orientation="Horizontal"
+                    Spacing="12"
+                    VerticalAlignment="Center">
+          <CheckBox x:Name="CompareModeCheckBox"
+                    VerticalAlignment="Center"
+                    Content="Two-Pane Compare"
+                    Click="CompareModeCheckBox_Click" />
+          <TextBlock Foreground="{StaticResource MutedBrush}"
+                     VerticalAlignment="Center"
+                     Text="Focused review commands stay bound to the selected pane." />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="1">
+      <Grid x:Name="PaneHostGrid"
+            ColumnDefinitions="*,0"
+            ColumnSpacing="10">
         <Border x:Name="PrimaryPaneBorder"
-                CornerRadius="12"
-                Background="#111822"
-                BorderBrush="#4A90E2"
+                Background="{StaticResource PanelBrush}"
+                BorderBrush="{StaticResource AccentBrush}"
                 BorderThickness="2"
-                Padding="12">
-          <Grid RowDefinitions="Auto,*,Auto" RowSpacing="12">
-            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-              <StackPanel>
-                <TextBlock x:Name="PrimaryPaneTitleTextBlock"
-                           FontSize="18"
-                           FontWeight="SemiBold"
-                           Text="Primary" />
-                <TextBlock x:Name="PrimaryPaneFileTextBlock"
-                           Foreground="#9BB0C7"
-                           Text=""
-                           TextWrapping="Wrap" />
-              </StackPanel>
-              <Button x:Name="UsePrimaryPaneButton"
-                      Grid.Column="1"
-                      Content="Use Pane"
-                      Tag="pane-primary"
-                      Click="UsePaneButton_Click" />
-              <Button x:Name="OpenPrimaryPaneButton"
-                      Grid.Column="2"
-                      Content="Open"
-                      Tag="pane-primary"
-                      Click="OpenPaneButton_Click" />
-            </Grid>
-
-            <Border Grid.Row="1"
-                    CornerRadius="10"
-                    Background="#0B1017"
-                    BorderBrush="#263342"
-                    BorderThickness="1">
-              <Grid>
-                <Image x:Name="PrimaryVideoImage" Stretch="Uniform" />
-                <TextBlock x:Name="PrimaryEmptySurfaceText"
-                           HorizontalAlignment="Center"
+                CornerRadius="10">
+          <Grid RowDefinitions="Auto,*,Auto">
+            <Border Background="{StaticResource PaneChromeBrush}"
+                    BorderBrush="{StaticResource PaneChromeBorderBrush}"
+                    BorderThickness="0,0,0,1"
+                    CornerRadius="10,10,0,0"
+                    Padding="12,9">
+              <Grid ColumnDefinitions="Auto,*,Auto,Auto"
+                    ColumnSpacing="10">
+                <Button x:Name="UsePrimaryPaneButton"
+                        Content="Use Pane"
+                        Tag="pane-primary"
+                        Click="UsePaneButton_Click" />
+                <StackPanel Grid.Column="1"
+                            Spacing="2">
+                  <TextBlock x:Name="PrimaryPaneTitleTextBlock"
+                             FontSize="16"
+                             FontWeight="SemiBold"
+                             Text="Primary" />
+                  <TextBlock x:Name="PrimaryPaneFileTextBlock"
+                             Foreground="{StaticResource MutedBrush}"
+                             FontSize="12"
+                             Text=""
+                             TextWrapping="Wrap" />
+                </StackPanel>
+                <TextBlock Grid.Column="2"
                            VerticalAlignment="Center"
-                           Foreground="#9BB0C7"
-                           FontSize="18"
-                           Text="Open a primary video to start review playback."
-                           TextWrapping="Wrap" />
+                           Foreground="{StaticResource MutedBrush}"
+                           FontSize="11"
+                           Text="Main review pane" />
+                <Button x:Name="OpenPrimaryPaneButton"
+                        Grid.Column="3"
+                        Margin="0"
+                        Content="Open"
+                        Tag="pane-primary"
+                        Click="OpenPaneButton_Click" />
               </Grid>
             </Border>
 
-            <StackPanel Grid.Row="2" Spacing="8">
-              <Slider x:Name="PrimaryPositionSlider"
-                      Minimum="0"
-                      Maximum="1"
-                      TickFrequency="0.04"
-                      Tag="pane-primary"
-                      PropertyChanged="PanePositionSlider_PropertyChanged" />
-              <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-                <TextBlock x:Name="PrimaryCurrentPositionTextBlock"
-                           VerticalAlignment="Center"
-                           Text="00:00:00.000" />
-                <TextBlock x:Name="PrimaryLoopStatusTextBlock"
-                           Grid.Column="1"
-                           HorizontalAlignment="Center"
-                           VerticalAlignment="Center"
-                           Text="Loop: off" />
-                <TextBlock x:Name="PrimaryDurationTextBlock"
-                           Grid.Column="2"
-                           VerticalAlignment="Center"
-                           Text="00:00:00.000" />
+            <Border Grid.Row="1"
+                    Margin="12"
+                    Background="{StaticResource PaneSurfaceBrush}"
+                    BorderBrush="{StaticResource PaneSurfaceBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="10">
+              <Grid>
+                <Image x:Name="PrimaryVideoImage"
+                       Stretch="Uniform" />
+                <Border x:Name="PrimaryEmptySurfaceOverlay"
+                        Background="{StaticResource OverlayBrush}"
+                        BorderBrush="#554A5564"
+                        BorderThickness="1"
+                        CornerRadius="14"
+                        Padding="24"
+                        MaxWidth="430"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center">
+                  <TextBlock x:Name="PrimaryEmptySurfaceText"
+                             HorizontalAlignment="Center"
+                             VerticalAlignment="Center"
+                             TextAlignment="Center"
+                             Foreground="#D5D8DE"
+                             FontSize="18"
+                             Text="Open a primary video to start review playback."
+                             TextWrapping="Wrap" />
+                </Border>
               </Grid>
-              <TextBlock x:Name="PrimaryFrameStatusTextBlock"
-                         Foreground="#7C8CA0"
-                         Text="Frame --" />
-            </StackPanel>
+            </Border>
+
+            <Border Grid.Row="2"
+                    Background="{StaticResource PaneChromeBrush}"
+                    BorderBrush="{StaticResource PaneChromeBorderBrush}"
+                    BorderThickness="0,1,0,0"
+                    CornerRadius="0,0,10,10"
+                    Padding="10,8">
+              <Grid RowDefinitions="Auto,Auto"
+                    RowSpacing="8">
+                <Grid ColumnDefinitions="Auto,*,Auto"
+                      ColumnSpacing="8">
+                  <TextBlock x:Name="PrimaryCurrentPositionTextBlock"
+                             VerticalAlignment="Center"
+                             Width="92"
+                             FontSize="12"
+                             TextAlignment="Left"
+                             Text="00:00:00.000" />
+                  <Slider x:Name="PrimaryPositionSlider"
+                          Grid.Column="1"
+                          Minimum="0"
+                          Maximum="1"
+                          TickFrequency="0.04"
+                          Tag="pane-primary"
+                          PropertyChanged="PanePositionSlider_PropertyChanged" />
+                  <TextBlock x:Name="PrimaryDurationTextBlock"
+                             Grid.Column="2"
+                             VerticalAlignment="Center"
+                             Width="92"
+                             FontSize="12"
+                             TextAlignment="Right"
+                             Text="00:00:00.000" />
+                </Grid>
+
+                <Grid Grid.Row="1"
+                      ColumnDefinitions="*,Auto"
+                      ColumnSpacing="10">
+                  <TextBlock x:Name="PrimaryFrameStatusTextBlock"
+                             VerticalAlignment="Center"
+                             Foreground="{StaticResource MutedBrush}"
+                             FontSize="11"
+                             Text="Frame --" />
+                  <TextBlock x:Name="PrimaryLoopStatusTextBlock"
+                             Grid.Column="1"
+                             VerticalAlignment="Center"
+                             Foreground="{StaticResource MutedBrush}"
+                             FontSize="11"
+                             Text="Loop: off"
+                             TextTrimming="CharacterEllipsis" />
+                </Grid>
+              </Grid>
+            </Border>
           </Grid>
         </Border>
 
         <Border x:Name="ComparePaneBorder"
                 Grid.Column="1"
                 IsVisible="False"
-                CornerRadius="12"
-                Background="#111822"
-                BorderBrush="#263342"
+                Background="{StaticResource PanelBrush}"
+                BorderBrush="{StaticResource PanelBorderBrush}"
                 BorderThickness="1"
-                Padding="12">
-          <Grid RowDefinitions="Auto,*,Auto" RowSpacing="12">
-            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-              <StackPanel>
-                <TextBlock x:Name="ComparePaneTitleTextBlock"
-                           FontSize="18"
-                           FontWeight="SemiBold"
-                           Text="Compare" />
-                <TextBlock x:Name="ComparePaneFileTextBlock"
-                           Foreground="#9BB0C7"
-                           Text=""
-                           TextWrapping="Wrap" />
-              </StackPanel>
-              <Button x:Name="UseComparePaneButton"
-                      Grid.Column="1"
-                      Content="Use Pane"
-                      Tag="pane-compare-a"
-                      Click="UsePaneButton_Click" />
-              <Button x:Name="OpenComparePaneButton"
-                      Grid.Column="2"
-                      Content="Open"
-                      Tag="pane-compare-a"
-                      Click="OpenPaneButton_Click" />
-            </Grid>
-
-            <Border Grid.Row="1"
-                    CornerRadius="10"
-                    Background="#0B1017"
-                    BorderBrush="#263342"
-                    BorderThickness="1">
-              <Grid>
-                <Image x:Name="CompareVideoImage" Stretch="Uniform" />
-                <TextBlock x:Name="CompareEmptySurfaceText"
-                           HorizontalAlignment="Center"
+                CornerRadius="10">
+          <Grid RowDefinitions="Auto,*,Auto">
+            <Border Background="{StaticResource PaneChromeBrush}"
+                    BorderBrush="{StaticResource PaneChromeBorderBrush}"
+                    BorderThickness="0,0,0,1"
+                    CornerRadius="10,10,0,0"
+                    Padding="12,9">
+              <Grid ColumnDefinitions="Auto,*,Auto,Auto"
+                    ColumnSpacing="10">
+                <Button x:Name="UseComparePaneButton"
+                        Content="Use Pane"
+                        Tag="pane-compare-a"
+                        Click="UsePaneButton_Click" />
+                <StackPanel Grid.Column="1"
+                            Spacing="2">
+                  <TextBlock x:Name="ComparePaneTitleTextBlock"
+                             FontSize="16"
+                             FontWeight="SemiBold"
+                             Text="Compare" />
+                  <TextBlock x:Name="ComparePaneFileTextBlock"
+                             Foreground="{StaticResource MutedBrush}"
+                             FontSize="12"
+                             Text=""
+                             TextWrapping="Wrap" />
+                </StackPanel>
+                <TextBlock Grid.Column="2"
                            VerticalAlignment="Center"
-                           Foreground="#9BB0C7"
-                           FontSize="18"
-                           Text="Open a compare video to review both panes together."
-                           TextWrapping="Wrap" />
+                           Foreground="{StaticResource MutedBrush}"
+                           FontSize="11"
+                           Text="Secondary compare pane" />
+                <Button x:Name="OpenComparePaneButton"
+                        Grid.Column="3"
+                        Margin="0"
+                        Content="Open"
+                        Tag="pane-compare-a"
+                        Click="OpenPaneButton_Click" />
               </Grid>
             </Border>
 
-            <StackPanel Grid.Row="2" Spacing="8">
-              <Slider x:Name="ComparePositionSlider"
-                      Minimum="0"
-                      Maximum="1"
-                      TickFrequency="0.04"
-                      Tag="pane-compare-a"
-                      PropertyChanged="PanePositionSlider_PropertyChanged" />
-              <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-                <TextBlock x:Name="CompareCurrentPositionTextBlock"
-                           VerticalAlignment="Center"
-                           Text="00:00:00.000" />
-                <TextBlock x:Name="CompareLoopStatusTextBlock"
-                           Grid.Column="1"
-                           HorizontalAlignment="Center"
-                           VerticalAlignment="Center"
-                           Text="Loop: off" />
-                <TextBlock x:Name="CompareDurationTextBlock"
-                           Grid.Column="2"
-                           VerticalAlignment="Center"
-                           Text="00:00:00.000" />
+            <Border Grid.Row="1"
+                    Margin="12"
+                    Background="{StaticResource PaneSurfaceBrush}"
+                    BorderBrush="{StaticResource PaneSurfaceBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="10">
+              <Grid>
+                <Image x:Name="CompareVideoImage"
+                       Stretch="Uniform" />
+                <Border x:Name="CompareEmptySurfaceOverlay"
+                        Background="{StaticResource OverlayBrush}"
+                        BorderBrush="#554A5564"
+                        BorderThickness="1"
+                        CornerRadius="14"
+                        Padding="24"
+                        MaxWidth="430"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center">
+                  <TextBlock x:Name="CompareEmptySurfaceText"
+                             HorizontalAlignment="Center"
+                             VerticalAlignment="Center"
+                             TextAlignment="Center"
+                             Foreground="#D5D8DE"
+                             FontSize="18"
+                             Text="Open a compare video to review both panes together."
+                             TextWrapping="Wrap" />
+                </Border>
               </Grid>
-              <TextBlock x:Name="CompareFrameStatusTextBlock"
-                         Foreground="#7C8CA0"
-                         Text="Frame --" />
-            </StackPanel>
+            </Border>
+
+            <Border Grid.Row="2"
+                    Background="{StaticResource PaneChromeBrush}"
+                    BorderBrush="{StaticResource PaneChromeBorderBrush}"
+                    BorderThickness="0,1,0,0"
+                    CornerRadius="0,0,10,10"
+                    Padding="10,8">
+              <Grid RowDefinitions="Auto,Auto"
+                    RowSpacing="8">
+                <Grid ColumnDefinitions="Auto,*,Auto"
+                      ColumnSpacing="8">
+                  <TextBlock x:Name="CompareCurrentPositionTextBlock"
+                             VerticalAlignment="Center"
+                             Width="92"
+                             FontSize="12"
+                             TextAlignment="Left"
+                             Text="00:00:00.000" />
+                  <Slider x:Name="ComparePositionSlider"
+                          Grid.Column="1"
+                          Minimum="0"
+                          Maximum="1"
+                          TickFrequency="0.04"
+                          Tag="pane-compare-a"
+                          PropertyChanged="PanePositionSlider_PropertyChanged" />
+                  <TextBlock x:Name="CompareDurationTextBlock"
+                             Grid.Column="2"
+                             VerticalAlignment="Center"
+                             Width="92"
+                             FontSize="12"
+                             TextAlignment="Right"
+                             Text="00:00:00.000" />
+                </Grid>
+
+                <Grid Grid.Row="1"
+                      ColumnDefinitions="*,Auto"
+                      ColumnSpacing="10">
+                  <TextBlock x:Name="CompareFrameStatusTextBlock"
+                             VerticalAlignment="Center"
+                             Foreground="{StaticResource MutedBrush}"
+                             FontSize="11"
+                             Text="Frame --" />
+                  <TextBlock x:Name="CompareLoopStatusTextBlock"
+                             Grid.Column="1"
+                             VerticalAlignment="Center"
+                             Foreground="{StaticResource MutedBrush}"
+                             FontSize="11"
+                             Text="Loop: off"
+                             TextTrimming="CharacterEllipsis" />
+                </Grid>
+              </Grid>
+            </Border>
           </Grid>
         </Border>
       </Grid>
+    </Grid>
 
-      <Border Grid.Column="1"
-              CornerRadius="12"
-              Background="#111822"
-              BorderBrush="#263342"
-              BorderThickness="1"
-              Padding="16">
-        <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="12">
-          <TextBlock FontSize="18" FontWeight="SemiBold" Text="Recent Files" />
-          <TextBlock x:Name="RecentFilesStatusTextBlock"
-                     Grid.Row="1"
-                     Foreground="#9BB0C7"
-                     Text="No recent files." />
+    <Border x:Name="RecentFilesPanel"
+            Grid.Row="2"
+            Background="{StaticResource PanelBrush}"
+            BorderBrush="{StaticResource PanelBorderBrush}"
+            BorderThickness="1"
+            CornerRadius="10"
+            Padding="12,10"
+            IsVisible="False">
+      <Grid RowDefinitions="Auto,Auto,Auto"
+            RowSpacing="10">
+        <TextBlock FontSize="16"
+                   FontWeight="SemiBold"
+                   Text="Recent Files" />
+        <TextBlock x:Name="RecentFilesStatusTextBlock"
+                   Grid.Row="1"
+                   Foreground="{StaticResource MutedBrush}"
+                   FontSize="12"
+                   Text="No recent files." />
+        <Grid Grid.Row="2"
+              ColumnDefinitions="*,Auto"
+              ColumnSpacing="10">
           <ListBox x:Name="RecentFilesListBox"
-                   Grid.Row="2"
-                   MinHeight="180"
+                   MinHeight="96"
+                   MaxHeight="132"
                    SelectionChanged="RecentFilesListBox_SelectionChanged">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="hosting:RecentFileViewState">
-                <StackPanel Margin="0,4,0,4" Spacing="2">
-                  <TextBlock FontWeight="SemiBold" Text="{Binding DisplayLabel}" />
-                  <TextBlock Foreground="#9BB0C7"
+                <StackPanel Margin="0,4,0,4"
+                            Spacing="2">
+                  <TextBlock FontWeight="SemiBold"
+                             Text="{Binding DisplayLabel}" />
+                  <TextBlock Foreground="{StaticResource MutedBrush}"
                              FontSize="12"
                              Text="{Binding ToolTip}"
                              TextWrapping="Wrap" />
@@ -217,22 +401,126 @@
               </DataTemplate>
             </ListBox.ItemTemplate>
           </ListBox>
-          <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8">
-            <Button x:Name="OpenRecentButton" Content="Open Selected" Click="OpenRecentButton_Click" />
-            <Button x:Name="ClearRecentButton" Content="Clear" Click="ClearRecentButton_Click" />
+
+          <StackPanel Grid.Column="1"
+                      Spacing="8"
+                      VerticalAlignment="Top">
+            <Button x:Name="OpenRecentButton"
+                    Margin="0"
+                    Content="Open Selected"
+                    Click="OpenRecentButton_Click" />
+            <Button x:Name="ClearRecentButton"
+                    Margin="0"
+                    Content="Clear"
+                    Click="ClearRecentButton_Click" />
           </StackPanel>
         </Grid>
-      </Border>
-    </Grid>
+      </Grid>
+    </Border>
 
-    <StackPanel Grid.Row="2" Spacing="4">
-      <TextBlock x:Name="PlaybackStatusTextBlock" FontWeight="SemiBold" Text="Ready for review playback." />
-      <TextBlock x:Name="ActionStatusTextBlock"
-                 Foreground="#9BB0C7"
-                 Text=""
-                 TextWrapping="Wrap" />
-      <TextBlock x:Name="MediaSummaryTextBlock" Foreground="#7C8CA0" Text="" />
-      <TextBlock x:Name="FrameStatusTextBlock" Foreground="#7C8CA0" Text="Frame --" />
-    </StackPanel>
+    <Border Grid.Row="3"
+            Background="{StaticResource PanelBrush}"
+            BorderBrush="{StaticResource PanelBorderBrush}"
+            BorderThickness="1"
+            CornerRadius="10"
+            Padding="12,10">
+      <Grid RowDefinitions="Auto,Auto"
+            RowSpacing="10"
+            ColumnDefinitions="Auto,*,Auto"
+            ColumnSpacing="16">
+        <StackPanel Spacing="2">
+          <TextBlock Foreground="{StaticResource MutedBrush}"
+                     FontSize="11"
+                     Text="Focused Pane" />
+          <TextBlock x:Name="FocusedPaneTextBlock"
+                     FontSize="14"
+                     FontWeight="SemiBold"
+                     Text="Focused Pane: Primary" />
+        </StackPanel>
+
+        <StackPanel Grid.Column="1"
+                    Orientation="Horizontal"
+                    Spacing="8"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center">
+          <Button x:Name="PreviousFrameButton"
+                  Width="92"
+                  Content="Prev Frame"
+                  Click="PreviousFrameButton_Click" />
+          <Button x:Name="PlayPauseButton"
+                  Width="92"
+                  Content="Play"
+                  Click="PlayPauseButton_Click" />
+          <Button x:Name="NextFrameButton"
+                  Margin="0"
+                  Width="92"
+                  Content="Next Frame"
+                  Click="NextFrameButton_Click" />
+        </StackPanel>
+
+        <StackPanel Grid.Column="2"
+                    Orientation="Horizontal"
+                    Spacing="8"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center">
+          <Button x:Name="SetLoopAButton"
+                  Width="58"
+                  Content="Set A"
+                  Click="SetLoopAButton_Click" />
+          <Button x:Name="SetLoopBButton"
+                  Width="58"
+                  Content="Set B"
+                  Click="SetLoopBButton_Click" />
+          <Button x:Name="ClearLoopButton"
+                  Width="88"
+                  Content="Clear Loop"
+                  Click="ClearLoopButton_Click" />
+          <Button x:Name="LoopPlaybackButton"
+                  Width="140"
+                  Content="Loop Playback: Off"
+                  Click="LoopPlaybackButton_Click" />
+          <Button x:Name="ExportClipButton"
+                  Margin="0"
+                  Width="148"
+                  Content="Save Loop As Clip"
+                  Click="ExportClipButton_Click" />
+        </StackPanel>
+
+        <TextBlock x:Name="ActionStatusTextBlock"
+                   Grid.Row="1"
+                   Grid.ColumnSpan="3"
+                   Foreground="{StaticResource MutedBrush}"
+                   FontSize="12"
+                   Text=""
+                   TextWrapping="Wrap" />
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="4"
+            Background="{StaticResource PanelBrush}"
+            BorderBrush="{StaticResource PanelBorderBrush}"
+            BorderThickness="1"
+            CornerRadius="10"
+            Padding="10,8">
+      <Grid ColumnDefinitions="1.2*,1.4*,Auto"
+            ColumnSpacing="14">
+        <TextBlock x:Name="PlaybackStatusTextBlock"
+                   VerticalAlignment="Center"
+                   FontWeight="SemiBold"
+                   TextTrimming="CharacterEllipsis"
+                   Text="Ready for review playback." />
+        <TextBlock x:Name="MediaSummaryTextBlock"
+                   Grid.Column="1"
+                   VerticalAlignment="Center"
+                   Foreground="{StaticResource MutedBrush}"
+                   TextTrimming="CharacterEllipsis"
+                   Text="" />
+        <TextBlock x:Name="FrameStatusTextBlock"
+                   Grid.Column="2"
+                   VerticalAlignment="Center"
+                   Foreground="{StaticResource MutedBrush}"
+                   Text="Frame --" />
+      </Grid>
+    </Border>
   </Grid>
 </Window>

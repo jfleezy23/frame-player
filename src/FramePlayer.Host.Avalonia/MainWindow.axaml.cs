@@ -629,6 +629,7 @@ namespace FramePlayer.Host.Avalonia
             RecentFilesListBox.ItemsSource = recentEntries;
             RecentFilesStatusTextBlock.Text = recentFiles != null ? recentFiles.StatusText : "No recent files.";
             RecentFilesStatusTextBlock.IsVisible = recentEntries == null || recentEntries.Count == 0;
+            RecentFilesPanel.IsVisible = recentEntries != null && recentEntries.Count > 0;
 
             if (!string.IsNullOrWhiteSpace(selectedPath) && recentEntries != null)
             {
@@ -1083,6 +1084,7 @@ namespace FramePlayer.Host.Avalonia
         private void RefreshPaneUi(ReviewWorkspaceViewState viewState, string paneId)
         {
             Border paneBorder;
+            Border emptySurfaceOverlay;
             TextBlock paneTitleTextBlock;
             TextBlock paneFileTextBlock;
             TextBlock emptySurfaceTextBlock;
@@ -1097,6 +1099,7 @@ namespace FramePlayer.Host.Avalonia
             if (!TryGetPaneControls(
                 paneId,
                 out paneBorder,
+                out emptySurfaceOverlay,
                 out paneTitleTextBlock,
                 out paneFileTextBlock,
                 out emptySurfaceTextBlock,
@@ -1171,7 +1174,7 @@ namespace FramePlayer.Host.Avalonia
                     : "Open a primary video to start review playback.";
             }
 
-            emptySurfaceTextBlock.IsVisible = !paneHasLoadedMedia && videoImage.Source == null;
+            emptySurfaceOverlay.IsVisible = !paneHasLoadedMedia && videoImage.Source == null;
         }
 
         private static bool PaneHasLoadedMedia(PaneViewState paneState)
@@ -1211,6 +1214,7 @@ namespace FramePlayer.Host.Avalonia
         private bool TryGetPaneControls(
             string paneId,
             out Border paneBorder,
+            out Border emptySurfaceOverlay,
             out TextBlock paneTitleTextBlock,
             out TextBlock paneFileTextBlock,
             out TextBlock emptySurfaceTextBlock,
@@ -1226,6 +1230,7 @@ namespace FramePlayer.Host.Avalonia
             if (string.Equals(paneId, ComparePaneId, StringComparison.Ordinal))
             {
                 paneBorder = ComparePaneBorder;
+                emptySurfaceOverlay = CompareEmptySurfaceOverlay;
                 paneTitleTextBlock = ComparePaneTitleTextBlock;
                 paneFileTextBlock = ComparePaneFileTextBlock;
                 emptySurfaceTextBlock = CompareEmptySurfaceText;
@@ -1241,6 +1246,7 @@ namespace FramePlayer.Host.Avalonia
             }
 
             paneBorder = PrimaryPaneBorder;
+            emptySurfaceOverlay = PrimaryEmptySurfaceOverlay;
             paneTitleTextBlock = PrimaryPaneTitleTextBlock;
             paneFileTextBlock = PrimaryPaneFileTextBlock;
             emptySurfaceTextBlock = PrimaryEmptySurfaceText;
