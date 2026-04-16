@@ -310,7 +310,7 @@ namespace FramePlayer.Host.Avalonia
                 false,
                 session,
                 loopRange,
-                _videoReviewEngine as FfmpegReviewEngine);
+                new IndexedFrameTimeResolverAdapter(_videoReviewEngine as FfmpegReviewEngine));
         }
 
         private LoopPlaybackPaneRangeSnapshot ResolveFocusedLoopRange()

@@ -5,7 +5,9 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using FramePlayer.Core.Abstractions;
 using FramePlayer.Core.Models;
+using FramePlayer.Engines.FFmpeg;
 
 namespace FramePlayer.Services
 {
@@ -393,6 +395,27 @@ namespace FramePlayer.Services
             public string StandardOutput { get; }
 
             public string StandardError { get; }
+        }
+    }
+
+    public sealed class IndexedFrameTimeResolverAdapter : IIndexedFrameTimeResolver
+    {
+        private readonly FfmpegReviewEngine _engine;
+
+        public IndexedFrameTimeResolverAdapter(FfmpegReviewEngine engine)
+        {
+            _engine = engine;
+        }
+
+        public bool TryGetIndexedPresentationTime(long absoluteFrameIndex, out TimeSpan presentationTime)
+        {
+            if (_engine != null)
+            {
+                return _engine.TryGetIndexedPresentationTime(absoluteFrameIndex, out presentationTime);
+            }
+
+            presentationTime = TimeSpan.Zero;
+            return false;
         }
     }
 }

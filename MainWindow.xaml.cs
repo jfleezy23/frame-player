@@ -4936,7 +4936,9 @@ namespace FramePlayer
                 exportTarget.IsPaneLocal,
                 sessionSnapshot,
                 exportTarget.LoopRange,
-                exportTarget.Engine);
+                exportTarget.Engine != null
+                    ? new IndexedFrameTimeResolverAdapter(exportTarget.Engine)
+                    : null);
         }
 
         private bool CanExportLoopClip(ReviewWorkspaceSnapshot workspaceSnapshot, string paneId, out string toolTip)

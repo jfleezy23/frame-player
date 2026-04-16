@@ -14,7 +14,7 @@ using ServiceRuntimeEnvironment = FramePlayer.Services.RuntimeEnvironment;
 
 namespace FramePlayer.Engines.FFmpeg
 {
-    public unsafe sealed class FfmpegReviewEngine : IVideoReviewEngine, IIndexedFrameTimeResolver
+    public unsafe sealed class FfmpegReviewEngine : IVideoReviewEngine
     {
         private const int DefaultCachedPreviousFrameCount = 10;
         private const int DefaultCachedForwardFrameCount = 1;
