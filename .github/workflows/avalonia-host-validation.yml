@@ -18,8 +18,8 @@ jobs:
         include:
           - os: windows-latest
             rid: win-x64
-          - os: macos-13
-            rid: osx-x64
+          - os: macos-latest
+            rid: osx-arm64
 
     runs-on: ${{ matrix.os }}
 
