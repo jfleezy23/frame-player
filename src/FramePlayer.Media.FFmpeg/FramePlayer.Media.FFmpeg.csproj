@@ -21,6 +21,7 @@
     <Compile Include="..\..\Engines\FFmpeg\*.cs" Link="Engines\FFmpeg\%(Filename)%(Extension)" />
     <Compile Include="..\..\Services\AppPreferences.cs" Link="Services\AppPreferences.cs" />
     <Compile Include="..\..\Services\AppPreferencesService.cs" Link="Services\AppPreferencesService.cs" />
+    <Compile Include="..\..\Services\BundledManifestSupport.cs" Link="Services\BundledManifestSupport.cs" />
     <Compile Include="..\..\Services\ClipExportService.cs" Link="Services\ClipExportService.cs" />
     <Compile Include="..\..\Services\DecodedFrameBudgetCoordinator.cs" Link="Services\DecodedFrameBudgetCoordinator.cs" />
     <Compile Include="..\..\Services\ExportToolsManifestService.cs" Link="Services\ExportToolsManifestService.cs" />

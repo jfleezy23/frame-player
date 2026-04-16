@@ -146,6 +146,7 @@
     <Compile Include="Services\AppPreferences.cs" />
     <Compile Include="Services\AppPreferencesService.cs" />
     <Compile Include="Services\BuildVariantInfo.cs" />
+    <Compile Include="Services\BundledManifestSupport.cs" />
     <Compile Include="Services\ExportToolsManifestService.cs" />
     <Compile Include="Services\DecodedFrameBudgetCoordinator.cs" />
     <Compile Include="Services\DiagnosticLogService.cs" />
