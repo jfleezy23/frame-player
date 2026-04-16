@@ -10,18 +10,29 @@ from pathlib import Path
 SUPPORTED_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".wmv"}
 
 
+def is_supported_media_file(path):
+    return path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
+
+
+def collect_candidates(path):
+    if path.is_dir():
+        return [
+            candidate
+            for candidate in sorted(path.rglob("*"))
+            if is_supported_media_file(candidate)
+        ]
+
+    if is_supported_media_file(path):
+        return [path]
+
+    return []
+
+
 def collect_files(paths):
     collected = []
     for raw_path in paths:
         path = Path(raw_path)
-        if path.is_dir():
-            for candidate in sorted(path.rglob("*")):
-                if candidate.is_file() and candidate.suffix.lower() in SUPPORTED_EXTENSIONS:
-                    collected.append(candidate)
-            continue
-
-        if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS:
-            collected.append(path)
+        collected.extend(collect_candidates(path))
 
     unique = []
     seen = set()
