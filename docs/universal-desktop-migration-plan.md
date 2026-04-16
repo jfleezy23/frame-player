@@ -91,10 +91,10 @@
    - finish A/B loop, loop playback, and clip export parity in Avalonia
    - add macOS CI/package validation
    - declare the first universal desktop release candidate
-6. `compare-and-linux-followup`
+6. `avalonia-compare-parity`
    - add two-pane compare to Avalonia
-   - add Linux packaging/validation
-   - retire WPF only after parity is accepted
+   - drive toward Windows parity with the new UI before widening platform scope again
+   - keep Linux deferred until the Windows-first Avalonia parity pass is accepted
 
 ## Test Plan
 
@@ -126,7 +126,7 @@
   - runtime manifest resolves
   - FFmpeg native assets load
   - audio output initializes
-- Linux stays off the required release path until the Windows + macOS milestone is green.
+- Linux stays off the required release path until the Windows-first Avalonia parity pass is accepted and we explicitly choose to widen scope again.
 
 ## Assumptions And Defaults
 
@@ -134,7 +134,7 @@
 - Dual-host migration is mandatory; WPF remains the reference host until Avalonia milestone 1 is accepted.
 - The solution moves to **.NET 8 LTS** before serious Avalonia work starts.
 - First Avalonia release is **single-pane only**; compare mode is phase 2.
-- First universal release targets **Windows x64** and **macOS**; Linux follows after packaging/audio/rendering stabilize.
+- First universal release targets **Windows x64** and **macOS**; Linux remains explicitly deferred until after Windows-first Avalonia parity is accepted.
 - Cross-platform rendering starts with a **CPU-backed bitmap upload path**; GPU acceleration is a later optimization pass.
 - SDL is the default cross-platform audio backend choice for the new host path; WinMM remains only as a temporary Windows implementation behind the new audio abstraction.
 - The current “middle/translation layer” is treated as real seed infrastructure, but it is **not yet enough** on its own; the missing piece is a shell-neutral host controller that removes most of `MainWindow.xaml.cs` from the decision path.

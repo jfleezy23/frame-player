@@ -1,5 +1,15 @@
 # Frame Player Coworker Beta Note
 
+This note currently describes the richer WPF compare shell. The in-progress Avalonia compare host is narrower:
+
+- turn on `Two-Pane Compare`
+- open a primary clip and a compare clip
+- click `Use Pane` on either side to move focused transport, loop, and export commands to that pane
+- use the top transport controls against the focused pane
+- use pane-local timelines and pane-local A/B loop export while compare mode is enabled
+
+Avalonia does not yet expose the older WPF compare alignment actions or a shared both-panes transport toggle. Do not use the WPF compare checklist below as an Avalonia parity checklist yet.
+
 ## What this build does well
 
 - Single-pane review remains the primary workflow.

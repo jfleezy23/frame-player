@@ -65,6 +65,7 @@ Current preview surface:
 - set loop A/B
 - loop playback restart with full-media fallback and pause/seek/play restarts
 - save current loop as clip with pause-before-export, suggested clip names, and actionable status messages
+- Windows-first two-pane compare bring-up is in progress on the next stacked branch, with Linux explicitly deferred
 - startup open-file handling
 - recent files panel backed by a cross-platform file catalog
 - display decoded frames via `AvaloniaFrameBufferPresenter`
@@ -102,4 +103,4 @@ Validated locally on April 15, 2026:
 - harden the Avalonia preview host with real parity coverage instead of manual preview-host wiring only
 - add RID-aware publish/test packaging for the new hosts
 - stage actual macOS FFmpeg runtime/tool bundles under the new RID manifest layout
-- move compare-mode behavior into the shared host-controller/application layer after single-pane parity is proven
+- finish the Avalonia two-pane compare pass and then move more compare-mode behavior into the shared host-controller/application layer

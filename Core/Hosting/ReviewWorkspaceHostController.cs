@@ -73,6 +73,19 @@ namespace FramePlayer.Core.Hosting
             return OpenInternalAsync(filePath, cancellationToken);
         }
 
+        public Task OpenInPaneAsync(
+            string paneId,
+            string filePath,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            if (!_workspaceCoordinator.TrySetActiveAndFocusedPane(paneId))
+            {
+                throw new InvalidOperationException("The requested workspace pane is not available.");
+            }
+
+            return OpenInternalAsync(filePath, cancellationToken);
+        }
+
         public Task CloseAsync()
         {
             return _workspaceCoordinator.CloseAsync();
@@ -144,6 +157,19 @@ namespace FramePlayer.Core.Hosting
         {
             _workspaceCoordinator.ClearPaneLoopRange(paneId);
             Refresh();
+        }
+
+        public bool TrySelectPane(
+            string paneId,
+            WorkspacePaneSelectionMode selectionMode = WorkspacePaneSelectionMode.ActiveAndFocused)
+        {
+            var selected = _workspaceCoordinator.TrySelectPane(paneId, selectionMode);
+            if (selected)
+            {
+                Refresh();
+            }
+
+            return selected;
         }
 
         public void SetStartupOpenFilePath(string filePath)

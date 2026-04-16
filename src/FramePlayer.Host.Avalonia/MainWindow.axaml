@@ -2,40 +2,192 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:hosting="using:FramePlayer.Core.Hosting"
         x:Class="FramePlayer.Host.Avalonia.MainWindow"
-        Width="1280"
-        Height="860"
-        MinWidth="960"
-        MinHeight="720"
+        Width="1440"
+        Height="900"
+        MinWidth="1100"
+        MinHeight="760"
         Title="Frame Player (Avalonia Preview)">
-  <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="16">
-    <StackPanel Orientation="Horizontal" Spacing="8">
-      <Button x:Name="OpenButton" Content="Open" Click="OpenButton_Click" />
-      <Button x:Name="CloseButton" Content="Close" Click="CloseButton_Click" />
-      <Button x:Name="PlayPauseButton" Content="Play" Click="PlayPauseButton_Click" />
-      <Button x:Name="PreviousFrameButton" Content="Prev Frame" Click="PreviousFrameButton_Click" />
-      <Button x:Name="NextFrameButton" Content="Next Frame" Click="NextFrameButton_Click" />
-      <Button x:Name="SetLoopAButton" Content="Set A" Click="SetLoopAButton_Click" />
-      <Button x:Name="SetLoopBButton" Content="Set B" Click="SetLoopBButton_Click" />
-      <Button x:Name="ClearLoopButton" Content="Clear Loop" Click="ClearLoopButton_Click" />
-      <Button x:Name="LoopPlaybackButton" Content="Loop Playback: Off" Click="LoopPlaybackButton_Click" />
-      <Button x:Name="ExportClipButton" Content="Save Loop As Clip" Click="ExportClipButton_Click" />
-    </StackPanel>
+  <Grid RowDefinitions="Auto,*,Auto" Margin="16">
+    <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                  VerticalScrollBarVisibility="Disabled">
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <Button x:Name="OpenButton" Content="Open Focused" Click="OpenButton_Click" />
+        <Button x:Name="OpenCompareButton" Content="Open Compare" Click="OpenCompareButton_Click" />
+        <CheckBox x:Name="CompareModeCheckBox"
+                  VerticalAlignment="Center"
+                  Content="Two-Pane Compare"
+                  Click="CompareModeCheckBox_Click" />
+        <TextBlock x:Name="FocusedPaneTextBlock"
+                   VerticalAlignment="Center"
+                   Margin="8,0,4,0"
+                   FontWeight="SemiBold"
+                   Text="Focused Pane: Primary" />
+        <Button x:Name="CloseButton" Content="Close Focused" Click="CloseButton_Click" />
+        <Button x:Name="PlayPauseButton" Content="Play" Click="PlayPauseButton_Click" />
+        <Button x:Name="PreviousFrameButton" Content="Prev Frame" Click="PreviousFrameButton_Click" />
+        <Button x:Name="NextFrameButton" Content="Next Frame" Click="NextFrameButton_Click" />
+        <Button x:Name="SetLoopAButton" Content="Set A" Click="SetLoopAButton_Click" />
+        <Button x:Name="SetLoopBButton" Content="Set B" Click="SetLoopBButton_Click" />
+        <Button x:Name="ClearLoopButton" Content="Clear Loop" Click="ClearLoopButton_Click" />
+        <Button x:Name="LoopPlaybackButton" Content="Loop Playback: Off" Click="LoopPlaybackButton_Click" />
+        <Button x:Name="ExportClipButton" Content="Save Loop As Clip" Click="ExportClipButton_Click" />
+      </StackPanel>
+    </ScrollViewer>
 
     <Grid Grid.Row="1" Margin="0,16,0,16" ColumnDefinitions="*,320" ColumnSpacing="16">
-      <Border CornerRadius="12"
-              Background="#111822"
-              BorderBrush="#263342"
-              BorderThickness="1">
-        <Grid>
-          <Image x:Name="VideoImage" Stretch="Uniform" />
-          <TextBlock x:Name="EmptySurfaceText"
-                     HorizontalAlignment="Center"
-                     VerticalAlignment="Center"
-                     Foreground="#9BB0C7"
-                     FontSize="20"
-                     Text="Open a supported file to start the Avalonia preview host." />
-        </Grid>
-      </Border>
+      <Grid x:Name="PaneHostGrid" ColumnDefinitions="*,0" ColumnSpacing="16">
+        <Border x:Name="PrimaryPaneBorder"
+                CornerRadius="12"
+                Background="#111822"
+                BorderBrush="#4A90E2"
+                BorderThickness="2"
+                Padding="12">
+          <Grid RowDefinitions="Auto,*,Auto" RowSpacing="12">
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+              <StackPanel>
+                <TextBlock x:Name="PrimaryPaneTitleTextBlock"
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           Text="Primary" />
+                <TextBlock x:Name="PrimaryPaneFileTextBlock"
+                           Foreground="#9BB0C7"
+                           Text=""
+                           TextWrapping="Wrap" />
+              </StackPanel>
+              <Button x:Name="UsePrimaryPaneButton"
+                      Grid.Column="1"
+                      Content="Use Pane"
+                      Tag="pane-primary"
+                      Click="UsePaneButton_Click" />
+              <Button x:Name="OpenPrimaryPaneButton"
+                      Grid.Column="2"
+                      Content="Open"
+                      Tag="pane-primary"
+                      Click="OpenPaneButton_Click" />
+            </Grid>
+
+            <Border Grid.Row="1"
+                    CornerRadius="10"
+                    Background="#0B1017"
+                    BorderBrush="#263342"
+                    BorderThickness="1">
+              <Grid>
+                <Image x:Name="PrimaryVideoImage" Stretch="Uniform" />
+                <TextBlock x:Name="PrimaryEmptySurfaceText"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Foreground="#9BB0C7"
+                           FontSize="18"
+                           Text="Open a primary video to start review playback."
+                           TextWrapping="Wrap" />
+              </Grid>
+            </Border>
+
+            <StackPanel Grid.Row="2" Spacing="8">
+              <Slider x:Name="PrimaryPositionSlider"
+                      Minimum="0"
+                      Maximum="1"
+                      TickFrequency="0.04"
+                      Tag="pane-primary"
+                      PropertyChanged="PanePositionSlider_PropertyChanged" />
+              <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                <TextBlock x:Name="PrimaryCurrentPositionTextBlock"
+                           VerticalAlignment="Center"
+                           Text="00:00:00.000" />
+                <TextBlock x:Name="PrimaryLoopStatusTextBlock"
+                           Grid.Column="1"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Text="Loop: off" />
+                <TextBlock x:Name="PrimaryDurationTextBlock"
+                           Grid.Column="2"
+                           VerticalAlignment="Center"
+                           Text="00:00:00.000" />
+              </Grid>
+              <TextBlock x:Name="PrimaryFrameStatusTextBlock"
+                         Foreground="#7C8CA0"
+                         Text="Frame --" />
+            </StackPanel>
+          </Grid>
+        </Border>
+
+        <Border x:Name="ComparePaneBorder"
+                Grid.Column="1"
+                IsVisible="False"
+                CornerRadius="12"
+                Background="#111822"
+                BorderBrush="#263342"
+                BorderThickness="1"
+                Padding="12">
+          <Grid RowDefinitions="Auto,*,Auto" RowSpacing="12">
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+              <StackPanel>
+                <TextBlock x:Name="ComparePaneTitleTextBlock"
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           Text="Compare" />
+                <TextBlock x:Name="ComparePaneFileTextBlock"
+                           Foreground="#9BB0C7"
+                           Text=""
+                           TextWrapping="Wrap" />
+              </StackPanel>
+              <Button x:Name="UseComparePaneButton"
+                      Grid.Column="1"
+                      Content="Use Pane"
+                      Tag="pane-compare-a"
+                      Click="UsePaneButton_Click" />
+              <Button x:Name="OpenComparePaneButton"
+                      Grid.Column="2"
+                      Content="Open"
+                      Tag="pane-compare-a"
+                      Click="OpenPaneButton_Click" />
+            </Grid>
+
+            <Border Grid.Row="1"
+                    CornerRadius="10"
+                    Background="#0B1017"
+                    BorderBrush="#263342"
+                    BorderThickness="1">
+              <Grid>
+                <Image x:Name="CompareVideoImage" Stretch="Uniform" />
+                <TextBlock x:Name="CompareEmptySurfaceText"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Foreground="#9BB0C7"
+                           FontSize="18"
+                           Text="Open a compare video to review both panes together."
+                           TextWrapping="Wrap" />
+              </Grid>
+            </Border>
+
+            <StackPanel Grid.Row="2" Spacing="8">
+              <Slider x:Name="ComparePositionSlider"
+                      Minimum="0"
+                      Maximum="1"
+                      TickFrequency="0.04"
+                      Tag="pane-compare-a"
+                      PropertyChanged="PanePositionSlider_PropertyChanged" />
+              <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                <TextBlock x:Name="CompareCurrentPositionTextBlock"
+                           VerticalAlignment="Center"
+                           Text="00:00:00.000" />
+                <TextBlock x:Name="CompareLoopStatusTextBlock"
+                           Grid.Column="1"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Text="Loop: off" />
+                <TextBlock x:Name="CompareDurationTextBlock"
+                           Grid.Column="2"
+                           VerticalAlignment="Center"
+                           Text="00:00:00.000" />
+              </Grid>
+              <TextBlock x:Name="CompareFrameStatusTextBlock"
+                         Foreground="#7C8CA0"
+                         Text="Frame --" />
+            </StackPanel>
+          </Grid>
+        </Border>
+      </Grid>
 
       <Border Grid.Column="1"
               CornerRadius="12"
@@ -73,29 +225,7 @@
       </Border>
     </Grid>
 
-    <StackPanel Grid.Row="2" Spacing="8">
-      <Slider x:Name="PositionSlider"
-              Minimum="0"
-              Maximum="1"
-              TickFrequency="0.04"
-              PropertyChanged="PositionSlider_PropertyChanged" />
-      <Grid ColumnDefinitions="Auto,*,Auto">
-        <TextBlock x:Name="CurrentPositionTextBlock"
-                   VerticalAlignment="Center"
-                   Text="00:00:00.000" />
-        <TextBlock x:Name="LoopStatusTextBlock"
-                   Grid.Column="1"
-                   HorizontalAlignment="Center"
-                   VerticalAlignment="Center"
-                   Text="Loop: off" />
-        <TextBlock x:Name="DurationTextBlock"
-                   Grid.Column="2"
-                   VerticalAlignment="Center"
-                   Text="00:00:00.000" />
-      </Grid>
-    </StackPanel>
-
-    <StackPanel Grid.Row="3" Margin="0,16,0,0" Spacing="4">
+    <StackPanel Grid.Row="2" Spacing="4">
       <TextBlock x:Name="PlaybackStatusTextBlock" FontWeight="SemiBold" Text="Ready for review playback." />
       <TextBlock x:Name="ActionStatusTextBlock"
                  Foreground="#9BB0C7"

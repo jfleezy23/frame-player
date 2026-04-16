@@ -108,6 +108,98 @@ namespace FramePlayer.Core.Tests
             }
         }
 
+        [Fact]
+        public async Task OpenInPaneAsync_SelectsAndOpensRequestedPane()
+        {
+            var primaryPath = CreateTempFilePath();
+            var comparePath = CreateTempFilePath();
+            var primaryEngine = new TestVideoReviewEngine();
+            var compareEngine = new TestVideoReviewEngine();
+            var primarySessionCoordinator = new ReviewSessionCoordinator(primaryEngine);
+            var compareSessionCoordinator = new ReviewSessionCoordinator(compareEngine, "compare-a", "Compare A");
+            var workspaceCoordinator = new ReviewWorkspaceCoordinator(primaryEngine, primarySessionCoordinator);
+            var controller = new ReviewWorkspaceHostController(workspaceCoordinator);
+            workspaceCoordinator.TryBindPane("pane-compare-a", compareSessionCoordinator, displayLabel: "Compare A");
+
+            try
+            {
+                await controller.OpenAsync(primaryPath);
+                await controller.OpenInPaneAsync("pane-compare-a", comparePath);
+
+                var viewState = controller.CurrentViewState;
+                Assert.Equal("pane-compare-a", viewState.FocusedPaneId);
+                Assert.Equal("pane-compare-a", viewState.ActivePaneId);
+                Assert.Equal(Path.GetFullPath(comparePath), Path.GetFullPath(viewState.CurrentFilePath));
+                Assert.Equal(Path.GetFullPath(comparePath), Path.GetFullPath(compareEngine.CurrentFilePath));
+                Assert.Equal(Path.GetFullPath(primaryPath), Path.GetFullPath(primaryEngine.CurrentFilePath));
+            }
+            finally
+            {
+                controller.Dispose();
+                workspaceCoordinator.Dispose();
+                compareSessionCoordinator.Dispose();
+                primarySessionCoordinator.Dispose();
+                compareEngine.Dispose();
+                primaryEngine.Dispose();
+                DeleteIfExists(primaryPath);
+                DeleteIfExists(comparePath);
+            }
+        }
+
+        [Fact]
+        public async Task PaneLocalLoopRange_DrivesFocusedPaneExportState()
+        {
+            var primaryPath = CreateTempFilePath();
+            var comparePath = CreateTempFilePath();
+            var primaryEngine = new TestVideoReviewEngine();
+            var compareEngine = new TestVideoReviewEngine();
+            var primarySessionCoordinator = new ReviewSessionCoordinator(primaryEngine);
+            var compareSessionCoordinator = new ReviewSessionCoordinator(compareEngine, "compare-a", "Compare A");
+            var workspaceCoordinator = new ReviewWorkspaceCoordinator(primaryEngine, primarySessionCoordinator);
+            var controller = new ReviewWorkspaceHostController(
+                workspaceCoordinator,
+                new ReviewHostCapabilities(
+                    supportsTimedPlayback: true,
+                    hasBundledRuntime: true,
+                    exportToolingAvailable: true,
+                    idleStatusText: "Ready",
+                    runtimeMissingStatusText: "Runtime missing",
+                    timedPlaybackCapabilityText: "Timed playback unavailable",
+                    exportToolingStatusText: "Export tooling ready"));
+            workspaceCoordinator.TryBindPane("pane-compare-a", compareSessionCoordinator, displayLabel: "Compare A");
+
+            try
+            {
+                await controller.OpenAsync(primaryPath);
+                await controller.OpenInPaneAsync("pane-compare-a", comparePath);
+
+                await controller.SeekToFrameAsync(10);
+                controller.SetPaneLoopMarker("pane-compare-a", LoopPlaybackMarkerEndpoint.In);
+                await controller.SeekToFrameAsync(20);
+                controller.SetPaneLoopMarker("pane-compare-a", LoopPlaybackMarkerEndpoint.Out);
+
+                var compareViewState = controller.CurrentViewState;
+                Assert.True(compareViewState.Export.CanExportCurrentLoop);
+                Assert.Equal("The current loop is ready to export.", compareViewState.Export.StatusText);
+
+                Assert.True(controller.TrySelectPane("pane-primary"));
+                var primaryViewState = controller.CurrentViewState;
+                Assert.False(primaryViewState.Export.CanExportCurrentLoop);
+                Assert.Equal("Set exact A/B markers before exporting a reviewed clip.", primaryViewState.Export.StatusText);
+            }
+            finally
+            {
+                controller.Dispose();
+                workspaceCoordinator.Dispose();
+                compareSessionCoordinator.Dispose();
+                primarySessionCoordinator.Dispose();
+                compareEngine.Dispose();
+                primaryEngine.Dispose();
+                DeleteIfExists(primaryPath);
+                DeleteIfExists(comparePath);
+            }
+        }
+
         private static string CreateTempFilePath()
         {
             var tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".mp4");
