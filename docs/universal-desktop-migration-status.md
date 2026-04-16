@@ -34,7 +34,7 @@ This checkpoint turns the existing WPF application into the reference host for a
 - `Core/Hosting/ExportCommandState.cs`
 - `Core/Hosting/ReviewHostCapabilities.cs`
 
-The current WPF host now consumes the host controller for transport state and playback messaging instead of recomputing all of that directly in `MainWindow.xaml.cs`.
+The current WPF host now consumes the host controller for transport state, playback messaging, startup-open dispatch, and recent-files menu state instead of recomputing all of that directly in `MainWindow.xaml.cs`.
 
 ### Core/Media decoupling cleanup
 

@@ -4,10 +4,11 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using FramePlayer.Core.Abstractions;
 
 namespace FramePlayer.Services
 {
-    internal sealed class RecentFilesService
+    internal sealed class RecentFilesService : IRecentFilesCatalog
     {
         private const int MaxRecentFiles = 10;
         private const string StoragePrefix = "DPAPIv1:";

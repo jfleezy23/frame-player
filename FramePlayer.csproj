@@ -83,6 +83,7 @@
     <Compile Include="Core\Abstractions\IAudioOutput.cs" />
     <Compile Include="Core\Abstractions\IAudioOutputFactory.cs" />
     <Compile Include="Core\Abstractions\IIndexedFrameTimeResolver.cs" />
+    <Compile Include="Core\Abstractions\IRecentFilesCatalog.cs" />
     <Compile Include="Core\Events\FramePresentedEventArgs.cs" />
     <Compile Include="Core\Events\ReviewSessionChangedEventArgs.cs" />
     <Compile Include="Core\Events\ReviewWorkspacePreparationChangedEventArgs.cs" />
@@ -91,6 +92,8 @@
     <Compile Include="Core\Hosting\ExportCommandState.cs" />
     <Compile Include="Core\Hosting\LoopCommandState.cs" />
     <Compile Include="Core\Hosting\PaneViewState.cs" />
+    <Compile Include="Core\Hosting\RecentFilesCommandState.cs" />
+    <Compile Include="Core\Hosting\RecentFileViewState.cs" />
     <Compile Include="Core\Hosting\ReviewHostCapabilities.cs" />
     <Compile Include="Core\Hosting\ReviewWorkspaceHostController.cs" />
     <Compile Include="Core\Hosting\ReviewWorkspaceViewState.cs" />

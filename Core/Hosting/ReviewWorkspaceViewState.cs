@@ -16,6 +16,7 @@ namespace FramePlayer.Core.Hosting
                 TransportCommandState.Disabled,
                 LoopCommandState.Empty,
                 ExportCommandState.Empty,
+                RecentFilesCommandState.Empty,
                 Array.Empty<PaneViewState>());
 
         public ReviewWorkspaceViewState(
@@ -28,6 +29,7 @@ namespace FramePlayer.Core.Hosting
             TransportCommandState transport,
             LoopCommandState loop,
             ExportCommandState export,
+            RecentFilesCommandState recentFiles,
             IReadOnlyList<PaneViewState> panes)
         {
             PrimaryPaneId = primaryPaneId ?? string.Empty;
@@ -39,6 +41,7 @@ namespace FramePlayer.Core.Hosting
             Transport = transport ?? TransportCommandState.Disabled;
             Loop = loop ?? LoopCommandState.Empty;
             Export = export ?? ExportCommandState.Empty;
+            RecentFiles = recentFiles ?? RecentFilesCommandState.Empty;
             Panes = panes ?? Array.Empty<PaneViewState>();
         }
 
@@ -59,6 +62,8 @@ namespace FramePlayer.Core.Hosting
         public LoopCommandState Loop { get; }
 
         public ExportCommandState Export { get; }
+
+        public RecentFilesCommandState RecentFiles { get; }
 
         public IReadOnlyList<PaneViewState> Panes { get; }
     }

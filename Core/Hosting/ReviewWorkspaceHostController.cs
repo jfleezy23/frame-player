@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using FramePlayer.Core.Abstractions;
 using FramePlayer.Core.Coordination;
 using FramePlayer.Core.Models;
 
@@ -12,15 +14,19 @@ namespace FramePlayer.Core.Hosting
     public sealed class ReviewWorkspaceHostController : IDisposable
     {
         private readonly ReviewWorkspaceCoordinator _workspaceCoordinator;
+        private readonly IRecentFilesCatalog _recentFilesCatalog;
         private ReviewHostCapabilities _capabilities;
         private string _lastMediaErrorMessage;
+        private string _startupOpenFilePath;
 
         public ReviewWorkspaceHostController(
             ReviewWorkspaceCoordinator workspaceCoordinator,
-            ReviewHostCapabilities capabilities = null)
+            ReviewHostCapabilities capabilities = null,
+            IRecentFilesCatalog recentFilesCatalog = null)
         {
             _workspaceCoordinator = workspaceCoordinator ?? throw new ArgumentNullException(nameof(workspaceCoordinator));
             _capabilities = capabilities ?? ReviewHostCapabilities.Default;
+            _recentFilesCatalog = recentFilesCatalog;
             _workspaceCoordinator.WorkspaceChanged += WorkspaceCoordinator_WorkspaceChanged;
             _workspaceCoordinator.PreparationStateChanged += WorkspaceCoordinator_PreparationStateChanged;
             CurrentViewState = BuildViewState();
@@ -64,7 +70,7 @@ namespace FramePlayer.Core.Hosting
 
         public Task OpenAsync(string filePath, CancellationToken cancellationToken = default(CancellationToken))
         {
-            return _workspaceCoordinator.OpenAsync(filePath, cancellationToken);
+            return OpenInternalAsync(filePath, cancellationToken);
         }
 
         public Task CloseAsync()
@@ -140,6 +146,40 @@ namespace FramePlayer.Core.Hosting
             Refresh();
         }
 
+        public void SetStartupOpenFilePath(string filePath)
+        {
+            _startupOpenFilePath = NormalizeExistingPath(filePath);
+        }
+
+        public bool TryConsumeStartupOpenFilePath(out string filePath)
+        {
+            filePath = NormalizeExistingPath(_startupOpenFilePath);
+            _startupOpenFilePath = string.Empty;
+            return !string.IsNullOrWhiteSpace(filePath);
+        }
+
+        public void RemoveRecentFile(string filePath)
+        {
+            if (_recentFilesCatalog == null)
+            {
+                return;
+            }
+
+            _recentFilesCatalog.Remove(filePath);
+            Refresh();
+        }
+
+        public void ClearRecentFiles()
+        {
+            if (_recentFilesCatalog == null)
+            {
+                return;
+            }
+
+            _recentFilesCatalog.Clear();
+            Refresh();
+        }
+
         private void WorkspaceCoordinator_WorkspaceChanged(object sender, Events.ReviewWorkspaceChangedEventArgs e)
         {
             Refresh();
@@ -174,6 +214,7 @@ namespace FramePlayer.Core.Hosting
                 : ResolveSharedPaneLoopRange(workspaceSnapshot);
             var loopState = BuildLoopState(focusedLoopRange, canControl);
             var exportState = BuildExportState(loopState);
+            var recentFilesState = BuildRecentFilesState();
 
             var panes = workspaceState.Panes
                 .Select(BuildPaneState)
@@ -189,6 +230,7 @@ namespace FramePlayer.Core.Hosting
                 transportState,
                 loopState,
                 exportState,
+                recentFilesState,
                 panes);
         }
 
@@ -233,6 +275,34 @@ namespace FramePlayer.Core.Hosting
             }
 
             return new ExportCommandState(true, true, "The current loop is ready to export.");
+        }
+
+        private RecentFilesCommandState BuildRecentFilesState()
+        {
+            if (_recentFilesCatalog == null)
+            {
+                return RecentFilesCommandState.Empty;
+            }
+
+            var entries = _recentFilesCatalog.Load()
+                .Select(NormalizePath)
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(
+                    (path, index) => new RecentFileViewState(
+                        path,
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "_{0} {1}",
+                            index + 1,
+                            Path.GetFileName(path)),
+                        path,
+                        File.Exists(path)))
+                .ToArray();
+
+            return entries.Length == 0
+                ? RecentFilesCommandState.Empty
+                : new RecentFilesCommandState(entries, true, "Recent files are ready.");
         }
 
         private static LoopCommandState BuildLoopState(LoopPlaybackPaneRangeSnapshot loopRange, bool canControl)
@@ -380,6 +450,54 @@ namespace FramePlayer.Core.Hosting
                 value.Minutes,
                 value.Seconds,
                 value.Milliseconds);
+        }
+
+        private async Task OpenInternalAsync(string filePath, CancellationToken cancellationToken)
+        {
+            await _workspaceCoordinator.OpenAsync(filePath, cancellationToken).ConfigureAwait(false);
+
+            if (_recentFilesCatalog == null)
+            {
+                Refresh();
+                return;
+            }
+
+            var session = _workspaceCoordinator.CurrentSession ?? ReviewSessionSnapshot.Empty;
+            var requestedPath = NormalizePath(filePath);
+            var currentPath = NormalizePath(session.CurrentFilePath);
+            if (session.IsMediaOpen &&
+                !string.IsNullOrWhiteSpace(requestedPath) &&
+                string.Equals(requestedPath, currentPath, StringComparison.OrdinalIgnoreCase))
+            {
+                _recentFilesCatalog.Add(requestedPath);
+            }
+
+            Refresh();
+        }
+
+        private static string NormalizeExistingPath(string filePath)
+        {
+            var normalizedPath = NormalizePath(filePath);
+            return !string.IsNullOrWhiteSpace(normalizedPath) && File.Exists(normalizedPath)
+                ? normalizedPath
+                : string.Empty;
+        }
+
+        private static string NormalizePath(string filePath)
+        {
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                return Path.GetFullPath(filePath.Trim());
+            }
+            catch
+            {
+                return string.Empty;
+            }
         }
     }
 }

@@ -253,7 +253,8 @@ namespace FramePlayer
             _videoReviewEngine = CreateVideoReviewEngine(PrimaryPaneId);
             _sessionCoordinator = new ReviewSessionCoordinator(_videoReviewEngine);
             _workspaceCoordinator = new ReviewWorkspaceCoordinator(_videoReviewEngine, _sessionCoordinator);
-            _hostController = new ReviewWorkspaceHostController(_workspaceCoordinator, BuildHostCapabilities());
+            _hostController = new ReviewWorkspaceHostController(_workspaceCoordinator, BuildHostCapabilities(), _recentFilesService);
+            _hostController.SetStartupOpenFilePath(App.ConsumeStartupOpenFilePath());
             _workspaceCoordinator.WorkspaceChanged += ReviewWorkspaceCoordinator_WorkspaceChanged;
             _workspaceCoordinator.PreparationStateChanged += ReviewWorkspaceCoordinator_PreparationStateChanged;
             _videoReviewEngine.FramePresented += VideoReviewEngine_FramePresented;
@@ -313,12 +314,12 @@ namespace FramePlayer
         {
             Loaded -= MainWindow_Loaded;
 
-            if (string.IsNullOrWhiteSpace(App.StartupOpenFilePath) || !File.Exists(App.StartupOpenFilePath))
+            string startupOpenFilePath;
+            if (!_hostController.TryConsumeStartupOpenFilePath(out startupOpenFilePath))
             {
                 return;
             }
 
-            var startupOpenFilePath = App.ConsumeStartupOpenFilePath();
             await OpenMediaAsync(startupOpenFilePath, PrimaryPaneId);
         }
 
@@ -2053,10 +2054,9 @@ namespace FramePlayer
                     LogInfo("Closing current media before opening the new file.");
                 }
 
-                await _workspaceCoordinator.OpenAsync(filePath);
+                await _hostController.OpenAsync(filePath);
                 ApplySessionSnapshot(_workspaceCoordinator.RefreshFromEngine());
 
-                _recentFilesService.Add(filePath);
                 RefreshRecentFilesMenu();
                 UpdateHeader();
                 UpdatePositionDisplay(GetDisplayPosition());
@@ -2643,7 +2643,7 @@ namespace FramePlayer
 
             if (!File.Exists(recentPath))
             {
-                _recentFilesService.Remove(recentPath);
+                _hostController.RemoveRecentFile(recentPath);
                 RefreshRecentFilesMenu();
                 LogWarning("Recent file no longer exists: " + GetSafeFileDisplay(recentPath));
                 MessageBox.Show(this, "That recent file no longer exists.", "Missing File", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -2660,7 +2660,7 @@ namespace FramePlayer
 
         private void ClearRecentFilesMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            _recentFilesService.Clear();
+            _hostController.ClearRecentFiles();
             RefreshRecentFilesMenu();
             LogInfo("Recent files list cleared.");
         }
@@ -2669,12 +2669,17 @@ namespace FramePlayer
         {
             RecentFilesMenuItem.Items.Clear();
 
-            var recentFiles = _recentFilesService.Load();
-            if (recentFiles.Count == 0)
+            var recentFilesState = _hostController.CurrentViewState.RecentFiles;
+            var recentFiles = recentFilesState != null
+                ? recentFilesState.Entries
+                : null;
+            if (recentFiles == null || recentFiles.Count == 0)
             {
                 RecentFilesMenuItem.Items.Add(new MenuItem
                 {
-                    Header = "No Recent Files",
+                    Header = recentFilesState != null && !string.IsNullOrWhiteSpace(recentFilesState.StatusText)
+                        ? recentFilesState.StatusText
+                        : "No Recent Files",
                     IsEnabled = false
                 });
                 return;
@@ -2682,12 +2687,12 @@ namespace FramePlayer
 
             for (var i = 0; i < recentFiles.Count; i++)
             {
-                var filePath = recentFiles[i];
+                var entry = recentFiles[i];
                 var item = new MenuItem
                 {
-                    Header = string.Format(CultureInfo.InvariantCulture, "_{0} {1}", i + 1, Path.GetFileName(filePath)),
-                    Tag = filePath,
-                    ToolTip = filePath
+                    Header = entry.DisplayLabel,
+                    Tag = entry.FilePath,
+                    ToolTip = entry.ToolTip
                 };
 
                 item.Click += RecentFileMenuItem_Click;
@@ -2698,7 +2703,8 @@ namespace FramePlayer
 
             var clearItem = new MenuItem
             {
-                Header = "_Clear Recent Files"
+                Header = "_Clear Recent Files",
+                IsEnabled = recentFilesState != null && recentFilesState.CanClear
             };
             clearItem.Click += ClearRecentFilesMenuItem_Click;
             RecentFilesMenuItem.Items.Add(clearItem);
