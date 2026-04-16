@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -23,6 +24,7 @@ namespace FramePlayer.Host.Avalonia
 
         private readonly ClipExportService _clipExportService;
         private readonly ReviewWorkspaceHostController _hostController;
+        private readonly FileBackedRecentFilesCatalog _recentFilesCatalog;
         private readonly AppPreferencesService _preferencesService;
         private readonly FfmpegReviewEngineOptionsProvider _optionsProvider;
         private readonly VideoReviewEngineFactory _videoReviewEngineFactory;
@@ -40,6 +42,7 @@ namespace FramePlayer.Host.Avalonia
 
             _preferencesService = new AppPreferencesService();
             _clipExportService = new ClipExportService();
+            _recentFilesCatalog = new FileBackedRecentFilesCatalog();
             _optionsProvider = new FfmpegReviewEngineOptionsProvider(_preferencesService);
             _videoReviewEngineFactory = new VideoReviewEngineFactory(_optionsProvider, SdlAudioOutputFactory.Instance);
             _videoReviewEngine = _videoReviewEngineFactory.Create("pane-primary");
@@ -58,10 +61,13 @@ namespace FramePlayer.Host.Avalonia
                         ? "Bundled playback runtime is missing."
                         : runtimeValidationMessage,
                     timedPlaybackCapabilityText: "Timed playback is unavailable in this host.",
-                    exportToolingStatusText: _clipExportService.GetToolAvailabilityMessage()));
+                    exportToolingStatusText: _clipExportService.GetToolAvailabilityMessage()),
+                _recentFilesCatalog);
+            _hostController.SetStartupOpenFilePath(AppLaunchOptions.ConsumeStartupOpenFilePath());
 
             _videoReviewEngine.FramePresented += VideoReviewEngine_FramePresented;
             _hostController.ViewStateChanged += HostController_ViewStateChanged;
+            Opened += MainWindow_Opened;
 
             _positionTimer = new DispatcherTimer
             {
@@ -77,6 +83,7 @@ namespace FramePlayer.Host.Avalonia
         {
             base.OnClosed(e);
             _positionTimer.Stop();
+            Opened -= MainWindow_Opened;
             _videoReviewEngine.FramePresented -= VideoReviewEngine_FramePresented;
             _hostController.ViewStateChanged -= HostController_ViewStateChanged;
             _hostController.Dispose();
@@ -110,7 +117,12 @@ namespace FramePlayer.Host.Avalonia
                 return;
             }
 
-            await _hostController.OpenAsync(filePath);
+            await OpenMediaAsync(filePath);
+        }
+
+        private async void CloseButton_Click(object sender, RoutedEventArgs e)
+        {
+            await _hostController.CloseAsync();
             _hostController.Refresh();
         }
 
@@ -203,6 +215,30 @@ namespace FramePlayer.Host.Avalonia
             _hostController.Refresh();
         }
 
+        private async void OpenRecentButton_Click(object sender, RoutedEventArgs e)
+        {
+            var entry = RecentFilesListBox.SelectedItem as RecentFileViewState;
+            if (entry == null)
+            {
+                return;
+            }
+
+            if (!File.Exists(entry.FilePath))
+            {
+                _hostController.RemoveRecentFile(entry.FilePath);
+                RefreshUi(_hostController.CurrentViewState);
+                return;
+            }
+
+            await OpenMediaAsync(entry.FilePath);
+        }
+
+        private void ClearRecentButton_Click(object sender, RoutedEventArgs e)
+        {
+            _hostController.ClearRecentFiles();
+            RefreshUi(_hostController.CurrentViewState);
+        }
+
         private async void PositionSlider_PropertyChanged(object sender, AvaloniaPropertyChangedEventArgs e)
         {
             if (_suppressSliderUpdate || e.Property != Slider.ValueProperty || !_hostController.CurrentViewState.Transport.CanSeek)
@@ -217,6 +253,26 @@ namespace FramePlayer.Host.Avalonia
         private void HostController_ViewStateChanged(object sender, ReviewWorkspaceViewStateChangedEventArgs e)
         {
             Dispatcher.UIThread.Post(() => RefreshUi(e.Current));
+        }
+
+        private async void MainWindow_Opened(object sender, EventArgs e)
+        {
+            Opened -= MainWindow_Opened;
+
+            string startupOpenFilePath;
+            if (!_hostController.TryConsumeStartupOpenFilePath(out startupOpenFilePath))
+            {
+                return;
+            }
+
+            await OpenMediaAsync(startupOpenFilePath);
+        }
+
+        private void RecentFilesListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            UpdateRecentFileButtonState(_hostController.CurrentViewState != null
+                ? _hostController.CurrentViewState.RecentFiles
+                : RecentFilesCommandState.Empty);
         }
 
         private void VideoReviewEngine_FramePresented(object sender, FramePresentedEventArgs e)
@@ -254,13 +310,19 @@ namespace FramePlayer.Host.Avalonia
                 }
             }
 
-            RefreshUi(_hostController.Refresh());
+            RefreshUi(_hostController.CurrentViewState);
         }
 
         private void RefreshUi(ReviewWorkspaceViewState viewState)
         {
             var transport = viewState != null ? viewState.Transport : TransportCommandState.Disabled;
+            var recentFiles = viewState != null ? viewState.RecentFiles : RecentFilesCommandState.Empty;
+            var recentEntries = recentFiles != null
+                ? recentFiles.Entries ?? Array.Empty<RecentFileViewState>()
+                : Array.Empty<RecentFileViewState>();
+
             PlayPauseButton.IsEnabled = transport.CanTogglePlayPause;
+            CloseButton.IsEnabled = transport.CanCloseMedia;
             PreviousFrameButton.IsEnabled = transport.CanStepBackward;
             NextFrameButton.IsEnabled = transport.CanStepForward;
             SetLoopAButton.IsEnabled = viewState != null && viewState.Loop.CanSetMarkers;
@@ -289,6 +351,14 @@ namespace FramePlayer.Host.Avalonia
             {
                 _suppressSliderUpdate = false;
             }
+
+            if (_workspaceCoordinator.CurrentSession == null || !_workspaceCoordinator.CurrentSession.IsMediaOpen)
+            {
+                VideoImage.Source = null;
+                EmptySurfaceText.IsVisible = true;
+            }
+
+            RefreshRecentFilesUi(recentFiles, recentEntries);
         }
 
         private ClipExportRequest BuildSeedClipExportRequest()
@@ -377,6 +447,40 @@ namespace FramePlayer.Host.Avalonia
                 value.Minutes,
                 value.Seconds,
                 value.Milliseconds);
+        }
+
+        private async Task OpenMediaAsync(string filePath)
+        {
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                return;
+            }
+
+            await _hostController.OpenAsync(filePath);
+            _hostController.Refresh();
+        }
+
+        private void RefreshRecentFilesUi(RecentFilesCommandState recentFiles, System.Collections.Generic.IReadOnlyList<RecentFileViewState> recentEntries)
+        {
+            var selectedPath = (RecentFilesListBox.SelectedItem as RecentFileViewState)?.FilePath;
+            RecentFilesListBox.ItemsSource = recentEntries;
+            RecentFilesStatusTextBlock.Text = recentFiles != null ? recentFiles.StatusText : "No recent files.";
+            RecentFilesStatusTextBlock.IsVisible = recentEntries == null || recentEntries.Count == 0;
+
+            if (!string.IsNullOrWhiteSpace(selectedPath) && recentEntries != null)
+            {
+                RecentFilesListBox.SelectedItem = recentEntries.FirstOrDefault(
+                    entry => string.Equals(entry.FilePath, selectedPath, StringComparison.OrdinalIgnoreCase));
+            }
+
+            UpdateRecentFileButtonState(recentFiles);
+        }
+
+        private void UpdateRecentFileButtonState(RecentFilesCommandState recentFiles)
+        {
+            var hasSelection = RecentFilesListBox != null && RecentFilesListBox.SelectedItem is RecentFileViewState;
+            OpenRecentButton.IsEnabled = hasSelection;
+            ClearRecentButton.IsEnabled = recentFiles != null && recentFiles.CanClear;
         }
     }
 }

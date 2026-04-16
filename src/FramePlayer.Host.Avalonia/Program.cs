@@ -8,6 +8,7 @@ namespace FramePlayer.Host.Avalonia
         [STAThread]
         public static void Main(string[] args)
         {
+            AppLaunchOptions.Initialize(args);
             BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
         }
 

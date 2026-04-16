@@ -58,12 +58,15 @@ The app no longer assumes a single embedded Windows runtime manifest. Runtime an
 Current preview surface:
 
 - open supported media
+- close current media
 - play/pause
 - frame step
 - timeline seek
 - set loop A/B
 - basic loop playback restart
 - save current loop as clip
+- startup open-file handling
+- recent files panel backed by a cross-platform file catalog
 - display decoded frames via `AvaloniaFrameBufferPresenter`
 
 This is still milestone-1 scaffolding, not parity with the existing WPF shell.
@@ -92,7 +95,7 @@ Validated locally on April 15, 2026:
 ## What Still Needs Another Pass
 
 - move more command routing and loop/export rules out of `MainWindow.xaml.cs`
-- replace DPAPI-backed recent-files and diagnostics persistence with a host-neutral store abstraction
+- replace DPAPI-backed WPF recent-files and diagnostics persistence with fully host-neutral shared store abstractions
 - harden the Avalonia preview host with real parity coverage instead of manual preview-host wiring only
 - add RID-aware publish/test packaging for the new hosts
 - stage actual macOS FFmpeg runtime/tool bundles under the new RID manifest layout
