@@ -16,7 +16,15 @@ namespace FramePlayer.Services
 
         public bool UseGpuAcceleration
         {
-            get { return _preferences.UseGpuAcceleration; }
+            get
+            {
+                return ResolveGpuBackendPreference() != GpuBackendPreference.Disabled;
+            }
+        }
+
+        public bool CanUserToggleGpuAcceleration
+        {
+            get { return false; }
         }
 
         public void SetUseGpuAcceleration(bool value)
@@ -34,30 +42,43 @@ namespace FramePlayer.Services
 
         private GpuBackendPreference ResolveGpuBackendPreference()
         {
-            var environmentOverride = Environment.GetEnvironmentVariable("FRAMEPLAYER_GPU_BACKEND");
-            if (!string.IsNullOrWhiteSpace(environmentOverride))
+            if (TryResolveEnvironmentOverride(out var gpuBackendPreference))
             {
-                switch (environmentOverride.Trim().ToLowerInvariant())
-                {
-                    case "0":
-                    case "cpu":
-                    case "disabled":
-                    case "off":
-                        return GpuBackendPreference.Disabled;
-                    case "force":
-                    case "force-vulkan":
-                    case "vulkan":
-                        return GpuBackendPreference.ForceVulkanForDiagnostics;
-                    case "1":
-                    case "auto":
-                    default:
-                        return GpuBackendPreference.Auto;
-                }
+                return gpuBackendPreference;
             }
 
-            return UseGpuAcceleration
-                ? GpuBackendPreference.Auto
-                : GpuBackendPreference.Disabled;
+            return GpuBackendPreference.Disabled;
+        }
+
+        private static bool TryResolveEnvironmentOverride(out GpuBackendPreference gpuBackendPreference)
+        {
+            gpuBackendPreference = GpuBackendPreference.Disabled;
+
+            var environmentOverride = Environment.GetEnvironmentVariable("FRAMEPLAYER_GPU_BACKEND");
+            if (string.IsNullOrWhiteSpace(environmentOverride))
+            {
+                return false;
+            }
+
+            switch (environmentOverride.Trim().ToLowerInvariant())
+            {
+                case "0":
+                case "cpu":
+                case "disabled":
+                case "off":
+                    gpuBackendPreference = GpuBackendPreference.Disabled;
+                    return true;
+                case "force":
+                case "force-vulkan":
+                case "vulkan":
+                    gpuBackendPreference = GpuBackendPreference.ForceVulkanForDiagnostics;
+                    return true;
+                case "1":
+                case "auto":
+                default:
+                    gpuBackendPreference = GpuBackendPreference.Auto;
+                    return true;
+            }
         }
 
         private static int? ResolveCacheBudgetOverrideMegabytes()

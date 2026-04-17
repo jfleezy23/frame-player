@@ -2,7 +2,7 @@ namespace FramePlayer.Services
 {
     internal sealed class AppPreferences
     {
-        public static AppPreferences Default { get; } = new AppPreferences(true);
+        public static AppPreferences Default { get; } = new AppPreferences(false);
 
         public AppPreferences(bool useGpuAcceleration)
         {

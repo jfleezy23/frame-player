@@ -239,6 +239,11 @@ namespace FramePlayer
             _recentFilesService = new RecentFilesService();
             _videoReviewEngineFactory = new VideoReviewEngineFactory(_ffmpegReviewEngineOptionsProvider);
             UseGpuAccelerationMenuItem.IsChecked = _ffmpegReviewEngineOptionsProvider.UseGpuAcceleration;
+            UseGpuAccelerationMenuItem.IsEnabled = _ffmpegReviewEngineOptionsProvider.CanUserToggleGpuAcceleration;
+            if (!UseGpuAccelerationMenuItem.IsEnabled)
+            {
+                UseGpuAccelerationMenuItem.ToolTip = "GPU decode is temporarily disabled while we stabilize frame alignment.";
+            }
             _videoReviewEngine = CreateVideoReviewEngine(PrimaryPaneId);
             _sessionCoordinator = new ReviewSessionCoordinator(_videoReviewEngine);
             _workspaceCoordinator = new ReviewWorkspaceCoordinator(_videoReviewEngine, _sessionCoordinator);
