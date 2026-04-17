@@ -61,7 +61,11 @@
           <TextBlock Foreground="{StaticResource MutedBrush}"
                      FontFamily="Consolas"
                      FontSize="12"
-                     Text="J / L  Rewind or fast forward 5 seconds" />
+                     Text=", / .  Rewind or fast forward 5 seconds" />
+          <TextBlock Foreground="{StaticResource MutedBrush}"
+                     FontFamily="Consolas"
+                     FontSize="12"
+                     Text="L  Toggle loop playback" />
           <TextBlock Foreground="{StaticResource MutedBrush}"
                      FontFamily="Consolas"
                      FontSize="12"

@@ -1920,7 +1920,7 @@ namespace FramePlayer
                 return;
             }
 
-            if (e.IsRepeat && (e.Key == Key.Space || e.Key == Key.Left || e.Key == Key.Right))
+            if (e.IsRepeat && (e.Key == Key.Space || e.Key == Key.Left || e.Key == Key.Right || e.Key == Key.L))
             {
                 e.Handled = true;
                 return;
@@ -1952,10 +1952,18 @@ namespace FramePlayer
                     }
                     break;
                 case Key.J:
+                case Key.OemComma:
                     await SeekRelativeAsync(-SeekJump);
                     e.Handled = true;
                     break;
                 case Key.L:
+                    if (LoopPlaybackMenuItem != null)
+                    {
+                        LoopPlaybackMenuItem.IsChecked = !LoopPlaybackMenuItem.IsChecked;
+                        e.Handled = true;
+                    }
+                    break;
+                case Key.OemPeriod:
                     await SeekRelativeAsync(SeekJump);
                     e.Handled = true;
                     break;
