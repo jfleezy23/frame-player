@@ -59,7 +59,7 @@ Frame Player is a frames-first WPF review tool built on a custom FFmpeg engine w
 
 The shipped app is packaged with the FFmpeg runtime DLLs next to `FramePlayer.exe`.
 
-- Current release: `v1.6.0`
+- Current release: `v1.7.1`
 - Pinned FFmpeg runtime version: `n8.1-frameplayer-source`
 - Runtime provenance: built from the official FFmpeg source tag `n8.1` at commit `9047fa1b084f76b1b4d065af2d743df1b40dfb56`
 - Runtime hashes and source-build metadata are recorded in `Runtime\\runtime-manifest.json` and `docs\\ffmpeg-8.1-build-notes.md`
@@ -153,7 +153,7 @@ GitHub Actions Windows CI is compile validation on a clean runner. The workflow 
 - The portable release archive is written to `artifacts\FramePlayer-CustomFFmpeg-<product-version>.zip`
 - The runtime bootstrap is pinned through `Runtime\runtime-manifest.json`
 - The active runtime is the self-built FFmpeg 8.1 line staged by `scripts\ffmpeg\Build-FFmpeg-8.1.ps1`
-- The current release note is `docs\release-v1.6.0-loop-export.md`
+- The current release note is `docs\release-v1.7.1-keyboard-controls.md`
 
 ## License
 
