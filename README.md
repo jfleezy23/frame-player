@@ -51,7 +51,8 @@ Frame Player is a frames-first WPF review tool built on a custom FFmpeg engine w
 - after entering a frame number, `Enter` commits the jump and returns focus to video controls for immediate arrow-key stepping
 - `[` sets loop-in on the current loop context
 - `]` sets loop-out on the current loop context
-- `J` / `L` seek backward or forward 5 seconds
+- `,` / `.` seek backward or forward 5 seconds
+- `L` toggles loop playback
 - `F11` or `Alt+Enter` toggles full screen
 
 ## Packaging Model
