@@ -779,8 +779,7 @@
                 </Border.ContextMenu>
                 <Image x:Name="CustomVideoSurface"
                        Margin="1"
-                       Stretch="Uniform"
-                       RenderOptions.BitmapScalingMode="NearestNeighbor" />
+                       Stretch="Uniform" />
               </Border>
 
               <Border x:Name="PrimaryEmptyStateOverlay"
@@ -1026,8 +1025,7 @@
                 </Border.ContextMenu>
                 <Image x:Name="CompareVideoSurface"
                        Margin="1"
-                       Stretch="Uniform"
-                       RenderOptions.BitmapScalingMode="NearestNeighbor" />
+                       Stretch="Uniform" />
               </Border>
 
               <Border x:Name="CompareEmptyStateOverlay"
