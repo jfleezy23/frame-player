@@ -529,13 +529,14 @@
           <MenuItem Style="{StaticResource TitleBarTopLevelMenuItemStyle}" Header="_Playback">
             <MenuItem x:Name="PlayPauseMenuItem" Header="_Play" InputGestureText="Space" Click="PlayPauseButton_Click" />
             <Separator Style="{StaticResource TitleBarMenuSeparatorStyle}" />
-            <MenuItem Header="_Rewind 5s" InputGestureText="J" Click="RewindButton_Click" />
-            <MenuItem Header="_Fast Forward 5s" InputGestureText="L" Click="FastForwardButton_Click" />
+            <MenuItem Header="_Rewind 5s" InputGestureText="," Click="RewindButton_Click" />
+            <MenuItem Header="_Fast Forward 5s" InputGestureText="." Click="FastForwardButton_Click" />
             <Separator Style="{StaticResource TitleBarMenuSeparatorStyle}" />
             <MenuItem Header="Previous _Frame" InputGestureText="Left" Click="PreviousFrameButton_Click" />
             <MenuItem Header="_Next Frame" InputGestureText="Right" Click="NextFrameButton_Click" />
             <MenuItem x:Name="LoopPlaybackMenuItem"
                       Header="_Loop Playback"
+                      InputGestureText="L"
                       IsCheckable="True"
                       Checked="LoopPlaybackMenuItem_Checked"
                       Unchecked="LoopPlaybackMenuItem_Unchecked" />
