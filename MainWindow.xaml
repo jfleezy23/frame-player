@@ -780,7 +780,6 @@
                 <Image x:Name="CustomVideoSurface"
                        Margin="1"
                        Stretch="Uniform"
-                       SnapsToDevicePixels="True"
                        RenderOptions.BitmapScalingMode="NearestNeighbor" />
               </Border>
 
@@ -1028,7 +1027,6 @@
                 <Image x:Name="CompareVideoSurface"
                        Margin="1"
                        Stretch="Uniform"
-                       SnapsToDevicePixels="True"
                        RenderOptions.BitmapScalingMode="NearestNeighbor" />
               </Border>
 
