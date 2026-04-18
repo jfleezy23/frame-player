@@ -30,10 +30,7 @@ namespace FramePlayer.Services
 
         public CompareSideBySideExportPlan CreatePlan(CompareSideBySideExportRequest request)
         {
-            if (request == null)
-            {
-                throw new ArgumentNullException(nameof(request));
-            }
+            ArgumentNullException.ThrowIfNull(request);
 
             var toolPaths = _tooling.GetRequiredToolPaths();
 
@@ -88,8 +85,7 @@ namespace FramePlayer.Services
                     toolPaths,
                     primarySourceFullPath,
                     compareSourceFullPath,
-                    outputFullPath,
-                    outputDirectory);
+                    outputFullPath);
             }
 
             return BuildLoopPlan(
@@ -97,8 +93,7 @@ namespace FramePlayer.Services
                 toolPaths,
                 primarySourceFullPath,
                 compareSourceFullPath,
-                outputFullPath,
-                outputDirectory);
+                outputFullPath);
         }
 
         public async Task<CompareSideBySideExportResult> ExportAsync(
@@ -109,14 +104,11 @@ namespace FramePlayer.Services
             return await ExportPlanAsync(plan, cancellationToken).ConfigureAwait(false);
         }
 
-        public async Task<CompareSideBySideExportResult> ExportPlanAsync(
+        public static async Task<CompareSideBySideExportResult> ExportPlanAsync(
             CompareSideBySideExportPlan plan,
             CancellationToken cancellationToken = default(CancellationToken))
         {
-            if (plan == null)
-            {
-                throw new ArgumentNullException(nameof(plan));
-            }
+            ArgumentNullException.ThrowIfNull(plan);
 
             return await Task.Run(
                 () =>
@@ -168,8 +160,7 @@ namespace FramePlayer.Services
             FfmpegCliToolPaths toolPaths,
             string primarySourceFullPath,
             string compareSourceFullPath,
-            string outputFullPath,
-            string outputDirectory)
+            string outputFullPath)
         {
             var primaryLoopRange = request.PrimaryLoopRange;
             var compareLoopRange = request.CompareLoopRange;
@@ -227,9 +218,6 @@ namespace FramePlayer.Services
             var selectedAudioSession = request.AudioSource == CompareSideBySideExportAudioSource.Compare
                 ? request.CompareSessionSnapshot
                 : request.PrimarySessionSnapshot;
-            var selectedAudioLoopRange = request.AudioSource == CompareSideBySideExportAudioSource.Compare
-                ? compareLoopRange
-                : primaryLoopRange;
             var selectedAudioStartTime = request.AudioSource == CompareSideBySideExportAudioSource.Compare
                 ? compareStartTime
                 : primaryStartTime;
@@ -297,8 +285,7 @@ namespace FramePlayer.Services
             FfmpegCliToolPaths toolPaths,
             string primarySourceFullPath,
             string compareSourceFullPath,
-            string outputFullPath,
-            string outputDirectory)
+            string outputFullPath)
         {
             var primarySession = request.PrimarySessionSnapshot;
             var compareSession = request.CompareSessionSnapshot;

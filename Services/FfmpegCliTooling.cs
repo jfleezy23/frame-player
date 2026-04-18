@@ -65,10 +65,7 @@ namespace FramePlayer.Services
 
         public static string BuildFailureMessage(FfmpegProcessResult processResult, string defaultMessage)
         {
-            if (processResult == null)
-            {
-                throw new ArgumentNullException(nameof(processResult));
-            }
+            ArgumentNullException.ThrowIfNull(processResult);
 
             var details = !string.IsNullOrWhiteSpace(processResult.StandardError)
                 ? processResult.StandardError

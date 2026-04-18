@@ -28,10 +28,7 @@ namespace FramePlayer.Services
 
         public ClipExportPlan CreatePlan(ClipExportRequest request)
         {
-            if (request == null)
-            {
-                throw new ArgumentNullException(nameof(request));
-            }
+            ArgumentNullException.ThrowIfNull(request);
 
             var toolPaths = _tooling.GetRequiredToolPaths();
 
@@ -124,12 +121,9 @@ namespace FramePlayer.Services
             return await ExportPlanAsync(plan, cancellationToken).ConfigureAwait(false);
         }
 
-        public async Task<ClipExportResult> ExportPlanAsync(ClipExportPlan plan, CancellationToken cancellationToken = default(CancellationToken))
+        public static async Task<ClipExportResult> ExportPlanAsync(ClipExportPlan plan, CancellationToken cancellationToken = default(CancellationToken))
         {
-            if (plan == null)
-            {
-                throw new ArgumentNullException(nameof(plan));
-            }
+            ArgumentNullException.ThrowIfNull(plan);
 
             return await Task.Run(
                 () =>
