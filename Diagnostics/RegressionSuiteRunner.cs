@@ -1208,59 +1208,6 @@ namespace FramePlayer.Diagnostics
             return target > maxTarget ? maxTarget : target;
         }
 
-        private static bool HasPlaybackHeadroom(
-            long? currentFrameIndex,
-            long indexedFrameCount,
-            TimeSpan currentTime,
-            TimeSpan duration,
-            TimeSpan positionStep)
-        {
-            if (currentFrameIndex.HasValue && indexedFrameCount > 0L)
-            {
-                return currentFrameIndex.Value < indexedFrameCount - 1L;
-            }
-
-            var fallbackStep = positionStep > TimeSpan.Zero
-                ? positionStep
-                : TimeSpan.FromMilliseconds(100d);
-            return duration - currentTime > fallbackStep;
-        }
-
-        private static bool CanRunFullMediaLoopWrapSmoke(TimeSpan duration)
-        {
-            return duration >= MinimumFullMediaLoopWrapDuration;
-        }
-
-        private static bool CanRunPaneLocalLoopCoverage(long indexedFrameCount)
-        {
-            return indexedFrameCount >= MinimumPaneLocalLoopCoverageFrames;
-        }
-
-        private static bool IsPlayingPlaybackState(string playbackStateText)
-        {
-            return !string.IsNullOrWhiteSpace(playbackStateText) &&
-                   playbackStateText.IndexOf("playing", StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-
-        private static int CountObservedFrameWraps(IReadOnlyList<long> observedFrameIndices)
-        {
-            if (observedFrameIndices == null || observedFrameIndices.Count <= 1)
-            {
-                return 0;
-            }
-
-            var observedWrapCount = 0;
-            for (var observationIndex = 1; observationIndex < observedFrameIndices.Count; observationIndex++)
-            {
-                if (observedFrameIndices[observationIndex] < observedFrameIndices[observationIndex - 1])
-                {
-                    observedWrapCount++;
-                }
-            }
-
-            return observedWrapCount;
-        }
-
         private static async Task<IndexReadyResult> WaitForIndexReadyAsync(
             FfmpegReviewEngine engine,
             TimeSpan timeout,
@@ -1963,6 +1910,59 @@ namespace FramePlayer.Diagnostics
                 thread.SetApartmentState(ApartmentState.STA);
                 thread.Start();
                 return completion.Task;
+            }
+
+            private static bool HasPlaybackHeadroom(
+                long? currentFrameIndex,
+                long indexedFrameCount,
+                TimeSpan currentTime,
+                TimeSpan duration,
+                TimeSpan positionStep)
+            {
+                if (currentFrameIndex.HasValue && indexedFrameCount > 0L)
+                {
+                    return currentFrameIndex.Value < indexedFrameCount - 1L;
+                }
+
+                var fallbackStep = positionStep > TimeSpan.Zero
+                    ? positionStep
+                    : TimeSpan.FromMilliseconds(100d);
+                return duration - currentTime > fallbackStep;
+            }
+
+            private static bool CanRunFullMediaLoopWrapSmoke(TimeSpan duration)
+            {
+                return duration >= MinimumFullMediaLoopWrapDuration;
+            }
+
+            private static bool CanRunPaneLocalLoopCoverage(long indexedFrameCount)
+            {
+                return indexedFrameCount >= MinimumPaneLocalLoopCoverageFrames;
+            }
+
+            private static bool IsPlayingPlaybackState(string playbackStateText)
+            {
+                return !string.IsNullOrWhiteSpace(playbackStateText) &&
+                       playbackStateText.Contains("playing", StringComparison.OrdinalIgnoreCase);
+            }
+
+            private static int CountObservedFrameWraps(IReadOnlyList<long> observedFrameIndices)
+            {
+                if (observedFrameIndices == null || observedFrameIndices.Count <= 1)
+                {
+                    return 0;
+                }
+
+                var observedWrapCount = 0;
+                for (var observationIndex = 1; observationIndex < observedFrameIndices.Count; observationIndex++)
+                {
+                    if (observedFrameIndices[observationIndex] < observedFrameIndices[observationIndex - 1])
+                    {
+                        observedWrapCount++;
+                    }
+                }
+
+                return observedWrapCount;
             }
 
             private static async Task<UiRegressionResult> RunOnUiThreadAsync(
