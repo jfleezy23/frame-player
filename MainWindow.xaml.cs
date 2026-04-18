@@ -33,8 +33,12 @@ namespace FramePlayer
         private const string PrimaryPaneId = "pane-primary";
         private const string ComparePaneId = "pane-compare-a";
         private const string CompareSessionId = "compare-a";
+        private const string PrimaryPaneShortLabel = "Primary";
         private const string PrimaryPaneDisplayLabel = "Primary pane";
         private const string ComparePaneDisplayLabel = "Compare pane";
+        private const string NoneDisplayLabel = "(none)";
+        private const string AbsoluteFrameIdentityLabel = "absolute";
+        private const string SegmentLocalFrameIdentityLabel = "segment-local";
         private const string DefaultCompareAlignmentStatus = "Last align: none";
         private const double CompareModePreferredMinWindowWidth = 1180d;
         private const int ControlModifiedFrameStep = 10;
@@ -1261,7 +1265,7 @@ namespace FramePlayer
                 paneSnapshot = new ReviewWorkspacePaneSnapshot(
                     paneId,
                     string.Empty,
-                    string.Equals(paneId, ComparePaneId, StringComparison.Ordinal) ? "Compare A" : "Primary",
+                    string.Equals(paneId, ComparePaneId, StringComparison.Ordinal) ? "Compare A" : PrimaryPaneShortLabel,
                     false,
                     string.Equals(paneId, PrimaryPaneId, StringComparison.Ordinal),
                     false,
@@ -1356,7 +1360,7 @@ namespace FramePlayer
                 return "Compare";
             }
 
-            return "Primary";
+            return PrimaryPaneShortLabel;
         }
 
         private string BuildPaneStateText(ReviewWorkspacePaneSnapshot paneSnapshot)
@@ -2452,8 +2456,8 @@ namespace FramePlayer
                         "Decode backend: {0} | GPU active {1} | GPU status {2} | Fallback {3} | Cache budget {4:0.0} MiB | Queue depth {5}.",
                         string.IsNullOrWhiteSpace(ffmpegEngine.ActiveDecodeBackend) ? "(unknown)" : ffmpegEngine.ActiveDecodeBackend,
                         ffmpegEngine.IsGpuActive ? "yes" : "no",
-                        string.IsNullOrWhiteSpace(ffmpegEngine.GpuCapabilityStatus) ? "(none)" : ffmpegEngine.GpuCapabilityStatus,
-                        string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? "(none)" : ffmpegEngine.GpuFallbackReason,
+                        string.IsNullOrWhiteSpace(ffmpegEngine.GpuCapabilityStatus) ? NoneDisplayLabel : ffmpegEngine.GpuCapabilityStatus,
+                        string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? NoneDisplayLabel : ffmpegEngine.GpuFallbackReason,
                         ffmpegEngine.DecodedFrameCacheBudgetBytes / 1048576d,
                         ffmpegEngine.OperationalQueueDepth));
                     LogInfo(string.Format(
@@ -3347,7 +3351,7 @@ namespace FramePlayer
                         currentFrame,
                         totalFrameDisplay,
                         totalFrames,
-                        isAbsoluteFrameIndex ? "absolute" : "segment-local")
+                        isAbsoluteFrameIndex ? AbsoluteFrameIdentityLabel : SegmentLocalFrameIdentityLabel)
                     : string.Format(CultureInfo.InvariantCulture, "Current frame {0} of {1}.", currentFrame, totalFrames);
             }
             else
@@ -3361,7 +3365,7 @@ namespace FramePlayer
                         CultureInfo.InvariantCulture,
                         "Current zero-indexed frame {0}. Identity: {1}.",
                         currentFrame,
-                        isAbsoluteFrameIndex ? "absolute" : "segment-local")
+                        isAbsoluteFrameIndex ? AbsoluteFrameIdentityLabel : SegmentLocalFrameIdentityLabel)
                     : string.Format(CultureInfo.InvariantCulture, "Current frame {0}.", currentFrame);
             }
 
@@ -3372,13 +3376,13 @@ namespace FramePlayer
                         "Current / last zero-indexed frames: {0} / {1}. Identity: {2}. Type a zero-indexed frame number and press Enter.",
                         currentFrame,
                         totalFrameDisplay,
-                        isAbsoluteFrameIndex ? "absolute" : "segment-local")
+                        isAbsoluteFrameIndex ? AbsoluteFrameIdentityLabel : SegmentLocalFrameIdentityLabel)
                     : string.Format(CultureInfo.InvariantCulture, "Current / total frames: {0} / {1}. Type a frame number and press Enter.", currentFrame, totalFrames)
                 : string.Format(
                     CultureInfo.InvariantCulture,
                     "Current frame: {0}. Identity: {1}. {2}",
                     currentFrame,
-                    isAbsoluteFrameIndex ? "absolute" : "segment-local",
+                    isAbsoluteFrameIndex ? AbsoluteFrameIdentityLabel : SegmentLocalFrameIdentityLabel,
                     GetFrameNumberInputToolTip());
 
             TimecodeTextBlock.Text = string.Format(
@@ -3894,7 +3898,7 @@ namespace FramePlayer
 
             var paneLabel = string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
                 ? "Compare"
-                : "Primary";
+                : PrimaryPaneShortLabel;
             SetPointerCoordinates(string.Format(
                 CultureInfo.InvariantCulture,
                 "Pixel: {0} ({1},{2})",
@@ -4193,8 +4197,8 @@ namespace FramePlayer
                 CultureInfo.InvariantCulture,
                 "Backend: {0}. GPU status: {1}. Fallback: {2}. Queue depth: {3}. Index: {4}. Frame identity: {5}. Review cache budget is {6:0.0} MiB and currently uses about {7:0.0} MiB with up to {8} prior and {9} forward decoded frames. Last refill: {10} ({11:0.0} ms, {12}). Timeline seeks show the landed frame first.",
                 string.IsNullOrWhiteSpace(ffmpegEngine.ActiveDecodeBackend) ? "(unknown)" : ffmpegEngine.ActiveDecodeBackend,
-                string.IsNullOrWhiteSpace(ffmpegEngine.GpuCapabilityStatus) ? "(none)" : ffmpegEngine.GpuCapabilityStatus,
-                string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? "(none)" : ffmpegEngine.GpuFallbackReason,
+                string.IsNullOrWhiteSpace(ffmpegEngine.GpuCapabilityStatus) ? NoneDisplayLabel : ffmpegEngine.GpuCapabilityStatus,
+                string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? NoneDisplayLabel : ffmpegEngine.GpuFallbackReason,
                 ffmpegEngine.OperationalQueueDepth,
                 ffmpegEngine.GlobalFrameIndexStatus,
                 positionIdentity,
@@ -4202,7 +4206,7 @@ namespace FramePlayer
                 approximateCacheMegabytes,
                 ffmpegEngine.MaxPreviousCachedFrameCount,
                 ffmpegEngine.MaxForwardCachedFrameCount,
-                string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason) ? "(none)" : ffmpegEngine.LastCacheRefillReason,
+                string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason) ? NoneDisplayLabel : ffmpegEngine.LastCacheRefillReason,
                 ffmpegEngine.LastCacheRefillMilliseconds,
                 string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillMode) ? "none" : ffmpegEngine.LastCacheRefillMode);
             SetCacheStatus(message, tooltip, false);
@@ -4893,7 +4897,7 @@ namespace FramePlayer
                         FormatTime(exportResult.Plan.EndTimeExclusive),
                         durationText,
                         string.IsNullOrWhiteSpace(exportResult.Plan.EndBoundaryStrategy)
-                            ? "(none)"
+                            ? NoneDisplayLabel
                             : exportResult.Plan.EndBoundaryStrategy,
                         exportResult.Elapsed.TotalMilliseconds));
                 }
@@ -7658,7 +7662,7 @@ namespace FramePlayer
 
             var paneLabel = string.Equals(resolvedPaneId, ComparePaneId, StringComparison.Ordinal)
                 ? "Compare"
-                : "Primary";
+                : PrimaryPaneShortLabel;
             var engine = GetEngineForPane(resolvedPaneId);
             if (engine == null || !engine.IsMediaOpen)
             {
@@ -8092,7 +8096,7 @@ namespace FramePlayer
                     "Playback state: " + (_isPlaying ? "Playing" : "Paused/Idle"),
                     "Audio stream: " + (focusedEngine != null && focusedEngine.MediaInfo.HasAudioStream ? "Yes" : "No"),
                     "Audio playback available: " + (focusedEngine != null && focusedEngine.MediaInfo.IsAudioPlaybackAvailable ? "Yes" : "No"),
-                    "Audio codec: " + (focusedEngine == null || string.IsNullOrWhiteSpace(focusedEngine.MediaInfo.AudioCodecName) ? "(none)" : focusedEngine.MediaInfo.AudioCodecName),
+                    "Audio codec: " + (focusedEngine == null || string.IsNullOrWhiteSpace(focusedEngine.MediaInfo.AudioCodecName) ? NoneDisplayLabel : focusedEngine.MediaInfo.AudioCodecName),
                     "Audio details: " + GetAudioTooltipText(focusedEngine != null ? focusedEngine.MediaInfo : VideoMediaInfo.Empty),
                     "Frame index status: " + (ffmpegEngine != null ? ffmpegEngine.GlobalFrameIndexStatus : "(unavailable)"),
                     "Frame index available: " + (ffmpegEngine != null && ffmpegEngine.IsGlobalFrameIndexAvailable ? "Yes" : "No"),
@@ -8100,7 +8104,7 @@ namespace FramePlayer
                     "Decode backend: " + (ffmpegEngine != null ? ffmpegEngine.ActiveDecodeBackend : "(unavailable)"),
                     "GPU active: " + (ffmpegEngine != null && ffmpegEngine.IsGpuActive ? "Yes" : "No"),
                     "GPU status: " + (ffmpegEngine != null ? ffmpegEngine.GpuCapabilityStatus : "(unavailable)"),
-                    "GPU fallback reason: " + (ffmpegEngine != null && !string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? ffmpegEngine.GpuFallbackReason : "(none)"),
+                    "GPU fallback reason: " + (ffmpegEngine != null && !string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? ffmpegEngine.GpuFallbackReason : NoneDisplayLabel),
                     "Decode cache budget: " + (ffmpegEngine != null
                         ? string.Format(CultureInfo.InvariantCulture, "{0:0.0} MiB", ffmpegEngine.DecodedFrameCacheBudgetBytes / 1048576d)
                         : "(unavailable)"),
@@ -8119,7 +8123,7 @@ namespace FramePlayer
                         ? string.Format(
                             CultureInfo.InvariantCulture,
                             "{0}, {1:0.0} ms, mode {2}, after landing {3}, forward {4}->{5}",
-                            string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason) ? "(none)" : ffmpegEngine.LastCacheRefillReason,
+                            string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason) ? NoneDisplayLabel : ffmpegEngine.LastCacheRefillReason,
                             ffmpegEngine.LastCacheRefillMilliseconds,
                             string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillMode) ? "none" : ffmpegEngine.LastCacheRefillMode,
                             ffmpegEngine.LastCacheRefillAfterLanding ? "yes" : "no",
@@ -8149,7 +8153,7 @@ namespace FramePlayer
                         !string.IsNullOrWhiteSpace(displayedTotalFrame) ? " / " + displayedTotalFrame : string.Empty),
                     string.Format(CultureInfo.InvariantCulture, "Frame rate: {0:0.###} fps", _framesPerSecond),
                     "Frame step: " + FormatStepDuration(_positionStep),
-                    "Last error: " + (string.IsNullOrWhiteSpace(_lastMediaErrorMessage) ? "(none)" : _lastMediaErrorMessage)
+                    "Last error: " + (string.IsNullOrWhiteSpace(_lastMediaErrorMessage) ? NoneDisplayLabel : _lastMediaErrorMessage)
                 });
 
                 File.WriteAllText(dialog.FileName, report);
@@ -8188,7 +8192,7 @@ namespace FramePlayer
         private static string GetSafeFileDisplay(string filePath)
         {
             return string.IsNullOrWhiteSpace(filePath)
-                ? "(none)"
+                ? NoneDisplayLabel
                 : Path.GetFileName(filePath);
         }
 
@@ -8255,7 +8259,7 @@ namespace FramePlayer
             if (enginePosition != null && enginePosition.FrameIndex.HasValue)
             {
                 frameText = GetDisplayedFrameNumber(enginePosition.FrameIndex.Value).ToString(CultureInfo.InvariantCulture);
-                frameIdentity = enginePosition.IsFrameIndexAbsolute ? "absolute" : "segment-local";
+                frameIdentity = enginePosition.IsFrameIndexAbsolute ? AbsoluteFrameIdentityLabel : SegmentLocalFrameIdentityLabel;
             }
 
             LogInfo(string.Format(
@@ -8286,8 +8290,8 @@ namespace FramePlayer
                 ffmpegEngine.LastSeekIndexWaitMilliseconds,
                 ffmpegEngine.LastSeekMaterializeMilliseconds,
                 ffmpegEngine.LastSeekForwardCacheWarmMilliseconds,
-                string.IsNullOrWhiteSpace(ffmpegEngine.LastSeekMode) ? "(none)" : ffmpegEngine.LastSeekMode,
-                string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason) ? "(none)" : ffmpegEngine.LastCacheRefillReason,
+                string.IsNullOrWhiteSpace(ffmpegEngine.LastSeekMode) ? NoneDisplayLabel : ffmpegEngine.LastSeekMode,
+                string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason) ? NoneDisplayLabel : ffmpegEngine.LastCacheRefillReason,
                 ffmpegEngine.LastCacheRefillMilliseconds,
                 string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillMode) ? "none" : ffmpegEngine.LastCacheRefillMode,
                 ffmpegEngine.LastCacheRefillStartingForwardCount,
