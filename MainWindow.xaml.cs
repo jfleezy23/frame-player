@@ -4393,18 +4393,20 @@ namespace FramePlayer
                 var sanitizedMessage = SanitizeSensitiveText(ex.Message);
                 SetPlaybackMessage("Side-by-side compare export failed.");
                 LogError("Side-by-side compare export failed: " + sanitizedMessage);
-                return new CompareSideBySideExportResult(
-                    false,
-                    null,
-                    sanitizedMessage,
-                    -1,
-                    TimeSpan.Zero,
-                    null,
-                    null,
-                    null,
-                    null,
-                    string.Empty,
-                    string.Empty);
+                return new CompareSideBySideExportResult
+                {
+                    Succeeded = false,
+                    Plan = null,
+                    Message = sanitizedMessage,
+                    ExitCode = -1,
+                    Elapsed = TimeSpan.Zero,
+                    ProbedDuration = null,
+                    ProbedVideoWidth = null,
+                    ProbedVideoHeight = null,
+                    ProbedHasAudioStream = null,
+                    StandardOutput = string.Empty,
+                    StandardError = string.Empty
+                };
             }
         }
 
@@ -4588,50 +4590,54 @@ namespace FramePlayer
             return true;
         }
 
-        private CompareSideBySideExportRequest BuildCompareSideBySideExportRequest(
+        private static CompareSideBySideExportRequest BuildCompareSideBySideExportRequest(
             CompareSideBySideExportContext exportContext,
             string outputPath,
             CompareSideBySideExportMode mode,
             CompareSideBySideExportAudioSource audioSource)
         {
-            return new CompareSideBySideExportRequest(
-                outputPath,
-                mode,
-                audioSource,
-                BuildReviewSessionSnapshot(exportContext.PrimaryPaneSnapshot, exportContext.PrimaryEngine),
-                BuildReviewSessionSnapshot(exportContext.ComparePaneSnapshot, exportContext.CompareEngine),
-                exportContext.PrimaryLoopRange,
-                exportContext.CompareLoopRange,
-                exportContext.PrimaryEngine,
-                exportContext.CompareEngine);
+            return new CompareSideBySideExportRequest
+            {
+                OutputFilePath = outputPath,
+                Mode = mode,
+                AudioSource = audioSource,
+                PrimarySessionSnapshot = BuildReviewSessionSnapshot(exportContext.PrimaryPaneSnapshot, exportContext.PrimaryEngine),
+                CompareSessionSnapshot = BuildReviewSessionSnapshot(exportContext.ComparePaneSnapshot, exportContext.CompareEngine),
+                PrimaryLoopRange = exportContext.PrimaryLoopRange,
+                CompareLoopRange = exportContext.CompareLoopRange,
+                PrimaryEngine = exportContext.PrimaryEngine,
+                CompareEngine = exportContext.CompareEngine
+            };
         }
 
-        private CompareSideBySideExportDialogSnapshot BuildCompareSideBySideExportDialogSnapshot(
+        private static CompareSideBySideExportDialogSnapshot BuildCompareSideBySideExportDialogSnapshot(
             CompareSideBySideExportContext exportContext,
             CompareSideBySideExportMode initialMode,
             CompareSideBySideExportAudioSource initialAudioSource)
         {
             var primaryMediaInfo = exportContext.PrimaryEngine != null ? exportContext.PrimaryEngine.MediaInfo : VideoMediaInfo.Empty;
             var compareMediaInfo = exportContext.CompareEngine != null ? exportContext.CompareEngine.MediaInfo : VideoMediaInfo.Empty;
-            return new CompareSideBySideExportDialogSnapshot(
-                Path.GetFileName(exportContext.PrimaryPaneSnapshot.CurrentFilePath),
-                BuildCompareExportVideoSummary(primaryMediaInfo),
-                BuildCompareExportAudioSummary(primaryMediaInfo),
-                BuildCompareExportPositionSummary(exportContext.PrimaryPaneSnapshot),
-                BuildCompareExportLoopSummary(exportContext.PrimaryLoopRange),
-                Path.GetFileName(exportContext.ComparePaneSnapshot.CurrentFilePath),
-                BuildCompareExportVideoSummary(compareMediaInfo),
-                BuildCompareExportAudioSummary(compareMediaInfo),
-                BuildCompareExportPositionSummary(exportContext.ComparePaneSnapshot),
-                BuildCompareExportLoopSummary(exportContext.CompareLoopRange),
-                primaryMediaInfo.HasAudioStream,
-                compareMediaInfo.HasAudioStream,
-                exportContext.IsLoopModeAvailable,
-                exportContext.LoopModeUnavailableReason,
-                initialMode,
-                initialAudioSource,
-                "Primary pane",
-                "Compare pane");
+            return new CompareSideBySideExportDialogSnapshot
+            {
+                PrimaryFileName = Path.GetFileName(exportContext.PrimaryPaneSnapshot.CurrentFilePath) ?? string.Empty,
+                PrimaryVideoSummary = BuildCompareExportVideoSummary(primaryMediaInfo),
+                PrimaryAudioSummary = BuildCompareExportAudioSummary(primaryMediaInfo),
+                PrimaryPositionSummary = BuildCompareExportPositionSummary(exportContext.PrimaryPaneSnapshot),
+                PrimaryLoopSummary = BuildCompareExportLoopSummary(exportContext.PrimaryLoopRange),
+                CompareFileName = Path.GetFileName(exportContext.ComparePaneSnapshot.CurrentFilePath) ?? string.Empty,
+                CompareVideoSummary = BuildCompareExportVideoSummary(compareMediaInfo),
+                CompareAudioSummary = BuildCompareExportAudioSummary(compareMediaInfo),
+                ComparePositionSummary = BuildCompareExportPositionSummary(exportContext.ComparePaneSnapshot),
+                CompareLoopSummary = BuildCompareExportLoopSummary(exportContext.CompareLoopRange),
+                PrimaryHasAudio = primaryMediaInfo.HasAudioStream,
+                CompareHasAudio = compareMediaInfo.HasAudioStream,
+                IsLoopModeAvailable = exportContext.IsLoopModeAvailable,
+                LoopModeUnavailableReason = exportContext.LoopModeUnavailableReason ?? string.Empty,
+                InitialMode = initialMode,
+                InitialAudioSource = initialAudioSource,
+                PrimaryAudioLabel = "Primary pane",
+                CompareAudioLabel = "Compare pane"
+            };
         }
 
         private static string BuildCompareExportVideoSummary(VideoMediaInfo mediaInfo)
@@ -4720,7 +4726,7 @@ namespace FramePlayer
             return true;
         }
 
-        private ReviewSessionSnapshot BuildReviewSessionSnapshot(
+        private static ReviewSessionSnapshot BuildReviewSessionSnapshot(
             ReviewWorkspacePaneSnapshot paneSnapshot,
             FfmpegReviewEngine engine)
         {
@@ -4738,30 +4744,29 @@ namespace FramePlayer
                 engine.Position);
         }
 
-        private string BuildSuggestedCompareExportFileName(
+        private static string BuildSuggestedCompareExportFileName(
             CompareSideBySideExportContext exportContext,
             CompareSideBySideExportMode mode)
         {
             var primaryBaseName = SanitizeFileNameSegment(Path.GetFileNameWithoutExtension(exportContext.PrimaryPaneSnapshot.CurrentFilePath));
             var compareBaseName = SanitizeFileNameSegment(Path.GetFileNameWithoutExtension(exportContext.ComparePaneSnapshot.CurrentFilePath));
             var modeSegment = mode == CompareSideBySideExportMode.Loop ? "loop" : "whole";
-            var rangeSegment = mode == CompareSideBySideExportMode.Loop
-                ? string.Format(
+            var rangeSegment = string.Empty;
+            if (mode == CompareSideBySideExportMode.Loop)
+            {
+                var primaryLoopInTime = GetCompareLoopBoundaryTime(exportContext.PrimaryLoopRange, useLoopIn: true);
+                var primaryLoopOutTime = GetCompareLoopBoundaryTime(exportContext.PrimaryLoopRange, useLoopIn: false);
+                var compareLoopInTime = GetCompareLoopBoundaryTime(exportContext.CompareLoopRange, useLoopIn: true);
+                var compareLoopOutTime = GetCompareLoopBoundaryTime(exportContext.CompareLoopRange, useLoopIn: false);
+                rangeSegment = string.Format(
                     CultureInfo.InvariantCulture,
                     "-{0}-{1}-{2}-{3}",
-                    FormatClipFileNameTime(exportContext.PrimaryLoopRange != null && exportContext.PrimaryLoopRange.LoopIn != null
-                        ? exportContext.PrimaryLoopRange.LoopIn.PresentationTime
-                        : TimeSpan.Zero),
-                    FormatClipFileNameTime(exportContext.PrimaryLoopRange != null && exportContext.PrimaryLoopRange.LoopOut != null
-                        ? exportContext.PrimaryLoopRange.LoopOut.PresentationTime
-                        : TimeSpan.Zero),
-                    FormatClipFileNameTime(exportContext.CompareLoopRange != null && exportContext.CompareLoopRange.LoopIn != null
-                        ? exportContext.CompareLoopRange.LoopIn.PresentationTime
-                        : TimeSpan.Zero),
-                    FormatClipFileNameTime(exportContext.CompareLoopRange != null && exportContext.CompareLoopRange.LoopOut != null
-                        ? exportContext.CompareLoopRange.LoopOut.PresentationTime
-                        : TimeSpan.Zero))
-                : string.Empty;
+                    FormatClipFileNameTime(primaryLoopInTime),
+                    FormatClipFileNameTime(primaryLoopOutTime),
+                    FormatClipFileNameTime(compareLoopInTime),
+                    FormatClipFileNameTime(compareLoopOutTime));
+            }
+
             return string.Format(
                 CultureInfo.InvariantCulture,
                 "{0}-vs-{1}-side-by-side-{2}{3}.mp4",
@@ -4769,6 +4774,17 @@ namespace FramePlayer
                 string.IsNullOrWhiteSpace(compareBaseName) ? "compare" : compareBaseName,
                 modeSegment,
                 rangeSegment);
+        }
+
+        private static TimeSpan GetCompareLoopBoundaryTime(LoopPlaybackPaneRangeSnapshot loopRange, bool useLoopIn)
+        {
+            if (loopRange == null)
+            {
+                return TimeSpan.Zero;
+            }
+
+            var anchor = useLoopIn ? loopRange.LoopIn : loopRange.LoopOut;
+            return anchor != null ? anchor.PresentationTime : TimeSpan.Zero;
         }
 
         private bool TryResolveTimelineLoopCommandContext(

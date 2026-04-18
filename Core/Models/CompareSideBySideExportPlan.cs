@@ -4,112 +4,172 @@ namespace FramePlayer.Core.Models
 {
     public sealed class CompareSideBySideExportPlan
     {
-        public CompareSideBySideExportPlan(
-            string outputFilePath,
-            CompareSideBySideExportMode mode,
-            CompareSideBySideExportAudioSource audioSource,
-            string primarySourceFilePath,
-            string compareSourceFilePath,
-            TimeSpan primaryStartTime,
-            TimeSpan primaryContentDuration,
-            TimeSpan primaryLeadingPad,
-            TimeSpan primaryTrailingPad,
-            TimeSpan compareStartTime,
-            TimeSpan compareContentDuration,
-            TimeSpan compareLeadingPad,
-            TimeSpan compareTrailingPad,
-            string primaryEndBoundaryStrategy,
-            string compareEndBoundaryStrategy,
-            TimeSpan outputDuration,
-            int primaryRenderWidth,
-            int primaryRenderHeight,
-            int compareRenderWidth,
-            int compareRenderHeight,
-            int outputWidth,
-            int outputHeight,
-            bool selectedAudioHasStream,
-            string ffmpegArguments,
-            string ffmpegPath,
-            string ffprobePath)
+        private string _outputFilePath = string.Empty;
+        private string _primarySourceFilePath = string.Empty;
+        private string _compareSourceFilePath = string.Empty;
+        private TimeSpan _primaryStartTime = TimeSpan.Zero;
+        private TimeSpan _primaryContentDuration = TimeSpan.Zero;
+        private TimeSpan _primaryLeadingPad = TimeSpan.Zero;
+        private TimeSpan _primaryTrailingPad = TimeSpan.Zero;
+        private TimeSpan _compareStartTime = TimeSpan.Zero;
+        private TimeSpan _compareContentDuration = TimeSpan.Zero;
+        private TimeSpan _compareLeadingPad = TimeSpan.Zero;
+        private TimeSpan _compareTrailingPad = TimeSpan.Zero;
+        private string _primaryEndBoundaryStrategy = string.Empty;
+        private string _compareEndBoundaryStrategy = string.Empty;
+        private TimeSpan _outputDuration = TimeSpan.Zero;
+        private int _primaryRenderWidth = 1;
+        private int _primaryRenderHeight = 1;
+        private int _compareRenderWidth = 1;
+        private int _compareRenderHeight = 1;
+        private int _outputWidth = 1;
+        private int _outputHeight = 1;
+        private string _ffmpegArguments = string.Empty;
+        private string _ffmpegPath = string.Empty;
+        private string _ffprobePath = string.Empty;
+
+        public string OutputFilePath
         {
-            OutputFilePath = outputFilePath ?? string.Empty;
-            Mode = mode;
-            AudioSource = audioSource;
-            PrimarySourceFilePath = primarySourceFilePath ?? string.Empty;
-            CompareSourceFilePath = compareSourceFilePath ?? string.Empty;
-            PrimaryStartTime = primaryStartTime < TimeSpan.Zero ? TimeSpan.Zero : primaryStartTime;
-            PrimaryContentDuration = primaryContentDuration < TimeSpan.Zero ? TimeSpan.Zero : primaryContentDuration;
-            PrimaryLeadingPad = primaryLeadingPad < TimeSpan.Zero ? TimeSpan.Zero : primaryLeadingPad;
-            PrimaryTrailingPad = primaryTrailingPad < TimeSpan.Zero ? TimeSpan.Zero : primaryTrailingPad;
-            CompareStartTime = compareStartTime < TimeSpan.Zero ? TimeSpan.Zero : compareStartTime;
-            CompareContentDuration = compareContentDuration < TimeSpan.Zero ? TimeSpan.Zero : compareContentDuration;
-            CompareLeadingPad = compareLeadingPad < TimeSpan.Zero ? TimeSpan.Zero : compareLeadingPad;
-            CompareTrailingPad = compareTrailingPad < TimeSpan.Zero ? TimeSpan.Zero : compareTrailingPad;
-            PrimaryEndBoundaryStrategy = primaryEndBoundaryStrategy ?? string.Empty;
-            CompareEndBoundaryStrategy = compareEndBoundaryStrategy ?? string.Empty;
-            OutputDuration = outputDuration < TimeSpan.Zero ? TimeSpan.Zero : outputDuration;
-            PrimaryRenderWidth = Math.Max(1, primaryRenderWidth);
-            PrimaryRenderHeight = Math.Max(1, primaryRenderHeight);
-            CompareRenderWidth = Math.Max(1, compareRenderWidth);
-            CompareRenderHeight = Math.Max(1, compareRenderHeight);
-            OutputWidth = Math.Max(1, outputWidth);
-            OutputHeight = Math.Max(1, outputHeight);
-            SelectedAudioHasStream = selectedAudioHasStream;
-            FfmpegArguments = ffmpegArguments ?? string.Empty;
-            FfmpegPath = ffmpegPath ?? string.Empty;
-            FfprobePath = ffprobePath ?? string.Empty;
+            get { return _outputFilePath; }
+            init { _outputFilePath = value ?? string.Empty; }
         }
 
-        public string OutputFilePath { get; }
+        public CompareSideBySideExportMode Mode { get; init; }
 
-        public CompareSideBySideExportMode Mode { get; }
+        public CompareSideBySideExportAudioSource AudioSource { get; init; }
 
-        public CompareSideBySideExportAudioSource AudioSource { get; }
+        public string PrimarySourceFilePath
+        {
+            get { return _primarySourceFilePath; }
+            init { _primarySourceFilePath = value ?? string.Empty; }
+        }
 
-        public string PrimarySourceFilePath { get; }
+        public string CompareSourceFilePath
+        {
+            get { return _compareSourceFilePath; }
+            init { _compareSourceFilePath = value ?? string.Empty; }
+        }
 
-        public string CompareSourceFilePath { get; }
+        public TimeSpan PrimaryStartTime
+        {
+            get { return _primaryStartTime; }
+            init { _primaryStartTime = value < TimeSpan.Zero ? TimeSpan.Zero : value; }
+        }
 
-        public TimeSpan PrimaryStartTime { get; }
+        public TimeSpan PrimaryContentDuration
+        {
+            get { return _primaryContentDuration; }
+            init { _primaryContentDuration = value < TimeSpan.Zero ? TimeSpan.Zero : value; }
+        }
 
-        public TimeSpan PrimaryContentDuration { get; }
+        public TimeSpan PrimaryLeadingPad
+        {
+            get { return _primaryLeadingPad; }
+            init { _primaryLeadingPad = value < TimeSpan.Zero ? TimeSpan.Zero : value; }
+        }
 
-        public TimeSpan PrimaryLeadingPad { get; }
+        public TimeSpan PrimaryTrailingPad
+        {
+            get { return _primaryTrailingPad; }
+            init { _primaryTrailingPad = value < TimeSpan.Zero ? TimeSpan.Zero : value; }
+        }
 
-        public TimeSpan PrimaryTrailingPad { get; }
+        public TimeSpan CompareStartTime
+        {
+            get { return _compareStartTime; }
+            init { _compareStartTime = value < TimeSpan.Zero ? TimeSpan.Zero : value; }
+        }
 
-        public TimeSpan CompareStartTime { get; }
+        public TimeSpan CompareContentDuration
+        {
+            get { return _compareContentDuration; }
+            init { _compareContentDuration = value < TimeSpan.Zero ? TimeSpan.Zero : value; }
+        }
 
-        public TimeSpan CompareContentDuration { get; }
+        public TimeSpan CompareLeadingPad
+        {
+            get { return _compareLeadingPad; }
+            init { _compareLeadingPad = value < TimeSpan.Zero ? TimeSpan.Zero : value; }
+        }
 
-        public TimeSpan CompareLeadingPad { get; }
+        public TimeSpan CompareTrailingPad
+        {
+            get { return _compareTrailingPad; }
+            init { _compareTrailingPad = value < TimeSpan.Zero ? TimeSpan.Zero : value; }
+        }
 
-        public TimeSpan CompareTrailingPad { get; }
+        public string PrimaryEndBoundaryStrategy
+        {
+            get { return _primaryEndBoundaryStrategy; }
+            init { _primaryEndBoundaryStrategy = value ?? string.Empty; }
+        }
 
-        public string PrimaryEndBoundaryStrategy { get; }
+        public string CompareEndBoundaryStrategy
+        {
+            get { return _compareEndBoundaryStrategy; }
+            init { _compareEndBoundaryStrategy = value ?? string.Empty; }
+        }
 
-        public string CompareEndBoundaryStrategy { get; }
+        public TimeSpan OutputDuration
+        {
+            get { return _outputDuration; }
+            init { _outputDuration = value < TimeSpan.Zero ? TimeSpan.Zero : value; }
+        }
 
-        public TimeSpan OutputDuration { get; }
+        public int PrimaryRenderWidth
+        {
+            get { return _primaryRenderWidth; }
+            init { _primaryRenderWidth = Math.Max(1, value); }
+        }
 
-        public int PrimaryRenderWidth { get; }
+        public int PrimaryRenderHeight
+        {
+            get { return _primaryRenderHeight; }
+            init { _primaryRenderHeight = Math.Max(1, value); }
+        }
 
-        public int PrimaryRenderHeight { get; }
+        public int CompareRenderWidth
+        {
+            get { return _compareRenderWidth; }
+            init { _compareRenderWidth = Math.Max(1, value); }
+        }
 
-        public int CompareRenderWidth { get; }
+        public int CompareRenderHeight
+        {
+            get { return _compareRenderHeight; }
+            init { _compareRenderHeight = Math.Max(1, value); }
+        }
 
-        public int CompareRenderHeight { get; }
+        public int OutputWidth
+        {
+            get { return _outputWidth; }
+            init { _outputWidth = Math.Max(1, value); }
+        }
 
-        public int OutputWidth { get; }
+        public int OutputHeight
+        {
+            get { return _outputHeight; }
+            init { _outputHeight = Math.Max(1, value); }
+        }
 
-        public int OutputHeight { get; }
+        public bool SelectedAudioHasStream { get; init; }
 
-        public bool SelectedAudioHasStream { get; }
+        public string FfmpegArguments
+        {
+            get { return _ffmpegArguments; }
+            init { _ffmpegArguments = value ?? string.Empty; }
+        }
 
-        public string FfmpegArguments { get; }
+        public string FfmpegPath
+        {
+            get { return _ffmpegPath; }
+            init { _ffmpegPath = value ?? string.Empty; }
+        }
 
-        public string FfmpegPath { get; }
-
-        public string FfprobePath { get; }
+        public string FfprobePath
+        {
+            get { return _ffprobePath; }
+            init { _ffprobePath = value ?? string.Empty; }
+        }
     }
 }

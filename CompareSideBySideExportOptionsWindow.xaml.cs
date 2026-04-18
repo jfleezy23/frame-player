@@ -111,81 +111,41 @@ namespace FramePlayer
 
     internal sealed class CompareSideBySideExportDialogSnapshot
     {
-        public CompareSideBySideExportDialogSnapshot(
-            string primaryFileName,
-            string primaryVideoSummary,
-            string primaryAudioSummary,
-            string primaryPositionSummary,
-            string primaryLoopSummary,
-            string compareFileName,
-            string compareVideoSummary,
-            string compareAudioSummary,
-            string comparePositionSummary,
-            string compareLoopSummary,
-            bool primaryHasAudio,
-            bool compareHasAudio,
-            bool isLoopModeAvailable,
-            string loopModeUnavailableReason,
-            CompareSideBySideExportMode initialMode,
-            CompareSideBySideExportAudioSource initialAudioSource,
-            string primaryAudioLabel,
-            string compareAudioLabel)
-        {
-            PrimaryFileName = primaryFileName ?? string.Empty;
-            PrimaryVideoSummary = primaryVideoSummary ?? string.Empty;
-            PrimaryAudioSummary = primaryAudioSummary ?? string.Empty;
-            PrimaryPositionSummary = primaryPositionSummary ?? string.Empty;
-            PrimaryLoopSummary = primaryLoopSummary ?? string.Empty;
-            CompareFileName = compareFileName ?? string.Empty;
-            CompareVideoSummary = compareVideoSummary ?? string.Empty;
-            CompareAudioSummary = compareAudioSummary ?? string.Empty;
-            ComparePositionSummary = comparePositionSummary ?? string.Empty;
-            CompareLoopSummary = compareLoopSummary ?? string.Empty;
-            PrimaryHasAudio = primaryHasAudio;
-            CompareHasAudio = compareHasAudio;
-            IsLoopModeAvailable = isLoopModeAvailable;
-            LoopModeUnavailableReason = loopModeUnavailableReason ?? string.Empty;
-            InitialMode = initialMode;
-            InitialAudioSource = initialAudioSource;
-            PrimaryAudioLabel = primaryAudioLabel ?? "Primary pane";
-            CompareAudioLabel = compareAudioLabel ?? "Compare pane";
-        }
+        public string PrimaryFileName { get; init; } = string.Empty;
 
-        public string PrimaryFileName { get; }
+        public string PrimaryVideoSummary { get; init; } = string.Empty;
 
-        public string PrimaryVideoSummary { get; }
+        public string PrimaryAudioSummary { get; init; } = string.Empty;
 
-        public string PrimaryAudioSummary { get; }
+        public string PrimaryPositionSummary { get; init; } = string.Empty;
 
-        public string PrimaryPositionSummary { get; }
+        public string PrimaryLoopSummary { get; init; } = string.Empty;
 
-        public string PrimaryLoopSummary { get; }
+        public string CompareFileName { get; init; } = string.Empty;
 
-        public string CompareFileName { get; }
+        public string CompareVideoSummary { get; init; } = string.Empty;
 
-        public string CompareVideoSummary { get; }
+        public string CompareAudioSummary { get; init; } = string.Empty;
 
-        public string CompareAudioSummary { get; }
+        public string ComparePositionSummary { get; init; } = string.Empty;
 
-        public string ComparePositionSummary { get; }
+        public string CompareLoopSummary { get; init; } = string.Empty;
 
-        public string CompareLoopSummary { get; }
+        public bool PrimaryHasAudio { get; init; }
 
-        public bool PrimaryHasAudio { get; }
+        public bool CompareHasAudio { get; init; }
 
-        public bool CompareHasAudio { get; }
+        public bool IsLoopModeAvailable { get; init; }
 
-        public bool IsLoopModeAvailable { get; }
+        public string LoopModeUnavailableReason { get; init; } = string.Empty;
 
-        public string LoopModeUnavailableReason { get; }
+        public CompareSideBySideExportMode InitialMode { get; init; }
 
-        public CompareSideBySideExportMode InitialMode { get; }
+        public CompareSideBySideExportAudioSource InitialAudioSource { get; init; }
 
-        public CompareSideBySideExportAudioSource InitialAudioSource { get; }
+        public string PrimaryAudioLabel { get; init; } = "Primary pane";
 
-        public string PrimaryAudioLabel { get; }
-
-        public string CompareAudioLabel { get; }
+        public string CompareAudioLabel { get; init; } = "Compare pane";
     }
 
     internal sealed class CompareSideBySideExportDialogSelection

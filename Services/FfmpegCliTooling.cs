@@ -110,77 +110,8 @@ namespace FramePlayer.Services
             {
                 using (var document = JsonDocument.Parse(processResult.StandardOutput))
                 {
-                    double parsedSeconds = 0d;
-                    TimeSpan? duration = null;
-                    int? videoWidth = null;
-                    int? videoHeight = null;
-                    var hasAudioStream = false;
-
-                    JsonElement root;
-                    if (!document.RootElement.TryGetProperty("format", out root))
-                    {
-                        root = default(JsonElement);
-                    }
-
-                    if (root.ValueKind == JsonValueKind.Object)
-                    {
-                        JsonElement durationElement;
-                        if (root.TryGetProperty("duration", out durationElement) &&
-                            durationElement.ValueKind == JsonValueKind.String &&
-                            double.TryParse(durationElement.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out parsedSeconds) &&
-                            parsedSeconds >= 0d)
-                        {
-                            duration = TimeSpan.FromSeconds(parsedSeconds);
-                        }
-                    }
-
-                    JsonElement streamsElement;
-                    if (document.RootElement.TryGetProperty("streams", out streamsElement) &&
-                        streamsElement.ValueKind == JsonValueKind.Array)
-                    {
-                        foreach (var streamElement in streamsElement.EnumerateArray())
-                        {
-                            JsonElement codecTypeElement;
-                            if (!streamElement.TryGetProperty("codec_type", out codecTypeElement) ||
-                                codecTypeElement.ValueKind != JsonValueKind.String)
-                            {
-                                continue;
-                            }
-
-                            var codecType = codecTypeElement.GetString();
-                            if (string.Equals(codecType, "audio", StringComparison.OrdinalIgnoreCase))
-                            {
-                                hasAudioStream = true;
-                                continue;
-                            }
-
-                            if (!string.Equals(codecType, "video", StringComparison.OrdinalIgnoreCase) ||
-                                videoWidth.HasValue ||
-                                videoHeight.HasValue)
-                            {
-                                continue;
-                            }
-
-                            JsonElement widthElement;
-                            if (streamElement.TryGetProperty("width", out widthElement) &&
-                                widthElement.ValueKind == JsonValueKind.Number &&
-                                widthElement.TryGetInt32(out var parsedWidth) &&
-                                parsedWidth > 0)
-                            {
-                                videoWidth = parsedWidth;
-                            }
-
-                            JsonElement heightElement;
-                            if (streamElement.TryGetProperty("height", out heightElement) &&
-                                heightElement.ValueKind == JsonValueKind.Number &&
-                                heightElement.TryGetInt32(out var parsedHeight) &&
-                                parsedHeight > 0)
-                            {
-                                videoHeight = parsedHeight;
-                            }
-                        }
-                    }
-
+                    var duration = ReadProbeDuration(document.RootElement);
+                    ReadProbeStreams(document.RootElement, out var videoWidth, out var videoHeight, out var hasAudioStream);
                     probe = new FfmpegMediaProbe(duration, videoWidth, videoHeight, hasAudioStream);
                     return true;
                 }
@@ -190,6 +121,122 @@ namespace FramePlayer.Services
                 probe = null;
                 return false;
             }
+        }
+
+        private static TimeSpan? ReadProbeDuration(JsonElement rootElement)
+        {
+            if (!TryGetObjectProperty(rootElement, "format", out var formatElement))
+            {
+                return null;
+            }
+
+            JsonElement durationElement;
+            if (!formatElement.TryGetProperty("duration", out durationElement) ||
+                durationElement.ValueKind != JsonValueKind.String)
+            {
+                return null;
+            }
+
+            if (!double.TryParse(durationElement.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedSeconds) ||
+                parsedSeconds < 0d)
+            {
+                return null;
+            }
+
+            return TimeSpan.FromSeconds(parsedSeconds);
+        }
+
+        private static void ReadProbeStreams(
+            JsonElement rootElement,
+            out int? videoWidth,
+            out int? videoHeight,
+            out bool hasAudioStream)
+        {
+            videoWidth = null;
+            videoHeight = null;
+            hasAudioStream = false;
+
+            if (!TryGetArrayProperty(rootElement, "streams", out var streamsElement))
+            {
+                return;
+            }
+
+            foreach (var streamElement in streamsElement.EnumerateArray())
+            {
+                if (!TryGetStringProperty(streamElement, "codec_type", out var codecType))
+                {
+                    continue;
+                }
+
+                if (string.Equals(codecType, "audio", StringComparison.OrdinalIgnoreCase))
+                {
+                    hasAudioStream = true;
+                    continue;
+                }
+
+                if (!string.Equals(codecType, "video", StringComparison.OrdinalIgnoreCase) ||
+                    videoWidth.HasValue ||
+                    videoHeight.HasValue)
+                {
+                    continue;
+                }
+
+                videoWidth = ReadPositiveInt32Property(streamElement, "width");
+                videoHeight = ReadPositiveInt32Property(streamElement, "height");
+            }
+        }
+
+        private static bool TryGetObjectProperty(JsonElement element, string propertyName, out JsonElement propertyValue)
+        {
+            if (element.TryGetProperty(propertyName, out propertyValue) &&
+                propertyValue.ValueKind == JsonValueKind.Object)
+            {
+                return true;
+            }
+
+            propertyValue = default(JsonElement);
+            return false;
+        }
+
+        private static bool TryGetArrayProperty(JsonElement element, string propertyName, out JsonElement propertyValue)
+        {
+            if (element.TryGetProperty(propertyName, out propertyValue) &&
+                propertyValue.ValueKind == JsonValueKind.Array)
+            {
+                return true;
+            }
+
+            propertyValue = default(JsonElement);
+            return false;
+        }
+
+        private static bool TryGetStringProperty(JsonElement element, string propertyName, out string propertyValue)
+        {
+            propertyValue = string.Empty;
+
+            JsonElement propertyElement;
+            if (!element.TryGetProperty(propertyName, out propertyElement) ||
+                propertyElement.ValueKind != JsonValueKind.String)
+            {
+                return false;
+            }
+
+            propertyValue = propertyElement.GetString() ?? string.Empty;
+            return true;
+        }
+
+        private static int? ReadPositiveInt32Property(JsonElement element, string propertyName)
+        {
+            JsonElement propertyElement;
+            if (!element.TryGetProperty(propertyName, out propertyElement) ||
+                propertyElement.ValueKind != JsonValueKind.Number ||
+                !propertyElement.TryGetInt32(out var parsedValue) ||
+                parsedValue <= 0)
+            {
+                return null;
+            }
+
+            return parsedValue;
         }
 
         private static ToolAvailability DiscoverToolAvailability()

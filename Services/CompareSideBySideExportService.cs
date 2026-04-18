@@ -123,34 +123,38 @@ namespace FramePlayer.Services
 
                     if (processResult.ExitCode != 0)
                     {
-                        return new CompareSideBySideExportResult(
-                            false,
-                            plan,
-                            FfmpegCliTooling.BuildFailureMessage(processResult, "FFmpeg compare export failed."),
-                            processResult.ExitCode,
-                            stopwatch.Elapsed,
-                            null,
-                            null,
-                            null,
-                            null,
-                            processResult.StandardOutput,
-                            processResult.StandardError);
+                        return new CompareSideBySideExportResult
+                        {
+                            Succeeded = false,
+                            Plan = plan,
+                            Message = FfmpegCliTooling.BuildFailureMessage(processResult, "FFmpeg compare export failed."),
+                            ExitCode = processResult.ExitCode,
+                            Elapsed = stopwatch.Elapsed,
+                            ProbedDuration = null,
+                            ProbedVideoWidth = null,
+                            ProbedVideoHeight = null,
+                            ProbedHasAudioStream = null,
+                            StandardOutput = processResult.StandardOutput,
+                            StandardError = processResult.StandardError
+                        };
                     }
 
                     FfmpegMediaProbe probe;
                     var probed = FfmpegCliTooling.TryProbeMediaFile(plan.FfprobePath, plan.OutputFilePath, out probe);
-                    return new CompareSideBySideExportResult(
-                        true,
-                        plan,
-                        "Compare export completed.",
-                        0,
-                        stopwatch.Elapsed,
-                        probed && probe != null ? probe.Duration : null,
-                        probed && probe != null ? probe.VideoWidth : null,
-                        probed && probe != null ? probe.VideoHeight : null,
-                        probed && probe != null ? (bool?)probe.HasAudioStream : null,
-                        processResult.StandardOutput,
-                        processResult.StandardError);
+                    return new CompareSideBySideExportResult
+                    {
+                        Succeeded = true,
+                        Plan = plan,
+                        Message = "Compare export completed.",
+                        ExitCode = 0,
+                        Elapsed = stopwatch.Elapsed,
+                        ProbedDuration = probed && probe != null ? probe.Duration : null,
+                        ProbedVideoWidth = probed && probe != null ? probe.VideoWidth : null,
+                        ProbedVideoHeight = probed && probe != null ? probe.VideoHeight : null,
+                        ProbedHasAudioStream = probed && probe != null ? (bool?)probe.HasAudioStream : null,
+                        StandardOutput = processResult.StandardOutput,
+                        StandardError = processResult.StandardError
+                    };
                 },
                 cancellationToken).ConfigureAwait(false);
         }
@@ -227,57 +231,76 @@ namespace FramePlayer.Services
             var selectedAudioHasStream = selectedAudioSession.MediaInfo.HasAudioStream;
 
             var ffmpegArguments = BuildFfmpegArguments(
-                request.Mode,
-                request.AudioSource,
-                primarySourceFullPath,
-                compareSourceFullPath,
-                outputFullPath,
-                primaryStartTime,
-                primaryContentDuration,
-                primaryLeadingPad,
-                primaryTrailingPad,
-                primaryRenderSize.Width,
-                primaryRenderSize.Height,
-                compareStartTime,
-                compareContentDuration,
-                compareLeadingPad,
-                compareTrailingPad,
-                compareRenderSize.Width,
-                compareRenderSize.Height,
-                outputDuration,
-                selectedAudioHasStream,
-                selectedAudioStartTime,
-                selectedAudioDuration,
-                TimeSpan.Zero,
-                outputSize.Height);
+                new CompareFilterComplexRequest
+                {
+                    Mode = request.Mode,
+                    PrimarySourceFullPath = primarySourceFullPath,
+                    CompareSourceFullPath = compareSourceFullPath,
+                    OutputFilePath = outputFullPath,
+                    PrimaryVideo = new VideoFilterSegment
+                    {
+                        InputIndex = 0,
+                        StartTime = primaryStartTime,
+                        ContentDuration = primaryContentDuration,
+                        LeadingPad = primaryLeadingPad,
+                        TrailingPad = primaryTrailingPad,
+                        RenderWidth = primaryRenderSize.Width,
+                        RenderHeight = primaryRenderSize.Height,
+                        CanvasHeight = outputSize.Height,
+                        OutputLabel = "[primaryv]"
+                    },
+                    CompareVideo = new VideoFilterSegment
+                    {
+                        InputIndex = 1,
+                        StartTime = compareStartTime,
+                        ContentDuration = compareContentDuration,
+                        LeadingPad = compareLeadingPad,
+                        TrailingPad = compareTrailingPad,
+                        RenderWidth = compareRenderSize.Width,
+                        RenderHeight = compareRenderSize.Height,
+                        CanvasHeight = outputSize.Height,
+                        OutputLabel = "[comparev]"
+                    },
+                    SelectedAudio = new AudioFilterSegment
+                    {
+                        HasStream = selectedAudioHasStream,
+                        InputIndex = request.AudioSource == CompareSideBySideExportAudioSource.Compare ? 1 : 0,
+                        StartTime = selectedAudioStartTime,
+                        ContentDuration = selectedAudioDuration,
+                        LeadingPad = TimeSpan.Zero,
+                        OutputDuration = outputDuration
+                    }
+                });
 
-            return new CompareSideBySideExportPlan(
-                outputFullPath,
-                request.Mode,
-                request.AudioSource,
-                primarySourceFullPath,
-                compareSourceFullPath,
-                primaryStartTime,
-                primaryContentDuration,
-                primaryLeadingPad,
-                primaryTrailingPad,
-                compareStartTime,
-                compareContentDuration,
-                compareLeadingPad,
-                compareTrailingPad,
-                primaryBoundaryStrategy,
-                compareBoundaryStrategy,
-                outputDuration,
-                primaryRenderSize.Width,
-                primaryRenderSize.Height,
-                compareRenderSize.Width,
-                compareRenderSize.Height,
-                outputSize.Width,
-                outputSize.Height,
-                selectedAudioHasStream,
-                ffmpegArguments,
-                toolPaths.FfmpegPath,
-                toolPaths.FfprobePath);
+            return new CompareSideBySideExportPlan
+            {
+                OutputFilePath = outputFullPath,
+                Mode = request.Mode,
+                AudioSource = request.AudioSource,
+                PrimarySourceFilePath = primarySourceFullPath,
+                CompareSourceFilePath = compareSourceFullPath,
+                PrimaryStartTime = primaryStartTime,
+                PrimaryContentDuration = primaryContentDuration,
+                PrimaryLeadingPad = primaryLeadingPad,
+                PrimaryTrailingPad = primaryTrailingPad,
+                CompareStartTime = compareStartTime,
+                CompareContentDuration = compareContentDuration,
+                CompareLeadingPad = compareLeadingPad,
+                CompareTrailingPad = compareTrailingPad,
+                PrimaryEndBoundaryStrategy = primaryBoundaryStrategy,
+                CompareEndBoundaryStrategy = compareBoundaryStrategy,
+                OutputDuration = outputDuration,
+                PrimaryRenderWidth = primaryRenderSize.Width,
+                PrimaryRenderHeight = primaryRenderSize.Height,
+                CompareRenderWidth = compareRenderSize.Width,
+                CompareRenderHeight = compareRenderSize.Height,
+                OutputWidth = outputSize.Width,
+                OutputHeight = outputSize.Height,
+                SelectedAudioHasStream = selectedAudioHasStream,
+                FfmpegArguments = ffmpegArguments,
+                FfmpegPath = toolPaths.FfmpegPath,
+                FfprobePath = toolPaths.FfprobePath
+            };
         }
 
         private static CompareSideBySideExportPlan BuildWholeVideoPlan(
@@ -338,139 +361,107 @@ namespace FramePlayer.Services
                 : primaryDuration;
 
             var ffmpegArguments = BuildFfmpegArguments(
-                request.Mode,
-                request.AudioSource,
-                primarySourceFullPath,
-                compareSourceFullPath,
-                outputFullPath,
-                TimeSpan.Zero,
-                primaryDuration,
-                primaryLeadingPad,
-                primaryTrailingPad,
-                primaryRenderSize.Width,
-                primaryRenderSize.Height,
-                TimeSpan.Zero,
-                compareDuration,
-                compareLeadingPad,
-                compareTrailingPad,
-                compareRenderSize.Width,
-                compareRenderSize.Height,
-                outputDuration,
-                selectedAudioHasStream,
-                TimeSpan.Zero,
-                selectedAudioDuration,
-                selectedAudioLeadingPad,
-                outputSize.Height);
+                new CompareFilterComplexRequest
+                {
+                    Mode = request.Mode,
+                    PrimarySourceFullPath = primarySourceFullPath,
+                    CompareSourceFullPath = compareSourceFullPath,
+                    OutputFilePath = outputFullPath,
+                    PrimaryVideo = new VideoFilterSegment
+                    {
+                        InputIndex = 0,
+                        StartTime = TimeSpan.Zero,
+                        ContentDuration = primaryDuration,
+                        LeadingPad = primaryLeadingPad,
+                        TrailingPad = primaryTrailingPad,
+                        RenderWidth = primaryRenderSize.Width,
+                        RenderHeight = primaryRenderSize.Height,
+                        CanvasHeight = outputSize.Height,
+                        OutputLabel = "[primaryv]"
+                    },
+                    CompareVideo = new VideoFilterSegment
+                    {
+                        InputIndex = 1,
+                        StartTime = TimeSpan.Zero,
+                        ContentDuration = compareDuration,
+                        LeadingPad = compareLeadingPad,
+                        TrailingPad = compareTrailingPad,
+                        RenderWidth = compareRenderSize.Width,
+                        RenderHeight = compareRenderSize.Height,
+                        CanvasHeight = outputSize.Height,
+                        OutputLabel = "[comparev]"
+                    },
+                    SelectedAudio = new AudioFilterSegment
+                    {
+                        HasStream = selectedAudioHasStream,
+                        InputIndex = request.AudioSource == CompareSideBySideExportAudioSource.Compare ? 1 : 0,
+                        StartTime = TimeSpan.Zero,
+                        ContentDuration = selectedAudioDuration,
+                        LeadingPad = selectedAudioLeadingPad,
+                        OutputDuration = outputDuration
+                    }
+                });
 
-            return new CompareSideBySideExportPlan(
-                outputFullPath,
-                request.Mode,
-                request.AudioSource,
-                primarySourceFullPath,
-                compareSourceFullPath,
-                TimeSpan.Zero,
-                primaryDuration,
-                primaryLeadingPad,
-                primaryTrailingPad,
-                TimeSpan.Zero,
-                compareDuration,
-                compareLeadingPad,
-                compareTrailingPad,
-                "whole-video",
-                "whole-video",
-                outputDuration,
-                primaryRenderSize.Width,
-                primaryRenderSize.Height,
-                compareRenderSize.Width,
-                compareRenderSize.Height,
-                outputSize.Width,
-                outputSize.Height,
-                selectedAudioHasStream,
-                ffmpegArguments,
-                toolPaths.FfmpegPath,
-                toolPaths.FfprobePath);
+            return new CompareSideBySideExportPlan
+            {
+                OutputFilePath = outputFullPath,
+                Mode = request.Mode,
+                AudioSource = request.AudioSource,
+                PrimarySourceFilePath = primarySourceFullPath,
+                CompareSourceFilePath = compareSourceFullPath,
+                PrimaryStartTime = TimeSpan.Zero,
+                PrimaryContentDuration = primaryDuration,
+                PrimaryLeadingPad = primaryLeadingPad,
+                PrimaryTrailingPad = primaryTrailingPad,
+                CompareStartTime = TimeSpan.Zero,
+                CompareContentDuration = compareDuration,
+                CompareLeadingPad = compareLeadingPad,
+                CompareTrailingPad = compareTrailingPad,
+                PrimaryEndBoundaryStrategy = "whole-video",
+                CompareEndBoundaryStrategy = "whole-video",
+                OutputDuration = outputDuration,
+                PrimaryRenderWidth = primaryRenderSize.Width,
+                PrimaryRenderHeight = primaryRenderSize.Height,
+                CompareRenderWidth = compareRenderSize.Width,
+                CompareRenderHeight = compareRenderSize.Height,
+                OutputWidth = outputSize.Width,
+                OutputHeight = outputSize.Height,
+                SelectedAudioHasStream = selectedAudioHasStream,
+                FfmpegArguments = ffmpegArguments,
+                FfmpegPath = toolPaths.FfmpegPath,
+                FfprobePath = toolPaths.FfprobePath
+            };
         }
 
-        private static string BuildFfmpegArguments(
-            CompareSideBySideExportMode mode,
-            CompareSideBySideExportAudioSource audioSource,
-            string primarySourceFullPath,
-            string compareSourceFullPath,
-            string outputFullPath,
-            TimeSpan primaryStartTime,
-            TimeSpan primaryContentDuration,
-            TimeSpan primaryLeadingPad,
-            TimeSpan primaryTrailingPad,
-            int primaryRenderWidth,
-            int primaryRenderHeight,
-            TimeSpan compareStartTime,
-            TimeSpan compareContentDuration,
-            TimeSpan compareLeadingPad,
-            TimeSpan compareTrailingPad,
-            int compareRenderWidth,
-            int compareRenderHeight,
-            TimeSpan outputDuration,
-            bool selectedAudioHasStream,
-            TimeSpan selectedAudioStartTime,
-            TimeSpan selectedAudioContentDuration,
-            TimeSpan selectedAudioLeadingPad,
-            int outputCanvasHeight)
+        private static string BuildFfmpegArguments(CompareFilterComplexRequest request)
         {
+            var includeTrim = request.Mode == CompareSideBySideExportMode.Loop;
             var filterBuilder = new StringBuilder();
-            AppendVideoFilter(
-                filterBuilder,
-                0,
-                primaryStartTime,
-                primaryContentDuration,
-                primaryLeadingPad,
-                primaryTrailingPad,
-                primaryRenderWidth,
-                primaryRenderHeight,
-                outputCanvasHeight,
-                "[primaryv]",
-                mode == CompareSideBySideExportMode.Loop);
+            AppendVideoFilter(filterBuilder, request.PrimaryVideo, includeTrim);
             filterBuilder.Append(';');
-            AppendVideoFilter(
-                filterBuilder,
-                1,
-                compareStartTime,
-                compareContentDuration,
-                compareLeadingPad,
-                compareTrailingPad,
-                compareRenderWidth,
-                compareRenderHeight,
-                outputCanvasHeight,
-                "[comparev]",
-                mode == CompareSideBySideExportMode.Loop);
+            AppendVideoFilter(filterBuilder, request.CompareVideo, includeTrim);
             filterBuilder.Append(';');
             filterBuilder.Append("[primaryv][comparev]hstack=inputs=2,pad=width='ceil(iw/2)*2':height='ceil(ih/2)*2':x=0:y=0:color=black,setsar=1,format=yuv420p[vout]");
 
-            if (selectedAudioHasStream)
+            if (request.SelectedAudio != null && request.SelectedAudio.HasStream)
             {
                 filterBuilder.Append(';');
-                AppendAudioFilter(
-                    filterBuilder,
-                    audioSource == CompareSideBySideExportAudioSource.Compare ? 1 : 0,
-                    selectedAudioStartTime,
-                    selectedAudioContentDuration,
-                    selectedAudioLeadingPad,
-                    outputDuration,
-                    mode == CompareSideBySideExportMode.Loop);
+                AppendAudioFilter(filterBuilder, request.SelectedAudio, includeTrim);
             }
 
             var arguments = new StringBuilder();
             arguments.Append("-v error -y ");
-            arguments.AppendFormat(CultureInfo.InvariantCulture, "-i \"{0}\" ", primarySourceFullPath);
-            arguments.AppendFormat(CultureInfo.InvariantCulture, "-i \"{0}\" ", compareSourceFullPath);
+            arguments.AppendFormat(CultureInfo.InvariantCulture, "-i \"{0}\" ", request.PrimarySourceFullPath);
+            arguments.AppendFormat(CultureInfo.InvariantCulture, "-i \"{0}\" ", request.CompareSourceFullPath);
             arguments.AppendFormat(CultureInfo.InvariantCulture, "-filter_complex \"{0}\" ", filterBuilder);
             arguments.Append("-map \"[vout]\" ");
-            if (selectedAudioHasStream)
+            if (request.SelectedAudio != null && request.SelectedAudio.HasStream)
             {
                 arguments.Append("-map \"[aout]\" ");
             }
 
             arguments.Append("-sn -dn -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p ");
-            if (selectedAudioHasStream)
+            if (request.SelectedAudio != null && request.SelectedAudio.HasStream)
             {
                 arguments.Append("-c:a aac -b:a 192k ");
             }
@@ -479,31 +470,20 @@ namespace FramePlayer.Services
                 arguments.Append("-an ");
             }
 
-            arguments.AppendFormat(CultureInfo.InvariantCulture, "-movflags +faststart \"{0}\"", outputFullPath);
+            arguments.AppendFormat(CultureInfo.InvariantCulture, "-movflags +faststart \"{0}\"", request.OutputFilePath);
             return arguments.ToString();
         }
 
-        private static void AppendVideoFilter(
-            StringBuilder builder,
-            int inputIndex,
-            TimeSpan startTime,
-            TimeSpan contentDuration,
-            TimeSpan leadingPad,
-            TimeSpan trailingPad,
-            int renderWidth,
-            int renderHeight,
-            int canvasHeight,
-            string outputLabel,
-            bool includeTrim)
+        private static void AppendVideoFilter(StringBuilder builder, VideoFilterSegment segment, bool includeTrim)
         {
-            builder.AppendFormat(CultureInfo.InvariantCulture, "[{0}:v]", inputIndex);
+            builder.AppendFormat(CultureInfo.InvariantCulture, "[{0}:v]", segment.InputIndex);
             if (includeTrim)
             {
                 builder.AppendFormat(
                     CultureInfo.InvariantCulture,
                     "trim=start={0}:duration={1},setpts=PTS-STARTPTS,",
-                    FfmpegExportTiming.FormatFfmpegTime(startTime),
-                    FfmpegExportTiming.FormatFfmpegTime(contentDuration));
+                    FfmpegExportTiming.FormatFfmpegTime(segment.StartTime),
+                    FfmpegExportTiming.FormatFfmpegTime(segment.ContentDuration));
             }
             else
             {
@@ -514,29 +494,29 @@ namespace FramePlayer.Services
             builder.AppendFormat(
                 CultureInfo.InvariantCulture,
                 "scale={0}:{1}:flags=lanczos,",
-                renderWidth,
-                renderHeight);
-            if (leadingPad > TimeSpan.Zero || trailingPad > TimeSpan.Zero)
+                segment.RenderWidth,
+                segment.RenderHeight);
+            if (segment.LeadingPad > TimeSpan.Zero || segment.TrailingPad > TimeSpan.Zero)
             {
                 builder.Append("tpad=");
-                if (leadingPad > TimeSpan.Zero)
+                if (segment.LeadingPad > TimeSpan.Zero)
                 {
                     builder.AppendFormat(
                         CultureInfo.InvariantCulture,
                         "start_mode=add:start_duration={0}",
-                        FfmpegExportTiming.FormatFfmpegTime(leadingPad));
-                    if (trailingPad > TimeSpan.Zero)
+                        FfmpegExportTiming.FormatFfmpegTime(segment.LeadingPad));
+                    if (segment.TrailingPad > TimeSpan.Zero)
                     {
                         builder.Append(':');
                     }
                 }
 
-                if (trailingPad > TimeSpan.Zero)
+                if (segment.TrailingPad > TimeSpan.Zero)
                 {
                     builder.AppendFormat(
                         CultureInfo.InvariantCulture,
                         "stop_mode=add:stop_duration={0}",
-                        FfmpegExportTiming.FormatFfmpegTime(trailingPad));
+                        FfmpegExportTiming.FormatFfmpegTime(segment.TrailingPad));
                 }
 
                 builder.Append(',');
@@ -545,36 +525,29 @@ namespace FramePlayer.Services
             builder.AppendFormat(
                 CultureInfo.InvariantCulture,
                 "pad=width=iw:height={0}:x=0:y=(oh-ih)/2:color=black{1}",
-                canvasHeight,
-                outputLabel);
+                segment.CanvasHeight,
+                segment.OutputLabel);
         }
 
-        private static void AppendAudioFilter(
-            StringBuilder builder,
-            int inputIndex,
-            TimeSpan startTime,
-            TimeSpan contentDuration,
-            TimeSpan leadingPad,
-            TimeSpan outputDuration,
-            bool includeTrim)
+        private static void AppendAudioFilter(StringBuilder builder, AudioFilterSegment segment, bool includeTrim)
         {
-            builder.AppendFormat(CultureInfo.InvariantCulture, "[{0}:a]", inputIndex);
+            builder.AppendFormat(CultureInfo.InvariantCulture, "[{0}:a]", segment.InputIndex);
             if (includeTrim)
             {
                 builder.AppendFormat(
                     CultureInfo.InvariantCulture,
                     "atrim=start={0}:duration={1},asetpts=PTS-STARTPTS,",
-                    FfmpegExportTiming.FormatFfmpegTime(startTime),
-                    FfmpegExportTiming.FormatFfmpegTime(contentDuration));
+                    FfmpegExportTiming.FormatFfmpegTime(segment.StartTime),
+                    FfmpegExportTiming.FormatFfmpegTime(segment.ContentDuration));
             }
             else
             {
                 builder.Append("asetpts=PTS-STARTPTS,");
             }
 
-            if (leadingPad > TimeSpan.Zero)
+            if (segment.LeadingPad > TimeSpan.Zero)
             {
-                var delayMilliseconds = Math.Max(0d, Math.Round(leadingPad.TotalMilliseconds));
+                var delayMilliseconds = Math.Max(0d, Math.Round(segment.LeadingPad.TotalMilliseconds));
                 builder.AppendFormat(
                     CultureInfo.InvariantCulture,
                     "adelay={0}:all=1,",
@@ -584,7 +557,60 @@ namespace FramePlayer.Services
             builder.AppendFormat(
                 CultureInfo.InvariantCulture,
                 "apad=whole_dur={0},atrim=duration={0}[aout]",
-                FfmpegExportTiming.FormatFfmpegTime(outputDuration));
+                FfmpegExportTiming.FormatFfmpegTime(segment.OutputDuration));
+        }
+
+        private sealed class CompareFilterComplexRequest
+        {
+            public CompareSideBySideExportMode Mode { get; init; }
+
+            public string PrimarySourceFullPath { get; init; } = string.Empty;
+
+            public string CompareSourceFullPath { get; init; } = string.Empty;
+
+            public string OutputFilePath { get; init; } = string.Empty;
+
+            public VideoFilterSegment PrimaryVideo { get; init; }
+
+            public VideoFilterSegment CompareVideo { get; init; }
+
+            public AudioFilterSegment SelectedAudio { get; init; }
+        }
+
+        private sealed class VideoFilterSegment
+        {
+            public int InputIndex { get; init; }
+
+            public TimeSpan StartTime { get; init; }
+
+            public TimeSpan ContentDuration { get; init; }
+
+            public TimeSpan LeadingPad { get; init; }
+
+            public TimeSpan TrailingPad { get; init; }
+
+            public int RenderWidth { get; init; }
+
+            public int RenderHeight { get; init; }
+
+            public int CanvasHeight { get; init; }
+
+            public string OutputLabel { get; init; } = string.Empty;
+        }
+
+        private sealed class AudioFilterSegment
+        {
+            public bool HasStream { get; init; }
+
+            public int InputIndex { get; init; }
+
+            public TimeSpan StartTime { get; init; }
+
+            public TimeSpan ContentDuration { get; init; }
+
+            public TimeSpan LeadingPad { get; init; }
+
+            public TimeSpan OutputDuration { get; init; }
         }
 
         private static (int Width, int Height) ResolveRenderSize(VideoMediaInfo mediaInfo)

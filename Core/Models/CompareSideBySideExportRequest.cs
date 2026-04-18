@@ -4,44 +4,38 @@ namespace FramePlayer.Core.Models
 {
     public sealed class CompareSideBySideExportRequest
     {
-        public CompareSideBySideExportRequest(
-            string outputFilePath,
-            CompareSideBySideExportMode mode,
-            CompareSideBySideExportAudioSource audioSource,
-            ReviewSessionSnapshot primarySessionSnapshot,
-            ReviewSessionSnapshot compareSessionSnapshot,
-            LoopPlaybackPaneRangeSnapshot primaryLoopRange,
-            LoopPlaybackPaneRangeSnapshot compareLoopRange,
-            FfmpegReviewEngine primaryEngine,
-            FfmpegReviewEngine compareEngine)
+        private string _outputFilePath = string.Empty;
+        private ReviewSessionSnapshot _primarySessionSnapshot = ReviewSessionSnapshot.Empty;
+        private ReviewSessionSnapshot _compareSessionSnapshot = ReviewSessionSnapshot.Empty;
+
+        public string OutputFilePath
         {
-            OutputFilePath = outputFilePath ?? string.Empty;
-            Mode = mode;
-            AudioSource = audioSource;
-            PrimarySessionSnapshot = primarySessionSnapshot ?? ReviewSessionSnapshot.Empty;
-            CompareSessionSnapshot = compareSessionSnapshot ?? ReviewSessionSnapshot.Empty;
-            PrimaryLoopRange = primaryLoopRange;
-            CompareLoopRange = compareLoopRange;
-            PrimaryEngine = primaryEngine;
-            CompareEngine = compareEngine;
+            get { return _outputFilePath; }
+            init { _outputFilePath = value ?? string.Empty; }
         }
 
-        public string OutputFilePath { get; }
+        public CompareSideBySideExportMode Mode { get; init; }
 
-        public CompareSideBySideExportMode Mode { get; }
+        public CompareSideBySideExportAudioSource AudioSource { get; init; }
 
-        public CompareSideBySideExportAudioSource AudioSource { get; }
+        public ReviewSessionSnapshot PrimarySessionSnapshot
+        {
+            get { return _primarySessionSnapshot; }
+            init { _primarySessionSnapshot = value ?? ReviewSessionSnapshot.Empty; }
+        }
 
-        public ReviewSessionSnapshot PrimarySessionSnapshot { get; }
+        public ReviewSessionSnapshot CompareSessionSnapshot
+        {
+            get { return _compareSessionSnapshot; }
+            init { _compareSessionSnapshot = value ?? ReviewSessionSnapshot.Empty; }
+        }
 
-        public ReviewSessionSnapshot CompareSessionSnapshot { get; }
+        public LoopPlaybackPaneRangeSnapshot PrimaryLoopRange { get; init; }
 
-        public LoopPlaybackPaneRangeSnapshot PrimaryLoopRange { get; }
+        public LoopPlaybackPaneRangeSnapshot CompareLoopRange { get; init; }
 
-        public LoopPlaybackPaneRangeSnapshot CompareLoopRange { get; }
+        public FfmpegReviewEngine PrimaryEngine { get; init; }
 
-        public FfmpegReviewEngine PrimaryEngine { get; }
-
-        public FfmpegReviewEngine CompareEngine { get; }
+        public FfmpegReviewEngine CompareEngine { get; init; }
     }
 }

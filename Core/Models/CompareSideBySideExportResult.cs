@@ -4,52 +4,47 @@ namespace FramePlayer.Core.Models
 {
     public sealed class CompareSideBySideExportResult
     {
-        public CompareSideBySideExportResult(
-            bool succeeded,
-            CompareSideBySideExportPlan plan,
-            string message,
-            int exitCode,
-            TimeSpan elapsed,
-            TimeSpan? probedDuration,
-            int? probedVideoWidth,
-            int? probedVideoHeight,
-            bool? probedHasAudioStream,
-            string standardOutput,
-            string standardError)
+        private string _message = string.Empty;
+        private TimeSpan _elapsed = TimeSpan.Zero;
+        private string _standardOutput = string.Empty;
+        private string _standardError = string.Empty;
+
+        public bool Succeeded { get; init; }
+
+        public CompareSideBySideExportPlan Plan { get; init; }
+
+        public string Message
         {
-            Succeeded = succeeded;
-            Plan = plan;
-            Message = message ?? string.Empty;
-            ExitCode = exitCode;
-            Elapsed = elapsed < TimeSpan.Zero ? TimeSpan.Zero : elapsed;
-            ProbedDuration = probedDuration;
-            ProbedVideoWidth = probedVideoWidth;
-            ProbedVideoHeight = probedVideoHeight;
-            ProbedHasAudioStream = probedHasAudioStream;
-            StandardOutput = standardOutput ?? string.Empty;
-            StandardError = standardError ?? string.Empty;
+            get { return _message; }
+            init { _message = value ?? string.Empty; }
         }
 
-        public bool Succeeded { get; }
+        public int ExitCode { get; init; }
 
-        public CompareSideBySideExportPlan Plan { get; }
+        public TimeSpan Elapsed
+        {
+            get { return _elapsed; }
+            init { _elapsed = value < TimeSpan.Zero ? TimeSpan.Zero : value; }
+        }
 
-        public string Message { get; }
+        public TimeSpan? ProbedDuration { get; init; }
 
-        public int ExitCode { get; }
+        public int? ProbedVideoWidth { get; init; }
 
-        public TimeSpan Elapsed { get; }
+        public int? ProbedVideoHeight { get; init; }
 
-        public TimeSpan? ProbedDuration { get; }
+        public bool? ProbedHasAudioStream { get; init; }
 
-        public int? ProbedVideoWidth { get; }
+        public string StandardOutput
+        {
+            get { return _standardOutput; }
+            init { _standardOutput = value ?? string.Empty; }
+        }
 
-        public int? ProbedVideoHeight { get; }
-
-        public bool? ProbedHasAudioStream { get; }
-
-        public string StandardOutput { get; }
-
-        public string StandardError { get; }
+        public string StandardError
+        {
+            get { return _standardError; }
+            init { _standardError = value ?? string.Empty; }
+        }
     }
 }
