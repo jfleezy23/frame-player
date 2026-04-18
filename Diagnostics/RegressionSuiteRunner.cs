@@ -1551,21 +1551,6 @@ namespace FramePlayer.Diagnostics
                 : value;
         }
 
-        private static string ResolvePackagingClassification(IEnumerable<RegressionCheckResult> checks)
-        {
-            if (checks.Any(check => string.Equals(check.Classification, FailClassification, StringComparison.OrdinalIgnoreCase)))
-            {
-                return FailClassification;
-            }
-
-            if (checks.Any(check => string.Equals(check.Classification, WarningClassification, StringComparison.OrdinalIgnoreCase)))
-            {
-                return WarningClassification;
-            }
-
-            return PassClassification;
-        }
-
         private static void Trace(string message)
         {
             var tracePath = DiagnosticTracePath;
@@ -1719,6 +1704,21 @@ namespace FramePlayer.Diagnostics
                     staleFiles,
                     checks.ToArray(),
                     classification);
+            }
+
+            private static string ResolvePackagingClassification(IEnumerable<RegressionCheckResult> checks)
+            {
+                if (checks.Any(check => string.Equals(check.Classification, FailClassification, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return FailClassification;
+                }
+
+                if (checks.Any(check => string.Equals(check.Classification, WarningClassification, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return WarningClassification;
+                }
+
+                return PassClassification;
             }
 
             private static void ValidateZip(
