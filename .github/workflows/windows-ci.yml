@@ -18,11 +18,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup NuGet
-        uses: NuGet/setup-nuget@v3
-
-      - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v3
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: .\global.json
 
       - name: Restore pinned FFmpeg runtime
         shell: pwsh
@@ -30,4 +29,4 @@ jobs:
 
       - name: Restore and build
         shell: pwsh
-        run: msbuild .\FramePlayer.csproj /t:Restore,Build /p:Configuration=Release /p:Platform=x64
+        run: dotnet build .\FramePlayer.csproj -c Release -p:Platform=x64

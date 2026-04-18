@@ -13,6 +13,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="..\..\Controls\LoopRangeOverlay.cs" Link="Controls\LoopRangeOverlay.cs" />
   </ItemGroup>
 </Project>
