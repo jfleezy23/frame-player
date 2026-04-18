@@ -436,11 +436,15 @@ namespace FramePlayer
                 : DwmWindowCornerPreference.DoNotRound;
             try
             {
-                DwmSetWindowAttribute(
+                var hresult = DwmSetWindowAttribute(
                     handle,
                     DwmaWindowCornerPreference,
                     ref preference,
                     sizeof(int));
+                if (hresult != 0)
+                {
+                    return;
+                }
             }
             catch (DllNotFoundException)
             {
@@ -7207,11 +7211,13 @@ namespace FramePlayer
                 return string.Empty;
             }
 
-            return Regex.Replace(
+            return SensitivePathRegex().Replace(
                 value,
-                @"(?i)(?:[A-Z]:\\|\\\\)[^\r\n]+?(?=(?:\s|$))",
                 match => GetSafeFileDisplay(match.Value));
         }
+
+        [GeneratedRegex(@"(?i)(?:[A-Z]:\\|\\\\)[^\r\n]+?(?=(?:\s|$))")]
+        private static partial Regex SensitivePathRegex();
 
         private void LogInfo(string message)
         {
@@ -7336,8 +7342,8 @@ namespace FramePlayer
             _ = StepFrameAsync(_heldFrameStepDirection);
         }
 
-        [DllImport("dwmapi.dll")]
-        private static extern int DwmSetWindowAttribute(
+        [LibraryImport("dwmapi.dll")]
+        private static partial int DwmSetWindowAttribute(
             IntPtr hwnd,
             int dwAttribute,
             ref DwmWindowCornerPreference pvAttribute,
