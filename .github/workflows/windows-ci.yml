@@ -43,4 +43,4 @@ jobs:
 
       - name: Run cold-path unit tests
         shell: pwsh
-        run: dotnet test .\tests\FramePlayer.Core.Tests\FramePlayer.Core.Tests.csproj -c Release --no-restore
+        run: dotnet test .\tests\FramePlayer.Core.Tests\FramePlayer.Core.Tests.csproj -c Release
