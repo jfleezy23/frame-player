@@ -23,7 +23,7 @@ Guardrail:
   - runtime/export-tool bootstrap scripts passed
   - packaged test drop build passed
   - MSIX packaging passed with `-UseDevCertificate`
-  - full-corpus regression and manual review-engine sweeps completed without failures
+  - full-corpus regression passed cleanly, and the manual review-engine sweep now reports `17/17` passes instead of warning-only noise
 
 ## Blocking security findings
 - None confirmed after this pass.

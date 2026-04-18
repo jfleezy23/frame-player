@@ -276,17 +276,12 @@ namespace FramePlayer.Diagnostics
             return (long)estimatedFrameCount;
         }
 
-        private static ReviewEngineManualBackendResult EvaluateBackend(
+        internal static ReviewEngineManualBackendResult EvaluateBackend(
             ReviewEngineScenarioReport scenario,
             ReviewEngineManualTestPlan plan)
         {
             var warnings = new List<string>();
             var failures = new List<string>();
-
-            if (plan != null && plan.Warnings != null && plan.Warnings.Length > 0)
-            {
-                warnings.AddRange(plan.Warnings);
-            }
 
             if (scenario == null)
             {
@@ -306,9 +301,11 @@ namespace FramePlayer.Diagnostics
                 failures.Add("Scenario error: " + scenario.ScenarioError);
             }
 
+            AddPlanCoverageWarnings(plan, scenario, warnings);
+
             if (string.Equals(scenario.BackendName, "custom-ffmpeg", StringComparison.OrdinalIgnoreCase))
             {
-                if (scenario.OpenResult == null || scenario.OpenResult.IsGlobalFrameIndexAvailable != true)
+                if (ShouldWarnOnMissingUsableGlobalIndex(scenario))
                 {
                     warnings.Add("Custom FFmpeg did not report a usable global frame index during the test run.");
                 }
@@ -321,9 +318,7 @@ namespace FramePlayer.Diagnostics
                 warnings.Add("Seek-to-frame did not retain absolute frame identity.");
             }
 
-            if (scenario.SeekToTimeResult != null &&
-                scenario.SeekToTimeResult.Succeeded &&
-                !scenario.SeekToTimeResult.Position.IsFrameIndexAbsolute)
+            if (ShouldWarnOnNonAbsoluteSeekToTime(scenario, plan))
             {
                 warnings.Add("Seek-to-time did not report absolute frame identity.");
             }
@@ -339,6 +334,132 @@ namespace FramePlayer.Diagnostics
                 classification,
                 warnings.Distinct(StringComparer.Ordinal).ToArray(),
                 failures.Distinct(StringComparer.Ordinal).ToArray());
+        }
+
+        private static void AddPlanCoverageWarnings(
+            ReviewEngineManualTestPlan plan,
+            ReviewEngineScenarioReport scenario,
+            ICollection<string> warnings)
+        {
+            if (plan == null)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(plan.PreflightError))
+            {
+                warnings.Add("Custom FFmpeg preflight probe failed, so the test plan fell back to conservative defaults: " + plan.PreflightError);
+            }
+
+            if (!plan.DurationKnown)
+            {
+                warnings.Add("Duration was unavailable, so seek-to-time uses the start position.");
+            }
+            else if (string.Equals(plan.SeekTimeStrategy, "start-short-clip", StringComparison.OrdinalIgnoreCase))
+            {
+                warnings.Add("The clip is short enough that the manual seek-to-time target was clamped to the start position.");
+            }
+
+            if (string.Equals(plan.SeekFrameStrategy, "start-frame-fallback", StringComparison.OrdinalIgnoreCase))
+            {
+                warnings.Add("Frame-target planning fell back to frame 0 because no reliable index or duration/fps estimate was available.");
+            }
+            else if (UsesDurationFpsFramePlanningFallback(plan) && !DidScenarioAchieveAbsoluteSeekToFrame(scenario))
+            {
+                warnings.Add("Global index data was unavailable during planning, so the frame target used duration/fps estimation and the scenario did not later recover absolute frame identity.");
+            }
+        }
+
+        private static bool UsesDurationFpsFramePlanningFallback(ReviewEngineManualTestPlan plan)
+        {
+            if (plan == null)
+            {
+                return false;
+            }
+
+            return string.Equals(plan.SeekFrameStrategy, "duration-fps-midpoint", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(plan.SeekFrameStrategy, "duration-fps-start-fallback", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool DidScenarioAchieveAbsoluteSeekToFrame(ReviewEngineScenarioReport scenario)
+        {
+            return scenario != null &&
+                   scenario.SeekToFrameResult != null &&
+                   scenario.SeekToFrameResult.Succeeded &&
+                   scenario.SeekToFrameResult.Position != null &&
+                   scenario.SeekToFrameResult.Position.IsFrameIndexAbsolute;
+        }
+
+        private static bool DidScenarioObserveUsableGlobalIndex(ReviewEngineScenarioReport scenario)
+        {
+            if (scenario == null)
+            {
+                return false;
+            }
+
+            return OperationShowsUsableGlobalIndex(scenario.OpenResult) ||
+                   OperationShowsUsableGlobalIndex(scenario.PlaybackResult) ||
+                   OperationShowsUsableGlobalIndex(scenario.SeekToTimeResult) ||
+                   OperationShowsUsableGlobalIndex(scenario.SeekToFrameResult) ||
+                   StepShowsUsableGlobalIndex(scenario.BackwardStepResult) ||
+                   StepShowsUsableGlobalIndex(scenario.ForwardStepResult);
+        }
+
+        private static bool ShouldWarnOnMissingUsableGlobalIndex(ReviewEngineScenarioReport scenario)
+        {
+            return !DidScenarioObserveUsableGlobalIndex(scenario) &&
+                   !DidScenarioAchieveAbsoluteSeekToFrame(scenario);
+        }
+
+        private static bool ShouldWarnOnNonAbsoluteSeekToTime(
+            ReviewEngineScenarioReport scenario,
+            ReviewEngineManualTestPlan plan)
+        {
+            if (scenario == null ||
+                scenario.SeekToTimeResult == null ||
+                !scenario.SeekToTimeResult.Succeeded ||
+                scenario.SeekToTimeResult.Position == null ||
+                scenario.SeekToTimeResult.Position.IsFrameIndexAbsolute)
+            {
+                return false;
+            }
+
+            if (plan != null && !plan.IndexAvailable && DidScenarioAchieveAbsoluteSeekToFrame(scenario))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool OperationShowsUsableGlobalIndex(ReviewOperationSnapshot snapshot)
+        {
+            if (snapshot == null)
+            {
+                return false;
+            }
+
+            return snapshot.IsGlobalFrameIndexAvailable == true ||
+                   snapshot.UsedGlobalIndex == true ||
+                   ShowsGlobalIndexAnchor(snapshot.AnchorStrategy);
+        }
+
+        private static bool StepShowsUsableGlobalIndex(ReviewStepOperationSnapshot snapshot)
+        {
+            if (snapshot == null)
+            {
+                return false;
+            }
+
+            return snapshot.IsGlobalFrameIndexAvailable == true ||
+                   snapshot.UsedGlobalIndex == true ||
+                   ShowsGlobalIndexAnchor(snapshot.AnchorStrategy);
+        }
+
+        private static bool ShowsGlobalIndexAnchor(string anchorStrategy)
+        {
+            return !string.IsNullOrWhiteSpace(anchorStrategy) &&
+                   anchorStrategy.IndexOf("global-index", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static FfmpegReviewEngine CreateFfmpegReviewEngine()
