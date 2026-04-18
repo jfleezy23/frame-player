@@ -11,28 +11,26 @@ namespace FramePlayer.Services
 {
     internal sealed class CompareSideBySideExportService
     {
-        private readonly FfmpegCliTooling _tooling;
+        private readonly ExportHostClient _hostClient;
 
         public CompareSideBySideExportService()
         {
-            _tooling = new FfmpegCliTooling();
+            _hostClient = new ExportHostClient();
         }
 
-        public bool IsBundledToolingAvailable
+        public bool IsBundledRuntimeAvailable
         {
-            get { return _tooling.IsBundledToolingAvailable; }
+            get { return _hostClient.IsBundledRuntimeAvailable; }
         }
 
-        public string GetToolAvailabilityMessage()
+        public string GetRuntimeAvailabilityMessage()
         {
-            return _tooling.GetToolAvailabilityMessage();
+            return _hostClient.GetRuntimeAvailabilityMessage();
         }
 
         public CompareSideBySideExportPlan CreatePlan(CompareSideBySideExportRequest request)
         {
             ArgumentNullException.ThrowIfNull(request);
-
-            var toolPaths = _tooling.GetRequiredToolPaths();
 
             var primarySession = request.PrimarySessionSnapshot ?? ReviewSessionSnapshot.Empty;
             var compareSession = request.CompareSessionSnapshot ?? ReviewSessionSnapshot.Empty;
@@ -82,7 +80,6 @@ namespace FramePlayer.Services
             {
                 return BuildWholeVideoPlan(
                     request,
-                    toolPaths,
                     primarySourceFullPath,
                     compareSourceFullPath,
                     outputFullPath);
@@ -90,7 +87,6 @@ namespace FramePlayer.Services
 
             return BuildLoopPlan(
                 request,
-                toolPaths,
                 primarySourceFullPath,
                 compareSourceFullPath,
                 outputFullPath);
@@ -101,7 +97,7 @@ namespace FramePlayer.Services
             CancellationToken cancellationToken = default(CancellationToken))
         {
             var plan = CreatePlan(request);
-            return await ExportPlanAsync(plan, cancellationToken).ConfigureAwait(false);
+            return await _hostClient.ExportCompareAsync(plan, cancellationToken).ConfigureAwait(false);
         }
 
         public static async Task<CompareSideBySideExportResult> ExportPlanAsync(
@@ -109,59 +105,11 @@ namespace FramePlayer.Services
             CancellationToken cancellationToken = default(CancellationToken))
         {
             ArgumentNullException.ThrowIfNull(plan);
-
-            return await Task.Run(
-                () =>
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var stopwatch = Stopwatch.StartNew();
-                    var processResult = FfmpegCliTooling.RunProcess(
-                        plan.FfmpegPath,
-                        plan.FfmpegArguments,
-                        Path.GetDirectoryName(plan.OutputFilePath));
-                    stopwatch.Stop();
-
-                    if (processResult.ExitCode != 0)
-                    {
-                        return new CompareSideBySideExportResult
-                        {
-                            Succeeded = false,
-                            Plan = plan,
-                            Message = FfmpegCliTooling.BuildFailureMessage(processResult, "FFmpeg compare export failed."),
-                            ExitCode = processResult.ExitCode,
-                            Elapsed = stopwatch.Elapsed,
-                            ProbedDuration = null,
-                            ProbedVideoWidth = null,
-                            ProbedVideoHeight = null,
-                            ProbedHasAudioStream = null,
-                            StandardOutput = processResult.StandardOutput,
-                            StandardError = processResult.StandardError
-                        };
-                    }
-
-                    FfmpegMediaProbe probe;
-                    var probed = FfmpegCliTooling.TryProbeMediaFile(plan.FfprobePath, plan.OutputFilePath, out probe);
-                    return new CompareSideBySideExportResult
-                    {
-                        Succeeded = true,
-                        Plan = plan,
-                        Message = "Compare export completed.",
-                        ExitCode = 0,
-                        Elapsed = stopwatch.Elapsed,
-                        ProbedDuration = probed && probe != null ? probe.Duration : null,
-                        ProbedVideoWidth = probed && probe != null ? probe.VideoWidth : null,
-                        ProbedVideoHeight = probed && probe != null ? probe.VideoHeight : null,
-                        ProbedHasAudioStream = probed && probe != null ? (bool?)probe.HasAudioStream : null,
-                        StandardOutput = processResult.StandardOutput,
-                        StandardError = processResult.StandardError
-                    };
-                },
-                cancellationToken).ConfigureAwait(false);
+            return await new ExportHostClient().ExportCompareAsync(plan, cancellationToken).ConfigureAwait(false);
         }
 
         private static CompareSideBySideExportPlan BuildLoopPlan(
             CompareSideBySideExportRequest request,
-            FfmpegCliToolPaths toolPaths,
             string primarySourceFullPath,
             string compareSourceFullPath,
             string outputFullPath)
@@ -308,14 +256,13 @@ namespace FramePlayer.Services
                 CompareViewportSnapshot = compareViewportSnapshot,
                 SelectedAudioHasStream = selectedAudioHasStream,
                 FfmpegArguments = ffmpegArguments,
-                FfmpegPath = toolPaths.FfmpegPath,
-                FfprobePath = toolPaths.FfprobePath
+                FfmpegPath = string.Empty,
+                FfprobePath = string.Empty
             };
         }
 
         private static CompareSideBySideExportPlan BuildWholeVideoPlan(
             CompareSideBySideExportRequest request,
-            FfmpegCliToolPaths toolPaths,
             string primarySourceFullPath,
             string compareSourceFullPath,
             string outputFullPath)
@@ -448,8 +395,8 @@ namespace FramePlayer.Services
                 CompareViewportSnapshot = compareViewportSnapshot,
                 SelectedAudioHasStream = selectedAudioHasStream,
                 FfmpegArguments = ffmpegArguments,
-                FfmpegPath = toolPaths.FfmpegPath,
-                FfprobePath = toolPaths.FfprobePath
+                FfmpegPath = string.Empty,
+                FfprobePath = string.Empty
             };
         }
 

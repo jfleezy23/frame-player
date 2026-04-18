@@ -2846,7 +2846,7 @@ namespace FramePlayer.Diagnostics
                                         "ui",
                                         CoverageCategory,
                                         "ui-loop-export-main-skipped",
-                                        "Main-loop clip export was skipped because the export tools were unavailable or the loop state changed before export."));
+                                        "Main-loop clip export was skipped because the export runtime was unavailable or the loop state changed before export."));
                                 }
                                 else if (!mainExportResult.Succeeded)
                                 {
@@ -3296,7 +3296,7 @@ namespace FramePlayer.Diagnostics
                                     "ui",
                                     CoverageCategory,
                                     "ui-loop-export-pane-primary-skipped",
-                                    "Primary pane clip export was skipped because the export tools were unavailable or the pane loop state changed before export."));
+                                    "Primary pane clip export was skipped because the export runtime was unavailable or the pane loop state changed before export."));
                             }
                             else if (!primaryPaneExport.Succeeded)
                             {
@@ -3367,7 +3367,7 @@ namespace FramePlayer.Diagnostics
                                     "ui",
                                     CoverageCategory,
                                     "ui-loop-export-pane-compare-skipped",
-                                    "Compare pane clip export was skipped because the export tools were unavailable or the pane loop state changed before export."));
+                                    "Compare pane clip export was skipped because the export runtime was unavailable or the pane loop state changed before export."));
                             }
                             else if (!comparePaneExport.Succeeded)
                             {

@@ -124,11 +124,25 @@ $resolvedOutputDirectory = Assert-PathWithin -Path $resolvedOutputDirectory -Roo
 $resolvedIntermediateDirectory = Assert-PathWithin -Path $resolvedIntermediateDirectory -Root (Join-Path $repoRoot "obj")
 
 $ensureRuntimeScript = Join-Path $PSScriptRoot "Ensure-DevRuntime.ps1"
+$ensureExportRuntimeScript = Join-Path $PSScriptRoot "Ensure-DevExportRuntime.ps1"
 $ensureExportToolsScript = Join-Path $PSScriptRoot "Ensure-DevExportTools.ps1"
 $projectPath = Join-Path $repoRoot "FramePlayer.csproj"
 $manifestPath = Join-Path $repoRoot "Runtime\runtime-manifest.json"
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 $expectedRuntimeFiles = Get-ManifestFileHashes -Manifest $manifest
+$exportRuntimeManifestPath = Join-Path $repoRoot "Runtime\export-runtime-manifest.json"
+$exportRuntimeManifest = if (Test-Path -LiteralPath $exportRuntimeManifestPath) {
+    Get-Content -LiteralPath $exportRuntimeManifestPath -Raw | ConvertFrom-Json
+}
+else {
+    $null
+}
+$expectedExportRuntimeFiles = if ($null -ne $exportRuntimeManifest) {
+    Get-ManifestFileHashes -Manifest $exportRuntimeManifest
+}
+else {
+    @{}
+}
 $exportToolsManifestPath = Join-Path $repoRoot "Runtime\export-tools-manifest.json"
 $exportToolsManifest = if (Test-Path -LiteralPath $exportToolsManifestPath) {
     Get-Content -LiteralPath $exportToolsManifestPath -Raw | ConvertFrom-Json
@@ -151,6 +165,9 @@ if ($expectedExportToolsFiles.Count -gt 0 -and (Test-Path -LiteralPath $ensureEx
     else {
         & $ensureExportToolsScript
     }
+}
+if ($expectedExportRuntimeFiles.Count -gt 0 -and (Test-Path -LiteralPath $ensureExportRuntimeScript)) {
+    & $ensureExportRuntimeScript
 }
 
 if (Test-Path -LiteralPath $resolvedOutputDirectory) {
@@ -200,9 +217,18 @@ if ($staleRuntimeFiles.Count -gt 0) {
 
 Test-OutputRuntimeIntegrity -DirectoryPath $resolvedOutputDirectory -ExpectedHashes $expectedRuntimeFiles
 
-if ($expectedExportToolsFiles.Count -gt 0 -and (Test-Path -LiteralPath (Join-Path $resolvedOutputDirectory "ffmpeg-tools"))) {
-    $exportToolsOutputDirectory = Join-Path $resolvedOutputDirectory "ffmpeg-tools"
-    Test-OutputRuntimeIntegrity -DirectoryPath $exportToolsOutputDirectory -ExpectedHashes $expectedExportToolsFiles
+if ($expectedExportRuntimeFiles.Count -gt 0) {
+    $exportRuntimeOutputDirectory = Join-Path $resolvedOutputDirectory "ffmpeg-export"
+    if (-not (Test-Path -LiteralPath $exportRuntimeOutputDirectory)) {
+        throw "Packaged output is missing the ffmpeg-export runtime directory."
+    }
+
+    Test-OutputRuntimeIntegrity -DirectoryPath $exportRuntimeOutputDirectory -ExpectedHashes $expectedExportRuntimeFiles
+}
+
+$ffmpegToolsOutputDirectory = Join-Path $resolvedOutputDirectory "ffmpeg-tools"
+if (Test-Path -LiteralPath $ffmpegToolsOutputDirectory) {
+    throw "Packaged output still contains the ffmpeg-tools directory."
 }
 
 $testingNotesPath = Join-Path $repoRoot "TESTING_NOTES.md"
@@ -235,6 +261,7 @@ Compress-Archive -Path (Join-Path $resolvedOutputDirectory "*") -DestinationPath
     ExecutablePath = $exePath
     ArtifactPath = $resolvedArtifactPath
     RuntimeFiles = @($expectedRuntimeFiles.Keys | Sort-Object)
+    ExportRuntimeFiles = @($expectedExportRuntimeFiles.Keys | Sort-Object)
     ExportToolsFiles = @($expectedExportToolsFiles.Keys | Sort-Object)
     ProductVersion = $artifactVersion
 }

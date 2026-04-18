@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using FFmpeg.AutoGen;
 using FramePlayer.Services;
 using Xunit;
 
@@ -18,6 +19,47 @@ namespace FramePlayer.Core.Tests
 
             Assert.True(valid, errorMessage);
             Assert.True(string.IsNullOrWhiteSpace(errorMessage));
+        }
+
+        [Fact]
+        public void ExportRuntimeManifestValidation_Succeeds_ForBundledRuntimeDirectory_WhenPresent()
+        {
+            var runtimeDirectory = Path.Combine(GetRepositoryRoot(), "Runtime", "ffmpeg-export");
+            if (!Directory.Exists(runtimeDirectory))
+            {
+                return;
+            }
+
+            var valid = ExportRuntimeManifestService.TryValidateRuntimeDirectory(runtimeDirectory, out var errorMessage);
+
+            Assert.True(valid, errorMessage);
+            Assert.True(string.IsNullOrWhiteSpace(errorMessage));
+        }
+
+        [Fact]
+        public void ExportRuntimeManifestValidation_Succeeds_ForBundledAppOutputDirectory()
+        {
+            var runtimeDirectory = Path.Combine(AppContext.BaseDirectory, ExportHostClient.ExportRuntimeFolderName);
+
+            Assert.True(
+                Directory.Exists(runtimeDirectory),
+                "The built app output did not include the ffmpeg-export runtime directory. Run .\\scripts\\Ensure-DevExportRuntime.ps1 before building.");
+
+            var valid = ExportRuntimeManifestService.TryValidateRuntimeDirectory(runtimeDirectory, out var errorMessage);
+
+            Assert.True(valid, errorMessage);
+            Assert.True(string.IsNullOrWhiteSpace(errorMessage));
+        }
+
+        [Fact]
+        public void BundledAppOutput_DoesNotContainExportToolExecutables()
+        {
+            var toolsDirectory = Path.Combine(AppContext.BaseDirectory, "ffmpeg-tools");
+            Assert.False(
+                Directory.Exists(toolsDirectory),
+                "The built app output still contains an ffmpeg-tools directory. Export CLI tools must remain dev/test-only and stay out of shipped output.");
+            Assert.False(File.Exists(Path.Combine(AppContext.BaseDirectory, "ffmpeg.exe")));
+            Assert.False(File.Exists(Path.Combine(AppContext.BaseDirectory, "ffprobe.exe")));
         }
 
         [Fact]
@@ -45,6 +87,26 @@ namespace FramePlayer.Core.Tests
 
             Assert.False(valid);
             Assert.Contains("missing", errorMessage, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public void MediaProbeService_ReportsVideoMetadata_ForSampleClip()
+        {
+            var sampleFilePath = Path.Combine(GetRepositoryRoot(), "artifacts", "generated-test-media", "sample-test-h264.mp4");
+            if (!File.Exists(sampleFilePath))
+            {
+                return;
+            }
+
+            ffmpeg.RootPath = Path.Combine(GetRepositoryRoot(), "Runtime", "ffmpeg");
+            var probed = MediaProbeService.TryProbeVideoMediaInfo(sampleFilePath, out var mediaInfo, out var errorMessage);
+
+            Assert.True(probed, errorMessage);
+            Assert.NotNull(mediaInfo);
+            Assert.True(mediaInfo.Duration > TimeSpan.Zero);
+            Assert.True(mediaInfo.PixelWidth > 0);
+            Assert.True(mediaInfo.PixelHeight > 0);
+            Assert.False(string.IsNullOrWhiteSpace(mediaInfo.VideoCodecName));
         }
 
         [Fact]

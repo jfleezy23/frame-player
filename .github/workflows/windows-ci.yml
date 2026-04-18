@@ -41,6 +41,10 @@ jobs:
         shell: pwsh
         run: .\scripts\Ensure-DevExportTools.ps1
 
+      - name: Restore pinned FFmpeg export runtime
+        shell: pwsh
+        run: .\scripts\Ensure-DevExportRuntime.ps1 -Required
+
       - name: Restore and build
         shell: pwsh
         run: dotnet build .\FramePlayer.csproj -c Release -p:Platform=x64

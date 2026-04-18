@@ -1,0 +1,29 @@
+{
+  "runtimeSource": "DLL-only export runtime staged from the reviewed FFmpeg tools build while the separate export-runtime archive remains a local build artifact.",
+  "sourceRepository": "https://git.ffmpeg.org/ffmpeg.git",
+  "sourceTag": "n8.1",
+  "sourceCommit": "9047fa1b084f76b1b4d065af2d743df1b40dfb56",
+  "ffmpegVersion": "n8.1-frameplayer-export-runtime",
+  "assetName": "",
+  "tag": "",
+  "assetUrl": "",
+  "assetSha256": "",
+  "files": {
+    "avcodec-62.dll": "0686de5731863e3b513062b735777739f4780306a2500b8b72c0fa29861b05a6",
+    "avfilter-11.dll": "44f4f4977fff9ca80228f9bdafa01f18127b4317140de07c64ef5468758c8df3",
+    "avformat-62.dll": "de2878caeb26d84eeab94cfa6f71cf862b0c57273a5c1caf6eef6c8a454306dd",
+    "avutil-60.dll": "9a78a8c752c06f0231fab17dcdd8d3e31b66bcc27bf1e0595df22a41cdfb5c6c",
+    "libbz2-1.dll": "b79cd3a7102e359ef6324e98966a67939e58ec2b651ae2847cae84a4dfa453f7",
+    "libgcc_s_seh-1.dll": "eeda86410a82012a22b47f73d63c9e93667b7ed19e0b4aa22bcd02aed2215c66",
+    "libiconv-2.dll": "7a282a854e01be726c6cccfe46f548c716aa45b3014818468253aaa4efbcd067",
+    "liblzma-5.dll": "dc9edb9bd83b0371fe68d96cb3e70cd17b7a5aba958326a18f8210cb812432e9",
+    "libstdc++-6.dll": "e41b6010e168f5ea5c62b110d90dbc8274f0694015821ba54211e365c91c68a6",
+    "libva.dll": "b31d70355988a9de985900a53cb8a5a4df5bae713759a3c45987fd72814e162f",
+    "libva_win32.dll": "7e77ca54027daa4f69c36a28989a7807105d3671d2bfca37336d53bf781a4342",
+    "libwinpthread-1.dll": "67a8ebf011133c6413cc68e59eeeefa5860c416334b96fc527c7d2e6b86a98cf",
+    "libx264-165.dll": "3cda80e1c872fe1aae0bc8cd62cec6bb729a0bac6365697488783ab48e7651d7",
+    "swresample-6.dll": "c617dfb4f88b331a08157ed1aae63269ee7f29444690902c150cd82ee3ad1f32",
+    "swscale-9.dll": "be1f768183ddfdb7dec1e2562d86e9430862d3322169536a78a65c2fb2b9083c",
+    "zlib1.dll": "93e9243a44c29200eeacaf9658efe2558581770e4b11ca4b500e18e424a6e3b5"
+  }
+}

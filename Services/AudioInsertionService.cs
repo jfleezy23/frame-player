@@ -9,28 +9,26 @@ namespace FramePlayer.Services
 {
     internal sealed class AudioInsertionService
     {
-        private readonly FfmpegCliTooling _tooling;
+        private readonly ExportHostClient _hostClient;
 
         public AudioInsertionService()
         {
-            _tooling = new FfmpegCliTooling();
+            _hostClient = new ExportHostClient();
         }
 
-        public bool IsBundledToolingAvailable
+        public bool IsBundledRuntimeAvailable
         {
-            get { return _tooling.IsBundledToolingAvailable; }
+            get { return _hostClient.IsBundledRuntimeAvailable; }
         }
 
-        public string GetToolAvailabilityMessage()
+        public string GetRuntimeAvailabilityMessage()
         {
-            return _tooling.GetToolAvailabilityMessage();
+            return _hostClient.GetRuntimeAvailabilityMessage();
         }
 
         public AudioInsertionPlan CreatePlan(AudioInsertionRequest request)
         {
             ArgumentNullException.ThrowIfNull(request);
-
-            var toolPaths = _tooling.GetRequiredToolPaths();
 
             if (string.IsNullOrWhiteSpace(request.SourceFilePath))
             {
@@ -110,8 +108,8 @@ namespace FramePlayer.Services
                 request.DisplayLabel,
                 videoDuration,
                 BuildFfmpegArguments(sourceFullPath, replacementAudioFullPath, outputFullPath, videoDuration),
-                toolPaths.FfmpegPath,
-                toolPaths.FfprobePath);
+                string.Empty,
+                string.Empty);
         }
 
         public async Task<AudioInsertionResult> InsertAsync(
@@ -119,7 +117,7 @@ namespace FramePlayer.Services
             CancellationToken cancellationToken = default(CancellationToken))
         {
             var plan = CreatePlan(request);
-            return await InsertPlanAsync(plan, cancellationToken).ConfigureAwait(false);
+            return await _hostClient.InsertAudioAsync(plan, cancellationToken).ConfigureAwait(false);
         }
 
         public static async Task<AudioInsertionResult> InsertPlanAsync(
@@ -127,54 +125,7 @@ namespace FramePlayer.Services
             CancellationToken cancellationToken = default(CancellationToken))
         {
             ArgumentNullException.ThrowIfNull(plan);
-
-            return await Task.Run(
-                () =>
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-                    var processResult = FfmpegCliTooling.RunProcess(
-                        plan.FfmpegPath,
-                        plan.FfmpegArguments,
-                        Path.GetDirectoryName(plan.OutputFilePath));
-                    stopwatch.Stop();
-
-                    if (processResult.ExitCode != 0)
-                    {
-                        return new AudioInsertionResult(
-                            false,
-                            plan,
-                            FfmpegCliTooling.BuildFailureMessage(processResult, "FFmpeg audio insertion failed."),
-                            processResult.ExitCode,
-                            stopwatch.Elapsed,
-                            null,
-                            null,
-                            processResult.StandardOutput,
-                            processResult.StandardError);
-                    }
-
-                    TimeSpan? probedDuration = null;
-                    bool? probedHasAudioStream = null;
-                    FfmpegMediaProbe probe;
-                    if (FfmpegCliTooling.TryProbeMediaFile(plan.FfprobePath, plan.OutputFilePath, out probe) &&
-                        probe != null)
-                    {
-                        probedDuration = probe.Duration;
-                        probedHasAudioStream = probe.HasAudioStream;
-                    }
-
-                    return new AudioInsertionResult(
-                        true,
-                        plan,
-                        "Audio insertion completed.",
-                        0,
-                        stopwatch.Elapsed,
-                        probedDuration,
-                        probedHasAudioStream,
-                        processResult.StandardOutput,
-                        processResult.StandardError);
-                },
-                cancellationToken).ConfigureAwait(false);
+            return await new ExportHostClient().InsertAudioAsync(plan, cancellationToken).ConfigureAwait(false);
         }
 
         private static string BuildFfmpegArguments(

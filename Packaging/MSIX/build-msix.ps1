@@ -104,7 +104,7 @@ function New-PngFromIcon {
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $projectPath = Join-Path $repoRoot "FramePlayer.csproj"
 $ensureRuntimeScript = Join-Path $repoRoot "scripts\Ensure-DevRuntime.ps1"
-$ensureExportToolsScript = Join-Path $repoRoot "scripts\Ensure-DevExportTools.ps1"
+$ensureExportRuntimeScript = Join-Path $repoRoot "scripts\Ensure-DevExportRuntime.ps1"
 $releaseDir = Join-Path $repoRoot ("bin\" + $Configuration)
 $distDir = Join-Path $repoRoot "dist\MSIX"
 $buildRoot = Join-Path $distDir "_build"
@@ -117,8 +117,8 @@ $makepriPath = Get-ToolPath -ToolName "makepri.exe"
 $signtoolPath = Get-ToolPath -ToolName "signtool.exe"
 
 & $ensureRuntimeScript | Out-Host
-if (Test-Path -LiteralPath $ensureExportToolsScript) {
-    & $ensureExportToolsScript | Out-Host
+if (Test-Path -LiteralPath $ensureExportRuntimeScript) {
+    & $ensureExportRuntimeScript -Required | Out-Host
 }
 & dotnet build $projectPath -c $Configuration -p:Platform=$Platform | Out-Host
 if ($LASTEXITCODE -ne 0) {
@@ -157,9 +157,9 @@ Get-ChildItem $releaseDir -File |
         Copy-Item $_.FullName -Destination (Join-Path $packageRoot $_.Name) -Force
     }
 
-$exportToolsReleaseDirectory = Join-Path $releaseDir "ffmpeg-tools"
-if (Test-Path -LiteralPath $exportToolsReleaseDirectory) {
-    Copy-Item -LiteralPath $exportToolsReleaseDirectory -Destination (Join-Path $packageRoot "ffmpeg-tools") -Recurse -Force
+$exportRuntimeReleaseDirectory = Join-Path $releaseDir "ffmpeg-export"
+if (Test-Path -LiteralPath $exportRuntimeReleaseDirectory) {
+    Copy-Item -LiteralPath $exportRuntimeReleaseDirectory -Destination (Join-Path $packageRoot "ffmpeg-export") -Recurse -Force
 }
 
 New-PngFromIcon -IconPath $iconPath -OutputPath (Join-Path $assetsDir "FramePlayer150x150.png") -Size 150
