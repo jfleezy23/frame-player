@@ -190,41 +190,21 @@ namespace FramePlayer
 
         private sealed class CompareSideBySideExportContext
         {
-            public CompareSideBySideExportContext(
-                ReviewWorkspacePaneSnapshot primaryPaneSnapshot,
-                ReviewWorkspacePaneSnapshot comparePaneSnapshot,
-                FfmpegReviewEngine primaryEngine,
-                FfmpegReviewEngine compareEngine,
-                LoopPlaybackPaneRangeSnapshot primaryLoopRange,
-                LoopPlaybackPaneRangeSnapshot compareLoopRange,
-                bool isLoopModeAvailable,
-                string loopModeUnavailableReason)
-            {
-                PrimaryPaneSnapshot = primaryPaneSnapshot;
-                ComparePaneSnapshot = comparePaneSnapshot;
-                PrimaryEngine = primaryEngine;
-                CompareEngine = compareEngine;
-                PrimaryLoopRange = primaryLoopRange;
-                CompareLoopRange = compareLoopRange;
-                IsLoopModeAvailable = isLoopModeAvailable;
-                LoopModeUnavailableReason = loopModeUnavailableReason ?? string.Empty;
-            }
+            public ReviewWorkspacePaneSnapshot PrimaryPaneSnapshot { get; init; }
 
-            public ReviewWorkspacePaneSnapshot PrimaryPaneSnapshot { get; }
+            public ReviewWorkspacePaneSnapshot ComparePaneSnapshot { get; init; }
 
-            public ReviewWorkspacePaneSnapshot ComparePaneSnapshot { get; }
+            public FfmpegReviewEngine PrimaryEngine { get; init; }
 
-            public FfmpegReviewEngine PrimaryEngine { get; }
+            public FfmpegReviewEngine CompareEngine { get; init; }
 
-            public FfmpegReviewEngine CompareEngine { get; }
+            public LoopPlaybackPaneRangeSnapshot PrimaryLoopRange { get; init; }
 
-            public LoopPlaybackPaneRangeSnapshot PrimaryLoopRange { get; }
+            public LoopPlaybackPaneRangeSnapshot CompareLoopRange { get; init; }
 
-            public LoopPlaybackPaneRangeSnapshot CompareLoopRange { get; }
+            public bool IsLoopModeAvailable { get; init; }
 
-            public bool IsLoopModeAvailable { get; }
-
-            public string LoopModeUnavailableReason { get; }
+            public string LoopModeUnavailableReason { get; init; } = string.Empty;
         }
 
         private sealed class TimelineContextCommandTarget
@@ -4276,17 +4256,12 @@ namespace FramePlayer
 
         private async Task<CompareSideBySideExportResult> PromptAndExportSideBySideCompareAsync()
         {
-            var workspaceSnapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
             CompareSideBySideExportContext exportContext;
-            string exportFailureMessage;
-            if (!TryResolveCompareSideBySideExportContext(workspaceSnapshot, null, out exportContext, out exportFailureMessage))
+            if (!TryResolveCompareSideBySideExportContextWithUserFeedback(
+                _workspaceCoordinator.GetWorkspaceSnapshot(),
+                null,
+                out exportContext))
             {
-                if (!string.IsNullOrWhiteSpace(exportFailureMessage))
-                {
-                    SetPlaybackMessage(exportFailureMessage);
-                    LogWarning(exportFailureMessage);
-                }
-
                 return null;
             }
 
@@ -4307,41 +4282,30 @@ namespace FramePlayer
             CompareSideBySideExportMode mode,
             CompareSideBySideExportAudioSource audioSource)
         {
-            var workspaceSnapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
             CompareSideBySideExportContext exportContext;
-            string exportFailureMessage;
-            if (!TryResolveCompareSideBySideExportContext(workspaceSnapshot, mode, out exportContext, out exportFailureMessage))
+            if (!TryResolveCompareSideBySideExportContextWithUserFeedback(
+                _workspaceCoordinator.GetWorkspaceSnapshot(),
+                mode,
+                out exportContext))
             {
-                if (!string.IsNullOrWhiteSpace(exportFailureMessage))
-                {
-                    SetPlaybackMessage(exportFailureMessage);
-                    LogWarning(exportFailureMessage);
-                }
-
                 return null;
             }
 
             await PausePlaybackAsync(logAction: false, operationScope: SynchronizedOperationScope.AllPanes);
 
-            workspaceSnapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
-            if (!TryResolveCompareSideBySideExportContext(workspaceSnapshot, mode, out exportContext, out exportFailureMessage))
+            if (!TryResolveCompareSideBySideExportContextWithUserFeedback(
+                _workspaceCoordinator.GetWorkspaceSnapshot(),
+                mode,
+                out exportContext))
             {
-                if (!string.IsNullOrWhiteSpace(exportFailureMessage))
-                {
-                    SetPlaybackMessage(exportFailureMessage);
-                    LogWarning(exportFailureMessage);
-                }
-
                 return null;
             }
 
             var resolvedOutputPath = outputPath;
-            if (string.IsNullOrWhiteSpace(resolvedOutputPath))
+            if (string.IsNullOrWhiteSpace(resolvedOutputPath) &&
+                !TryPromptForCompareSideBySideExportPath(exportContext, mode, out resolvedOutputPath))
             {
-                if (!TryPromptForCompareSideBySideExportPath(exportContext, mode, out resolvedOutputPath))
-                {
-                    return null;
-                }
+                return null;
             }
 
             var request = BuildCompareSideBySideExportRequest(exportContext, resolvedOutputPath, mode, audioSource);
@@ -4359,55 +4323,93 @@ namespace FramePlayer
                     GetSafeFileDisplay(resolvedOutputPath)));
 
                 var exportResult = await _compareSideBySideExportService.ExportAsync(request).ConfigureAwait(true);
-                if (exportResult != null && exportResult.Succeeded)
+                if (exportResult == null)
                 {
-                    var durationText = exportResult.ProbedDuration.HasValue
-                        ? FormatTime(exportResult.ProbedDuration.Value)
-                        : FormatTime(exportResult.Plan.OutputDuration);
-                    SetPlaybackMessage("Side-by-side compare exported.");
-                    LogInfo(string.Format(
-                        CultureInfo.InvariantCulture,
-                        "Side-by-side compare export completed: output {0}, mode {1}, audio {2}, duration {3}, output size {4}x{5}, probed audio {6}, elapsed {7:0.0} ms.",
-                        GetSafeFileDisplay(exportResult.Plan.OutputFilePath),
-                        exportResult.Plan.Mode,
-                        exportResult.Plan.AudioSource,
-                        durationText,
-                        exportResult.ProbedVideoWidth.GetValueOrDefault(exportResult.Plan.OutputWidth),
-                        exportResult.ProbedVideoHeight.GetValueOrDefault(exportResult.Plan.OutputHeight),
-                        exportResult.ProbedHasAudioStream.HasValue
-                            ? exportResult.ProbedHasAudioStream.Value.ToString()
-                            : exportResult.Plan.SelectedAudioHasStream.ToString(),
-                        exportResult.Elapsed.TotalMilliseconds));
+                    return null;
                 }
-                else if (exportResult != null)
+
+                if (exportResult.Succeeded)
                 {
-                    var sanitizedMessage = SanitizeSensitiveText(exportResult.Message);
-                    SetPlaybackMessage("Side-by-side compare export failed.");
-                    LogError("Side-by-side compare export failed: " + sanitizedMessage);
+                    ReportSuccessfulCompareSideBySideExport(exportResult);
+                }
+                else
+                {
+                    ReportFailedCompareSideBySideExport(exportResult.Message);
                 }
 
                 return exportResult;
             }
             catch (Exception ex)
             {
-                var sanitizedMessage = SanitizeSensitiveText(ex.Message);
-                SetPlaybackMessage("Side-by-side compare export failed.");
-                LogError("Side-by-side compare export failed: " + sanitizedMessage);
-                return new CompareSideBySideExportResult
-                {
-                    Succeeded = false,
-                    Plan = null,
-                    Message = sanitizedMessage,
-                    ExitCode = -1,
-                    Elapsed = TimeSpan.Zero,
-                    ProbedDuration = null,
-                    ProbedVideoWidth = null,
-                    ProbedVideoHeight = null,
-                    ProbedHasAudioStream = null,
-                    StandardOutput = string.Empty,
-                    StandardError = string.Empty
-                };
+                return CreateFailedCompareSideBySideExportResult(ex.Message);
             }
+        }
+
+        private bool TryResolveCompareSideBySideExportContextWithUserFeedback(
+            ReviewWorkspaceSnapshot workspaceSnapshot,
+            CompareSideBySideExportMode? requiredMode,
+            out CompareSideBySideExportContext exportContext)
+        {
+            string failureMessage;
+            if (TryResolveCompareSideBySideExportContext(workspaceSnapshot, requiredMode, out exportContext, out failureMessage))
+            {
+                return true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(failureMessage))
+            {
+                SetPlaybackMessage(failureMessage);
+                LogWarning(failureMessage);
+            }
+
+            return false;
+        }
+
+        private void ReportSuccessfulCompareSideBySideExport(CompareSideBySideExportResult exportResult)
+        {
+            var durationText = exportResult.ProbedDuration.HasValue
+                ? FormatTime(exportResult.ProbedDuration.Value)
+                : FormatTime(exportResult.Plan.OutputDuration);
+            SetPlaybackMessage("Side-by-side compare exported.");
+            LogInfo(string.Format(
+                CultureInfo.InvariantCulture,
+                "Side-by-side compare export completed: output {0}, mode {1}, audio {2}, duration {3}, output size {4}x{5}, probed audio {6}, elapsed {7:0.0} ms.",
+                GetSafeFileDisplay(exportResult.Plan.OutputFilePath),
+                exportResult.Plan.Mode,
+                exportResult.Plan.AudioSource,
+                durationText,
+                exportResult.ProbedVideoWidth.GetValueOrDefault(exportResult.Plan.OutputWidth),
+                exportResult.ProbedVideoHeight.GetValueOrDefault(exportResult.Plan.OutputHeight),
+                exportResult.ProbedHasAudioStream.HasValue
+                    ? exportResult.ProbedHasAudioStream.Value.ToString()
+                    : exportResult.Plan.SelectedAudioHasStream.ToString(),
+                exportResult.Elapsed.TotalMilliseconds));
+        }
+
+        private void ReportFailedCompareSideBySideExport(string message)
+        {
+            var sanitizedMessage = SanitizeSensitiveText(message);
+            SetPlaybackMessage("Side-by-side compare export failed.");
+            LogError("Side-by-side compare export failed: " + sanitizedMessage);
+        }
+
+        private CompareSideBySideExportResult CreateFailedCompareSideBySideExportResult(string message)
+        {
+            ReportFailedCompareSideBySideExport(message);
+            return new CompareSideBySideExportResult
+            {
+                Succeeded = false,
+                Plan = null,
+                Message = SanitizeSensitiveText(message),
+                ExitCode = -1,
+                Elapsed = TimeSpan.Zero,
+                ProbedDuration = null,
+                ProbedVideoWidth = null,
+                ProbedVideoHeight = null,
+                ProbedHasAudioStream = null,
+                StandardOutput = string.Empty,
+                StandardError = string.Empty
+            };
         }
 
         private bool TryResolveCompareSideBySideExportContext(
@@ -4439,10 +4441,7 @@ namespace FramePlayer
 
             ReviewWorkspacePaneSnapshot primaryPaneSnapshot;
             ReviewWorkspacePaneSnapshot comparePaneSnapshot;
-            if (!workspaceSnapshot.TryGetPane(PrimaryPaneId, out primaryPaneSnapshot) ||
-                !workspaceSnapshot.TryGetPane(ComparePaneId, out comparePaneSnapshot) ||
-                !PaneHasLoadedMedia(primaryPaneSnapshot) ||
-                !PaneHasLoadedMedia(comparePaneSnapshot))
+            if (!TryResolveLoadedComparePaneSnapshots(workspaceSnapshot, out primaryPaneSnapshot, out comparePaneSnapshot))
             {
                 failureMessage = "Load media into both compare panes before exporting a side-by-side compare.";
                 return false;
@@ -4458,55 +4457,14 @@ namespace FramePlayer
 
             var primaryLoopRange = primaryPaneSnapshot.LoopRange;
             var compareLoopRange = comparePaneSnapshot.LoopRange;
-            var isLoopModeAvailable = true;
-            var loopModeFailureMessage = string.Empty;
-
-            if (primaryLoopRange == null || !primaryLoopRange.HasAnyMarkers)
-            {
-                isLoopModeAvailable = false;
-                loopModeFailureMessage = "Loop mode requires pane-local A/B markers on both panes.";
-            }
-            else if (!primaryLoopRange.HasLoopIn || !primaryLoopRange.HasLoopOut)
-            {
-                isLoopModeAvailable = false;
-                loopModeFailureMessage = "Loop mode requires both loop-in and loop-out on the primary pane.";
-            }
-            else if (compareLoopRange == null || !compareLoopRange.HasAnyMarkers)
-            {
-                isLoopModeAvailable = false;
-                loopModeFailureMessage = "Loop mode requires pane-local A/B markers on both panes.";
-            }
-            else if (!compareLoopRange.HasLoopIn || !compareLoopRange.HasLoopOut)
-            {
-                isLoopModeAvailable = false;
-                loopModeFailureMessage = "Loop mode requires both loop-in and loop-out on the compare pane.";
-            }
-            else
-            {
-                primaryLoopRange = PromotePendingLoopRangeFromIndexedFrameIdentity(
-                    primaryLoopRange,
-                    primaryPaneSnapshot.PaneId,
-                    primaryPaneSnapshot.SessionId,
-                    primaryPaneSnapshot.DisplayLabel,
-                    primaryEngine);
-                compareLoopRange = PromotePendingLoopRangeFromIndexedFrameIdentity(
-                    compareLoopRange,
-                    comparePaneSnapshot.PaneId,
-                    comparePaneSnapshot.SessionId,
-                    comparePaneSnapshot.DisplayLabel,
-                    compareEngine);
-
-                if (primaryLoopRange.HasPendingMarkers || compareLoopRange.HasPendingMarkers)
-                {
-                    isLoopModeAvailable = false;
-                    loopModeFailureMessage = "Loop mode is disabled while pane-local markers are still pending exact frame identity.";
-                }
-                else if (primaryLoopRange.IsInvalidRange || compareLoopRange.IsInvalidRange)
-                {
-                    isLoopModeAvailable = false;
-                    loopModeFailureMessage = "Loop mode is disabled because one or both pane-local loop ranges are invalid.";
-                }
-            }
+            var isLoopModeAvailable = EvaluateCompareSideBySideLoopModeAvailability(
+                primaryPaneSnapshot,
+                comparePaneSnapshot,
+                primaryEngine,
+                compareEngine,
+                ref primaryLoopRange,
+                ref compareLoopRange,
+                out var loopModeFailureMessage);
 
             if (requiredMode == CompareSideBySideExportMode.Loop && !isLoopModeAvailable)
             {
@@ -4514,15 +4472,93 @@ namespace FramePlayer
                 return false;
             }
 
-            exportContext = new CompareSideBySideExportContext(
-                primaryPaneSnapshot,
-                comparePaneSnapshot,
-                primaryEngine,
-                compareEngine,
+            exportContext = new CompareSideBySideExportContext
+            {
+                PrimaryPaneSnapshot = primaryPaneSnapshot,
+                ComparePaneSnapshot = comparePaneSnapshot,
+                PrimaryEngine = primaryEngine,
+                CompareEngine = compareEngine,
+                PrimaryLoopRange = primaryLoopRange,
+                CompareLoopRange = compareLoopRange,
+                IsLoopModeAvailable = isLoopModeAvailable,
+                LoopModeUnavailableReason = loopModeFailureMessage ?? string.Empty
+            };
+            return true;
+        }
+
+        private bool TryResolveLoadedComparePaneSnapshots(
+            ReviewWorkspaceSnapshot workspaceSnapshot,
+            out ReviewWorkspacePaneSnapshot primaryPaneSnapshot,
+            out ReviewWorkspacePaneSnapshot comparePaneSnapshot)
+        {
+            primaryPaneSnapshot = default;
+            comparePaneSnapshot = default;
+
+            if (!workspaceSnapshot.TryGetPane(PrimaryPaneId, out primaryPaneSnapshot) ||
+                !workspaceSnapshot.TryGetPane(ComparePaneId, out comparePaneSnapshot))
+            {
+                return false;
+            }
+
+            return PaneHasLoadedMedia(primaryPaneSnapshot) &&
+                   PaneHasLoadedMedia(comparePaneSnapshot);
+        }
+
+        private bool EvaluateCompareSideBySideLoopModeAvailability(
+            ReviewWorkspacePaneSnapshot primaryPaneSnapshot,
+            ReviewWorkspacePaneSnapshot comparePaneSnapshot,
+            FfmpegReviewEngine primaryEngine,
+            FfmpegReviewEngine compareEngine,
+            ref LoopPlaybackPaneRangeSnapshot primaryLoopRange,
+            ref LoopPlaybackPaneRangeSnapshot compareLoopRange,
+            out string loopModeFailureMessage)
+        {
+            loopModeFailureMessage = string.Empty;
+
+            if ((primaryLoopRange == null || !primaryLoopRange.HasAnyMarkers) ||
+                (compareLoopRange == null || !compareLoopRange.HasAnyMarkers))
+            {
+                loopModeFailureMessage = "Loop mode requires pane-local A/B markers on both panes.";
+                return false;
+            }
+
+            if (!primaryLoopRange.HasLoopIn || !primaryLoopRange.HasLoopOut)
+            {
+                loopModeFailureMessage = "Loop mode requires both loop-in and loop-out on the primary pane.";
+                return false;
+            }
+
+            if (!compareLoopRange.HasLoopIn || !compareLoopRange.HasLoopOut)
+            {
+                loopModeFailureMessage = "Loop mode requires both loop-in and loop-out on the compare pane.";
+                return false;
+            }
+
+            primaryLoopRange = PromotePendingLoopRangeFromIndexedFrameIdentity(
                 primaryLoopRange,
+                primaryPaneSnapshot.PaneId,
+                primaryPaneSnapshot.SessionId,
+                primaryPaneSnapshot.DisplayLabel,
+                primaryEngine);
+            compareLoopRange = PromotePendingLoopRangeFromIndexedFrameIdentity(
                 compareLoopRange,
-                isLoopModeAvailable,
-                loopModeFailureMessage);
+                comparePaneSnapshot.PaneId,
+                comparePaneSnapshot.SessionId,
+                comparePaneSnapshot.DisplayLabel,
+                compareEngine);
+
+            if (primaryLoopRange.HasPendingMarkers || compareLoopRange.HasPendingMarkers)
+            {
+                loopModeFailureMessage = "Loop mode is disabled while pane-local markers are still pending exact frame identity.";
+                return false;
+            }
+
+            if (primaryLoopRange.IsInvalidRange || compareLoopRange.IsInvalidRange)
+            {
+                loopModeFailureMessage = "Loop mode is disabled because one or both pane-local loop ranges are invalid.";
+                return false;
+            }
+
             return true;
         }
 
