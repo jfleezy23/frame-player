@@ -1,9 +1,14 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace FramePlayer.Core.Models
 {
     public sealed class ClipExportPlan
     {
+        [SuppressMessage(
+            "Major Code Smell",
+            "S107:Methods should not have too many parameters",
+            Justification = "Clip export plans are immutable export-time transport models with explicit scalar fields to keep command construction and diagnostics straightforward.")]
         public ClipExportPlan(
             string sourceFilePath,
             string outputFilePath,

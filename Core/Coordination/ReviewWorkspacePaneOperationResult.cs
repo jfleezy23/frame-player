@@ -1,10 +1,15 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using FramePlayer.Core.Models;
 
 namespace FramePlayer.Core.Coordination
 {
     public sealed class ReviewWorkspacePaneOperationResult
     {
+        [SuppressMessage(
+            "Major Code Smell",
+            "S107:Methods should not have too many parameters",
+            Justification = "Pane operation results are immutable coordination snapshots; explicit scalar fields keep failure reporting and tests straightforward.")]
         public ReviewWorkspacePaneOperationResult(
             string paneId,
             string sessionId,

@@ -1,9 +1,14 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace FramePlayer.Core.Models
 {
     public sealed class ClipExportResult
     {
+        [SuppressMessage(
+            "Major Code Smell",
+            "S107:Methods should not have too many parameters",
+            Justification = "Clip export results are immutable export-path snapshots that intentionally keep scalar fields explicit for reporting and test assertions.")]
         public ClipExportResult(
             bool succeeded,
             ClipExportPlan plan,

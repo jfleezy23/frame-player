@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using FramePlayer.Core.Models;
 
 namespace FramePlayer.Core.Coordination
@@ -18,6 +19,10 @@ namespace FramePlayer.Core.Coordination
                 LoopPlaybackRangeSnapshot.Empty,
                 Array.Empty<ReviewPaneState>());
 
+        [SuppressMessage(
+            "Major Code Smell",
+            "S107:Methods should not have too many parameters",
+            Justification = "Workspace state snapshots intentionally keep scalar identifiers and pane collections explicit so coordination logic stays transparent.")]
         public MultiVideoWorkspaceState(
             TimeSpan masterTimelinePosition,
             TimelineSynchronizationMode synchronizationMode,

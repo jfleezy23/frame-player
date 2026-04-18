@@ -1,9 +1,14 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace FramePlayer.Core.Models
 {
     public sealed class AudioInsertionPlan
     {
+        [SuppressMessage(
+            "Major Code Smell",
+            "S107:Methods should not have too many parameters",
+            Justification = "Audio insertion plans are immutable export-path transport models that keep scalar fields explicit for stable call sites and diagnostics.")]
         public AudioInsertionPlan(
             string sourceFilePath,
             string replacementAudioFilePath,
