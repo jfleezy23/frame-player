@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -28,7 +29,6 @@ namespace FramePlayer.Engines.FFmpeg
         // Frame stepping must be cache- or decode-based rather than timestamp math.
         // Backward stepping should first use cached decoded frames, then seek to the prior
         // keyframe and decode forward until the requested display-order frame is reconstructed.
-        private static readonly Type FfmpegBindingsAnchor = typeof(ffmpeg);
         private const string OutputPixelFormatName = "bgra";
 
         private readonly object _playbackSync = new object();
@@ -65,7 +65,11 @@ namespace FramePlayer.Engines.FFmpeg
         private AVBufferRef* _hardwareDeviceContext;
         private AVPixelFormat _hardwarePixelFormat;
         private FfmpegFrameConverter _frameConverter;
-        private AVCodecContext_get_format _hardwareGetFormatCallback;
+        [SuppressMessage(
+            "Major Code Smell",
+            "S1450:Private fields only used as local variables in methods should become local variables",
+            Justification = "FFmpeg stores the callback in unmanaged state; the engine must keep a managed delegate alive for the codec context lifetime.")]
+        private readonly AVCodecContext_get_format _hardwareGetFormatCallback;
         private CancellationTokenSource _playbackCancellationSource;
         private Task _playbackTask;
         private CancellationTokenSource _indexBuildCancellationSource;
@@ -127,6 +131,7 @@ namespace FramePlayer.Engines.FFmpeg
             ActiveDecodeBackend = "ffmpeg-cpu";
             GpuCapabilityStatus = "not-requested";
             GpuFallbackReason = string.Empty;
+            _hardwareGetFormatCallback = SelectHardwarePixelFormat;
             OperationalQueueDepth = CpuOperationalQueueDepth;
             _budgetCoordinator.AllocationChanged += BudgetCoordinator_AllocationChanged;
             _budgetCoordinator.RegisterPane(_paneId);
@@ -309,7 +314,7 @@ namespace FramePlayer.Engines.FFmpeg
 
         public double LastSeekForwardCacheWarmMilliseconds { get; private set; }
 
-        public string LastSeekMode { get; private set; } = string.Empty;
+        public string LastSeekMode { get; private set; }
 
         public double LastCacheRefillMilliseconds { get; private set; }
 
@@ -1766,7 +1771,6 @@ namespace FramePlayer.Engines.FFmpeg
             _hardwareDecodeFormatSelected = false;
             IsGpuActive = false;
             _hardwarePixelFormat = AVPixelFormat.AV_PIX_FMT_NONE;
-            _hardwareGetFormatCallback = null;
 
             if (_codecContext != null)
             {
@@ -1849,7 +1853,6 @@ namespace FramePlayer.Engines.FFmpeg
 
             _hardwareDeviceContext = hardwareDeviceContext;
             _hardwarePixelFormat = hardwareConfiguration->pix_fmt;
-            _hardwareGetFormatCallback = SelectHardwarePixelFormat;
             _codecContext->get_format = _hardwareGetFormatCallback;
             _codecContext->hw_device_ctx = ffmpeg.av_buffer_ref(_hardwareDeviceContext);
             GpuCapabilityStatus = "probe-ready";

@@ -13,6 +13,8 @@ namespace FramePlayer.Diagnostics
 {
     public static class ReviewEngineComparisonRunner
     {
+        private const string NoneLabel = "(none)";
+
         public static async Task<ReviewEngineComparisonReport> RunAsync(
             string filePath,
             TimeSpan seekTime,
@@ -434,7 +436,7 @@ namespace FramePlayer.Diagnostics
                     ? "landed on or after the requested stream timestamp"
                     : "fell back to the closest available decoded frame near end of stream",
                 ffmpegEngine.LastOperationUsedGlobalIndex ? "yes" : "no",
-                string.IsNullOrWhiteSpace(ffmpegEngine.LastAnchorStrategy) ? "(none)" : ffmpegEngine.LastAnchorStrategy,
+                string.IsNullOrWhiteSpace(ffmpegEngine.LastAnchorStrategy) ? NoneLabel : ffmpegEngine.LastAnchorStrategy,
                 ffmpegEngine.LastAnchorFrameIndex.HasValue
                     ? " @ frame " + ffmpegEngine.LastAnchorFrameIndex.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
                     : string.Empty,
@@ -481,7 +483,7 @@ namespace FramePlayer.Diagnostics
                     ? "was satisfied from the decoded absolute-frame cache"
                     : "decoded the exact target frame from a global-index anchor",
                 ffmpegEngine.LastOperationUsedGlobalIndex ? "yes" : "no",
-                string.IsNullOrWhiteSpace(ffmpegEngine.LastAnchorStrategy) ? "(none)" : ffmpegEngine.LastAnchorStrategy,
+                string.IsNullOrWhiteSpace(ffmpegEngine.LastAnchorStrategy) ? NoneLabel : ffmpegEngine.LastAnchorStrategy,
                 ffmpegEngine.LastAnchorFrameIndex.HasValue
                     ? " @ frame " + ffmpegEngine.LastAnchorFrameIndex.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
                     : string.Empty,
@@ -511,10 +513,10 @@ namespace FramePlayer.Diagnostics
                 ffmpegEngine.LastGlobalFrameIndexBuildMilliseconds,
                 string.IsNullOrWhiteSpace(ffmpegEngine.ActiveDecodeBackend) ? "(unknown)" : ffmpegEngine.ActiveDecodeBackend,
                 ffmpegEngine.IsGpuActive ? "yes" : "no",
-                string.IsNullOrWhiteSpace(ffmpegEngine.GpuCapabilityStatus) ? "(none)" : ffmpegEngine.GpuCapabilityStatus,
-                string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? "(none)" : ffmpegEngine.GpuFallbackReason,
-                string.IsNullOrWhiteSpace(ffmpegEngine.BudgetBand) ? "(none)" : ffmpegEngine.BudgetBand,
-                string.IsNullOrWhiteSpace(ffmpegEngine.HostResourceClass) ? "(none)" : ffmpegEngine.HostResourceClass,
+                string.IsNullOrWhiteSpace(ffmpegEngine.GpuCapabilityStatus) ? NoneLabel : ffmpegEngine.GpuCapabilityStatus,
+                string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? NoneLabel : ffmpegEngine.GpuFallbackReason,
+                string.IsNullOrWhiteSpace(ffmpegEngine.BudgetBand) ? NoneLabel : ffmpegEngine.BudgetBand,
+                string.IsNullOrWhiteSpace(ffmpegEngine.HostResourceClass) ? NoneLabel : ffmpegEngine.HostResourceClass,
                 ffmpegEngine.SessionDecodedFrameCacheBudgetBytes / 1048576d,
                 ffmpegEngine.DecodedFrameCacheBudgetBytes / 1048576d,
                 ffmpegEngine.OperationalQueueDepth,
