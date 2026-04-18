@@ -115,7 +115,7 @@ Performed:
 
 Result:
 - No obvious hardcoded API keys, tokens, private keys, or certificates were found in tracked source.
-- Secret-scan matches were limited to password parameter names in the MSIX build script, which are expected.
+- Secret-scan matches were limited to password parameter names in the deployment signing script, which are expected.
 
 ## Build And Verification
 
