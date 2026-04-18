@@ -47,7 +47,7 @@
                      FontSize="13"
                      LineHeight="20"
                      TextWrapping="Wrap"
-                     Text="Frame Player is built for simple playback, quick navigation, and precise frame stepping." />
+                     Text="Frame Player is designed for review workflows that need dependable playback, efficient navigation, and exact frame stepping." />
 
           <TextBlock Margin="0,18,0,0"
                      FontSize="15"
@@ -61,7 +61,7 @@
           <TextBlock Foreground="{StaticResource MutedBrush}"
                      FontFamily="Consolas"
                      FontSize="12"
-                     Text=", / .  Rewind or fast forward 5 seconds" />
+                     Text=", / .  Seek backward or forward 5 seconds" />
           <TextBlock Foreground="{StaticResource MutedBrush}"
                      FontFamily="Consolas"
                      FontSize="12"
@@ -73,7 +73,7 @@
           <TextBlock Foreground="{StaticResource MutedBrush}"
                      FontFamily="Consolas"
                      FontSize="12"
-                     Text="F11 or Alt+Enter  Toggle full screen" />
+                     Text="F11 or Alt+Enter  Toggle full-screen mode" />
 
           <TextBlock Margin="0,18,0,0"
                      FontSize="15"
@@ -84,7 +84,7 @@
                      FontSize="13"
                      LineHeight="20"
                      TextWrapping="Wrap"
-                     Text="Pause the video, then use Left and Right to move one frame at a time. Hold either arrow to enter delayed auto-step mode. Use Ctrl+Left / Ctrl+Right for 10-frame moves and Shift+Left / Shift+Right for 100-frame moves. The frame field shows current / total, and you can type a frame number there before pressing Enter or Go. After Enter or Go, focus returns to the video so arrow stepping works immediately." />
+                     Text="Pause playback, then use Left and Right to move one frame at a time. Hold either key to enter delayed auto-step mode. Use Ctrl+Left / Ctrl+Right for 10-frame moves and Shift+Left / Shift+Right for 100-frame moves. The frame field shows the current and total frame counts, and you can type a frame number before pressing Enter or Go. After Enter or Go, focus returns to the video surface so arrow-key stepping works immediately." />
 
           <TextBlock Margin="0,18,0,0"
                      FontSize="15"
@@ -95,7 +95,7 @@
                      FontSize="13"
                      LineHeight="20"
                      TextWrapping="Wrap"
-                     Text="Dragging the timeline now scrubs live and lands paused when you release the thumb. Track clicks still seek immediately. The status bar also shows the hovered pane and source pixel coordinates using a top-left, 0-based origin when the pointer is over the rendered image." />
+                     Text="Dragging the timeline scrubs live and leaves playback paused when you release the thumb. Track clicks still seek immediately. When the pointer is over the rendered image, the status bar also reports the active pane and source pixel coordinates using a top-left, 0-based origin." />
 
           <TextBlock Margin="0,18,0,0"
                      FontSize="15"
@@ -106,7 +106,7 @@
                      FontSize="13"
                      LineHeight="20"
                      TextWrapping="Wrap"
-                     Text="Use Playback &gt; Loop Playback for whole-media repeat or an exact A/B range. Use [ to set loop-in and ] to set loop-out on the current loop context. The main timeline greys out everything outside the shared boxed range, and compare mode can also show pane-local loop boxes on the pane sliders. If a marker is still pending absolute frame identity, the loop status stays pending and A/B repeat will not start until the engine proves that frame. Once a reviewed range is ready, use Playback &gt; Save Loop As Clip... or the pane context menu in compare mode to export an MP4 subset. In two-pane compare mode, use Playback &gt; Export Side-by-Side Compare... to merge both panes into one side-by-side MP4, either from the pane-local loops or from the full aligned videos." />
+                     Text="Use Playback &gt; Loop Playback for whole-media repeat or for an exact A/B range. Use [ to set loop-in and ] to set loop-out on the active loop context. The main timeline dims everything outside the shared boxed range, and compare mode can also show pane-local loop boxes on the pane sliders. If a marker is still pending absolute frame identity, loop status remains pending and A/B repeat will not start until that frame is resolved. Once a reviewed range is ready, use Playback &gt; Save Loop As Clip... or the pane context menu in compare mode to export an MP4 subset. In two-pane compare mode, use Playback &gt; Export Side-by-Side Compare... to merge both panes into a single side-by-side MP4, either from the pane-local loops or from the fully aligned source videos." />
 
           <TextBlock Margin="0,18,0,0"
                      FontSize="15"
@@ -130,7 +130,7 @@
                      FontSize="13"
                      LineHeight="20"
                      TextWrapping="Wrap"
-                     Text="Supported formats: AVI, MOV, M4V, MP4, MKV, and WMV." />
+                     Text="Supported formats include AVI, MOV, M4V, MP4, MKV, and WMV." />
         </StackPanel>
       </ScrollViewer>
     </Border>
