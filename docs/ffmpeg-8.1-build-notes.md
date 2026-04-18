@@ -61,13 +61,13 @@ The script stages output in:
 Runtime\ffmpeg-8.1-candidate\
 ```
 
-The script also stages a local runtime archive in:
+The script also stages a local runtime bundle in:
 
 ```text
-artifacts\FramePlayer-ffmpeg-runtime-x64.zip
+artifacts\FramePlayer-ffmpeg-runtime-x64.bundle
 ```
 
-Both paths are intentionally ignored by git. `scripts\Ensure-DevRuntime.ps1` restores the active `Runtime\ffmpeg\` directory from this self-built candidate or archive instead of a third-party prebuilt bundle.
+Both paths are intentionally ignored by git. `scripts\Ensure-DevRuntime.ps1` restores the active `Runtime\ffmpeg\` directory from this self-built candidate or staged bundle instead of a third-party prebuilt bundle.
 
 ## Current Restore Model
 
