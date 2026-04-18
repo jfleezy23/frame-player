@@ -143,33 +143,6 @@ namespace FramePlayer.Diagnostics
             }
         }
 
-        private static string ResolveCompareCompanionPath(string primaryFilePath)
-        {
-            if (string.IsNullOrWhiteSpace(primaryFilePath) || !File.Exists(primaryFilePath))
-            {
-                return primaryFilePath ?? string.Empty;
-            }
-
-            if (!string.Equals(Path.GetExtension(primaryFilePath), ".avi", StringComparison.OrdinalIgnoreCase))
-            {
-                return primaryFilePath;
-            }
-
-            var directoryPath = Path.GetDirectoryName(primaryFilePath);
-            if (string.IsNullOrWhiteSpace(directoryPath) || !Directory.Exists(directoryPath))
-            {
-                return primaryFilePath;
-            }
-
-            var companionPath = Directory
-                .EnumerateFiles(directoryPath, "*.mp4", SearchOption.TopDirectoryOnly)
-                .Select(Path.GetFullPath)
-                .FirstOrDefault(candidatePath => !string.Equals(candidatePath, primaryFilePath, StringComparison.OrdinalIgnoreCase));
-            return string.IsNullOrWhiteSpace(companionPath)
-                ? primaryFilePath
-                : companionPath;
-        }
-
         private static bool IsSupportedVideoFile(string filePath)
         {
             var extension = Path.GetExtension(filePath);
@@ -1864,6 +1837,33 @@ namespace FramePlayer.Diagnostics
 
         private static class MainWindowRegressionHarness
         {
+            private static string ResolveCompareCompanionPath(string primaryFilePath)
+            {
+                if (string.IsNullOrWhiteSpace(primaryFilePath) || !File.Exists(primaryFilePath))
+                {
+                    return primaryFilePath ?? string.Empty;
+                }
+
+                if (!string.Equals(Path.GetExtension(primaryFilePath), ".avi", StringComparison.OrdinalIgnoreCase))
+                {
+                    return primaryFilePath;
+                }
+
+                var directoryPath = Path.GetDirectoryName(primaryFilePath);
+                if (string.IsNullOrWhiteSpace(directoryPath) || !Directory.Exists(directoryPath))
+                {
+                    return primaryFilePath;
+                }
+
+                var companionPath = Directory
+                    .EnumerateFiles(directoryPath, "*.mp4", SearchOption.TopDirectoryOnly)
+                    .Select(Path.GetFullPath)
+                    .FirstOrDefault(candidatePath => !string.Equals(candidatePath, primaryFilePath, StringComparison.OrdinalIgnoreCase));
+                return string.IsNullOrWhiteSpace(companionPath)
+                    ? primaryFilePath
+                    : companionPath;
+            }
+
             internal static Task<UiRegressionResult> RunInMainWindowAsync(
                 string filePath,
                 bool runPlaybackLifecycleChecks,
@@ -2976,6 +2976,8 @@ namespace FramePlayer.Diagnostics
                                                       compareLoopMerge.ProbedVideoHeight.HasValue &&
                                                       compareLoopMerge.ProbedVideoWidth.Value >= compareLoopMerge.Plan.OutputWidth &&
                                                       compareLoopMerge.ProbedVideoHeight.Value >= compareLoopMerge.Plan.OutputHeight;
+                                var plannedLoopWidth = compareLoopMerge.Plan?.OutputWidth ?? 0;
+                                var plannedLoopHeight = compareLoopMerge.Plan?.OutputHeight ?? 0;
                                 checks.Add(dimensionsValid
                                     ? Pass(
                                         filePath,
@@ -2995,22 +2997,23 @@ namespace FramePlayer.Diagnostics
                                         string.Format(
                                             CultureInfo.InvariantCulture,
                                             "Loop-mode side-by-side compare export dimensions were smaller than expected. Planned={0}x{1}; probed={2}x{3}.",
-                                            compareLoopMerge.Plan != null ? compareLoopMerge.Plan.OutputWidth : 0,
-                                            compareLoopMerge.Plan != null ? compareLoopMerge.Plan.OutputHeight : 0,
+                                            plannedLoopWidth,
+                                            plannedLoopHeight,
                                             compareLoopMerge.ProbedVideoWidth,
                                             compareLoopMerge.ProbedVideoHeight)));
 
                                 var expectedAudio = compareLoopMerge.Plan != null && compareLoopMerge.Plan.SelectedAudioHasStream;
                                 var actualAudio = compareLoopMerge.ProbedHasAudioStream.GetValueOrDefault(false);
+                                var loopAudioSuccessMessage = expectedAudio
+                                    ? "Loop-mode side-by-side compare export preserved the selected primary-pane audio track."
+                                    : "Loop-mode side-by-side compare export correctly produced a silent output when the selected primary pane had no audio.";
                                 checks.Add(actualAudio == expectedAudio
                                     ? Pass(
                                         filePath,
                                         "ui",
                                         "correctness",
                                         "ui-compare-side-by-side-loop-audio-selection",
-                                        expectedAudio
-                                            ? "Loop-mode side-by-side compare export preserved the selected primary-pane audio track."
-                                            : "Loop-mode side-by-side compare export correctly produced a silent output when the selected primary pane had no audio.")
+                                        loopAudioSuccessMessage)
                                     : Fail(
                                         filePath,
                                         "ui",
@@ -3139,6 +3142,8 @@ namespace FramePlayer.Diagnostics
                                                       compareWholeMerge.ProbedVideoHeight.HasValue &&
                                                       compareWholeMerge.ProbedVideoWidth.Value >= compareWholeMerge.Plan.OutputWidth &&
                                                       compareWholeMerge.ProbedVideoHeight.Value >= compareWholeMerge.Plan.OutputHeight;
+                                var plannedWholeWidth = compareWholeMerge.Plan?.OutputWidth ?? 0;
+                                var plannedWholeHeight = compareWholeMerge.Plan?.OutputHeight ?? 0;
                                 checks.Add(dimensionsValid
                                     ? Pass(
                                         filePath,
@@ -3158,22 +3163,23 @@ namespace FramePlayer.Diagnostics
                                         string.Format(
                                             CultureInfo.InvariantCulture,
                                             "Whole-video side-by-side compare export dimensions were smaller than expected. Planned={0}x{1}; probed={2}x{3}.",
-                                            compareWholeMerge.Plan != null ? compareWholeMerge.Plan.OutputWidth : 0,
-                                            compareWholeMerge.Plan != null ? compareWholeMerge.Plan.OutputHeight : 0,
+                                            plannedWholeWidth,
+                                            plannedWholeHeight,
                                             compareWholeMerge.ProbedVideoWidth,
                                             compareWholeMerge.ProbedVideoHeight)));
 
                                 var expectedAudio = compareWholeMerge.Plan != null && compareWholeMerge.Plan.SelectedAudioHasStream;
                                 var actualAudio = compareWholeMerge.ProbedHasAudioStream.GetValueOrDefault(false);
+                                var wholeAudioSuccessMessage = expectedAudio
+                                    ? "Whole-video side-by-side compare export preserved the selected compare-pane audio track."
+                                    : "Whole-video side-by-side compare export correctly produced a silent output when the selected compare pane had no audio.";
                                 checks.Add(actualAudio == expectedAudio
                                     ? Pass(
                                         filePath,
                                         "ui",
                                         "correctness",
                                         "ui-compare-side-by-side-whole-audio-selection",
-                                        expectedAudio
-                                            ? "Whole-video side-by-side compare export preserved the selected compare-pane audio track."
-                                            : "Whole-video side-by-side compare export correctly produced a silent output when the selected compare pane had no audio.")
+                                        wholeAudioSuccessMessage)
                                     : Fail(
                                         filePath,
                                         "ui",
