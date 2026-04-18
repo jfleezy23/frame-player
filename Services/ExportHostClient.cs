@@ -16,6 +16,8 @@ namespace FramePlayer.Services
         internal const string ClipExportOperation = "clip-export";
         internal const string CompareExportOperation = "compare-export";
         internal const string ExportRuntimeFolderName = "ffmpeg-export";
+        private static readonly Lazy<RuntimeAvailability> CachedRuntimeAvailability =
+            new Lazy<RuntimeAvailability>(DiscoverRuntimeAvailability);
 
         internal static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
@@ -27,15 +29,13 @@ namespace FramePlayer.Services
         {
             get
             {
-                return TryValidateExportRuntime(out _);
+                return CachedRuntimeAvailability.Value.IsAvailable;
             }
         }
 
         public string GetRuntimeAvailabilityMessage()
         {
-            return TryValidateExportRuntime(out var message)
-                ? "Bundled FFmpeg export runtime is ready."
-                : message;
+            return CachedRuntimeAvailability.Value.Message;
         }
 
         public async Task<VideoMediaInfo> ProbeAsync(string filePath, CancellationToken cancellationToken = default(CancellationToken))
@@ -118,9 +118,10 @@ namespace FramePlayer.Services
 
         private async Task<ExportHostResponse> ExecuteAsync(ExportHostRequest request, CancellationToken cancellationToken)
         {
-            if (!TryValidateExportRuntime(out var validationMessage))
+            var runtimeAvailability = CachedRuntimeAvailability.Value;
+            if (!runtimeAvailability.IsAvailable)
             {
-                throw new InvalidOperationException(validationMessage);
+                throw new InvalidOperationException(runtimeAvailability.Message);
             }
 
             if (request == null)
@@ -208,10 +209,21 @@ namespace FramePlayer.Services
             }
         }
 
-        private static bool TryValidateExportRuntime(out string message)
+        private static RuntimeAvailability DiscoverRuntimeAvailability()
         {
             var runtimeDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ExportRuntimeFolderName);
-            return ExportRuntimeManifestService.TryValidateRuntimeDirectory(runtimeDirectory, out message);
+            if (!ExportRuntimeManifestService.TryValidateRuntimeDirectory(runtimeDirectory, out var message))
+            {
+                return new RuntimeAvailability(
+                    false,
+                    string.IsNullOrWhiteSpace(message)
+                        ? "The bundled FFmpeg export runtime is unavailable."
+                        : message);
+            }
+
+            return new RuntimeAvailability(
+                true,
+                "Bundled FFmpeg export runtime is ready.");
         }
 
         private static string BuildHostFailureMessage(ExportHostResponse response, string fallbackMessage)
@@ -248,6 +260,19 @@ namespace FramePlayer.Services
             }
 
             return "Export host failed with exit code " + exitCode.ToString() + " before it could write a response.";
+        }
+
+        private sealed class RuntimeAvailability
+        {
+            public RuntimeAvailability(bool isAvailable, string message)
+            {
+                IsAvailable = isAvailable;
+                Message = message ?? string.Empty;
+            }
+
+            public bool IsAvailable { get; }
+
+            public string Message { get; }
         }
     }
 }

@@ -106,6 +106,44 @@ function Test-OutputRuntimeIntegrity {
     }
 }
 
+function Stop-OutputProcesses {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$OutputDirectory
+    )
+
+    if (-not (Test-Path -LiteralPath $OutputDirectory)) {
+        return
+    }
+
+    $normalizedOutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
+    if (-not $normalizedOutputDirectory.EndsWith([System.IO.Path]::DirectorySeparatorChar.ToString(), [System.StringComparison]::Ordinal)) {
+        $normalizedOutputDirectory += [System.IO.Path]::DirectorySeparatorChar
+    }
+
+    $processes = @(
+        Get-CimInstance Win32_Process -Filter "Name = 'FramePlayer.exe'" |
+            Where-Object {
+                if ([string]::IsNullOrWhiteSpace($_.ExecutablePath)) {
+                    return $false
+                }
+
+                $executablePath = [System.IO.Path]::GetFullPath($_.ExecutablePath)
+                return $executablePath.StartsWith($normalizedOutputDirectory, [System.StringComparison]::OrdinalIgnoreCase)
+            }
+    )
+
+    foreach ($process in $processes) {
+        try {
+            Stop-Process -Id $process.ProcessId -Force -ErrorAction Stop | Out-Null
+            Wait-Process -Id $process.ProcessId -Timeout 5 -ErrorAction SilentlyContinue
+        }
+        catch {
+            throw "Could not stop stale test-drop process $($process.ProcessId) from '$($process.ExecutablePath)': $($_.Exception.Message)"
+        }
+    }
+}
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $resolvedOutputDirectory = if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     Join-Path $repoRoot "bin\TestDrop"
@@ -170,12 +208,28 @@ if ($expectedExportRuntimeFiles.Count -gt 0 -and (Test-Path -LiteralPath $ensure
     & $ensureExportRuntimeScript
 }
 
-if (Test-Path -LiteralPath $resolvedOutputDirectory) {
-    Remove-Item -LiteralPath $resolvedOutputDirectory -Recurse -Force
-}
+try {
+    if (Test-Path -LiteralPath $resolvedOutputDirectory) {
+        Stop-OutputProcesses -OutputDirectory $resolvedOutputDirectory
+        Remove-Item -LiteralPath $resolvedOutputDirectory -Recurse -Force
+    }
 
-if (Test-Path -LiteralPath $resolvedIntermediateDirectory) {
-    Remove-Item -LiteralPath $resolvedIntermediateDirectory -Recurse -Force
+    if (Test-Path -LiteralPath $resolvedIntermediateDirectory) {
+        Remove-Item -LiteralPath $resolvedIntermediateDirectory -Recurse -Force
+    }
+}
+catch {
+    if (-not [string]::IsNullOrWhiteSpace($OutputDirectory) -or
+        -not [string]::IsNullOrWhiteSpace($IntermediateDirectory)) {
+        throw
+    }
+
+    $fallbackSuffix = [Guid]::NewGuid().ToString("N").Substring(0, 8)
+    $fallbackOutputDirectory = Join-Path (Join-Path $repoRoot "bin") ("TestDrop-" + $fallbackSuffix)
+    $fallbackIntermediateDirectory = Join-Path (Join-Path $repoRoot "obj") ("TestDrop-" + $fallbackSuffix)
+    $resolvedOutputDirectory = Assert-PathWithin -Path $fallbackOutputDirectory -Root (Join-Path $repoRoot "bin")
+    $resolvedIntermediateDirectory = Assert-PathWithin -Path $fallbackIntermediateDirectory -Root (Join-Path $repoRoot "obj")
+    Write-Warning ("Could not clean the default test-drop directories. Building into fallback output '{0}' instead." -f $resolvedOutputDirectory)
 }
 
 New-Item -ItemType Directory -Force -Path $resolvedOutputDirectory | Out-Null
