@@ -219,6 +219,12 @@ namespace FramePlayer.Services
             var primaryRenderSize = ResolveRenderSize(request.PrimarySessionSnapshot.MediaInfo);
             var compareRenderSize = ResolveRenderSize(request.CompareSessionSnapshot.MediaInfo);
             var outputSize = ResolveOutputCanvas(primaryRenderSize, compareRenderSize);
+            var primaryViewportSnapshot = request.PrimaryViewportSnapshot ?? PaneViewportSnapshot.CreateFullFrame(
+                request.PrimarySessionSnapshot.MediaInfo.PixelWidth,
+                request.PrimarySessionSnapshot.MediaInfo.PixelHeight);
+            var compareViewportSnapshot = request.CompareViewportSnapshot ?? PaneViewportSnapshot.CreateFullFrame(
+                request.CompareSessionSnapshot.MediaInfo.PixelWidth,
+                request.CompareSessionSnapshot.MediaInfo.PixelHeight);
             var selectedAudioSession = request.AudioSource == CompareSideBySideExportAudioSource.Compare
                 ? request.CompareSessionSnapshot
                 : request.PrimarySessionSnapshot;
@@ -247,6 +253,7 @@ namespace FramePlayer.Services
                         RenderWidth = primaryRenderSize.Width,
                         RenderHeight = primaryRenderSize.Height,
                         CanvasHeight = outputSize.Height,
+                        ViewportSnapshot = primaryViewportSnapshot,
                         OutputLabel = "[primaryv]"
                     },
                     CompareVideo = new VideoFilterSegment
@@ -259,6 +266,7 @@ namespace FramePlayer.Services
                         RenderWidth = compareRenderSize.Width,
                         RenderHeight = compareRenderSize.Height,
                         CanvasHeight = outputSize.Height,
+                        ViewportSnapshot = compareViewportSnapshot,
                         OutputLabel = "[comparev]"
                     },
                     SelectedAudio = new AudioFilterSegment
@@ -296,6 +304,8 @@ namespace FramePlayer.Services
                 CompareRenderHeight = compareRenderSize.Height,
                 OutputWidth = outputSize.Width,
                 OutputHeight = outputSize.Height,
+                PrimaryViewportSnapshot = primaryViewportSnapshot,
+                CompareViewportSnapshot = compareViewportSnapshot,
                 SelectedAudioHasStream = selectedAudioHasStream,
                 FfmpegArguments = ffmpegArguments,
                 FfmpegPath = toolPaths.FfmpegPath,
@@ -349,6 +359,12 @@ namespace FramePlayer.Services
             var primaryRenderSize = ResolveRenderSize(primarySession.MediaInfo);
             var compareRenderSize = ResolveRenderSize(compareSession.MediaInfo);
             var outputSize = ResolveOutputCanvas(primaryRenderSize, compareRenderSize);
+            var primaryViewportSnapshot = request.PrimaryViewportSnapshot ?? PaneViewportSnapshot.CreateFullFrame(
+                primarySession.MediaInfo.PixelWidth,
+                primarySession.MediaInfo.PixelHeight);
+            var compareViewportSnapshot = request.CompareViewportSnapshot ?? PaneViewportSnapshot.CreateFullFrame(
+                compareSession.MediaInfo.PixelWidth,
+                compareSession.MediaInfo.PixelHeight);
             var selectedAudioSession = request.AudioSource == CompareSideBySideExportAudioSource.Compare
                 ? compareSession
                 : primarySession;
@@ -377,6 +393,7 @@ namespace FramePlayer.Services
                         RenderWidth = primaryRenderSize.Width,
                         RenderHeight = primaryRenderSize.Height,
                         CanvasHeight = outputSize.Height,
+                        ViewportSnapshot = primaryViewportSnapshot,
                         OutputLabel = "[primaryv]"
                     },
                     CompareVideo = new VideoFilterSegment
@@ -389,6 +406,7 @@ namespace FramePlayer.Services
                         RenderWidth = compareRenderSize.Width,
                         RenderHeight = compareRenderSize.Height,
                         CanvasHeight = outputSize.Height,
+                        ViewportSnapshot = compareViewportSnapshot,
                         OutputLabel = "[comparev]"
                     },
                     SelectedAudio = new AudioFilterSegment
@@ -426,6 +444,8 @@ namespace FramePlayer.Services
                 CompareRenderHeight = compareRenderSize.Height,
                 OutputWidth = outputSize.Width,
                 OutputHeight = outputSize.Height,
+                PrimaryViewportSnapshot = primaryViewportSnapshot,
+                CompareViewportSnapshot = compareViewportSnapshot,
                 SelectedAudioHasStream = selectedAudioHasStream,
                 FfmpegArguments = ffmpegArguments,
                 FfmpegPath = toolPaths.FfmpegPath,
@@ -488,6 +508,17 @@ namespace FramePlayer.Services
             else
             {
                 builder.Append("setpts=PTS-STARTPTS,");
+            }
+
+            if (segment.ViewportSnapshot != null && segment.ViewportSnapshot.IsZoomed)
+            {
+                builder.AppendFormat(
+                    CultureInfo.InvariantCulture,
+                    "crop={0}:{1}:{2}:{3},",
+                    segment.ViewportSnapshot.SourceCropWidth,
+                    segment.ViewportSnapshot.SourceCropHeight,
+                    segment.ViewportSnapshot.SourceCropX,
+                    segment.ViewportSnapshot.SourceCropY);
             }
 
             builder.Append("format=rgba,");
@@ -594,6 +625,8 @@ namespace FramePlayer.Services
             public int RenderHeight { get; init; }
 
             public int CanvasHeight { get; init; }
+
+            public PaneViewportSnapshot ViewportSnapshot { get; init; }
 
             public string OutputLabel { get; init; } = string.Empty;
         }

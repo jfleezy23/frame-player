@@ -557,6 +557,9 @@
             <MenuItem x:Name="ExportSideBySideCompareMenuItem"
                       Header="Export _Side-by-Side Compare..."
                       Click="ExportSideBySideCompareMenuItem_Click" />
+            <MenuItem x:Name="ResetZoomMenuItem"
+                      Header="_Reset Zoom"
+                      Click="ResetZoomMenuItem_Click" />
             <Separator Style="{StaticResource TitleBarMenuSeparatorStyle}" />
             <MenuItem x:Name="UseGpuAccelerationMenuItem"
                       Header="Use _GPU Acceleration"
@@ -565,6 +568,12 @@
                       Unchecked="UseGpuAccelerationMenuItem_Unchecked" />
             <Separator Style="{StaticResource TitleBarMenuSeparatorStyle}" />
             <MenuItem Header="_Toggle Full Screen" InputGestureText="F11" Click="ToggleFullScreenMenuItem_Click" />
+          </MenuItem>
+          <MenuItem Style="{StaticResource TitleBarTopLevelMenuItemStyle}" Header="_Audio Insertion">
+            <MenuItem x:Name="ReplaceAudioTrackMenuItem"
+                      Header="_Replace Audio Track..."
+                      ToolTipService.ShowOnDisabled="True"
+                      Click="ReplaceAudioTrackMenuItem_Click" />
           </MenuItem>
           <MenuItem Style="{StaticResource TitleBarTopLevelMenuItemStyle}" Header="_Help">
             <MenuItem Header="_Controls and Shortcuts"
@@ -767,14 +776,22 @@
                       Focusable="True"
                       Tag="pane-primary"
                       PreviewMouseRightButtonDown="VideoPane_PreviewMouseRightButtonDown"
+                      PreviewMouseWheel="VideoSurfaceHost_PreviewMouseWheel"
                       ContextMenuOpening="VideoPane_ContextMenuOpening"
+                      MouseLeftButtonDown="VideoSurfaceHost_MouseLeftButtonDown"
+                      MouseLeftButtonUp="VideoSurfaceHost_MouseLeftButtonUp"
                       MouseMove="VideoSurfaceHost_MouseMove"
-                      MouseLeave="VideoSurfaceHost_MouseLeave">
+                      MouseLeave="VideoSurfaceHost_MouseLeave"
+                      LostMouseCapture="VideoSurfaceHost_LostMouseCapture"
+                      SizeChanged="VideoSurfaceHost_SizeChanged">
                 <Border.ContextMenu>
                   <ContextMenu>
                     <MenuItem Header="Video Info..."
                               Tag="pane-primary"
                               Click="VideoPaneVideoInfoMenuItem_Click" />
+                    <MenuItem Header="Reset Zoom"
+                              Tag="pane-primary"
+                              Click="PaneResetZoomMenuItem_Click" />
                     <MenuItem Header="Save Loop As Clip..."
                               Tag="pane-primary"
                               Click="PaneSaveLoopAsClipMenuItem_Click" />
@@ -783,10 +800,17 @@
                               Click="PaneExportSideBySideCompareMenuItem_Click" />
                   </ContextMenu>
                 </Border.ContextMenu>
-                <Image x:Name="CustomVideoSurface"
-                       Stretch="Uniform"
-                       SnapsToDevicePixels="True"
-                       RenderOptions.BitmapScalingMode="NearestNeighbor" />
+                <Canvas x:Name="CustomVideoCanvas"
+                        ClipToBounds="False"
+                        IsHitTestVisible="False">
+                  <Border x:Name="CustomVideoViewport"
+                          Background="Transparent">
+                    <Image x:Name="CustomVideoSurface"
+                           Stretch="Fill"
+                           SnapsToDevicePixels="True"
+                           RenderOptions.BitmapScalingMode="NearestNeighbor" />
+                  </Border>
+                </Canvas>
               </Border>
 
               <Border x:Name="PrimaryEmptyStateOverlay"
@@ -1017,14 +1041,22 @@
                       Focusable="True"
                       Tag="pane-compare-a"
                       PreviewMouseRightButtonDown="VideoPane_PreviewMouseRightButtonDown"
+                      PreviewMouseWheel="VideoSurfaceHost_PreviewMouseWheel"
                       ContextMenuOpening="VideoPane_ContextMenuOpening"
+                      MouseLeftButtonDown="VideoSurfaceHost_MouseLeftButtonDown"
+                      MouseLeftButtonUp="VideoSurfaceHost_MouseLeftButtonUp"
                       MouseMove="VideoSurfaceHost_MouseMove"
-                      MouseLeave="VideoSurfaceHost_MouseLeave">
+                      MouseLeave="VideoSurfaceHost_MouseLeave"
+                      LostMouseCapture="VideoSurfaceHost_LostMouseCapture"
+                      SizeChanged="VideoSurfaceHost_SizeChanged">
                 <Border.ContextMenu>
                   <ContextMenu>
                     <MenuItem Header="Video Info..."
                               Tag="pane-compare-a"
                               Click="VideoPaneVideoInfoMenuItem_Click" />
+                    <MenuItem Header="Reset Zoom"
+                              Tag="pane-compare-a"
+                              Click="PaneResetZoomMenuItem_Click" />
                     <MenuItem Header="Save Loop As Clip..."
                               Tag="pane-compare-a"
                               Click="PaneSaveLoopAsClipMenuItem_Click" />
@@ -1033,10 +1065,17 @@
                               Click="PaneExportSideBySideCompareMenuItem_Click" />
                   </ContextMenu>
                 </Border.ContextMenu>
-                <Image x:Name="CompareVideoSurface"
-                       Stretch="Uniform"
-                       SnapsToDevicePixels="True"
-                       RenderOptions.BitmapScalingMode="NearestNeighbor" />
+                <Canvas x:Name="CompareVideoCanvas"
+                        ClipToBounds="False"
+                        IsHitTestVisible="False">
+                  <Border x:Name="CompareVideoViewport"
+                          Background="Transparent">
+                    <Image x:Name="CompareVideoSurface"
+                           Stretch="Fill"
+                           SnapsToDevicePixels="True"
+                           RenderOptions.BitmapScalingMode="NearestNeighbor" />
+                  </Border>
+                </Canvas>
               </Border>
 
               <Border x:Name="CompareEmptyStateOverlay"

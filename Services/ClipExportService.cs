@@ -84,6 +84,9 @@ namespace FramePlayer.Services
             var mediaDuration = request.SessionSnapshot != null
                 ? request.SessionSnapshot.MediaInfo.Duration
                 : TimeSpan.Zero;
+            var viewportSnapshot = request.ViewportSnapshot ?? PaneViewportSnapshot.CreateFullFrame(
+                request.SessionSnapshot.MediaInfo.PixelWidth,
+                request.SessionSnapshot.MediaInfo.PixelHeight);
             var startTime = FfmpegExportTiming.ClampTime(loopRange.LoopIn.PresentationTime, mediaDuration);
             var endTimeExclusive = FfmpegExportTiming.BuildExclusiveEndTime(
                 request.Engine,
@@ -98,7 +101,20 @@ namespace FramePlayer.Services
 
             Directory.CreateDirectory(outputDirectory);
 
-            var ffmpegArguments = BuildFfmpegArguments(sourceFullPath, outputFullPath, startTime, endTimeExclusive - startTime);
+            var outputWidth = request.SessionSnapshot != null && request.SessionSnapshot.MediaInfo != null
+                ? Math.Max(1, request.SessionSnapshot.MediaInfo.PixelWidth)
+                : Math.Max(1, viewportSnapshot.SourcePixelWidth);
+            var outputHeight = request.SessionSnapshot != null && request.SessionSnapshot.MediaInfo != null
+                ? Math.Max(1, request.SessionSnapshot.MediaInfo.PixelHeight)
+                : Math.Max(1, viewportSnapshot.SourcePixelHeight);
+            var ffmpegArguments = BuildFfmpegArguments(
+                sourceFullPath,
+                outputFullPath,
+                startTime,
+                endTimeExclusive - startTime,
+                viewportSnapshot,
+                outputWidth,
+                outputHeight);
             return new ClipExportPlan(
                 sourceFullPath,
                 outputFullPath,
@@ -110,6 +126,7 @@ namespace FramePlayer.Services
                 loopRange.LoopIn.AbsoluteFrameIndex,
                 loopRange.LoopOut.AbsoluteFrameIndex,
                 endBoundaryStrategy,
+                viewportSnapshot,
                 ffmpegArguments,
                 toolPaths.FfmpegPath,
                 toolPaths.FfprobePath);
@@ -171,15 +188,45 @@ namespace FramePlayer.Services
                 cancellationToken).ConfigureAwait(false);
         }
 
-        private static string BuildFfmpegArguments(string sourceFilePath, string outputFilePath, TimeSpan startTime, TimeSpan duration)
+        private static string BuildFfmpegArguments(
+            string sourceFilePath,
+            string outputFilePath,
+            TimeSpan startTime,
+            TimeSpan duration,
+            PaneViewportSnapshot viewportSnapshot,
+            int outputWidth,
+            int outputHeight)
         {
+            var filterArguments = BuildVideoFilterArguments(viewportSnapshot, outputWidth, outputHeight);
             return string.Format(
                 CultureInfo.InvariantCulture,
-                "-v error -y -i \"{0}\" -ss {1} -t {2} -map 0:v:0 -map 0:a? -sn -dn -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart \"{3}\"",
+                "-v error -y -i \"{0}\" -ss {1} -t {2} -map 0:v:0 -map 0:a? -sn -dn {3}-c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart \"{4}\"",
                 sourceFilePath,
                 FfmpegExportTiming.FormatFfmpegTime(startTime),
                 FfmpegExportTiming.FormatFfmpegTime(duration),
+                filterArguments,
                 outputFilePath);
+        }
+
+        private static string BuildVideoFilterArguments(
+            PaneViewportSnapshot viewportSnapshot,
+            int outputWidth,
+            int outputHeight)
+        {
+            if (viewportSnapshot == null || !viewportSnapshot.IsZoomed)
+            {
+                return string.Empty;
+            }
+
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "-vf \"crop={0}:{1}:{2}:{3},scale={4}:{5}:flags=lanczos\" ",
+                viewportSnapshot.SourceCropWidth,
+                viewportSnapshot.SourceCropHeight,
+                viewportSnapshot.SourceCropX,
+                viewportSnapshot.SourceCropY,
+                Math.Max(1, outputWidth),
+                Math.Max(1, outputHeight));
         }
     }
 }

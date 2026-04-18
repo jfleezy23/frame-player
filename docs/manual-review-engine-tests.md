@@ -84,6 +84,17 @@ The script writes three files into the `-Output` directory:
 
 The script also prints a short console summary with pass/warning/fail counts and the output paths.
 
+## Supplemental UI Regression Checks
+
+The scripted manual runner does not cover the new shell-only MVP features below. Run these separately in the WPF app as part of the manual regression sweep:
+
+- Single-pane `Audio Insertion > Replace Audio Track...` with both `.wav` and `.mp3` replacement audio on an H.264 `.mp4`.
+- Disabled audio insertion coverage for two-pane compare, non-`.mp4` sources, non-H.264 sources, and unknown-codec cases.
+- Paused pane-local zoom and pan in single-pane review, including play/pause/seek/frame-step persistence plus `Playback > Reset Zoom`.
+- Independent paused zoom and pan on both panes in compare mode, including pane-context `Reset Zoom`.
+- Zoom-aware pointer readout validation in the status bar.
+- Crop-aware loop clip export and crop-aware side-by-side compare export, ensuring zoom changes rendered pixels only and does not change loop timing, whole-video alignment, or audio-source rules.
+
 ## Result Classification
 
 - `pass`
