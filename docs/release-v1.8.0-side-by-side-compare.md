@@ -30,7 +30,7 @@ This note documents the `v1.8.0` release. It is the maintainer-facing summary of
 ## Runtime And CI Truth
 
 - Product version: `v1.8.0`
-- Current published clean-runner bootstrap asset: `v1.5.0`
+- Current pinned clean-runner runtime bootstrap asset: `v1.5.0`
 - `Runtime\runtime-manifest.json` remains pinned to the verified runtime bundle because the playback DLL payload itself did not change for this release.
 
 ## Validation Evidence

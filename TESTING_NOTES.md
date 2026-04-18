@@ -1,14 +1,13 @@
-# Frame Player Release Candidate Test Drop
+# Frame Player Release Verification Notes
 
 Release: `1.8.0`
 
-## What changed recently
+## Current release focus
 
 - The app is now custom FFmpeg only; FFME has been removed from the active path and older FFME-era releases are legacy/deprecated.
 - Video playback, audio playback, basic A/V sync, seek-to-time, seek-to-frame, exact frame stepping, and opportunistic Vulkan decode with strict CPU fallback are implemented in the custom engine.
-- The latest UI pass combined Play/Pause into one toggle, restored the normal visual tone, removed temporary custom-build banners, added a cache status indicator, and fixed arrow-key stepping immediately after frame entry.
-- The latest GPU/cache pass adds a visible GPU toggle, pane-aware decoded-frame budgeting, shared Vulkan warmup, and backend-aware compare behavior without changing the frames-first review contract.
-- The latest release polish pass adds live timeline scrubbing, A/B loop playback on the main transport, pane-local compare loop boxes, pane-local compare navigation, Inspector V2 with pane context-menu access, pending frame-number honesty while background indexing is still resolving absolute frame identity, follow-up fixes for fullscreen status-bar chrome plus pane-local frame clamping, reviewed-loop MP4 clip export through a separate FFmpeg CLI bundle, and side-by-side compare export with loop and whole-video modes.
+- The current WPF shell includes the combined Play/Pause control, cache-status visibility, immediate post-frame-entry arrow-key stepping, a visible GPU toggle, pane-aware decoded-frame budgeting, shared Vulkan warmup, and backend-aware compare behavior without changing the frames-first review contract.
+- The current `v1.8.0` release adds live timeline scrubbing, A/B loop playback on the main transport, pane-local compare loop boxes, pane-local compare navigation, Inspector V2 with pane context-menu access, pending frame-number honesty while background indexing is still resolving absolute frame identity, reviewed-loop MP4 clip export through a separate FFmpeg CLI bundle, and side-by-side compare export with loop and whole-video modes.
 
 ## Manual test checklist
 
@@ -56,7 +55,7 @@ Release: `1.8.0`
 - The runtime was built from the official FFmpeg source tag `n8.1` and is restored locally from the self-built candidate/archive produced by `scripts\ffmpeg\Build-FFmpeg-8.1.ps1`.
 - The packaged runtime also requires `libwinpthread-1.dll`; it must ship beside `FramePlayer.exe` with the FFmpeg DLL set.
 - Clip export uses a separate `ffmpeg-tools` folder beside the app output and depends on the hashes recorded in `Runtime\export-tools-manifest.json`.
-- Clean-runner bootstrap restores from the verified `v1.5.0` runtime release asset recorded in `Runtime\runtime-manifest.json`.
+- Clean-runner bootstrap restores from the verified runtime-only `v1.5.0` release asset recorded in `Runtime\runtime-manifest.json`.
 
 ## Build and shortcut
 
