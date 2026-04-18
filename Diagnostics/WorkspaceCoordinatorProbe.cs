@@ -282,7 +282,7 @@ namespace FramePlayer.Diagnostics
                     return new WorkspaceCoordinatorProbeReport
                     {
                         PaneCount = workspace.PaneCount,
-                        PrimaryPaneId = workspace.PrimaryPaneId,
+                        WorkspacePrimaryPaneId = workspace.PrimaryPaneId,
                         ActivePaneId = workspace.ActivePaneId,
                         FocusedPaneId = workspace.FocusedPaneId,
                         PaneIds = workspace.Panes != null
@@ -510,7 +510,7 @@ namespace FramePlayer.Diagnostics
         {
             public int PaneCount { get; set; }
 
-            public string PrimaryPaneId { get; set; }
+            public string WorkspacePrimaryPaneId { get; set; }
 
             public string ActivePaneId { get; set; }
 

@@ -37,8 +37,11 @@ namespace FramePlayer
         private const string PrimaryPaneDisplayLabel = "Primary pane";
         private const string ComparePaneDisplayLabel = "Compare pane";
         private const string NoneDisplayLabel = "(none)";
+        private const string UnavailableDisplayLabel = "(unavailable)";
+        private const string UnknownDisplayLabel = "Unknown";
         private const string AbsoluteFrameIdentityLabel = "absolute";
         private const string SegmentLocalFrameIdentityLabel = "segment-local";
+        private const string LoopOffStatusLabel = "Loop: off";
         private const string DefaultCompareAlignmentStatus = "Last align: none";
         private const double CompareModePreferredMinWindowWidth = 1180d;
         private const int ControlModifiedFrameStep = 10;
@@ -6683,7 +6686,7 @@ namespace FramePlayer
                 return;
             }
 
-            LoopStatusTextBlock.Text = string.IsNullOrWhiteSpace(message) ? "Loop: off" : message;
+            LoopStatusTextBlock.Text = string.IsNullOrWhiteSpace(message) ? LoopOffStatusLabel : message;
             LoopStatusTextBlock.ToolTip = string.IsNullOrWhiteSpace(toolTip)
                 ? "Loop playback status for the main transport."
                 : toolTip;
@@ -6752,7 +6755,7 @@ namespace FramePlayer
 
                 if (loopStatusTextBlock != null)
                 {
-                    loopStatusTextBlock.Text = IsLoopPlaybackEnabled ? "Loop: full media" : "Loop: off";
+                    loopStatusTextBlock.Text = IsLoopPlaybackEnabled ? "Loop: full media" : LoopOffStatusLabel;
                     loopStatusTextBlock.ToolTip = string.Format(
                         CultureInfo.InvariantCulture,
                         "{0} loop playback status. With no pane-local A/B markers, pane playback loops the full media only when loop playback is enabled.",
@@ -6781,7 +6784,7 @@ namespace FramePlayer
         {
             if (paneRange == null || !paneRange.HasAnyMarkers)
             {
-                return "Loop: off";
+                return LoopOffStatusLabel;
             }
 
             var rangeDisplay = string.Format(
@@ -7030,13 +7033,13 @@ namespace FramePlayer
         {
             if (evaluation == null || !evaluation.HasMarkers)
             {
-                return IsLoopPlaybackEnabled ? "Loop: full media" : "Loop: off";
+                return IsLoopPlaybackEnabled ? "Loop: full media" : LoopOffStatusLabel;
             }
 
             var focusedPaneRange = evaluation.FocusedPaneRange;
             if (focusedPaneRange == null || !focusedPaneRange.HasAnyMarkers)
             {
-                return IsLoopPlaybackEnabled ? "Loop: pending scope" : "Loop: off";
+                return IsLoopPlaybackEnabled ? "Loop: pending scope" : LoopOffStatusLabel;
             }
 
             var rangeDisplay = string.Format(
@@ -7062,7 +7065,7 @@ namespace FramePlayer
 
             if (!IsLoopPlaybackEnabled)
             {
-                return string.Format(CultureInfo.InvariantCulture, "Loop: off ({0})", rangeDisplay);
+                return string.Format(CultureInfo.InvariantCulture, "{0} ({1})", LoopOffStatusLabel, rangeDisplay);
             }
 
             return string.Format(CultureInfo.InvariantCulture, "Loop: {0}", rangeDisplay);
@@ -7906,7 +7909,7 @@ namespace FramePlayer
         {
             return duration > TimeSpan.Zero
                 ? FormatTime(duration)
-                : "Unknown";
+                : UnknownDisplayLabel;
         }
 
         private static void AddInspectorFieldIfKnown(List<VideoInfoField> fields, string label, string value)
@@ -7923,21 +7926,21 @@ namespace FramePlayer
         {
             return framesPerSecond > 0d
                 ? string.Format(CultureInfo.InvariantCulture, "{0:0.###} fps", framesPerSecond)
-                : "Unknown";
+                : UnknownDisplayLabel;
         }
 
         private static string FormatInspectorResolution(int width, int height)
         {
             return width > 0 && height > 0
                 ? string.Format(CultureInfo.InvariantCulture, "{0} x {1}", width, height)
-                : "Unknown";
+                : UnknownDisplayLabel;
         }
 
         private static string FormatInspectorResolution(int? width, int? height)
         {
             return width.HasValue && height.HasValue
                 ? FormatInspectorResolution(width.Value, height.Value)
-                : "Unknown";
+                : UnknownDisplayLabel;
         }
 
         private static string FormatInspectorRatio(int? numerator, int? denominator)
@@ -7947,21 +7950,21 @@ namespace FramePlayer
                    numerator.Value > 0 &&
                    denominator.Value > 0
                 ? string.Format(CultureInfo.InvariantCulture, "{0}:{1}", numerator.Value, denominator.Value)
-                : "Unknown";
+                : UnknownDisplayLabel;
         }
 
         private static string FormatInspectorText(string value)
         {
             if (string.IsNullOrWhiteSpace(value))
             {
-                return "Unknown";
+                return UnknownDisplayLabel;
             }
 
             var trimmedValue = value.Trim();
             return trimmedValue.Equals("unknown", StringComparison.OrdinalIgnoreCase) ||
                    trimmedValue.Equals("unspecified", StringComparison.OrdinalIgnoreCase) ||
                    trimmedValue.StartsWith("reserved", StringComparison.OrdinalIgnoreCase)
-                ? "Unknown"
+                ? UnknownDisplayLabel
                 : trimmedValue;
         }
 
@@ -7969,14 +7972,14 @@ namespace FramePlayer
         {
             return bitDepth.HasValue && bitDepth.Value > 0
                 ? string.Format(CultureInfo.InvariantCulture, "{0}-bit", bitDepth.Value)
-                : "Unknown";
+                : UnknownDisplayLabel;
         }
 
         private static string FormatInspectorBitRate(long? bitsPerSecond)
         {
             if (!bitsPerSecond.HasValue || bitsPerSecond.Value <= 0L)
             {
-                return "Unknown";
+                return UnknownDisplayLabel;
             }
 
             var units = new[] { "bit/s", "Kbit/s", "Mbit/s", "Gbit/s" };
@@ -8001,28 +8004,28 @@ namespace FramePlayer
         {
             return sampleRate > 0
                 ? string.Format(CultureInfo.InvariantCulture, "{0:N0} Hz", sampleRate)
-                : "Unknown";
+                : UnknownDisplayLabel;
         }
 
         private static string FormatInspectorChannelCount(int channelCount)
         {
             return channelCount > 0
                 ? string.Format(CultureInfo.InvariantCulture, "{0} channel(s)", channelCount)
-                : "Unknown";
+                : UnknownDisplayLabel;
         }
 
         private static string FormatInspectorIndex(int streamIndex)
         {
             return streamIndex >= 0
                 ? streamIndex.ToString(CultureInfo.InvariantCulture)
-                : "Unknown";
+                : UnknownDisplayLabel;
         }
 
         private static string FormatInspectorFraction(int numerator, int denominator)
         {
             return numerator > 0 && denominator > 0
                 ? string.Format(CultureInfo.InvariantCulture, "{0}/{1}", numerator, denominator)
-                : "Unknown";
+                : UnknownDisplayLabel;
         }
 
         private void ShowHelpWindow()
@@ -8098,17 +8101,17 @@ namespace FramePlayer
                     "Audio playback available: " + (focusedEngine != null && focusedEngine.MediaInfo.IsAudioPlaybackAvailable ? "Yes" : "No"),
                     "Audio codec: " + (focusedEngine == null || string.IsNullOrWhiteSpace(focusedEngine.MediaInfo.AudioCodecName) ? NoneDisplayLabel : focusedEngine.MediaInfo.AudioCodecName),
                     "Audio details: " + GetAudioTooltipText(focusedEngine != null ? focusedEngine.MediaInfo : VideoMediaInfo.Empty),
-                    "Frame index status: " + (ffmpegEngine != null ? ffmpegEngine.GlobalFrameIndexStatus : "(unavailable)"),
+                    "Frame index status: " + (ffmpegEngine != null ? ffmpegEngine.GlobalFrameIndexStatus : UnavailableDisplayLabel),
                     "Frame index available: " + (ffmpegEngine != null && ffmpegEngine.IsGlobalFrameIndexAvailable ? "Yes" : "No"),
-                    "Indexed frame count: " + (ffmpegEngine != null ? ffmpegEngine.IndexedFrameCount.ToString(CultureInfo.InvariantCulture) : "(unavailable)"),
-                    "Decode backend: " + (ffmpegEngine != null ? ffmpegEngine.ActiveDecodeBackend : "(unavailable)"),
+                    "Indexed frame count: " + (ffmpegEngine != null ? ffmpegEngine.IndexedFrameCount.ToString(CultureInfo.InvariantCulture) : UnavailableDisplayLabel),
+                    "Decode backend: " + (ffmpegEngine != null ? ffmpegEngine.ActiveDecodeBackend : UnavailableDisplayLabel),
                     "GPU active: " + (ffmpegEngine != null && ffmpegEngine.IsGpuActive ? "Yes" : "No"),
-                    "GPU status: " + (ffmpegEngine != null ? ffmpegEngine.GpuCapabilityStatus : "(unavailable)"),
+                    "GPU status: " + (ffmpegEngine != null ? ffmpegEngine.GpuCapabilityStatus : UnavailableDisplayLabel),
                     "GPU fallback reason: " + (ffmpegEngine != null && !string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? ffmpegEngine.GpuFallbackReason : NoneDisplayLabel),
                     "Decode cache budget: " + (ffmpegEngine != null
                         ? string.Format(CultureInfo.InvariantCulture, "{0:0.0} MiB", ffmpegEngine.DecodedFrameCacheBudgetBytes / 1048576d)
-                        : "(unavailable)"),
-                    "Operational queue depth: " + (ffmpegEngine != null ? ffmpegEngine.OperationalQueueDepth.ToString(CultureInfo.InvariantCulture) : "(unavailable)"),
+                        : UnavailableDisplayLabel),
+                    "Operational queue depth: " + (ffmpegEngine != null ? ffmpegEngine.OperationalQueueDepth.ToString(CultureInfo.InvariantCulture) : UnavailableDisplayLabel),
                     "Review cache window: " + (ffmpegEngine != null
                         ? string.Format(
                             CultureInfo.InvariantCulture,
@@ -8118,7 +8121,7 @@ namespace FramePlayer
                             ffmpegEngine.MaxPreviousCachedFrameCount,
                             ffmpegEngine.MaxForwardCachedFrameCount,
                             ffmpegEngine.ApproximateCachedFrameBytes / 1048576d)
-                        : "(unavailable)"),
+                        : UnavailableDisplayLabel),
                     "Last cache refill: " + (ffmpegEngine != null
                         ? string.Format(
                             CultureInfo.InvariantCulture,
@@ -8129,7 +8132,7 @@ namespace FramePlayer
                             ffmpegEngine.LastCacheRefillAfterLanding ? "yes" : "no",
                             ffmpegEngine.LastCacheRefillStartingForwardCount,
                             ffmpegEngine.LastCacheRefillCompletedForwardCount)
-                        : "(unavailable)"),
+                        : UnavailableDisplayLabel),
                     "Open timing: " + (ffmpegEngine != null
                         ? string.Format(
                             CultureInfo.InvariantCulture,
@@ -8142,7 +8145,7 @@ namespace FramePlayer
                             ffmpegEngine.LastOpenFirstFrameDecodeMilliseconds,
                             ffmpegEngine.LastOpenInitialCacheWarmMilliseconds,
                             ffmpegEngine.LastGlobalFrameIndexBuildMilliseconds)
-                        : "(unavailable)"),
+                        : UnavailableDisplayLabel),
                     "Full screen: " + (_isFullScreen ? "Yes" : "No"),
                     string.Format(CultureInfo.InvariantCulture, "Clock position: {0} / {1}", FormatTime(currentPosition), FormatTime(_mediaDuration)),
                     string.Format(CultureInfo.InvariantCulture, "Timecode: {0}", _isMediaLoaded ? FormatTimecode(currentFrameIndex) : "--:--:--:--"),
@@ -8254,7 +8257,7 @@ namespace FramePlayer
             var landedPosition = GetDisplayPosition();
             var focusedEngine = GetFocusedPaneEngine();
             var enginePosition = focusedEngine != null ? focusedEngine.Position : null;
-            var frameText = "(unavailable)";
+            var frameText = UnavailableDisplayLabel;
             var frameIdentity = "unavailable";
             if (enginePosition != null && enginePosition.FrameIndex.HasValue)
             {

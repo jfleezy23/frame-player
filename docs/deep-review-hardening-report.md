@@ -71,6 +71,10 @@ Resolved in this pass:
   Project-wide nullable enablement and unsafe-scope narrowing.
   Reason:
   They are worthwhile long-term hygiene goals, but changing them blindly across performance-sensitive code would create a large regression surface before targeted tests and hot-path measurements are in place.
+- Documented merge-prep exception:
+  Sonar still highlights `unsafe` review hotspots in `Engines/FFmpeg/FfmpegReviewEngine.cs`, `Engines/FFmpeg/FfmpegNativeHelpers.cs`, `Engines/FFmpeg/FfmpegHardwareDeviceCache.cs`, `Engines/FFmpeg/FfmpegGlobalFrameIndex.cs`, `Engines/FFmpeg/FfmpegFrameConverter.cs`, and `Engines/FFmpeg/FfmpegAudioPlaybackSession.cs`.
+  Reason:
+  Those files are intentional FFmpeg interop boundaries on the frame-critical path. No concrete unsafe defect was identified in this pass, and broad refactoring there would add regression risk to frame stepping, seek determinism, and playback responsiveness. Keep them under targeted manual review until a specific flaw justifies isolated change.
 
 ## Code cleanliness and documentation gaps
 1. `MainWindow.xaml.cs` remains a very large controller/code-behind file at roughly 7,347 lines.
