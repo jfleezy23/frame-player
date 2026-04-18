@@ -2686,7 +2686,7 @@ namespace FramePlayer.Diagnostics
                             var compareCompanionPath = ResolveCompareCompanionPath(filePath);
                             await controller.SetCompareModeAsync(true).ConfigureAwait(true);
                             await controller.OpenAsync(compareCompanionPath, ComparePaneId).ConfigureAwait(true);
-                        var primaryLoopInTarget = controller.GetSliderTargetFromRatio(0.20d);
+                        var primaryLoopInTarget = controller.GetPaneTargetFromRatio(PrimaryPaneId, 0.20d);
                         var primaryLoopInSet = await controller.SetTimelineLoopMarkerAtAsync(
                             PrimaryPaneId,
                             LoopPlaybackMarkerEndpoint.In,
@@ -2725,12 +2725,12 @@ namespace FramePlayer.Diagnostics
                                                 await controller.SetTimelineLoopMarkerAtAsync(
                                                         PrimaryPaneId,
                                                         LoopPlaybackMarkerEndpoint.Out,
-                                                        controller.GetSliderTargetFromRatio(0.22d))
+                                                        controller.GetPaneTargetFromRatio(PrimaryPaneId, 0.22d))
                                                     .ConfigureAwait(true);
                         var compareLoopInSet = await controller.SetTimelineLoopMarkerAtAsync(
                             ComparePaneId,
                             LoopPlaybackMarkerEndpoint.In,
-                            controller.GetSliderTargetFromRatio(0.40d)).ConfigureAwait(true);
+                            controller.GetPaneTargetFromRatio(ComparePaneId, 0.40d)).ConfigureAwait(true);
                         var compareLoopInReady = compareLoopInSet &&
                                                  await controller.WaitForLoopMarkerReadyAsync(
                                                          ComparePaneId,
@@ -2742,7 +2742,7 @@ namespace FramePlayer.Diagnostics
                                                 await controller.SetTimelineLoopMarkerAtAsync(
                                                         ComparePaneId,
                                                         LoopPlaybackMarkerEndpoint.Out,
-                                                        controller.GetSliderTargetFromRatio(0.42d))
+                                                        controller.GetPaneTargetFromRatio(ComparePaneId, 0.42d))
                                                     .ConfigureAwait(true);
 
                         var primaryPaneLoopUi = await controller.WaitForLoopUiReadyAsync(PrimaryPaneId, LoopUiReadyTimeout, cancellationToken).ConfigureAwait(true);
@@ -3508,6 +3508,7 @@ namespace FramePlayer.Diagnostics
                 private readonly MethodInfo _startPlaybackAsyncMethod;
                 private readonly MethodInfo _pausePlaybackAsyncMethod;
                 private readonly MethodInfo _buildVideoInfoSnapshotMethod;
+                private readonly MethodInfo _getEngineForPaneMethod;
                 private readonly MethodInfo _setLoopMarkerMethod;
                 private readonly MethodInfo _setTimelineLoopMarkerAtAsyncMethod;
                 private readonly MethodInfo _clearLoopPointsMethod;
@@ -3530,6 +3531,7 @@ namespace FramePlayer.Diagnostics
                     _startPlaybackAsyncMethod = RequireMethod(windowType, "StartPlaybackAsync", typeof(SynchronizedOperationScope?), typeof(string));
                     _pausePlaybackAsyncMethod = RequireMethod(windowType, "PausePlaybackAsync", typeof(bool));
                     _buildVideoInfoSnapshotMethod = RequireMethod(windowType, "BuildVideoInfoSnapshot", typeof(string), typeof(VideoMediaInfo));
+                    _getEngineForPaneMethod = RequireMethod(windowType, "GetEngineForPane", typeof(string));
                     _setLoopMarkerMethod = RequireMethod(windowType, "SetLoopMarker", typeof(LoopPlaybackMarkerEndpoint));
                     _setTimelineLoopMarkerAtAsyncMethod = RequireMethod(windowType, "SetTimelineLoopMarkerAtAsync", typeof(string), typeof(LoopPlaybackMarkerEndpoint), typeof(TimeSpan));
                     _clearLoopPointsMethod = RequireMethod(windowType, "ClearLoopPoints");
@@ -3561,6 +3563,16 @@ namespace FramePlayer.Diagnostics
                 {
                     ratio = Math.Max(0d, Math.Min(1d, ratio));
                     return TimeSpan.FromSeconds(SliderMaximumSeconds * ratio);
+                }
+
+                public TimeSpan GetPaneTargetFromRatio(string paneId, double ratio)
+                {
+                    ratio = Math.Max(0d, Math.Min(1d, ratio));
+                    var engine = _getEngineForPaneMethod.Invoke(_window, new object[] { paneId }) as FfmpegReviewEngine;
+                    var duration = engine != null && engine.MediaInfo != null && engine.MediaInfo.Duration > TimeSpan.Zero
+                        ? engine.MediaInfo.Duration
+                        : TimeSpan.Zero;
+                    return TimeSpan.FromSeconds(duration.TotalSeconds * ratio);
                 }
 
                 public async Task OpenAsync(string filePath)
@@ -4025,7 +4037,12 @@ namespace FramePlayer.Diagnostics
 
                 private static MethodInfo RequireMethod(Type type, string name, params Type[] parameterTypes)
                 {
-                    var method = type.GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic, null, parameterTypes, null);
+                    var method = type.GetMethod(
+                        name,
+                        BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic,
+                        null,
+                        parameterTypes,
+                        null);
                     if (method == null)
                     {
                         throw new MissingMethodException(type.FullName, name);
