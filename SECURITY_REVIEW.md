@@ -11,17 +11,17 @@ Scope:
 - WPF desktop application source
 - Bundled FFmpeg runtime loading path
 - Diagnostics and recent-file persistence
-- Runtime bootstrap and MSIX packaging scripts
+- Runtime bootstrap and deployment-signing scripts
 - Repository hygiene and obvious secret exposure
 
 Verdict:
 - No critical or high-severity code findings remain after the latest hardening pass.
-- Government deployment should not use the portable ZIP as the primary distribution channel.
-- Government deployment should still prefer signed package deployment over portable ZIP distribution.
+- Production deployment should not use loose-file distribution as the primary distribution channel.
+- Production deployment should still prefer signed install deployment over loose-file distribution.
 
 ## Findings
 
-### P2 Open: Portable ZIP distribution remains less tamper-resistant than signed package deployment
+### P2 Open: Loose-file distribution remains less tamper-resistant than signed install deployment
 
 Locations:
 - [App.xaml.cs](App.xaml.cs)
@@ -30,12 +30,12 @@ Locations:
 
 Why it matters:
 - The app validates required FFmpeg DLL hashes at startup, which is good defense-in-depth.
-- Even so, the portable ZIP places native DLLs beside the executable and therefore depends on install-directory ACLs for tamper resistance.
-- This is acceptable for local testing, but it is weaker than an enterprise-signed and managed MSIX deployment.
+- Even so, loose-file deployment places native DLLs beside the executable and therefore depends on install-directory ACLs for tamper resistance.
+- This is acceptable for local testing, but it is weaker than an enterprise-signed and managed install deployment.
 
 Recommendation:
-- Treat the portable ZIP as a test artifact only.
-- For government deployment, distribute only a signed and timestamped MSIX through a protected install path with locked-down write permissions.
+- Treat loose-file deployment as a test artifact only.
+- For production deployment, distribute only an organization-signed and timestamped install artifact through a protected install path with locked-down write permissions.
 
 Status:
 - Open operational risk
@@ -87,7 +87,7 @@ Implemented:
 Location:
 - [MainWindow.xaml.cs](MainWindow.xaml.cs)
 
-### MSIX signing workflow now distinguishes test signing from production signing
+### Install-signing workflow now distinguishes test signing from production signing
 
 Implemented:
 - Local dev signing requires explicit `-UseDevCertificate`
@@ -95,7 +95,7 @@ Implemented:
 - Install helper no longer assumes enterprise certs should be imported into `TrustedPeople`
 
 Location:
-- [Packaging/MSIX/build-msix.ps1](Packaging/MSIX/build-msix.ps1)
+- deployment signing script
 
 ### Prerelease FFME dependency removed
 
@@ -122,19 +122,19 @@ Result:
 Validated:
 - `scripts\\Ensure-DevRuntime.ps1` passed with the pinned runtime present
 - Release build succeeded with `0 warnings, 0 errors`
-- `Packaging\\MSIX\\build-msix.ps1 -UseDevCertificate` produced a signed local MSIX successfully
+- the maintained signing flow produced a signed local install artifact successfully
 - The rebuilt portable EXE launched successfully
 
-## Government Deployment Recommendation
+## Deployment Recommendation
 
 Recommended baseline:
-- Use only the signed MSIX path for deployment
+- Use only the signed install path for deployment
 - Sign with an organization-issued certificate
 - Timestamp the package signature
 - Install into a protected location with controlled write access
 - Treat diagnostics exports as sensitive
 
 Not covered by this review:
-- Formal authority-to-operate requirements
+- Formal internal deployment approval requirements
 - OS hardening baselines or STIG alignment
 - Endpoint management policy, EDR policy, or enterprise certificate distribution

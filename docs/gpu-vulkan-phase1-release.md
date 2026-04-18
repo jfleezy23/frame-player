@@ -57,7 +57,7 @@ Last-known green validation runs:
   - checks run: `488`
   - pass / warning / fail: `453 / 35 / 0`
 - Clean-runner bootstrap proof:
-  - the pinned runtime archive is published on the `v1.4.4` GitHub release as `FramePlayer-ffmpeg-runtime-x64.zip`
+- the pinned runtime archive is published on the `v1.4.4` GitHub release as the versioned runtime bootstrap artifact
   - `Runtime\runtime-manifest.json` now points at that verified release asset with matching archive and DLL hashes
   - Windows CI restores the pinned runtime through `scripts\Ensure-DevRuntime.ps1` before build
 - Dual-pane real-media proof, mixed backend capable:

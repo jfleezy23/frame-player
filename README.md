@@ -56,7 +56,7 @@ Frame Player is a frames-first WPF review tool built on a custom FFmpeg engine w
 - `L` toggles loop playback
 - `F11` or `Alt+Enter` toggles full screen
 
-## Packaging Model
+## Runtime Model
 
 The shipped app is packaged with the FFmpeg runtime DLLs next to `FramePlayer.exe`.
 
@@ -75,8 +75,6 @@ The shipped app is packaged with the FFmpeg runtime DLLs next to `FramePlayer.ex
 - `File > Export Diagnostics...` saves a shareable text report with runtime and playback state
 - Recent-file history is protected at rest with Windows DPAPI for the current user profile
 - Diagnostics and UI error messages redact absolute file paths where practical
-- A signed local MSIX can be built with `Packaging\\MSIX\\build-msix.ps1`
-- The generated MSIX artifacts are written to `dist\\MSIX`
 - The FFmpeg development runtime is not stored in git; local restore comes from the self-built candidate folder or local runtime archive staged by `scripts\ffmpeg\Build-FFmpeg-8.1.ps1`
 - The runtime manifest records the expected archive filename, archive SHA256, human-readable FFmpeg version, DLL hashes, and source-build metadata
 - The current runtime manifest still points at the verified `v1.5.0` runtime-only GitHub release asset used for clean-runner bootstrap
@@ -128,18 +126,6 @@ If you need to build directly instead of using the helper script, use a machine 
 dotnet build .\FramePlayer.csproj -c Release -p:Platform=x64
 ```
 
-To build the local MSIX package:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\Packaging\MSIX\build-msix.ps1 -UseDevCertificate -CertificatePassword "YourLocalPassword"
-```
-
-To build the MSIX package with an organization's trusted signing certificate:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\Packaging\MSIX\build-msix.ps1 -SigningPfxPath "C:\path\to\signing-cert.pfx" -SigningPfxPassword "YourPfxPassword" -TimestampUrl "https://your-approved-timestamp-service"
-```
-
 ## Windows CI
 
 GitHub Actions Windows CI is compile validation on a clean runner. The workflow restores the pinned FFmpeg runtime through `scripts\Ensure-DevRuntime.ps1` before building, using the currently verified runtime-only `v1.5.0` archive published on GitHub Releases. Local/dev builds continue to use the same bootstrap path, with local candidate/runtime archives still preferred when they are available.
@@ -159,7 +145,7 @@ GitHub Actions Windows CI is compile validation on a clean runner. The workflow 
 - A/B loop ranges can be saved as exact MP4 clip exports through the bundled `ffmpeg-tools` path
 - The standard build output is in `bin\Release`
 - The packaged test-drop output used for release verification is `bin\TestDrop`
-- The portable release archive is written to `artifacts\FramePlayer-CustomFFmpeg-<product-version>.zip`
+- Versioned release artifacts use the product version in their filenames
 - The runtime bootstrap is pinned through `Runtime\runtime-manifest.json`
 - The active runtime is the self-built FFmpeg 8.1 line staged by `scripts\ffmpeg\Build-FFmpeg-8.1.ps1`
 - The current release note is `docs\release-v1.8.1-maintenance.md`
@@ -171,7 +157,6 @@ GitHub Actions Windows CI is compile validation on a clean runner. The workflow 
 
 ## Deployment Notes
 
-- The portable ZIP is convenient for testing, but production deployments should prefer a signed package and a protected install location.
-- The included MSIX script now requires either `-UseDevCertificate` for local testing or `-SigningPfxPath` for real signing.
-- For production or government deployments, use an organization's trusted code-signing certificate, timestamp the signature, and distribute the app through a protected install location.
+- Production deployments should use an organization-signed, timestamped install artifact in a protected install location.
+- Keep local test signing and deployed-build signing as separate flows, and use organization-approved signing inputs for installed builds.
 - The About dialog intentionally stays short; full license and third-party notice text ships as `LICENSE` and `THIRD_PARTY_NOTICES.md` instead of being embedded in the dialog.

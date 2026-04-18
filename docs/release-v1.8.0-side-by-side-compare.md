@@ -50,9 +50,9 @@ Green validation captured for this release:
   - tool: .NET SDK `10.0.202`
   - command: `dotnet build FramePlayer.csproj -c Release -p:Platform=x64`
   - result: `Build succeeded`
-- Packaged release validation:
+- Release verification validation:
   - command: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Build-TestDrop.ps1 -Configuration Release -Platform x64`
-  - result: packaged `bin\TestDrop` output plus `artifacts\FramePlayer-CustomFFmpeg-1.8.0.zip`
+  - result: versioned release output plus validated `bin\TestDrop` verification output
 - Full supported regression corpus:
   - command: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Run-RegressionSuite.ps1 -Path "C:\Projects\Video Test Files" -Recurse -Output ".\artifacts\regression-suite\release-v1.8-full-r4" -Configuration Release`
   - files tested: `17`
@@ -75,6 +75,4 @@ Known non-blocking warnings remain the intentional frames-first pre-index and ti
 - Treat `v1.8.0` as the feature release that turns compare-mode review into a real side-by-side export workflow without allowing silent quality reduction.
 - Keep `Properties\AssemblyInfo.cs` as the canonical product-version source.
 - Keep the app-driven regression suite as the source of truth for compare export validation; the release was gated on the clean full-corpus result above.
-- Release assets for this cut are expected to include:
-  - `FramePlayer-CustomFFmpeg-1.8.0.zip`
-  - the usual `bin\TestDrop` package output
+- Release outputs for this cut should match the validated versioned application artifact and `bin\TestDrop` verification output.

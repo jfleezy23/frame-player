@@ -12,7 +12,7 @@ Release: `1.8.1`
 
 ## Manual test checklist
 
-- Launch the app from `bin\TestDrop\FramePlayer.exe` or the packaged `FramePlayer-CustomFFmpeg-<product-version>.zip` drop.
+- Launch the app from `bin\TestDrop\FramePlayer.exe`.
 - Open a normal video file and verify the first displayed frame is frame `1`.
 - Watch the status bar after open: it should distinguish index building/ready from the decoded review-cache window.
 - Open a representative HEVC file with `Playback > Use GPU Acceleration` enabled and confirm diagnostics/log output report `ffmpeg-vulkan` when the local machine supports the Vulkan path.
@@ -54,7 +54,7 @@ Release: `1.8.1`
 - The repository-carried PowerShell harness is still the primary product-level validation surface:
   - `scripts\Run-RegressionSuite.ps1` for app-driven regression coverage
   - `scripts\Run-ReviewEngine-ManualTests.ps1` for deterministic manual review-engine sweeps, launched headlessly through the app runtime
-  - `scripts\Build-TestDrop.ps1` for packaged runtime/test-drop validation
+  - `scripts\Build-TestDrop.ps1` for release-style runtime/test-drop validation
 - Small unit tests can complement these harnesses for cold-path service logic, but they do not replace the app-driven harness for frame-review behavior.
 - The supported full-corpus regression path now runs hidden-window timed playback, loop playback, clip export, and side-by-side compare export coverage for both audio-bearing and video-only files.
 - The packaged regression suite also includes the repo-carried `dist\Frame Player\sample-test.mp4` when present, so the final file count can be one higher than the external corpus count alone.
@@ -71,7 +71,7 @@ Release: `1.8.1`
 - Large files still require a full-file frame index scan, but that work now happens in the background after the first frame is visible.
 - The pinned FFmpeg runtime is `n8.1-frameplayer-source`, recorded in `Runtime\runtime-manifest.json`.
 - The runtime was built from the official FFmpeg source tag `n8.1` and is restored locally from the self-built candidate/archive produced by `scripts\ffmpeg\Build-FFmpeg-8.1.ps1`.
-- The packaged runtime also requires `libwinpthread-1.dll`; it must ship beside `FramePlayer.exe` with the FFmpeg DLL set.
+- The bundled runtime also requires `libwinpthread-1.dll`; it must ship beside `FramePlayer.exe` with the FFmpeg DLL set.
 - Clip export uses a separate `ffmpeg-tools` folder beside the app output and depends on the hashes recorded in `Runtime\export-tools-manifest.json`.
 - Clean-runner bootstrap restores from the verified runtime-only `v1.5.0` release asset recorded in `Runtime\runtime-manifest.json`.
 
@@ -79,7 +79,6 @@ Release: `1.8.1`
 
 - Test drop executable: `bin\TestDrop\FramePlayer.exe`
 - Startup-open helper for visible UI automation: `bin\TestDrop\FramePlayer.exe --open-file <absolute-media-path>`
-- Release archive: `artifacts\FramePlayer-CustomFFmpeg-<product-version>.zip`
 - Test-drop build script: `scripts\Build-TestDrop.ps1`
 - Live visible loop verifier: `scripts\ui_loop_visible_test.py`
 - Desktop shortcut name: `Frame Player`

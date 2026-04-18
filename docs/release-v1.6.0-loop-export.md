@@ -66,6 +66,4 @@ Follow-up regression hardening after the `v1.6.0` cut also removed the old hidde
 - Treat `v1.6.0` as the feature release that turns the reviewed A/B loop surface into a real export workflow.
 - Keep `Properties\AssemblyInfo.cs` as the canonical product-version source.
 - Keep the app-driven regression suite as the source of truth for loop/export validation; Sonar coverage exclusions intentionally reflect that desktop-path testing model.
-- Release assets for this cut are expected to include:
-  - `FramePlayer-CustomFFmpeg-1.6.0.zip`
-  - the usual test-drop folder build from `bin\TestDrop`
+- Release outputs for this cut should match the validated versioned application artifact and test-drop verification output.

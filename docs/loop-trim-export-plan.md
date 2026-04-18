@@ -8,7 +8,7 @@
 
 ## Key Changes
 
-- Add an isolated export-tools bundle under something like `Runtime\ffmpeg-tools\` with manifest validation, `ffmpeg.exe`, `ffprobe.exe`, and required colocated dependencies; build it from the official FFmpeg `n8.1` source with a dedicated script and package it in test-drop/MSIX outputs.
+- Add an isolated export-tools bundle under something like `Runtime\ffmpeg-tools\` with manifest validation, `ffmpeg.exe`, `ffprobe.exe`, and required colocated dependencies; build it from the official FFmpeg `n8.1` source with a dedicated script and carry it into the release verification and install outputs.
 - Add internal export types/service: `ClipExportRequest`, `ClipExportPlan`, `ClipExportResult`, and `ClipExportService`. Service responsibilities: resolve the reviewed source file, compute exact start and exclusive end boundaries from the current loop snapshot, launch FFmpeg, capture stdout/stderr, and return a structured result.
 - Keep `IVideoReviewEngine` unchanged for phase 1. Boundary resolution should be an internal FFmpeg-aware helper that uses ready loop markers plus the global frame index when available. End boundary rule: prefer the next indexed frame timestamp after `loop-out`, otherwise use `loop-out time + PositionStep`, clamped to media duration.
 - Main-window UX: add `Playback > Save Loop As Clip...`, enabled only when single-pane media is open and the shared A/B range has both markers, is not pending, and is not invalid. Export pauses playback, snapshots the active loop/file state, opens a `SaveFileDialog`, writes exact MP4 output, and logs actionable failures.
@@ -24,7 +24,7 @@
 
 ## Test Plan
 
-- Tooling: build on clean Windows CI, validate export-tool manifest integrity, and verify test-drop/MSIX outputs include the isolated tool bundle without changing current playback runtime validation.
+- Tooling: build on clean Windows CI, validate export-tool manifest integrity, and verify the release/distribution outputs include the isolated tool bundle without changing current playback runtime validation.
 - Main-window export: exact MP4 export succeeds for one audio-bearing clip and one video-only clip; command is blocked for missing media, pending markers, invalid ranges, incomplete A/B ranges, and compare mode during phase 1.
 - Boundary sanity: exported file exists, FFprobe-reported duration matches the reviewed range within tolerance, and hidden-window smoke confirms the first/last landed frames stay inside the selected loop window.
 - Review-path regression: run the existing loop smoke on default review settings and forced CPU review settings, then run new clip-export smoke on the same sample set.

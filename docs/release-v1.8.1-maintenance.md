@@ -53,7 +53,5 @@ Known non-blocking warnings remain the intentional frames-first pending-index an
 
 - Treat `v1.8.1` as a maintenance release that preserves the current user-facing behavior while making release validation more trustworthy.
 - Keep `Properties\AssemblyInfo.cs` as the canonical product-version source.
-- Keep the app-driven regression suite as the source of truth for packaged playback/export validation.
-- Release assets for this cut are expected to include:
-  - `FramePlayer-CustomFFmpeg-1.8.1.zip`
-  - the usual `bin\TestDrop` package output
+- Keep the app-driven regression suite as the source of truth for release-style playback/export validation.
+- Release outputs for this cut should reflect product version `1.8.1` and match the validated verification output.

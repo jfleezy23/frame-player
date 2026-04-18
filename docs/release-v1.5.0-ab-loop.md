@@ -87,6 +87,4 @@ Remove-Item Env:FRAMEPLAYER_GPU_BACKEND
 - Treat `v1.5.0` as a minor feature release on top of `v1.4.4`.
 - Keep `Properties\AssemblyInfo.cs` as the canonical version source.
 - Keep the new loop smoke checks in the broader regression suite; they are stable enough to stay wired into normal validation.
-- Release assets for this cut are:
-  - `FramePlayer-CustomFFmpeg-1.5.0.zip`
-  - `FramePlayer-ffmpeg-runtime-x64.zip`
+- Release outputs for this cut should match the validated versioned application artifact and runtime bootstrap artifact.

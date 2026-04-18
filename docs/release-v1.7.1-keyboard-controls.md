@@ -35,9 +35,9 @@ Validation captured for this release:
   - tool: .NET SDK `10.0.202`
   - command: `dotnet build FramePlayer.csproj -c Release -p:Platform=x64`
   - result: `Build succeeded`, `0 Warning(s)`, `0 Error(s)`
-- Packaged release validation:
+- Release verification validation:
   - command: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Build-TestDrop.ps1 -Configuration Release -Platform x64`
-  - result: packaged `bin\TestDrop` output plus `artifacts\FramePlayer-CustomFFmpeg-1.7.1.zip`
+  - result: versioned release output plus validated `bin\TestDrop` verification output
 - Automated tests:
   - no runnable test-project file was present in this checkout under `tests\FramePlayer.Core.Tests`, so no separate test suite was executed in this release pass
 
@@ -45,6 +45,4 @@ Validation captured for this release:
 
 - Treat `v1.7.1` as a focused patch release on top of `v1.7.0` that aligns the shipped keyboard review controls with tester feedback.
 - Keep `Properties\AssemblyInfo.cs` as the canonical product-version source.
-- Release assets for this cut are expected to include:
-  - `FramePlayer-CustomFFmpeg-1.7.1.zip`
-  - the usual `bin\TestDrop` package output
+- Release outputs for this cut should match the validated versioned application artifact and `bin\TestDrop` verification output.
