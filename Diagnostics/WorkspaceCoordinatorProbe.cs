@@ -138,7 +138,7 @@ namespace FramePlayer.Diagnostics
                     var secondPaneLookupBeforeSelection = workspaceCoordinator.TryGetBoundPane(ComparePaneId, out var comparePaneBeforeSelection);
                     var snapshotPrimaryLookupBeforeSelection = workspaceCoordinator.TryGetPaneSnapshot(PrimaryPaneId, out var primarySnapshotBeforeSelection);
                     var snapshotSecondaryLookupBeforeSelection = workspaceCoordinator.TryGetPaneSnapshot(ComparePaneId, out var secondarySnapshotBeforeSelection);
-                    var snapshotMissingPaneLookupFails = !workspaceCoordinator.TryGetPaneSnapshot("pane-missing", out var unusedMissingPaneSnapshot);
+                    var snapshotMissingPaneLookupFails = !workspaceCoordinator.TryGetPaneSnapshot("pane-missing", out _);
                     var focusedSecondary = workspaceCoordinator.TrySelectPane(ComparePaneId, WorkspacePaneSelectionMode.Focused);
                     var focusedPlayResult = workspaceCoordinator
                         .PlayWithPaneResultsAsync(SynchronizedOperationScope.FocusedPane)
@@ -214,7 +214,6 @@ namespace FramePlayer.Diagnostics
                     var allPaneStepBackwardSecondaryResult = GetPaneResult(allPaneStepBackwardResult, ComparePaneId);
                     var allPaneStepForwardPrimaryResult = GetPaneResult(allPaneStepForwardResult, PrimaryPaneId);
                     var allPaneStepForwardSecondaryResult = GetPaneResult(allPaneStepForwardResult, ComparePaneId);
-                    var workspaceSnapshotAfterAllPaneOperations = workspaceCoordinator.GetWorkspaceSnapshot();
                     var snapshotPrimaryLookupAfterAllPaneOperations = workspaceCoordinator.TryGetPaneSnapshot(PrimaryPaneId, out var primarySnapshotAfterAllPaneOperations);
                     var snapshotSecondaryLookupAfterAllPaneOperations = workspaceCoordinator.TryGetPaneSnapshot(ComparePaneId, out var secondarySnapshotAfterAllPaneOperations);
 
