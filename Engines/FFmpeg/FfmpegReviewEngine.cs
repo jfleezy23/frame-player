@@ -30,6 +30,7 @@ namespace FramePlayer.Engines.FFmpeg
         // Backward stepping should first use cached decoded frames, then seek to the prior
         // keyframe and decode forward until the requested display-order frame is reconstructed.
         private const string OutputPixelFormatName = "bgra";
+        private const string StreamStartAnchorStrategy = "stream-start";
 
         private readonly object _playbackSync = new object();
         private readonly object _indexBuildSync = new object();
@@ -731,7 +732,7 @@ namespace FramePlayer.Engines.FFmpeg
             LastFrameAdvanceWasCacheHit = false;
             IsPlaying = false;
             RecordNoCacheRefill("step-backward-reconstruction", afterLanding: true);
-            SetOperationInstrumentation(false, reconstructionSeekTimestamp > 0L ? "timestamp-backtrack" : "stream-start", null);
+            SetOperationInstrumentation(false, reconstructionSeekTimestamp > 0L ? "timestamp-backtrack" : StreamStartAnchorStrategy, null);
 
             if (!reconstruction.HasPreviousFrame)
             {
@@ -845,12 +846,12 @@ namespace FramePlayer.Engines.FFmpeg
             SetOperationInstrumentation(
                 false,
                 fallbackFrameIndexAbsolute
-                    ? "stream-start"
+                    ? StreamStartAnchorStrategy
                     : "timestamp-seek-pending-index",
                 null);
             seekStopwatch.Stop();
             LastSeekMode = fallbackFrameIndexAbsolute
-                ? "stream-start"
+                ? StreamStartAnchorStrategy
                 : "timestamp-seek-pending-index";
             LastSeekTotalMilliseconds = seekStopwatch.Elapsed.TotalMilliseconds;
             OnStateChanged();
@@ -933,7 +934,7 @@ namespace FramePlayer.Engines.FFmpeg
                     ? (wasClampedToLastIndexedFrame
                         ? indexedTargetEntry.SeekAnchorStrategy + "-clamped"
                         : indexedTargetEntry.SeekAnchorStrategy)
-                    : "stream-start",
+                    : StreamStartAnchorStrategy,
                 indexedTargetEntry != null
                     ? (long?)indexedTargetEntry.SeekAnchorFrameIndex
                     : null);

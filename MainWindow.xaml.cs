@@ -33,6 +33,8 @@ namespace FramePlayer
         private const string PrimaryPaneId = "pane-primary";
         private const string ComparePaneId = "pane-compare-a";
         private const string CompareSessionId = "compare-a";
+        private const string PrimaryPaneDisplayLabel = "Primary pane";
+        private const string ComparePaneDisplayLabel = "Compare pane";
         private const string DefaultCompareAlignmentStatus = "Last align: none";
         private const double CompareModePreferredMinWindowWidth = 1180d;
         private const int ControlModifiedFrameStep = 10;
@@ -714,9 +716,7 @@ namespace FramePlayer
             SetPlaybackMessage(string.Format(
                 CultureInfo.InvariantCulture,
                 "{0} zoom reset.",
-                string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
-                    ? "Compare pane"
-                    : "Primary pane"));
+                GetPaneDisplayLabel(paneId)));
         }
 
         private bool CanAdjustPaneViewportZoom(
@@ -867,9 +867,7 @@ namespace FramePlayer
                 return "main transport";
             }
 
-            return string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
-                ? "Compare pane"
-                : "Primary pane";
+            return GetPaneDisplayLabel(paneId);
         }
 
         private static bool PaneHasLoadedMedia(ReviewWorkspacePaneSnapshot paneSnapshot)
@@ -1121,7 +1119,7 @@ namespace FramePlayer
 
             if (hasFrameIdentity && !isAbsoluteFrameIndex)
             {
-                var pendingFrameMessage = _buildVariant.UsesZeroIndexedFrameDisplay
+                var pendingFrameMessage = BuildVariantInfo.UsesZeroIndexedFrameDisplay
                     ? "The current frame number is pending while the background index finishes. The visible frame is correct, but the absolute zero-indexed frame label is not ready yet."
                     : "The current frame number is pending while the background index finishes. The visible frame is correct, but the absolute frame label is not ready yet.";
                 var pendingMaxFrameIndex = GetPaneMaxFrameIndex(paneId);
@@ -1142,7 +1140,7 @@ namespace FramePlayer
             if (maxFrameIndex >= 0)
             {
                 var lastFrameNumber = GetDisplayedTotalFrameValue(maxFrameIndex + 1L);
-                return _buildVariant.UsesZeroIndexedFrameDisplay
+                return BuildVariantInfo.UsesZeroIndexedFrameDisplay
                     ? string.Format(
                         CultureInfo.InvariantCulture,
                         "Type a zero-indexed frame number for this pane and press Enter. Last frame: {0}.",
@@ -3297,12 +3295,12 @@ namespace FramePlayer
                 CurrentFrameTextBlock.Text = totalFrames > 0
                     ? string.Format(
                         CultureInfo.InvariantCulture,
-                        _buildVariant.UsesZeroIndexedFrameDisplay
+                        BuildVariantInfo.UsesZeroIndexedFrameDisplay
                             ? "Frame -- / {0} (pending, 0-index)"
                             : "Frame -- / {0} (pending)",
                         totalFrameDisplay.ToString(frameFormat, CultureInfo.InvariantCulture))
                     : "Frame -- (pending)";
-                CurrentFrameTextBlock.ToolTip = _buildVariant.UsesZeroIndexedFrameDisplay
+                CurrentFrameTextBlock.ToolTip = BuildVariantInfo.UsesZeroIndexedFrameDisplay
                     ? string.Format(
                         CultureInfo.InvariantCulture,
                         "The visible frame is correct, but the absolute zero-indexed frame number is still pending while the background index finishes. Current segment-local frame: {0}.",
@@ -3327,7 +3325,7 @@ namespace FramePlayer
                     FrameNumberTextBox.Text = string.Empty;
                 }
 
-                FrameNumberTextBox.ToolTip = _buildVariant.UsesZeroIndexedFrameDisplay
+                FrameNumberTextBox.ToolTip = BuildVariantInfo.UsesZeroIndexedFrameDisplay
                     ? "The visible frame is correct, but the absolute zero-indexed frame number is still pending while the background index finishes. Type a frame number and press Enter once the index is ready."
                     : "The visible frame is correct, but the absolute frame number is still pending while the background index finishes. Type a frame number and press Enter once the index is ready.";
                 return;
@@ -3337,12 +3335,12 @@ namespace FramePlayer
             {
                 CurrentFrameTextBlock.Text = string.Format(
                     CultureInfo.InvariantCulture,
-                    _buildVariant.UsesZeroIndexedFrameDisplay
+                    BuildVariantInfo.UsesZeroIndexedFrameDisplay
                         ? "Frame {0} / {1} (0-index)"
                         : "Frame {0} / {1}",
                     currentFrame.ToString(frameFormat, CultureInfo.InvariantCulture),
                     totalFrameDisplay.ToString(frameFormat, CultureInfo.InvariantCulture));
-                CurrentFrameTextBlock.ToolTip = _buildVariant.UsesZeroIndexedFrameDisplay
+                CurrentFrameTextBlock.ToolTip = BuildVariantInfo.UsesZeroIndexedFrameDisplay
                     ? string.Format(
                         CultureInfo.InvariantCulture,
                         "Current zero-indexed frame {0}. Last zero-indexed frame {1}. Total decoded frames: {2}. Identity: {3}.",
@@ -3356,9 +3354,9 @@ namespace FramePlayer
             {
                 CurrentFrameTextBlock.Text = string.Format(
                     CultureInfo.InvariantCulture,
-                    _buildVariant.UsesZeroIndexedFrameDisplay ? "Frame {0} (0-index)" : "Frame {0}",
+                    BuildVariantInfo.UsesZeroIndexedFrameDisplay ? "Frame {0} (0-index)" : "Frame {0}",
                     currentFrame.ToString(frameFormat, CultureInfo.InvariantCulture));
-                CurrentFrameTextBlock.ToolTip = _buildVariant.UsesZeroIndexedFrameDisplay
+                CurrentFrameTextBlock.ToolTip = BuildVariantInfo.UsesZeroIndexedFrameDisplay
                     ? string.Format(
                         CultureInfo.InvariantCulture,
                         "Current zero-indexed frame {0}. Identity: {1}.",
@@ -3368,7 +3366,7 @@ namespace FramePlayer
             }
 
             FrameNumberTextBox.ToolTip = totalFrames > 0
-                ? _buildVariant.UsesZeroIndexedFrameDisplay
+                ? BuildVariantInfo.UsesZeroIndexedFrameDisplay
                     ? string.Format(
                         CultureInfo.InvariantCulture,
                         "Current / last zero-indexed frames: {0} / {1}. Identity: {2}. Type a zero-indexed frame number and press Enter.",
@@ -3427,14 +3425,14 @@ namespace FramePlayer
         private long GetDisplayedFrameNumber(long frameIndex)
         {
             var clampedFrameIndex = Math.Max(0L, frameIndex);
-            return _buildVariant.UsesZeroIndexedFrameDisplay
+            return BuildVariantInfo.UsesZeroIndexedFrameDisplay
                 ? clampedFrameIndex
                 : clampedFrameIndex + 1L;
         }
 
         private long GetFrameIndexFromDisplayedFrameNumber(long displayedFrameNumber)
         {
-            return _buildVariant.UsesZeroIndexedFrameDisplay
+            return BuildVariantInfo.UsesZeroIndexedFrameDisplay
                 ? Math.Max(0L, displayedFrameNumber)
                 : Math.Max(1L, displayedFrameNumber) - 1L;
         }
@@ -3446,14 +3444,14 @@ namespace FramePlayer
                 return -1L;
             }
 
-            return _buildVariant.UsesZeroIndexedFrameDisplay
+            return BuildVariantInfo.UsesZeroIndexedFrameDisplay
                 ? totalFrameCount - 1L
                 : totalFrameCount;
         }
 
         private string GetFrameNumberInputToolTip()
         {
-            return _buildVariant.UsesZeroIndexedFrameDisplay
+            return BuildVariantInfo.UsesZeroIndexedFrameDisplay
                 ? "Type a zero-indexed frame number and press Enter."
                 : "Type a frame number and press Enter.";
         }
@@ -4604,9 +4602,7 @@ namespace FramePlayer
                 var paneRange = _workspaceCoordinator.SetPaneLoopMarker(loopContextPaneId, endpoint);
                 UpdateLoopUi();
 
-                var paneLabel = string.Equals(loopContextPaneId, ComparePaneId, StringComparison.Ordinal)
-                    ? "Compare pane"
-                    : "Primary pane";
+                var paneLabel = GetPaneDisplayLabel(loopContextPaneId);
                 var paneAnchor = endpoint == LoopPlaybackMarkerEndpoint.In
                     ? (paneRange != null ? paneRange.LoopIn : null)
                     : (paneRange != null ? paneRange.LoopOut : null);
@@ -4697,9 +4693,7 @@ namespace FramePlayer
                 SetPlaybackMessage(string.Format(
                     CultureInfo.InvariantCulture,
                     "{0} loop points {1}.",
-                    string.Equals(loopContextPaneId, ComparePaneId, StringComparison.Ordinal)
-                        ? "Compare pane"
-                        : "Primary pane",
+                    GetPaneDisplayLabel(loopContextPaneId),
                     paneRange != null && paneRange.HasAnyMarkers ? "cleared" : "already clear"));
                 LogInfo(string.Format(
                     CultureInfo.InvariantCulture,
@@ -5586,8 +5580,8 @@ namespace FramePlayer
                 LoopModeUnavailableReason = exportContext.LoopModeUnavailableReason ?? string.Empty,
                 InitialMode = initialMode,
                 InitialAudioSource = initialAudioSource,
-                PrimaryAudioLabel = "Primary pane",
-                CompareAudioLabel = "Compare pane"
+                PrimaryAudioLabel = PrimaryPaneDisplayLabel,
+                CompareAudioLabel = ComparePaneDisplayLabel
             };
         }
 
@@ -6623,8 +6617,8 @@ namespace FramePlayer
         private static string GetPaneDisplayLabel(string paneId)
         {
             return string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
-                ? "Compare pane"
-                : "Primary pane";
+                ? ComparePaneDisplayLabel
+                : PrimaryPaneDisplayLabel;
         }
 
         private void UpdateLoopUi()
@@ -6758,7 +6752,7 @@ namespace FramePlayer
                     loopStatusTextBlock.ToolTip = string.Format(
                         CultureInfo.InvariantCulture,
                         "{0} loop playback status. With no pane-local A/B markers, pane playback loops the full media only when loop playback is enabled.",
-                        string.Equals(paneId, ComparePaneId, StringComparison.Ordinal) ? "Compare pane" : "Primary pane");
+                        GetPaneDisplayLabel(paneId));
                 }
 
                 return;
@@ -6807,9 +6801,7 @@ namespace FramePlayer
 
         private static string BuildPaneLoopStatusToolTip(string paneId, LoopPlaybackPaneRangeSnapshot paneRange)
         {
-            var paneLabel = string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
-                ? "Compare pane"
-                : "Primary pane";
+            var paneLabel = GetPaneDisplayLabel(paneId);
             if (paneRange == null || !paneRange.HasAnyMarkers)
             {
                 return paneLabel + " loop playback status.";
@@ -8086,7 +8078,7 @@ namespace FramePlayer
                     "Build variant: " + _buildVariant.BuildDisplayName,
                     "Forced backend: " + _buildVariant.ForcedBackend,
                     "Timed playback supported: " + (_buildVariant.SupportsTimedPlayback ? "Yes" : "No"),
-                    "Frame display mode: " + (_buildVariant.UsesZeroIndexedFrameDisplay ? "Zero-indexed" : "1-based"),
+                    "Frame display mode: " + (BuildVariantInfo.UsesZeroIndexedFrameDisplay ? "Zero-indexed" : "1-based"),
                     "Version: " + GetApplicationVersion(),
                     "OS: " + Environment.OSVersion,
                     ".NET: " + Environment.Version,
