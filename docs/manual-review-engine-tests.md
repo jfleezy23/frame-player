@@ -6,6 +6,11 @@
 
 The workflow is now custom-only. It is intended for local regression checks of the active engine, not backend comparison.
 
+The PowerShell harness launches `FramePlayer.exe` headlessly through the app's
+`--run-review-engine-manual-tests-request` entrypoint, so the sweep runs under
+the app's own .NET runtime instead of attempting to load `FramePlayer.dll`
+inside Windows PowerShell.
+
 ## How To Run
 
 Single file:
@@ -34,6 +39,16 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-ReviewEngi
   -Recurse `
   -Output ".\artifacts\review-engine-tests" `
   -Configuration Debug
+```
+
+Local supported-format corpus:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-ReviewEngine-ManualTests.ps1 `
+  -Path "C:\Projects\Video Test Files" `
+  -Recurse `
+  -Output ".\artifacts\review-engine-tests\full-corpus" `
+  -Configuration Release
 ```
 
 ## Supported Input Modes
@@ -78,11 +93,11 @@ The script writes three files into the `-Output` directory:
 - `review-engine-manual-tests.json`
   Full structured report with per-file plan details, custom-engine outcomes, notes, warnings, and metrics.
 - `review-engine-manual-tests.csv`
-  One row per file for sorting, filtering, and spreadsheet review.
+  Granular rows for each operation in the standard sequence plus separate advisory, warning, and failure rows that were not already represented by an operation result.
 - `review-engine-manual-tests-summary.md`
-  Human-readable summary with custom-engine totals, per-file highlights, and warning/failure details.
+  Human-readable summary with scenario totals, operation totals, a per-file operation matrix, and explicit warning/failure/advisory sections.
 
-The script also prints a short console summary with pass/warning/fail counts and the output paths.
+The script also prints a short console summary with result-row totals, operation-row totals, pass/warning/fail/advisory counts, and the output paths.
 
 ## Supplemental UI Regression Checks
 
@@ -98,19 +113,24 @@ The scripted manual runner does not cover the new shell-only MVP features below.
 ## Result Classification
 
 - `pass`
-  All operations completed and no warnings were raised for that file.
+  All required operations completed, and any plan-time fallback stayed advisory rather than turning into a degraded runtime result.
 - `warning`
-  The sequence completed, but interpretation needs care.
+  The sequence completed, but the runtime result or the exercised coverage was materially reduced.
 - `fail`
   One or more required operations did not complete successfully.
+- `advisory`
+  Planning or preflight context that should stay visible in the report but should not be mistaken for a runtime failure.
 
 Common warning cases:
 
-- Absolute frame identity is not available after seek operations.
-- The custom FFmpeg global index is unavailable.
-- Duration or fps was unavailable, so a reduced planning path was used.
+- Preflight planning failed and the runner had to fall back to conservative defaults.
+- Duration was unavailable, or the clip was short enough that seek-to-time had to clamp to the start position.
+- Frame-target planning had to fall back all the way to frame `0`.
+- Seek-to-frame did not retain absolute frame identity.
+- Seek-to-time still lacked absolute frame identity in a case where the runner should have been able to recover it.
 - A very short clip caused step operations to hit a boundary during the reduced test path.
-- An audio stream was present but audio output did not initialize, so the playback portion ran video-only.
+
+Planning-only advisories remain visible in the JSON report and are also emitted as explicit `plan-advisory` rows in the CSV and markdown summary even when the backend scenario classification remains `pass`.
 
 ## Known Limitations
 

@@ -39,6 +39,24 @@ function Get-ToolPath {
     return $tool.FullName
 }
 
+function Assert-HttpsUrl {
+    param(
+        [string]$Url,
+        [Parameter(Mandatory = $true)]
+        [string]$Label
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Url)) {
+        return
+    }
+
+    $parsedUri = $null
+    if (-not [System.Uri]::TryCreate($Url, [System.UriKind]::Absolute, [ref]$parsedUri) -or
+        -not [string]::Equals($parsedUri.Scheme, [System.Uri]::UriSchemeHttps, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "$Label must be an absolute HTTPS URL."
+    }
+}
+
 function New-PngFromIcon {
     param(
         [Parameter(Mandatory = $true)]
@@ -126,6 +144,8 @@ else {
 
 $safeVersion = [Version]$resolvedVersion
 $resolvedVersion = $safeVersion.ToString()
+
+Assert-HttpsUrl -Url $TimestampUrl -Label "TimestampUrl"
 
 New-Item -ItemType Directory -Force -Path $distDir | Out-Null
 Remove-Item $buildRoot -Recurse -Force -ErrorAction SilentlyContinue
@@ -215,7 +235,7 @@ if (-not $usingCustomSigningCertificate -and -not $UseDevCertificate) {
 }
 
 if ($usingCustomSigningCertificate) {
-    if (-not (Test-Path $SigningPfxPath)) {
+    if (-not (Test-Path -LiteralPath $SigningPfxPath)) {
         throw "The signing PFX was not found at '$SigningPfxPath'."
     }
 

@@ -1,9 +1,14 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace FramePlayer.Core.Models
 {
     public sealed class FrameDescriptor
     {
+        [SuppressMessage(
+            "Major Code Smell",
+            "S107:Methods should not have too many parameters",
+            Justification = "Frame descriptors are immutable decode-path snapshots and keep explicit scalar metadata fields to avoid extra transport objects in frame review flows.")]
         public FrameDescriptor(
             long? frameIndex,
             TimeSpan presentationTime,

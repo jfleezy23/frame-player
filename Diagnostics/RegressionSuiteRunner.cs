@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using System.IO.Compression;
@@ -29,13 +30,15 @@ namespace FramePlayer.Diagnostics
         private const string EngineScope = "engine";
         private const string CorrectnessCategory = "correctness";
         private const string LifecycleCategory = "lifecycle";
-        private const string ForwardOnlyStepProofCheckName = "forward-only-step-proof";
-        private const string NoneText = "(none)";
-        private const string PassClassification = "pass";
-        private const string FailClassification = "fail";
+        private const string CoverageCategory = "coverage";
+        private const string PackagingCategory = "packaging";
+        private const string PackagingScope = "(packaging)";
         private const string WarningClassification = "warning";
+        private const string ClickSeekInteraction = "click";
         private const string UiAudioInsertionWavCheckName = "ui-audio-insertion-wav";
         private const string UiAudioInsertionMp3CheckName = "ui-audio-insertion-mp3";
+        private const string ForwardOnlyStepProofCheckName = "forward-only-step-proof";
+        private const string NoneText = "(none)";
         private static readonly StringComparer FilePathComparer = StringComparer.OrdinalIgnoreCase;
         private static readonly HashSet<string> SupportedRegressionExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -507,7 +510,6 @@ namespace FramePlayer.Diagnostics
                     var playbackAdvanced = playbackStartFrame.HasValue &&
                         playbackPosition.FrameIndex.HasValue &&
                         playbackPosition.FrameIndex.Value > playbackStartFrame.Value;
-                    var playbackLandedFrame = FormatFrameIndex(playbackPosition.FrameIndex);
 
                     checks.Add(playbackAdvanced
                         ? Pass(
@@ -519,7 +521,7 @@ namespace FramePlayer.Diagnostics
                                 CultureInfo.InvariantCulture,
                                 "Playback advanced from frame {0} to frame {1}, then paused cleanly.",
                                 playbackStartFrame.Value,
-                                playbackLandedFrame),
+                                playbackPosition.FrameIndex.HasValue ? playbackPosition.FrameIndex.Value.ToString(CultureInfo.InvariantCulture) : NoneText),
                             actualFrameIndex: playbackPosition.FrameIndex,
                             actualTime: playbackPosition.PresentationTime,
                             elapsedMilliseconds: metrics.PlaybackMilliseconds)
@@ -542,7 +544,6 @@ namespace FramePlayer.Diagnostics
                         var audioHealthy = engine.AudioStreamInfo.DecoderAvailable &&
                             engine.LastAudioSubmittedBytes > 0L &&
                             engine.LastPlaybackUsedAudioClock;
-                        var audioErrorMessage = TextOrNone(engine.LastAudioErrorMessage);
                         checks.Add(audioHealthy
                             ? Pass(
                                 filePath,
@@ -565,7 +566,7 @@ namespace FramePlayer.Diagnostics
                                     engine.AudioStreamInfo.DecoderAvailable ? "yes" : "no",
                                     engine.LastAudioSubmittedBytes,
                                     engine.LastPlaybackUsedAudioClock ? "yes" : "no",
-                                    audioErrorMessage)));
+                                    string.IsNullOrWhiteSpace(engine.LastAudioErrorMessage) ? NoneText : engine.LastAudioErrorMessage)));
                     }
                     else
                     {
@@ -1309,7 +1310,6 @@ namespace FramePlayer.Diagnostics
             }
 
             var position = stepResult.Position ?? ReviewPosition.Empty;
-            var stepMessage = TextOrNone(stepResult.Message);
             var success = stepResult.Success &&
                 position.IsFrameIndexAbsolute &&
                 position.FrameIndex.HasValue &&
@@ -1344,7 +1344,7 @@ namespace FramePlayer.Diagnostics
                         expectedFrameIndex,
                         FormatFrameIndex(position.FrameIndex),
                         stepResult.Success ? "yes" : "no",
-                        stepMessage),
+                        string.IsNullOrWhiteSpace(stepResult.Message) ? NoneText : stepResult.Message),
                     expectedFrameIndex,
                     position.FrameIndex,
                     actualTime: position.PresentationTime,
@@ -1544,13 +1544,6 @@ namespace FramePlayer.Diagnostics
                 : NoneText;
         }
 
-        private static string TextOrNone(string value)
-        {
-            return string.IsNullOrWhiteSpace(value)
-                ? NoneText
-                : value;
-        }
-
         private static void Trace(string message)
         {
             var tracePath = DiagnosticTracePath;
@@ -1583,9 +1576,9 @@ namespace FramePlayer.Diagnostics
                 if (!Directory.Exists(packagedOutputDirectory))
                 {
                     checks.Add(Fail(
-                        "(packaging)",
-                        "packaging",
-                        "packaging",
+                        PackagingScope,
+                        PackagingCategory,
+                        PackagingCategory,
                         "output-directory-exists",
                         "Packaged output directory was not found: " + packagedOutputDirectory));
                     return new RegressionPackagingReport(
@@ -1629,32 +1622,32 @@ namespace FramePlayer.Diagnostics
 
                 checks.Add(missingFiles.Count == 0
                     ? Pass(
-                        "(packaging)",
-                        "packaging",
-                        "packaging",
+                        PackagingScope,
+                        PackagingCategory,
+                        PackagingCategory,
                         "runtime-files-present",
                         string.Format(
                             CultureInfo.InvariantCulture,
                             "Packaged output contains all {0} expected runtime files.",
                             expectedFiles.Length))
                     : Fail(
-                        "(packaging)",
-                        "packaging",
-                        "packaging",
+                        PackagingScope,
+                        PackagingCategory,
+                        PackagingCategory,
                         "runtime-files-present",
                         "Packaged output is missing runtime files: " + string.Join(", ", missingFiles)));
 
                 checks.Add(hashMismatches.Count == 0
                     ? Pass(
-                        "(packaging)",
-                        "packaging",
-                        "packaging",
+                        PackagingScope,
+                        PackagingCategory,
+                        PackagingCategory,
                         "runtime-hashes-match-manifest",
                         "Packaged output runtime hashes match the active runtime manifest.")
                     : Fail(
-                        "(packaging)",
-                        "packaging",
-                        "packaging",
+                        PackagingScope,
+                        PackagingCategory,
+                        PackagingCategory,
                         "runtime-hashes-match-manifest",
                         "Packaged output runtime hashes do not match the manifest for: " + string.Join(", ", hashMismatches)));
 
@@ -1664,36 +1657,40 @@ namespace FramePlayer.Diagnostics
                     .ToArray();
                 checks.Add(staleFiles.Length == 0
                     ? Pass(
-                        "(packaging)",
-                        "packaging",
-                        "packaging",
+                        PackagingScope,
+                        PackagingCategory,
+                        PackagingCategory,
                         "no-stale-runtime-dlls",
                         "Packaged output contains no stale FFmpeg 7-era runtime DLLs.")
                     : Fail(
-                        "(packaging)",
-                        "packaging",
-                        "packaging",
+                        PackagingScope,
+                        PackagingCategory,
+                        PackagingCategory,
                         "no-stale-runtime-dlls",
                         "Packaged output still contains stale runtime DLLs: " + string.Join(", ", staleFiles)));
 
                 var executablePath = Path.Combine(packagedOutputDirectory, "FramePlayer.exe");
                 checks.Add(File.Exists(executablePath)
                     ? Pass(
-                        "(packaging)",
-                        "packaging",
-                        "packaging",
+                        PackagingScope,
+                        PackagingCategory,
+                        PackagingCategory,
                         "packaged-executable-present",
                         "Packaged executable is present.")
                     : Fail(
-                        "(packaging)",
-                        "packaging",
-                        "packaging",
+                        PackagingScope,
+                        PackagingCategory,
+                        PackagingCategory,
                         "packaged-executable-present",
                         "Packaged executable is missing from the output directory."));
 
                 ValidateZip(packagedArtifactPath, expectedFiles, manifest, checks);
 
-                var classification = ResolvePackagingClassification(checks);
+                var classification = checks.Any(check => string.Equals(check.Classification, "fail", StringComparison.OrdinalIgnoreCase))
+                    ? "fail"
+                    : checks.Any(check => string.Equals(check.Classification, WarningClassification, StringComparison.OrdinalIgnoreCase))
+                        ? WarningClassification
+                        : "pass";
 
                 return new RegressionPackagingReport(
                     packagedOutputDirectory,
@@ -1706,21 +1703,6 @@ namespace FramePlayer.Diagnostics
                     classification);
             }
 
-            private static string ResolvePackagingClassification(IEnumerable<RegressionCheckResult> checks)
-            {
-                if (checks.Any(check => string.Equals(check.Classification, FailClassification, StringComparison.OrdinalIgnoreCase)))
-                {
-                    return FailClassification;
-                }
-
-                if (checks.Any(check => string.Equals(check.Classification, WarningClassification, StringComparison.OrdinalIgnoreCase)))
-                {
-                    return WarningClassification;
-                }
-
-                return PassClassification;
-            }
-
             private static void ValidateZip(
                 string packagedArtifactPath,
                 string[] expectedFiles,
@@ -1730,18 +1712,18 @@ namespace FramePlayer.Diagnostics
                 if (!File.Exists(packagedArtifactPath))
                 {
                     checks.Add(Fail(
-                        "(packaging)",
-                        "packaging",
-                        "packaging",
+                        PackagingScope,
+                        PackagingCategory,
+                        PackagingCategory,
                         "artifact-zip-present",
                         "Packaged zip artifact was not found: " + packagedArtifactPath));
                     return;
                 }
 
                 checks.Add(Pass(
-                    "(packaging)",
-                    "packaging",
-                    "packaging",
+                    PackagingScope,
+                    PackagingCategory,
+                    PackagingCategory,
                     "artifact-zip-present",
                     "Packaged zip artifact is present."));
 
@@ -1757,15 +1739,15 @@ namespace FramePlayer.Diagnostics
                         .ToArray();
                     checks.Add(missingEntries.Length == 0
                         ? Pass(
-                            "(packaging)",
-                            "packaging",
-                            "packaging",
+                            PackagingScope,
+                            PackagingCategory,
+                            PackagingCategory,
                             "artifact-zip-runtime-files",
                             "Packaged zip contains the expected runtime DLL set.")
                         : Fail(
-                            "(packaging)",
-                            "packaging",
-                            "packaging",
+                            PackagingScope,
+                            PackagingCategory,
+                            PackagingCategory,
                             "artifact-zip-runtime-files",
                             "Packaged zip is missing runtime files: " + string.Join(", ", missingEntries)));
 
@@ -1792,15 +1774,15 @@ namespace FramePlayer.Diagnostics
 
                         checks.Add(zipHashMismatches.Count == 0
                             ? Pass(
-                                "(packaging)",
-                                "packaging",
-                                "packaging",
+                                PackagingScope,
+                                PackagingCategory,
+                                PackagingCategory,
                                 "artifact-zip-hashes-match-manifest",
                                 "Packaged zip runtime hashes match the active runtime manifest.")
                             : Fail(
-                                "(packaging)",
-                                "packaging",
-                                "packaging",
+                                PackagingScope,
+                                PackagingCategory,
+                                PackagingCategory,
                                 "artifact-zip-hashes-match-manifest",
                                 "Packaged zip runtime hashes do not match the manifest for: " + string.Join(", ", zipHashMismatches)));
                     }
@@ -1813,15 +1795,15 @@ namespace FramePlayer.Diagnostics
                         .ToArray();
                     checks.Add(staleEntries.Length == 0
                         ? Pass(
-                            "(packaging)",
-                            "packaging",
-                            "packaging",
+                            PackagingScope,
+                            PackagingCategory,
+                            PackagingCategory,
                             "artifact-zip-no-stale-runtime-dlls",
                             "Packaged zip contains no stale FFmpeg 7-era runtime DLLs.")
                         : Fail(
-                            "(packaging)",
-                            "packaging",
-                            "packaging",
+                            PackagingScope,
+                            PackagingCategory,
+                            PackagingCategory,
                             "artifact-zip-no-stale-runtime-dlls",
                             "Packaged zip still contains stale runtime DLLs: " + string.Join(", ", staleEntries)));
                 }
@@ -2071,7 +2053,7 @@ namespace FramePlayer.Diagnostics
                                 ? Pass(
                                     filePath,
                                     "ui",
-                                    "coverage",
+                                    CoverageCategory,
                                     "ui-video-info-opens",
                                     string.Format(
                                         CultureInfo.InvariantCulture,
@@ -2085,7 +2067,7 @@ namespace FramePlayer.Diagnostics
                                 : Fail(
                                     filePath,
                                     "ui",
-                                    "coverage",
+                                    CoverageCategory,
                                     "ui-video-info-opens",
                                     string.Format(
                                         CultureInfo.InvariantCulture,
@@ -2103,7 +2085,7 @@ namespace FramePlayer.Diagnostics
                         checks.Add(Fail(
                             filePath,
                             "ui",
-                            "coverage",
+                            CoverageCategory,
                             "ui-video-info-opens",
                             "Video Info failed to open cleanly: " + ex.Message));
                     }
@@ -2118,13 +2100,13 @@ namespace FramePlayer.Diagnostics
                             ? Pass(
                                 filePath,
                                 "ui",
-                                "coverage",
+                                CoverageCategory,
                                 "ui-audio-insertion-single-pane-enabled",
                                 "Audio insertion stayed enabled for a loaded single-pane H.264 MP4 source.")
                             : Fail(
                                 filePath,
                                 "ui",
-                                "coverage",
+                                CoverageCategory,
                                 "ui-audio-insertion-single-pane-enabled",
                                 string.Format(
                                     CultureInfo.InvariantCulture,
@@ -2140,7 +2122,7 @@ namespace FramePlayer.Diagnostics
                             ? Pass(
                                 filePath,
                                 "ui",
-                                "coverage",
+                                CoverageCategory,
                                 "ui-audio-insertion-ineligible-source-disabled",
                                 string.Format(
                                     CultureInfo.InvariantCulture,
@@ -2149,7 +2131,7 @@ namespace FramePlayer.Diagnostics
                             : Fail(
                                 filePath,
                                 "ui",
-                                "coverage",
+                                CoverageCategory,
                                 "ui-audio-insertion-ineligible-source-disabled",
                                 string.Format(
                                     CultureInfo.InvariantCulture,
@@ -2163,7 +2145,7 @@ namespace FramePlayer.Diagnostics
                     if (immediateSliderTarget > TimeSpan.Zero)
                     {
                         Trace("UI harness pre-index click seek: " + filePath);
-                        var preIndexClick = await controller.CommitSliderSeekAsync("click", immediateSliderTarget).ConfigureAwait(true);
+                        var preIndexClick = await controller.CommitSliderSeekAsync(ClickSeekInteraction, immediateSliderTarget).ConfigureAwait(true);
                         metrics.UiPreIndexClickMilliseconds = preIndexClick.ElapsedMilliseconds;
                         checks.Add(EvaluateUiFrameTruth(
                             filePath,
@@ -2185,7 +2167,7 @@ namespace FramePlayer.Diagnostics
                             ? Pass(
                                 filePath,
                                 "ui",
-                                "coverage",
+                                CoverageCategory,
                                 "ui-loop-preindex-marker-honesty",
                                 expectsPendingMarker
                                     ? "Loop in stayed visibly pending before the global index was ready."
@@ -2193,7 +2175,7 @@ namespace FramePlayer.Diagnostics
                             : Fail(
                                 filePath,
                                 "ui",
-                                "coverage",
+                                CoverageCategory,
                                 "ui-loop-preindex-marker-honesty",
                                 string.Format(
                                     CultureInfo.InvariantCulture,
@@ -2374,13 +2356,13 @@ namespace FramePlayer.Diagnostics
                         ? Pass(
                             filePath,
                             "ui",
-                            "coverage",
+                            CoverageCategory,
                             "ui-audio-insertion-compare-disabled",
                             "Audio insertion stayed disabled with the expected tooltip while two-pane compare mode was enabled.")
                         : Fail(
                             filePath,
                             "ui",
-                            "coverage",
+                            CoverageCategory,
                             "ui-audio-insertion-compare-disabled",
                             string.Format(
                                 CultureInfo.InvariantCulture,
@@ -2393,7 +2375,7 @@ namespace FramePlayer.Diagnostics
                     {
                         var clickTarget = controller.GetSliderTargetFromRatio(0.35d);
                         Trace("UI harness indexed click seek: " + filePath);
-                        var clickSeek = await controller.CommitSliderSeekAsync("click", clickTarget).ConfigureAwait(true);
+                        var clickSeek = await controller.CommitSliderSeekAsync(ClickSeekInteraction, clickTarget).ConfigureAwait(true);
                         metrics.UiClickSeekMilliseconds = clickSeek.ElapsedMilliseconds;
                         checks.Add(EvaluateUiFrameTruth(
                             filePath,
@@ -2432,7 +2414,7 @@ namespace FramePlayer.Diagnostics
                             ? Pass(
                                 filePath,
                                 "ui",
-                                "coverage",
+                                CoverageCategory,
                                 "ui-zoom-shortcut-single-pane-apply",
                                 string.Format(
                                     CultureInfo.InvariantCulture,
@@ -2441,7 +2423,7 @@ namespace FramePlayer.Diagnostics
                             : Fail(
                                 filePath,
                                 "ui",
-                                "coverage",
+                                CoverageCategory,
                                 "ui-zoom-shortcut-single-pane-apply",
                                 string.Format(
                                     CultureInfo.InvariantCulture,
@@ -2456,13 +2438,13 @@ namespace FramePlayer.Diagnostics
                             ? Pass(
                                 filePath,
                                 "ui",
-                                "coverage",
+                                CoverageCategory,
                                 "ui-zoom-shortcut-single-pane-out",
                                 "Single-pane shortcut zoom-out returned to the full-frame viewport.")
                             : Fail(
                                 filePath,
                                 "ui",
-                                "coverage",
+                                CoverageCategory,
                                 "ui-zoom-shortcut-single-pane-out",
                                 string.Format(
                                     CultureInfo.InvariantCulture,
@@ -2483,7 +2465,7 @@ namespace FramePlayer.Diagnostics
                             ? Pass(
                                 filePath,
                                 "ui",
-                                "coverage",
+                                CoverageCategory,
                                 "ui-zoom-single-pane-apply",
                                 string.Format(
                                     CultureInfo.InvariantCulture,
@@ -2492,7 +2474,7 @@ namespace FramePlayer.Diagnostics
                             : Fail(
                                 filePath,
                                 "ui",
-                                "coverage",
+                                CoverageCategory,
                                 "ui-zoom-single-pane-apply",
                                 string.Format(
                                     CultureInfo.InvariantCulture,
@@ -2519,13 +2501,13 @@ namespace FramePlayer.Diagnostics
                             ? Pass(
                                 filePath,
                                 "ui",
-                                "coverage",
+                                CoverageCategory,
                                 "ui-loop-main-timeline-blocks-b-before-a",
                                 "Main timeline right-click rejected Position B before Position A.")
                             : Fail(
                                 filePath,
                                 "ui",
-                                "coverage",
+                                CoverageCategory,
                                 "ui-loop-main-timeline-blocks-b-before-a",
                                 "Main timeline allowed Position B before Position A."));
 
@@ -2546,7 +2528,7 @@ namespace FramePlayer.Diagnostics
                             ? Pass(
                                 filePath,
                                         "ui",
-                                        "coverage",
+                                        CoverageCategory,
                                         "ui-loop-main-range-renders",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -2556,7 +2538,7 @@ namespace FramePlayer.Diagnostics
                             : Fail(
                                 filePath,
                                 "ui",
-                                "coverage",
+                                CoverageCategory,
                                 "ui-loop-main-range-renders",
                                 string.Format(
                                     CultureInfo.InvariantCulture,
@@ -2588,7 +2570,7 @@ namespace FramePlayer.Diagnostics
                                     if (playbackSmokeTarget > TimeSpan.Zero)
                                     {
                                         Trace("UI harness playback smoke reposition: " + filePath);
-                                        playbackStart = await controller.CommitSliderSeekAsync("click", playbackSmokeTarget).ConfigureAwait(true);
+                                        playbackStart = await controller.CommitSliderSeekAsync(ClickSeekInteraction, playbackSmokeTarget).ConfigureAwait(true);
                                     }
                                 }
 
@@ -2637,14 +2619,14 @@ namespace FramePlayer.Diagnostics
                                     checks.Add(Warning(
                                         filePath,
                                         "ui",
-                                        "coverage",
+                                        CoverageCategory,
                                         "ui-playback-pause-progress-skipped",
                                         "Timed playback smoke was skipped because the post-loop setup position had no forward headroom left in this short clip."));
                                 }
 
                                 var postPlaybackTarget = controller.GetSliderTargetFromRatio(0.5d);
                                 Trace("UI harness post-playback seek: " + filePath);
-                                var postPlaybackSeek = await controller.CommitSliderSeekAsync("click", postPlaybackTarget).ConfigureAwait(true);
+                                var postPlaybackSeek = await controller.CommitSliderSeekAsync(ClickSeekInteraction, postPlaybackTarget).ConfigureAwait(true);
                                 checks.Add(EvaluateUiFrameTruth(
                                     filePath,
                                     "ui-post-playback-slider-seek",
@@ -2675,7 +2657,7 @@ namespace FramePlayer.Diagnostics
 
                                 await controller.SetLoopPlaybackEnabledAsync(true).ConfigureAwait(true);
                                 loopPlaybackEnabled = true;
-                                var loopEntrySeek = await controller.CommitSliderSeekAsync("click", loopStartSnapshot.EnginePresentationTime).ConfigureAwait(true);
+                                var loopEntrySeek = await controller.CommitSliderSeekAsync(ClickSeekInteraction, loopStartSnapshot.EnginePresentationTime).ConfigureAwait(true);
                                 var loopEntryLandedInsideRange = loopStartSnapshot.EngineFrameIndex.HasValue &&
                                                                  loopEndSnapshot.EngineFrameIndex.HasValue &&
                                                                  loopEntrySeek.EngineFrameIndex.HasValue &&
@@ -2830,7 +2812,7 @@ namespace FramePlayer.Diagnostics
                                     checks.Add(Warning(
                                         filePath,
                                         "ui",
-                                        "coverage",
+                                        CoverageCategory,
                                         "ui-loop-main-playback-multiwrap-skipped",
                                         "Main-loop repeated-wrap smoke was skipped because this clip is too short to observe a meaningful repeated wrap sequence."));
                                 }
@@ -2840,7 +2822,7 @@ namespace FramePlayer.Diagnostics
                                 checks.Add(Warning(
                                     filePath,
                                     "ui",
-                                    "coverage",
+                                    CoverageCategory,
                                     "ui-playback-lifecycle-skipped",
                                     "Timed playback was skipped in the hidden-window UI harness for this audio-bearing corpus file. Engine-level playback and audio checks still ran."));
                             }
@@ -2850,7 +2832,7 @@ namespace FramePlayer.Diagnostics
                                 checks.Add(Warning(
                                     filePath,
                                     "ui",
-                                    "coverage",
+                                    CoverageCategory,
                                     "ui-loop-export-main-skipped",
                                     "Main-loop clip export was skipped because the reviewed A/B range never settled into a ready exact box."));
                             }
@@ -2862,7 +2844,7 @@ namespace FramePlayer.Diagnostics
                                     checks.Add(Warning(
                                         filePath,
                                         "ui",
-                                        "coverage",
+                                        CoverageCategory,
                                         "ui-loop-export-main-skipped",
                                         "Main-loop clip export was skipped because the export tools were unavailable or the loop state changed before export."));
                                 }
@@ -2891,11 +2873,10 @@ namespace FramePlayer.Diagnostics
                                             "ui-loop-export-main",
                                             "Main-loop clip export reported success but did not produce the expected output file."));
 
-                                    var mainExportPlan = mainExportResult.Plan;
-                                    var mainExportViewport = mainExportPlan != null ? mainExportPlan.ViewportSnapshot : null;
-                                    var mainExportZoomed = mainExportViewport != null &&
-                                                          mainExportViewport.IsZoomed &&
-                                                          ViewportSnapshotsMatch(primaryZoomViewport, mainExportViewport);
+                                    var mainExportZoomed = mainExportResult.Plan != null &&
+                                                          mainExportResult.Plan.ViewportSnapshot != null &&
+                                                          mainExportResult.Plan.ViewportSnapshot.IsZoomed &&
+                                                          ViewportSnapshotsMatch(primaryZoomViewport, mainExportResult.Plan.ViewportSnapshot);
                                     checks.Add(mainExportZoomed
                                         ? Pass(
                                             filePath,
@@ -2912,7 +2893,7 @@ namespace FramePlayer.Diagnostics
                                                 CultureInfo.InvariantCulture,
                                                 "Main-loop clip export did not preserve the active zoomed viewport. Expected {0}; actual {1}.",
                                                 FormatViewportSnapshot(primaryZoomViewport),
-                                                FormatViewportSnapshot(mainExportViewport))));
+                                                FormatViewportSnapshot(mainExportResult.Plan != null ? mainExportResult.Plan.ViewportSnapshot : null))));
 
                                     var expectedDuration = mainExportResult.Plan != null
                                         ? mainExportResult.Plan.Duration
@@ -2947,7 +2928,7 @@ namespace FramePlayer.Diagnostics
                                 var fullMediaLeadSeconds = Math.Max(0.25d, Math.Min(0.75d, controller.SliderMaximumSeconds * 0.05d));
                                 var fullMediaEntryTarget = TimeSpan.FromSeconds(Math.Max(0d, controller.SliderMaximumSeconds - fullMediaLeadSeconds));
                                 Trace("UI harness full-media loop playback smoke: " + filePath);
-                                var fullMediaEntrySeek = await controller.CommitSliderSeekAsync("click", fullMediaEntryTarget).ConfigureAwait(true);
+                                var fullMediaEntrySeek = await controller.CommitSliderSeekAsync(ClickSeekInteraction, fullMediaEntryTarget).ConfigureAwait(true);
                                 checks.Add(EvaluateUiFrameTruth(
                                     filePath,
                                     "ui-loop-full-media-entry-seek",
@@ -3022,7 +3003,7 @@ namespace FramePlayer.Diagnostics
                                 checks.Add(Warning(
                                     filePath,
                                     "ui",
-                                    "coverage",
+                                    CoverageCategory,
                                     "ui-loop-full-media-playback-skipped",
                                     "Full-media loop playback smoke was skipped because this clip is too short to observe a meaningful end-boundary wrap sequence."));
                             }
@@ -3082,13 +3063,13 @@ namespace FramePlayer.Diagnostics
                                 ? Pass(
                                     filePath,
                                     "ui",
-                                    "coverage",
+                                    CoverageCategory,
                                     "ui-zoom-shortcut-compare-primary-local",
                                     "Focused-pane zoom shortcut only changed the primary pane in compare mode.")
                                 : Fail(
                                     filePath,
                                     "ui",
-                                    "coverage",
+                                    CoverageCategory,
                                     "ui-zoom-shortcut-compare-primary-local",
                                     string.Format(
                                         CultureInfo.InvariantCulture,
@@ -3111,13 +3092,13 @@ namespace FramePlayer.Diagnostics
                                 ? Pass(
                                     filePath,
                                     "ui",
-                                    "coverage",
+                                    CoverageCategory,
                                     "ui-zoom-shortcut-compare-compare-local",
                                     "Focused-pane zoom shortcut only changed the compare pane in compare mode.")
                                 : Fail(
                                     filePath,
                                     "ui",
-                                    "coverage",
+                                    CoverageCategory,
                                     "ui-zoom-shortcut-compare-compare-local",
                                     string.Format(
                                         CultureInfo.InvariantCulture,
@@ -3139,7 +3120,7 @@ namespace FramePlayer.Diagnostics
                                 ? Pass(
                                     filePath,
                                     "ui",
-                                    "coverage",
+                                    CoverageCategory,
                                     "ui-zoom-compare-pane-independent",
                                     string.Format(
                                         CultureInfo.InvariantCulture,
@@ -3149,7 +3130,7 @@ namespace FramePlayer.Diagnostics
                                 : Fail(
                                     filePath,
                                     "ui",
-                                    "coverage",
+                                    CoverageCategory,
                                     "ui-zoom-compare-pane-independent",
                                     string.Format(
                                         CultureInfo.InvariantCulture,
@@ -3197,7 +3178,7 @@ namespace FramePlayer.Diagnostics
                                 checks.Add(Warning(
                                     filePath,
                                     "ui",
-                                    "coverage",
+                                    CoverageCategory,
                                     "ui-zoom-compare-playback-persists-skipped",
                                     "Two-pane zoom playback persistence was skipped because the primary pane had no forward headroom left."));
                             }
@@ -3227,13 +3208,13 @@ namespace FramePlayer.Diagnostics
                             ? Pass(
                                 filePath,
                                 "ui",
-                                "coverage",
+                                CoverageCategory,
                                 "ui-loop-pane-primary-timeline-blocks-b-before-a",
                                 "Primary timeline right-click rejected Position B before Position A.")
                             : Fail(
                                 filePath,
                                 "ui",
-                                "coverage",
+                                CoverageCategory,
                                 "ui-loop-pane-primary-timeline-blocks-b-before-a",
                                 "Primary timeline allowed Position B before Position A."));
 
@@ -3280,7 +3261,7 @@ namespace FramePlayer.Diagnostics
                             ? Pass(
                                 filePath,
                                 "ui",
-                                "coverage",
+                                CoverageCategory,
                                 "ui-loop-pane-local-independent",
                                 string.Format(
                                     CultureInfo.InvariantCulture,
@@ -3290,7 +3271,7 @@ namespace FramePlayer.Diagnostics
                             : Fail(
                                 filePath,
                                 "ui",
-                                "coverage",
+                                CoverageCategory,
                                 "ui-loop-pane-local-independent",
                                 string.Format(
                                     CultureInfo.InvariantCulture,
@@ -3313,7 +3294,7 @@ namespace FramePlayer.Diagnostics
                                 checks.Add(Warning(
                                     filePath,
                                     "ui",
-                                    "coverage",
+                                    CoverageCategory,
                                     "ui-loop-export-pane-primary-skipped",
                                     "Primary pane clip export was skipped because the export tools were unavailable or the pane loop state changed before export."));
                             }
@@ -3342,11 +3323,10 @@ namespace FramePlayer.Diagnostics
                                         "ui-loop-export-pane-primary",
                                         "Primary pane clip export reported success but did not produce the expected output file."));
 
-                                var primaryPaneExportPlan = primaryPaneExport.Plan;
-                                var primaryPaneExportViewport = primaryPaneExportPlan != null ? primaryPaneExportPlan.ViewportSnapshot : null;
-                                var primaryPaneExportZoomed = primaryPaneExportViewport != null &&
-                                                              primaryPaneExportViewport.IsZoomed &&
-                                                              ViewportSnapshotsMatch(primaryPaneZoomViewport, primaryPaneExportViewport);
+                                var primaryPaneExportZoomed = primaryPaneExport.Plan != null &&
+                                                              primaryPaneExport.Plan.ViewportSnapshot != null &&
+                                                              primaryPaneExport.Plan.ViewportSnapshot.IsZoomed &&
+                                                              ViewportSnapshotsMatch(primaryPaneZoomViewport, primaryPaneExport.Plan.ViewportSnapshot);
                                 checks.Add(primaryPaneExportZoomed
                                     ? Pass(
                                         filePath,
@@ -3363,7 +3343,7 @@ namespace FramePlayer.Diagnostics
                                             CultureInfo.InvariantCulture,
                                             "Primary pane clip export did not preserve the primary pane viewport. Expected {0}; actual {1}.",
                                             FormatViewportSnapshot(primaryPaneZoomViewport),
-                                            FormatViewportSnapshot(primaryPaneExportViewport))));
+                                            FormatViewportSnapshot(primaryPaneExport.Plan != null ? primaryPaneExport.Plan.ViewportSnapshot : null))));
                             }
                         }
                         finally
@@ -3385,7 +3365,7 @@ namespace FramePlayer.Diagnostics
                                 checks.Add(Warning(
                                     filePath,
                                     "ui",
-                                    "coverage",
+                                    CoverageCategory,
                                     "ui-loop-export-pane-compare-skipped",
                                     "Compare pane clip export was skipped because the export tools were unavailable or the pane loop state changed before export."));
                             }
@@ -3414,11 +3394,10 @@ namespace FramePlayer.Diagnostics
                                         "ui-loop-export-pane-compare",
                                         "Compare pane clip export reported success but did not produce the expected output file."));
 
-                                var comparePaneExportPlan = comparePaneExport.Plan;
-                                var comparePaneExportViewport = comparePaneExportPlan != null ? comparePaneExportPlan.ViewportSnapshot : null;
-                                var comparePaneExportZoomed = comparePaneExportViewport != null &&
-                                                              comparePaneExportViewport.IsZoomed &&
-                                                              ViewportSnapshotsMatch(comparePaneZoomViewport, comparePaneExportViewport);
+                                var comparePaneExportZoomed = comparePaneExport.Plan != null &&
+                                                              comparePaneExport.Plan.ViewportSnapshot != null &&
+                                                              comparePaneExport.Plan.ViewportSnapshot.IsZoomed &&
+                                                              ViewportSnapshotsMatch(comparePaneZoomViewport, comparePaneExport.Plan.ViewportSnapshot);
                                 checks.Add(comparePaneExportZoomed
                                     ? Pass(
                                         filePath,
@@ -3435,7 +3414,7 @@ namespace FramePlayer.Diagnostics
                                             CultureInfo.InvariantCulture,
                                             "Compare pane clip export did not preserve the compare pane viewport. Expected {0}; actual {1}.",
                                             FormatViewportSnapshot(comparePaneZoomViewport),
-                                            FormatViewportSnapshot(comparePaneExportViewport))));
+                                            FormatViewportSnapshot(comparePaneExport.Plan != null ? comparePaneExport.Plan.ViewportSnapshot : null))));
 
                                 var paneLoopStartDeltaSeconds = Math.Abs(primaryPaneLoopUi.InPosition - comparePaneLoopUi.InPosition);
                                 var paneExportIndependent = comparePaneExport.Plan != null &&
@@ -3479,7 +3458,7 @@ namespace FramePlayer.Diagnostics
                                 checks.Add(Warning(
                                     filePath,
                                     "ui",
-                                    "coverage",
+                                    CoverageCategory,
                                     "ui-compare-side-by-side-loop-skipped",
                                     "Loop-mode side-by-side compare export was skipped because the compare export path was unavailable."));
                             }
@@ -3508,15 +3487,13 @@ namespace FramePlayer.Diagnostics
                                         "ui-compare-side-by-side-loop",
                                         "Loop-mode side-by-side compare export reported success but did not produce the expected output file."));
 
-                                var compareLoopPlan = compareLoopMerge.Plan;
-                                var compareLoopPrimaryViewport = compareLoopPlan != null ? compareLoopPlan.PrimaryViewportSnapshot : null;
-                                var compareLoopCompareViewport = compareLoopPlan != null ? compareLoopPlan.CompareViewportSnapshot : null;
-                                var compareLoopZoomed = compareLoopPrimaryViewport != null &&
-                                                        compareLoopCompareViewport != null &&
-                                                        compareLoopPrimaryViewport.IsZoomed &&
-                                                        compareLoopCompareViewport.IsZoomed &&
-                                                        ViewportSnapshotsMatch(primaryPaneZoomViewport, compareLoopPrimaryViewport) &&
-                                                        ViewportSnapshotsMatch(comparePaneZoomViewport, compareLoopCompareViewport);
+                                var compareLoopZoomed = compareLoopMerge.Plan != null &&
+                                                        compareLoopMerge.Plan.PrimaryViewportSnapshot != null &&
+                                                        compareLoopMerge.Plan.CompareViewportSnapshot != null &&
+                                                        compareLoopMerge.Plan.PrimaryViewportSnapshot.IsZoomed &&
+                                                        compareLoopMerge.Plan.CompareViewportSnapshot.IsZoomed &&
+                                                        ViewportSnapshotsMatch(primaryPaneZoomViewport, compareLoopMerge.Plan.PrimaryViewportSnapshot) &&
+                                                        ViewportSnapshotsMatch(comparePaneZoomViewport, compareLoopMerge.Plan.CompareViewportSnapshot);
                                 checks.Add(compareLoopZoomed
                                     ? Pass(
                                         filePath,
@@ -3533,9 +3510,9 @@ namespace FramePlayer.Diagnostics
                                             CultureInfo.InvariantCulture,
                                             "Loop-mode side-by-side compare export did not preserve pane-local viewports. Primary expected {0}, actual {1}; compare expected {2}, actual {3}.",
                                             FormatViewportSnapshot(primaryPaneZoomViewport),
-                                            FormatViewportSnapshot(compareLoopPrimaryViewport),
+                                            FormatViewportSnapshot(compareLoopMerge.Plan != null ? compareLoopMerge.Plan.PrimaryViewportSnapshot : null),
                                             FormatViewportSnapshot(comparePaneZoomViewport),
-                                            FormatViewportSnapshot(compareLoopCompareViewport))));
+                                            FormatViewportSnapshot(compareLoopMerge.Plan != null ? compareLoopMerge.Plan.CompareViewportSnapshot : null))));
 
                                 var expectedDuration = compareLoopMerge.Plan != null
                                     ? compareLoopMerge.Plan.OutputDuration
@@ -3623,13 +3600,13 @@ namespace FramePlayer.Diagnostics
                                         ? Pass(
                                             filePath,
                                             "ui",
-                                            "coverage",
+                                            CoverageCategory,
                                             "ui-compare-side-by-side-mixed-pair",
                                             "Side-by-side compare export covered an AVI primary plus MP4 compare pair.")
                                         : Pass(
                                             filePath,
                                             "ui",
-                                            "coverage",
+                                            CoverageCategory,
                                             "ui-compare-side-by-side-secondary-pair",
                                             "Side-by-side compare export covered a mixed compare pair."));
                                 }
@@ -3657,7 +3634,7 @@ namespace FramePlayer.Diagnostics
                                 checks.Add(Warning(
                                     filePath,
                                     "ui",
-                                    "coverage",
+                                    CoverageCategory,
                                     "ui-compare-side-by-side-whole-skipped",
                                     "Whole-video side-by-side compare export was skipped because the compare export path was unavailable."));
                             }
@@ -3686,15 +3663,13 @@ namespace FramePlayer.Diagnostics
                                         "ui-compare-side-by-side-whole",
                                         "Whole-video side-by-side compare export reported success but did not produce the expected output file."));
 
-                                var compareWholePlan = compareWholeMerge.Plan;
-                                var compareWholePrimaryViewport = compareWholePlan != null ? compareWholePlan.PrimaryViewportSnapshot : null;
-                                var compareWholeCompareViewport = compareWholePlan != null ? compareWholePlan.CompareViewportSnapshot : null;
-                                var compareWholeZoomed = compareWholePrimaryViewport != null &&
-                                                         compareWholeCompareViewport != null &&
-                                                         compareWholePrimaryViewport.IsZoomed &&
-                                                         compareWholeCompareViewport.IsZoomed &&
-                                                         ViewportSnapshotsMatch(primaryPaneZoomViewport, compareWholePrimaryViewport) &&
-                                                         ViewportSnapshotsMatch(comparePaneZoomViewport, compareWholeCompareViewport);
+                                var compareWholeZoomed = compareWholeMerge.Plan != null &&
+                                                         compareWholeMerge.Plan.PrimaryViewportSnapshot != null &&
+                                                         compareWholeMerge.Plan.CompareViewportSnapshot != null &&
+                                                         compareWholeMerge.Plan.PrimaryViewportSnapshot.IsZoomed &&
+                                                         compareWholeMerge.Plan.CompareViewportSnapshot.IsZoomed &&
+                                                         ViewportSnapshotsMatch(primaryPaneZoomViewport, compareWholeMerge.Plan.PrimaryViewportSnapshot) &&
+                                                         ViewportSnapshotsMatch(comparePaneZoomViewport, compareWholeMerge.Plan.CompareViewportSnapshot);
                                 checks.Add(compareWholeZoomed
                                     ? Pass(
                                         filePath,
@@ -3711,9 +3686,9 @@ namespace FramePlayer.Diagnostics
                                             CultureInfo.InvariantCulture,
                                             "Whole-video side-by-side compare export did not preserve pane-local viewports. Primary expected {0}, actual {1}; compare expected {2}, actual {3}.",
                                             FormatViewportSnapshot(primaryPaneZoomViewport),
-                                            FormatViewportSnapshot(compareWholePrimaryViewport),
+                                            FormatViewportSnapshot(compareWholeMerge.Plan != null ? compareWholeMerge.Plan.PrimaryViewportSnapshot : null),
                                             FormatViewportSnapshot(comparePaneZoomViewport),
-                                            FormatViewportSnapshot(compareWholeCompareViewport))));
+                                            FormatViewportSnapshot(compareWholeMerge.Plan != null ? compareWholeMerge.Plan.CompareViewportSnapshot : null))));
 
                                 var expectedDuration = compareWholeMerge.Plan != null
                                     ? compareWholeMerge.Plan.OutputDuration
@@ -3854,7 +3829,7 @@ namespace FramePlayer.Diagnostics
                             checks.Add(Warning(
                                 filePath,
                                 "ui",
-                                "coverage",
+                                CoverageCategory,
                                 "ui-loop-pane-local-coverage-skipped",
                                 string.Format(
                                     CultureInfo.InvariantCulture,
@@ -3863,7 +3838,7 @@ namespace FramePlayer.Diagnostics
                         }
 
                         Trace("UI harness end seek: " + filePath);
-                        var endSeek = await controller.CommitSliderSeekAsync("click", TimeSpan.FromSeconds(controller.SliderMaximumSeconds)).ConfigureAwait(true);
+                        var endSeek = await controller.CommitSliderSeekAsync(ClickSeekInteraction, TimeSpan.FromSeconds(controller.SliderMaximumSeconds)).ConfigureAwait(true);
                         metrics.UiEndSeekMilliseconds = endSeek.ElapsedMilliseconds;
                         var expectedLastFrame = indexReady.IndexedFrameCount - 1L;
                         checks.Add(EvaluateUiSnapshot(
@@ -4091,7 +4066,6 @@ namespace FramePlayer.Diagnostics
                     }
                     catch
                     {
-                        // Best-effort cleanup only; the temp file lives in a disposable directory.
                     }
                 }
             }
@@ -5228,6 +5202,10 @@ namespace FramePlayer.Diagnostics
 
     public sealed class RegressionPackagingReport
     {
+        [SuppressMessage(
+            "Major Code Smell",
+            "S107:Methods should not have too many parameters",
+            Justification = "Regression packaging reports are immutable diagnostics snapshots with explicit scalar fields for stable serialization and review output.")]
         public RegressionPackagingReport(
             string outputDirectory,
             string artifactPath,
@@ -5267,6 +5245,10 @@ namespace FramePlayer.Diagnostics
 
     public sealed class RegressionFileReport
     {
+        [SuppressMessage(
+            "Major Code Smell",
+            "S107:Methods should not have too many parameters",
+            Justification = "Regression file reports are immutable diagnostics transport models that keep scalar fields explicit for reporting and corpus review.")]
         public RegressionFileReport(
             string filePath,
             string fileName,
@@ -5340,6 +5322,10 @@ namespace FramePlayer.Diagnostics
                 string.Empty,
                 0d);
 
+        [SuppressMessage(
+            "Major Code Smell",
+            "S107:Methods should not have too many parameters",
+            Justification = "Regression decode profiles are immutable diagnostics snapshots that intentionally mirror explicit decode counters and timings without extra wrapper layers.")]
         public RegressionDecodeProfile(
             string activeDecodeBackend,
             string actualBackendUsed,

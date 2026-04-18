@@ -33,16 +33,18 @@ namespace FramePlayer
         private const string PrimaryPaneId = "pane-primary";
         private const string ComparePaneId = "pane-compare-a";
         private const string CompareSessionId = "compare-a";
-        private const string DefaultCompareAlignmentStatus = "Last align: none";
-        private const string PrimaryPaneTitle = "Primary";
+        private const string PrimaryPaneShortLabel = "Primary";
         private const string PrimaryPaneDisplayLabel = "Primary pane";
         private const string ComparePaneDisplayLabel = "Compare pane";
-        private const string NoneText = "(none)";
-        private const string UnavailableText = "(unavailable)";
-        private const string UnknownText = "Unknown";
-        private const string LoopOffStatusText = "Loop: off";
-        private const string AbsoluteFrameIdentityText = "absolute";
-        private const string SegmentLocalFrameIdentityText = "segment-local";
+        private const string NoneDisplayLabel = "(none)";
+        private const string UnavailableDisplayLabel = "(unavailable)";
+        private const string UnknownDisplayLabel = "Unknown";
+        private const string AbsoluteFrameIdentityLabel = "absolute";
+        private const string SegmentLocalFrameIdentityLabel = "segment-local";
+        private const string SupportedVideoExtensionsDescription = "AVI, MOV, M4V, MP4, MKV, WMV";
+        private const string OpenVideoFileFilter = "Supported Video Files|*.avi;*.mov;*.m4v;*.mp4;*.mkv;*.wmv|AVI Files|*.avi|MOV Files|*.mov|M4V Files|*.m4v|MP4 Files|*.mp4|MKV Files|*.mkv|WMV Files|*.wmv|All Files|*.*";
+        private const string LoopOffStatusLabel = "Loop: off";
+        private const string DefaultCompareAlignmentStatus = "Last align: none";
         private const double CompareModePreferredMinWindowWidth = 1180d;
         private const int ControlModifiedFrameStep = 10;
         private const int ShiftModifiedFrameStep = 100;
@@ -438,6 +440,7 @@ namespace FramePlayer
             }
             catch (InvalidOperationException)
             {
+                // DragMove can race the native window state during caption interactions; ignoring keeps the shell gesture best-effort.
             }
         }
 
@@ -518,20 +521,12 @@ namespace FramePlayer
             }
             catch (DllNotFoundException)
             {
+                // Rounded corner hints are optional and unavailable on down-level Windows builds.
             }
             catch (EntryPointNotFoundException)
             {
+                // Rounded corner hints are optional and unavailable on Windows builds that expose older DWM entry points.
             }
-        }
-
-        private static string GetSupportedVideoExtensionsDescription()
-        {
-            return "AVI, MOV, M4V, MP4, MKV, WMV";
-        }
-
-        private static string GetOpenFileFilter()
-        {
-            return "Supported Video Files|*.avi;*.mov;*.m4v;*.mp4;*.mkv;*.wmv|AVI Files|*.avi|MOV Files|*.mov|M4V Files|*.m4v|MP4 Files|*.mp4|MKV Files|*.mkv|WMV Files|*.wmv|All Files|*.*";
         }
 
         private bool IsCompareModeEnabled
@@ -723,9 +718,7 @@ namespace FramePlayer
             SetPlaybackMessage(string.Format(
                 CultureInfo.InvariantCulture,
                 "{0} zoom reset.",
-                string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
-                    ? ComparePaneDisplayLabel
-                    : PrimaryPaneDisplayLabel));
+                GetPaneDisplayLabel(paneId)));
         }
 
         private bool CanAdjustPaneViewportZoom(
@@ -876,9 +869,7 @@ namespace FramePlayer
                 return "main transport";
             }
 
-            return string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
-                ? ComparePaneDisplayLabel
-                : PrimaryPaneDisplayLabel;
+            return GetPaneDisplayLabel(paneId);
         }
 
         private static bool PaneHasLoadedMedia(ReviewWorkspacePaneSnapshot paneSnapshot)
@@ -1130,7 +1121,7 @@ namespace FramePlayer
 
             if (hasFrameIdentity && !isAbsoluteFrameIndex)
             {
-                var pendingFrameMessage = _buildVariant.UsesZeroIndexedFrameDisplay
+                var pendingFrameMessage = BuildVariantInfo.UsesZeroIndexedFrameDisplay
                     ? "The current frame number is pending while the background index finishes. The visible frame is correct, but the absolute zero-indexed frame label is not ready yet."
                     : "The current frame number is pending while the background index finishes. The visible frame is correct, but the absolute frame label is not ready yet.";
                 var pendingMaxFrameIndex = GetPaneMaxFrameIndex(paneId);
@@ -1151,7 +1142,7 @@ namespace FramePlayer
             if (maxFrameIndex >= 0)
             {
                 var lastFrameNumber = GetDisplayedTotalFrameValue(maxFrameIndex + 1L);
-                return _buildVariant.UsesZeroIndexedFrameDisplay
+                return BuildVariantInfo.UsesZeroIndexedFrameDisplay
                     ? string.Format(
                         CultureInfo.InvariantCulture,
                         "Type a zero-indexed frame number for this pane and press Enter. Last frame: {0}.",
@@ -1272,7 +1263,7 @@ namespace FramePlayer
                 paneSnapshot = new ReviewWorkspacePaneSnapshot(
                     paneId,
                     string.Empty,
-                    string.Equals(paneId, ComparePaneId, StringComparison.Ordinal) ? "Compare A" : PrimaryPaneTitle,
+                    string.Equals(paneId, ComparePaneId, StringComparison.Ordinal) ? "Compare A" : PrimaryPaneShortLabel,
                     false,
                     string.Equals(paneId, PrimaryPaneId, StringComparison.Ordinal),
                     false,
@@ -1367,7 +1358,7 @@ namespace FramePlayer
                 return "Compare";
             }
 
-            return PrimaryPaneTitle;
+            return PrimaryPaneShortLabel;
         }
 
         private string BuildPaneStateText(ReviewWorkspacePaneSnapshot paneSnapshot)
@@ -2119,7 +2110,7 @@ namespace FramePlayer
             {
                 MessageBox.Show(
                     this,
-                    "Drop a supported video file (" + GetSupportedVideoExtensionsDescription() + ").",
+                    "Drop a supported video file (" + SupportedVideoExtensionsDescription + ").",
                     "Unsupported File",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
@@ -2407,7 +2398,7 @@ namespace FramePlayer
                 LogWarning("Open requested for an unsupported file type: " + GetSafeFileDisplay(filePath));
                 MessageBox.Show(
                     this,
-                    "Supported file types are " + GetSupportedVideoExtensionsDescription() + ".",
+                    "Supported file types are " + SupportedVideoExtensionsDescription + ".",
                     "Unsupported File",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
@@ -2463,8 +2454,8 @@ namespace FramePlayer
                         "Decode backend: {0} | GPU active {1} | GPU status {2} | Fallback {3} | Cache budget {4:0.0} MiB | Queue depth {5}.",
                         string.IsNullOrWhiteSpace(ffmpegEngine.ActiveDecodeBackend) ? "(unknown)" : ffmpegEngine.ActiveDecodeBackend,
                         ffmpegEngine.IsGpuActive ? "yes" : "no",
-                        string.IsNullOrWhiteSpace(ffmpegEngine.GpuCapabilityStatus) ? NoneText : ffmpegEngine.GpuCapabilityStatus,
-                        string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? NoneText : ffmpegEngine.GpuFallbackReason,
+                        string.IsNullOrWhiteSpace(ffmpegEngine.GpuCapabilityStatus) ? NoneDisplayLabel : ffmpegEngine.GpuCapabilityStatus,
+                        string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? NoneDisplayLabel : ffmpegEngine.GpuFallbackReason,
                         ffmpegEngine.DecodedFrameCacheBudgetBytes / 1048576d,
                         ffmpegEngine.OperationalQueueDepth));
                     LogInfo(string.Format(
@@ -2528,7 +2519,7 @@ namespace FramePlayer
             var dialog = new OpenFileDialog
             {
                 Title = "Open Video",
-                Filter = GetOpenFileFilter()
+                Filter = OpenVideoFileFilter
             };
 
             if (dialog.ShowDialog(this) == true)
@@ -3306,12 +3297,12 @@ namespace FramePlayer
                 CurrentFrameTextBlock.Text = totalFrames > 0
                     ? string.Format(
                         CultureInfo.InvariantCulture,
-                        _buildVariant.UsesZeroIndexedFrameDisplay
+                        BuildVariantInfo.UsesZeroIndexedFrameDisplay
                             ? "Frame -- / {0} (pending, 0-index)"
                             : "Frame -- / {0} (pending)",
                         totalFrameDisplay.ToString(frameFormat, CultureInfo.InvariantCulture))
                     : "Frame -- (pending)";
-                CurrentFrameTextBlock.ToolTip = _buildVariant.UsesZeroIndexedFrameDisplay
+                CurrentFrameTextBlock.ToolTip = BuildVariantInfo.UsesZeroIndexedFrameDisplay
                     ? string.Format(
                         CultureInfo.InvariantCulture,
                         "The visible frame is correct, but the absolute zero-indexed frame number is still pending while the background index finishes. Current segment-local frame: {0}.",
@@ -3336,71 +3327,61 @@ namespace FramePlayer
                     FrameNumberTextBox.Text = string.Empty;
                 }
 
-                FrameNumberTextBox.ToolTip = _buildVariant.UsesZeroIndexedFrameDisplay
+                FrameNumberTextBox.ToolTip = BuildVariantInfo.UsesZeroIndexedFrameDisplay
                     ? "The visible frame is correct, but the absolute zero-indexed frame number is still pending while the background index finishes. Type a frame number and press Enter once the index is ready."
                     : "The visible frame is correct, but the absolute frame number is still pending while the background index finishes. Type a frame number and press Enter once the index is ready.";
                 return;
             }
 
-            var frameIdentityText = AbsoluteFrameIdentityText;
-            string currentFrameToolTip;
             if (totalFrames > 0)
             {
                 CurrentFrameTextBlock.Text = string.Format(
                     CultureInfo.InvariantCulture,
-                    _buildVariant.UsesZeroIndexedFrameDisplay
+                    BuildVariantInfo.UsesZeroIndexedFrameDisplay
                         ? "Frame {0} / {1} (0-index)"
                         : "Frame {0} / {1}",
                     currentFrame.ToString(frameFormat, CultureInfo.InvariantCulture),
                     totalFrameDisplay.ToString(frameFormat, CultureInfo.InvariantCulture));
-                currentFrameToolTip = _buildVariant.UsesZeroIndexedFrameDisplay
+                CurrentFrameTextBlock.ToolTip = BuildVariantInfo.UsesZeroIndexedFrameDisplay
                     ? string.Format(
                         CultureInfo.InvariantCulture,
                         "Current zero-indexed frame {0}. Last zero-indexed frame {1}. Total decoded frames: {2}. Identity: {3}.",
                         currentFrame,
                         totalFrameDisplay,
                         totalFrames,
-                        frameIdentityText)
+                        AbsoluteFrameIdentityLabel)
                     : string.Format(CultureInfo.InvariantCulture, "Current frame {0} of {1}.", currentFrame, totalFrames);
             }
             else
             {
                 CurrentFrameTextBlock.Text = string.Format(
                     CultureInfo.InvariantCulture,
-                    _buildVariant.UsesZeroIndexedFrameDisplay ? "Frame {0} (0-index)" : "Frame {0}",
+                    BuildVariantInfo.UsesZeroIndexedFrameDisplay ? "Frame {0} (0-index)" : "Frame {0}",
                     currentFrame.ToString(frameFormat, CultureInfo.InvariantCulture));
-                currentFrameToolTip = _buildVariant.UsesZeroIndexedFrameDisplay
+                CurrentFrameTextBlock.ToolTip = BuildVariantInfo.UsesZeroIndexedFrameDisplay
                     ? string.Format(
                         CultureInfo.InvariantCulture,
                         "Current zero-indexed frame {0}. Identity: {1}.",
                         currentFrame,
-                        frameIdentityText)
+                        AbsoluteFrameIdentityLabel)
                     : string.Format(CultureInfo.InvariantCulture, "Current frame {0}.", currentFrame);
             }
-            CurrentFrameTextBlock.ToolTip = currentFrameToolTip;
 
-            string frameNumberToolTip;
-            if (totalFrames > 0)
-            {
-                frameNumberToolTip = _buildVariant.UsesZeroIndexedFrameDisplay
+            FrameNumberTextBox.ToolTip = totalFrames > 0
+                ? BuildVariantInfo.UsesZeroIndexedFrameDisplay
                     ? string.Format(
                         CultureInfo.InvariantCulture,
                         "Current / last zero-indexed frames: {0} / {1}. Identity: {2}. Type a zero-indexed frame number and press Enter.",
                         currentFrame,
                         totalFrameDisplay,
-                        frameIdentityText)
-                    : string.Format(CultureInfo.InvariantCulture, "Current / total frames: {0} / {1}. Type a frame number and press Enter.", currentFrame, totalFrames);
-            }
-            else
-            {
-                frameNumberToolTip = string.Format(
+                        AbsoluteFrameIdentityLabel)
+                    : string.Format(CultureInfo.InvariantCulture, "Current / total frames: {0} / {1}. Type a frame number and press Enter.", currentFrame, totalFrames)
+                : string.Format(
                     CultureInfo.InvariantCulture,
                     "Current frame: {0}. Identity: {1}. {2}",
                     currentFrame,
-                    frameIdentityText,
+                    AbsoluteFrameIdentityLabel,
                     GetFrameNumberInputToolTip());
-            }
-            FrameNumberTextBox.ToolTip = frameNumberToolTip;
 
             TimecodeTextBlock.Text = string.Format(
                 CultureInfo.InvariantCulture,
@@ -3446,14 +3427,14 @@ namespace FramePlayer
         private long GetDisplayedFrameNumber(long frameIndex)
         {
             var clampedFrameIndex = Math.Max(0L, frameIndex);
-            return _buildVariant.UsesZeroIndexedFrameDisplay
+            return BuildVariantInfo.UsesZeroIndexedFrameDisplay
                 ? clampedFrameIndex
                 : clampedFrameIndex + 1L;
         }
 
         private long GetFrameIndexFromDisplayedFrameNumber(long displayedFrameNumber)
         {
-            return _buildVariant.UsesZeroIndexedFrameDisplay
+            return BuildVariantInfo.UsesZeroIndexedFrameDisplay
                 ? Math.Max(0L, displayedFrameNumber)
                 : Math.Max(1L, displayedFrameNumber) - 1L;
         }
@@ -3465,14 +3446,14 @@ namespace FramePlayer
                 return -1L;
             }
 
-            return _buildVariant.UsesZeroIndexedFrameDisplay
+            return BuildVariantInfo.UsesZeroIndexedFrameDisplay
                 ? totalFrameCount - 1L
                 : totalFrameCount;
         }
 
         private string GetFrameNumberInputToolTip()
         {
-            return _buildVariant.UsesZeroIndexedFrameDisplay
+            return BuildVariantInfo.UsesZeroIndexedFrameDisplay
                 ? "Type a zero-indexed frame number and press Enter."
                 : "Type a frame number and press Enter.";
         }
@@ -3820,8 +3801,9 @@ namespace FramePlayer
             TrySelectPaneForShell(paneId);
             UpdateWorkspacePanePresentation();
             var viewportState = GetPaneViewportState(paneId);
+            var wheelDeltaSteps = (double)e.Delta / Mouse.MouseWheelDeltaForOneLine;
             var targetZoomFactor = viewportState.ZoomFactor *
-                                   Math.Pow(PaneZoomWheelStep, (double)e.Delta / Mouse.MouseWheelDeltaForOneLine);
+                                   Math.Pow(PaneZoomWheelStep, wheelDeltaSteps);
             targetZoomFactor = Math.Max(MinimumPaneZoomFactor, Math.Min(MaximumPaneZoomFactor, targetZoomFactor));
             if (targetZoomFactor <= 1.0001d)
             {
@@ -3864,17 +3846,64 @@ namespace FramePlayer
 
         private void VideoSurfaceHost_MouseMove(object sender, MouseEventArgs e)
         {
-            FrameworkElement host;
-            string paneId;
-            if (!TryGetVideoSurfaceHostContext(sender, out host, out paneId))
+            var host = sender as FrameworkElement;
+            if (host == null)
             {
                 ClearPointerCoordinates();
                 return;
             }
 
-            var hostPoint = e.GetPosition(host);
-            UpdatePaneViewportPan(host, paneId, e, hostPoint);
-            UpdatePointerCoordinates(paneId, hostPoint);
+            var paneId = host.Tag as string;
+            if (string.IsNullOrWhiteSpace(paneId))
+            {
+                ClearPointerCoordinates();
+                return;
+            }
+
+            var viewportState = GetPaneViewportState(paneId);
+            if (viewportState.IsPanActive)
+            {
+                if (e.LeftButton != MouseButtonState.Pressed || !CanAdjustPaneViewport(paneId))
+                {
+                    EndPaneViewportPan(host, paneId);
+                }
+                else
+                {
+                    var geometryBeforePan = GetFrameSurfaceGeometry(paneId);
+                    if (geometryBeforePan.HasVisibleFrame)
+                    {
+                        var currentHostPoint = e.GetPosition(host);
+                        var delta = currentHostPoint - viewportState.PanAnchorHostPoint;
+                        if (Math.Abs(delta.X) >= PanePanDragThreshold || Math.Abs(delta.Y) >= PanePanDragThreshold)
+                        {
+                            var updatedCenter = new Point(
+                                viewportState.PanAnchorNormalizedCenter.X - (delta.X / geometryBeforePan.RenderedRect.Width),
+                                viewportState.PanAnchorNormalizedCenter.Y - (delta.Y / geometryBeforePan.RenderedRect.Height));
+                            viewportState.NormalizedCenter = updatedCenter;
+                            UpdatePaneViewportLayout(paneId);
+                        }
+                    }
+                }
+            }
+
+            var geometry = GetFrameSurfaceGeometry(paneId);
+            int sourcePixelX;
+            int sourcePixelY;
+            if (!geometry.TryMapPointToSourcePixel(e.GetPosition(host), out sourcePixelX, out sourcePixelY))
+            {
+                ClearPointerCoordinates();
+                return;
+            }
+
+            var paneLabel = string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
+                ? "Compare"
+                : PrimaryPaneShortLabel;
+            SetPointerCoordinates(string.Format(
+                CultureInfo.InvariantCulture,
+                "Pixel: {0} ({1},{2})",
+                paneLabel,
+                sourcePixelX,
+                sourcePixelY));
         }
 
         private void VideoSurfaceHost_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -3904,79 +3933,6 @@ namespace FramePlayer
             }
 
             EndPaneViewportPan(host, paneId);
-        }
-
-        private static bool TryGetVideoSurfaceHostContext(object sender, out FrameworkElement host, out string paneId)
-        {
-            host = sender as FrameworkElement;
-            paneId = host != null ? host.Tag as string : null;
-            return host != null && !string.IsNullOrWhiteSpace(paneId);
-        }
-
-        private void UpdatePaneViewportPan(
-            FrameworkElement host,
-            string paneId,
-            MouseEventArgs e,
-            Point currentHostPoint)
-        {
-            var viewportState = GetPaneViewportState(paneId);
-            if (!viewportState.IsPanActive)
-            {
-                return;
-            }
-
-            if (e.LeftButton != MouseButtonState.Pressed || !CanAdjustPaneViewport(paneId))
-            {
-                EndPaneViewportPan(host, paneId);
-                return;
-            }
-
-            var geometryBeforePan = GetFrameSurfaceGeometry(paneId);
-            if (!geometryBeforePan.HasVisibleFrame)
-            {
-                return;
-            }
-
-            var delta = currentHostPoint - viewportState.PanAnchorHostPoint;
-            if (Math.Abs(delta.X) < PanePanDragThreshold && Math.Abs(delta.Y) < PanePanDragThreshold)
-            {
-                return;
-            }
-
-            viewportState.NormalizedCenter = BuildPannedViewportCenter(viewportState, geometryBeforePan, delta);
-            UpdatePaneViewportLayout(paneId);
-        }
-
-        private static Point BuildPannedViewportCenter(
-            PaneViewportState viewportState,
-            FrameSurfaceGeometry geometryBeforePan,
-            Vector delta)
-        {
-            return new Point(
-                viewportState.PanAnchorNormalizedCenter.X - (delta.X / geometryBeforePan.RenderedRect.Width),
-                viewportState.PanAnchorNormalizedCenter.Y - (delta.Y / geometryBeforePan.RenderedRect.Height));
-        }
-
-        private void UpdatePointerCoordinates(string paneId, Point hostPoint)
-        {
-            var geometry = GetFrameSurfaceGeometry(paneId);
-            int sourcePixelX;
-            int sourcePixelY;
-            if (!geometry.TryMapPointToSourcePixel(hostPoint, out sourcePixelX, out sourcePixelY))
-            {
-                ClearPointerCoordinates();
-                return;
-            }
-
-            var paneLabel = string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
-                ? "Compare"
-                : PrimaryPaneTitle;
-            SetPointerCoordinates(string.Format(
-                CultureInfo.InvariantCulture,
-                "Pixel: {0} ({1},{2})",
-                paneLabel,
-                sourcePixelX,
-                sourcePixelY));
         }
 
         private void VideoSurfaceHost_SizeChanged(object sender, SizeChangedEventArgs e)
@@ -4240,8 +4196,8 @@ namespace FramePlayer
                 CultureInfo.InvariantCulture,
                 "Backend: {0}. GPU status: {1}. Fallback: {2}. Queue depth: {3}. Index: {4}. Frame identity: {5}. Review cache budget is {6:0.0} MiB and currently uses about {7:0.0} MiB with up to {8} prior and {9} forward decoded frames. Last refill: {10} ({11:0.0} ms, {12}). Timeline seeks show the landed frame first.",
                 string.IsNullOrWhiteSpace(ffmpegEngine.ActiveDecodeBackend) ? "(unknown)" : ffmpegEngine.ActiveDecodeBackend,
-                string.IsNullOrWhiteSpace(ffmpegEngine.GpuCapabilityStatus) ? NoneText : ffmpegEngine.GpuCapabilityStatus,
-                string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? NoneText : ffmpegEngine.GpuFallbackReason,
+                string.IsNullOrWhiteSpace(ffmpegEngine.GpuCapabilityStatus) ? NoneDisplayLabel : ffmpegEngine.GpuCapabilityStatus,
+                string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? NoneDisplayLabel : ffmpegEngine.GpuFallbackReason,
                 ffmpegEngine.OperationalQueueDepth,
                 ffmpegEngine.GlobalFrameIndexStatus,
                 positionIdentity,
@@ -4249,7 +4205,7 @@ namespace FramePlayer
                 approximateCacheMegabytes,
                 ffmpegEngine.MaxPreviousCachedFrameCount,
                 ffmpegEngine.MaxForwardCachedFrameCount,
-                string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason) ? NoneText : ffmpegEngine.LastCacheRefillReason,
+                string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason) ? NoneDisplayLabel : ffmpegEngine.LastCacheRefillReason,
                 ffmpegEngine.LastCacheRefillMilliseconds,
                 string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillMode) ? "none" : ffmpegEngine.LastCacheRefillMode);
             SetCacheStatus(message, tooltip, false);
@@ -4649,9 +4605,7 @@ namespace FramePlayer
                 var paneRange = _workspaceCoordinator.SetPaneLoopMarker(loopContextPaneId, endpoint);
                 UpdateLoopUi();
 
-                var paneLabel = string.Equals(loopContextPaneId, ComparePaneId, StringComparison.Ordinal)
-                    ? ComparePaneDisplayLabel
-                    : PrimaryPaneDisplayLabel;
+                var paneLabel = GetPaneDisplayLabel(loopContextPaneId);
                 var paneAnchor = endpoint == LoopPlaybackMarkerEndpoint.In
                     ? (paneRange != null ? paneRange.LoopIn : null)
                     : (paneRange != null ? paneRange.LoopOut : null);
@@ -4742,9 +4696,7 @@ namespace FramePlayer
                 SetPlaybackMessage(string.Format(
                     CultureInfo.InvariantCulture,
                     "{0} loop points {1}.",
-                    string.Equals(loopContextPaneId, ComparePaneId, StringComparison.Ordinal)
-                        ? ComparePaneDisplayLabel
-                        : PrimaryPaneDisplayLabel,
+                    GetPaneDisplayLabel(loopContextPaneId),
                     paneRange != null && paneRange.HasAnyMarkers ? "cleared" : "already clear"));
                 LogInfo(string.Format(
                     CultureInfo.InvariantCulture,
@@ -4944,7 +4896,7 @@ namespace FramePlayer
                         FormatTime(exportResult.Plan.EndTimeExclusive),
                         durationText,
                         string.IsNullOrWhiteSpace(exportResult.Plan.EndBoundaryStrategy)
-                            ? NoneText
+                            ? NoneDisplayLabel
                             : exportResult.Plan.EndBoundaryStrategy,
                         exportResult.Elapsed.TotalMilliseconds));
                 }
@@ -5688,31 +5640,6 @@ namespace FramePlayer
             return paneSnapshot == null
                 ? "Current sync position: unavailable"
                 : "Current sync position: " + FormatTime(paneSnapshot.PresentationTime);
-        }
-
-        private static string BuildCacheRefillSummary(FfmpegReviewEngine ffmpegEngine)
-        {
-            if (ffmpegEngine == null)
-            {
-                return UnavailableText;
-            }
-
-            var refillReason = string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason)
-                ? NoneText
-                : ffmpegEngine.LastCacheRefillReason;
-            var refillMode = string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillMode)
-                ? "none"
-                : ffmpegEngine.LastCacheRefillMode;
-            var afterLandingText = ffmpegEngine.LastCacheRefillAfterLanding ? "yes" : "no";
-            return string.Format(
-                CultureInfo.InvariantCulture,
-                "{0}, {1:0.0} ms, mode {2}, after landing {3}, forward {4}->{5}",
-                refillReason,
-                ffmpegEngine.LastCacheRefillMilliseconds,
-                refillMode,
-                afterLandingText,
-                ffmpegEngine.LastCacheRefillStartingForwardCount,
-                ffmpegEngine.LastCacheRefillCompletedForwardCount);
         }
 
         private static string BuildCompareExportLoopSummary(LoopPlaybackPaneRangeSnapshot loopRange)
@@ -6755,7 +6682,7 @@ namespace FramePlayer
                 return;
             }
 
-            LoopStatusTextBlock.Text = string.IsNullOrWhiteSpace(message) ? LoopOffStatusText : message;
+            LoopStatusTextBlock.Text = string.IsNullOrWhiteSpace(message) ? LoopOffStatusLabel : message;
             LoopStatusTextBlock.ToolTip = string.IsNullOrWhiteSpace(toolTip)
                 ? "Loop playback status for the main transport."
                 : toolTip;
@@ -6824,11 +6751,11 @@ namespace FramePlayer
 
                 if (loopStatusTextBlock != null)
                 {
-                    loopStatusTextBlock.Text = IsLoopPlaybackEnabled ? "Loop: full media" : LoopOffStatusText;
+                    loopStatusTextBlock.Text = IsLoopPlaybackEnabled ? "Loop: full media" : LoopOffStatusLabel;
                     loopStatusTextBlock.ToolTip = string.Format(
                         CultureInfo.InvariantCulture,
                         "{0} loop playback status. With no pane-local A/B markers, pane playback loops the full media only when loop playback is enabled.",
-                        string.Equals(paneId, ComparePaneId, StringComparison.Ordinal) ? ComparePaneDisplayLabel : PrimaryPaneDisplayLabel);
+                        GetPaneDisplayLabel(paneId));
                 }
 
                 return;
@@ -6853,7 +6780,7 @@ namespace FramePlayer
         {
             if (paneRange == null || !paneRange.HasAnyMarkers)
             {
-                return LoopOffStatusText;
+                return LoopOffStatusLabel;
             }
 
             var rangeDisplay = string.Format(
@@ -6877,9 +6804,7 @@ namespace FramePlayer
 
         private static string BuildPaneLoopStatusToolTip(string paneId, LoopPlaybackPaneRangeSnapshot paneRange)
         {
-            var paneLabel = string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
-                ? ComparePaneDisplayLabel
-                : PrimaryPaneDisplayLabel;
+            var paneLabel = GetPaneDisplayLabel(paneId);
             if (paneRange == null || !paneRange.HasAnyMarkers)
             {
                 return paneLabel + " loop playback status.";
@@ -7104,13 +7029,13 @@ namespace FramePlayer
         {
             if (evaluation == null || !evaluation.HasMarkers)
             {
-                return IsLoopPlaybackEnabled ? "Loop: full media" : LoopOffStatusText;
+                return IsLoopPlaybackEnabled ? "Loop: full media" : LoopOffStatusLabel;
             }
 
             var focusedPaneRange = evaluation.FocusedPaneRange;
             if (focusedPaneRange == null || !focusedPaneRange.HasAnyMarkers)
             {
-                return IsLoopPlaybackEnabled ? "Loop: pending scope" : LoopOffStatusText;
+                return IsLoopPlaybackEnabled ? "Loop: pending scope" : LoopOffStatusLabel;
             }
 
             var rangeDisplay = string.Format(
@@ -7136,7 +7061,7 @@ namespace FramePlayer
 
             if (!IsLoopPlaybackEnabled)
             {
-                return string.Format(CultureInfo.InvariantCulture, "Loop: off ({0})", rangeDisplay);
+                return string.Format(CultureInfo.InvariantCulture, "{0} ({1})", LoopOffStatusLabel, rangeDisplay);
             }
 
             return string.Format(CultureInfo.InvariantCulture, "Loop: {0}", rangeDisplay);
@@ -7736,7 +7661,7 @@ namespace FramePlayer
 
             var paneLabel = string.Equals(resolvedPaneId, ComparePaneId, StringComparison.Ordinal)
                 ? "Compare"
-                : PrimaryPaneTitle;
+                : PrimaryPaneShortLabel;
             var engine = GetEngineForPane(resolvedPaneId);
             if (engine == null || !engine.IsMediaOpen)
             {
@@ -7965,22 +7890,24 @@ namespace FramePlayer
                 advancedFields.Add(new VideoInfoField("Audio stream index", FormatInspectorIndex(mediaInfo.AudioStreamIndex)));
             }
 
-            return new VideoInfoSnapshot(
-                "Video Info - " + paneLabel,
-                paneLabel,
-                fileName,
-                filePath,
-                new VideoInfoSection(summaryFields),
-                new VideoInfoSection(videoFields),
-                audioSection,
-                new VideoInfoSection(advancedFields));
+            return new VideoInfoSnapshot
+            {
+                WindowTitle = "Video Info - " + paneLabel,
+                PaneLabel = paneLabel,
+                FileName = fileName,
+                FilePath = filePath,
+                SummarySection = new VideoInfoSection(summaryFields),
+                VideoSection = new VideoInfoSection(videoFields),
+                AudioSection = audioSection,
+                AdvancedSection = new VideoInfoSection(advancedFields)
+            };
         }
 
         private static string FormatInspectorDuration(TimeSpan duration)
         {
             return duration > TimeSpan.Zero
                 ? FormatTime(duration)
-                : UnknownText;
+                : UnknownDisplayLabel;
         }
 
         private static void AddInspectorFieldIfKnown(List<VideoInfoField> fields, string label, string value)
@@ -7997,21 +7924,21 @@ namespace FramePlayer
         {
             return framesPerSecond > 0d
                 ? string.Format(CultureInfo.InvariantCulture, "{0:0.###} fps", framesPerSecond)
-                : UnknownText;
+                : UnknownDisplayLabel;
         }
 
         private static string FormatInspectorResolution(int width, int height)
         {
             return width > 0 && height > 0
                 ? string.Format(CultureInfo.InvariantCulture, "{0} x {1}", width, height)
-                : UnknownText;
+                : UnknownDisplayLabel;
         }
 
         private static string FormatInspectorResolution(int? width, int? height)
         {
             return width.HasValue && height.HasValue
                 ? FormatInspectorResolution(width.Value, height.Value)
-                : UnknownText;
+                : UnknownDisplayLabel;
         }
 
         private static string FormatInspectorRatio(int? numerator, int? denominator)
@@ -8021,21 +7948,21 @@ namespace FramePlayer
                    numerator.Value > 0 &&
                    denominator.Value > 0
                 ? string.Format(CultureInfo.InvariantCulture, "{0}:{1}", numerator.Value, denominator.Value)
-                : UnknownText;
+                : UnknownDisplayLabel;
         }
 
         private static string FormatInspectorText(string value)
         {
             if (string.IsNullOrWhiteSpace(value))
             {
-                return UnknownText;
+                return UnknownDisplayLabel;
             }
 
             var trimmedValue = value.Trim();
             return trimmedValue.Equals("unknown", StringComparison.OrdinalIgnoreCase) ||
                    trimmedValue.Equals("unspecified", StringComparison.OrdinalIgnoreCase) ||
                    trimmedValue.StartsWith("reserved", StringComparison.OrdinalIgnoreCase)
-                ? UnknownText
+                ? UnknownDisplayLabel
                 : trimmedValue;
         }
 
@@ -8043,14 +7970,14 @@ namespace FramePlayer
         {
             return bitDepth.HasValue && bitDepth.Value > 0
                 ? string.Format(CultureInfo.InvariantCulture, "{0}-bit", bitDepth.Value)
-                : UnknownText;
+                : UnknownDisplayLabel;
         }
 
         private static string FormatInspectorBitRate(long? bitsPerSecond)
         {
             if (!bitsPerSecond.HasValue || bitsPerSecond.Value <= 0L)
             {
-                return UnknownText;
+                return UnknownDisplayLabel;
             }
 
             var units = new[] { "bit/s", "Kbit/s", "Mbit/s", "Gbit/s" };
@@ -8075,28 +8002,28 @@ namespace FramePlayer
         {
             return sampleRate > 0
                 ? string.Format(CultureInfo.InvariantCulture, "{0:N0} Hz", sampleRate)
-                : UnknownText;
+                : UnknownDisplayLabel;
         }
 
         private static string FormatInspectorChannelCount(int channelCount)
         {
             return channelCount > 0
                 ? string.Format(CultureInfo.InvariantCulture, "{0} channel(s)", channelCount)
-                : UnknownText;
+                : UnknownDisplayLabel;
         }
 
         private static string FormatInspectorIndex(int streamIndex)
         {
             return streamIndex >= 0
                 ? streamIndex.ToString(CultureInfo.InvariantCulture)
-                : UnknownText;
+                : UnknownDisplayLabel;
         }
 
         private static string FormatInspectorFraction(int numerator, int denominator)
         {
             return numerator > 0 && denominator > 0
                 ? string.Format(CultureInfo.InvariantCulture, "{0}/{1}", numerator, denominator)
-                : UnknownText;
+                : UnknownDisplayLabel;
         }
 
         private void ShowHelpWindow()
@@ -8156,7 +8083,7 @@ namespace FramePlayer
                     "Build variant: " + _buildVariant.BuildDisplayName,
                     "Forced backend: " + _buildVariant.ForcedBackend,
                     "Timed playback supported: " + (_buildVariant.SupportsTimedPlayback ? "Yes" : "No"),
-                    "Frame display mode: " + (_buildVariant.UsesZeroIndexedFrameDisplay ? "Zero-indexed" : "1-based"),
+                    "Frame display mode: " + (BuildVariantInfo.UsesZeroIndexedFrameDisplay ? "Zero-indexed" : "1-based"),
                     "Version: " + GetApplicationVersion(),
                     "OS: " + Environment.OSVersion,
                     ".NET: " + Environment.Version,
@@ -8170,19 +8097,19 @@ namespace FramePlayer
                     "Playback state: " + (_isPlaying ? "Playing" : "Paused/Idle"),
                     "Audio stream: " + (focusedEngine != null && focusedEngine.MediaInfo.HasAudioStream ? "Yes" : "No"),
                     "Audio playback available: " + (focusedEngine != null && focusedEngine.MediaInfo.IsAudioPlaybackAvailable ? "Yes" : "No"),
-                    "Audio codec: " + (focusedEngine == null || string.IsNullOrWhiteSpace(focusedEngine.MediaInfo.AudioCodecName) ? NoneText : focusedEngine.MediaInfo.AudioCodecName),
+                    "Audio codec: " + (focusedEngine == null || string.IsNullOrWhiteSpace(focusedEngine.MediaInfo.AudioCodecName) ? NoneDisplayLabel : focusedEngine.MediaInfo.AudioCodecName),
                     "Audio details: " + GetAudioTooltipText(focusedEngine != null ? focusedEngine.MediaInfo : VideoMediaInfo.Empty),
-                    "Frame index status: " + (ffmpegEngine != null ? ffmpegEngine.GlobalFrameIndexStatus : UnavailableText),
+                    "Frame index status: " + (ffmpegEngine != null ? ffmpegEngine.GlobalFrameIndexStatus : UnavailableDisplayLabel),
                     "Frame index available: " + (ffmpegEngine != null && ffmpegEngine.IsGlobalFrameIndexAvailable ? "Yes" : "No"),
-                    "Indexed frame count: " + (ffmpegEngine != null ? ffmpegEngine.IndexedFrameCount.ToString(CultureInfo.InvariantCulture) : UnavailableText),
-                    "Decode backend: " + (ffmpegEngine != null ? ffmpegEngine.ActiveDecodeBackend : UnavailableText),
+                    "Indexed frame count: " + (ffmpegEngine != null ? ffmpegEngine.IndexedFrameCount.ToString(CultureInfo.InvariantCulture) : UnavailableDisplayLabel),
+                    "Decode backend: " + (ffmpegEngine != null ? ffmpegEngine.ActiveDecodeBackend : UnavailableDisplayLabel),
                     "GPU active: " + (ffmpegEngine != null && ffmpegEngine.IsGpuActive ? "Yes" : "No"),
-                    "GPU status: " + (ffmpegEngine != null ? ffmpegEngine.GpuCapabilityStatus : UnavailableText),
-                    "GPU fallback reason: " + (ffmpegEngine != null && !string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? ffmpegEngine.GpuFallbackReason : NoneText),
+                    "GPU status: " + (ffmpegEngine != null ? ffmpegEngine.GpuCapabilityStatus : UnavailableDisplayLabel),
+                    "GPU fallback reason: " + (ffmpegEngine != null && !string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? ffmpegEngine.GpuFallbackReason : NoneDisplayLabel),
                     "Decode cache budget: " + (ffmpegEngine != null
                         ? string.Format(CultureInfo.InvariantCulture, "{0:0.0} MiB", ffmpegEngine.DecodedFrameCacheBudgetBytes / 1048576d)
-                        : UnavailableText),
-                    "Operational queue depth: " + (ffmpegEngine != null ? ffmpegEngine.OperationalQueueDepth.ToString(CultureInfo.InvariantCulture) : UnavailableText),
+                        : UnavailableDisplayLabel),
+                    "Operational queue depth: " + (ffmpegEngine != null ? ffmpegEngine.OperationalQueueDepth.ToString(CultureInfo.InvariantCulture) : UnavailableDisplayLabel),
                     "Review cache window: " + (ffmpegEngine != null
                         ? string.Format(
                             CultureInfo.InvariantCulture,
@@ -8192,8 +8119,18 @@ namespace FramePlayer
                             ffmpegEngine.MaxPreviousCachedFrameCount,
                             ffmpegEngine.MaxForwardCachedFrameCount,
                             ffmpegEngine.ApproximateCachedFrameBytes / 1048576d)
-                        : UnavailableText),
-                    "Last cache refill: " + BuildCacheRefillSummary(ffmpegEngine),
+                        : UnavailableDisplayLabel),
+                    "Last cache refill: " + (ffmpegEngine != null
+                        ? string.Format(
+                            CultureInfo.InvariantCulture,
+                            "{0}, {1:0.0} ms, mode {2}, after landing {3}, forward {4}->{5}",
+                            string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason) ? NoneDisplayLabel : ffmpegEngine.LastCacheRefillReason,
+                            ffmpegEngine.LastCacheRefillMilliseconds,
+                            string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillMode) ? "none" : ffmpegEngine.LastCacheRefillMode,
+                            ffmpegEngine.LastCacheRefillAfterLanding ? "yes" : "no",
+                            ffmpegEngine.LastCacheRefillStartingForwardCount,
+                            ffmpegEngine.LastCacheRefillCompletedForwardCount)
+                        : UnavailableDisplayLabel),
                     "Open timing: " + (ffmpegEngine != null
                         ? string.Format(
                             CultureInfo.InvariantCulture,
@@ -8206,7 +8143,7 @@ namespace FramePlayer
                             ffmpegEngine.LastOpenFirstFrameDecodeMilliseconds,
                             ffmpegEngine.LastOpenInitialCacheWarmMilliseconds,
                             ffmpegEngine.LastGlobalFrameIndexBuildMilliseconds)
-                        : UnavailableText),
+                        : UnavailableDisplayLabel),
                     "Full screen: " + (_isFullScreen ? "Yes" : "No"),
                     string.Format(CultureInfo.InvariantCulture, "Clock position: {0} / {1}", FormatTime(currentPosition), FormatTime(_mediaDuration)),
                     string.Format(CultureInfo.InvariantCulture, "Timecode: {0}", _isMediaLoaded ? FormatTimecode(currentFrameIndex) : "--:--:--:--"),
@@ -8217,7 +8154,7 @@ namespace FramePlayer
                         !string.IsNullOrWhiteSpace(displayedTotalFrame) ? " / " + displayedTotalFrame : string.Empty),
                     string.Format(CultureInfo.InvariantCulture, "Frame rate: {0:0.###} fps", _framesPerSecond),
                     "Frame step: " + FormatStepDuration(_positionStep),
-                    "Last error: " + (string.IsNullOrWhiteSpace(_lastMediaErrorMessage) ? NoneText : _lastMediaErrorMessage)
+                    "Last error: " + (string.IsNullOrWhiteSpace(_lastMediaErrorMessage) ? NoneDisplayLabel : _lastMediaErrorMessage)
                 });
 
                 File.WriteAllText(dialog.FileName, report);
@@ -8256,7 +8193,7 @@ namespace FramePlayer
         private static string GetSafeFileDisplay(string filePath)
         {
             return string.IsNullOrWhiteSpace(filePath)
-                ? NoneText
+                ? NoneDisplayLabel
                 : Path.GetFileName(filePath);
         }
 
@@ -8318,12 +8255,12 @@ namespace FramePlayer
             var landedPosition = GetDisplayPosition();
             var focusedEngine = GetFocusedPaneEngine();
             var enginePosition = focusedEngine != null ? focusedEngine.Position : null;
-            var frameText = UnavailableText;
+            var frameText = UnavailableDisplayLabel;
             var frameIdentity = "unavailable";
             if (enginePosition != null && enginePosition.FrameIndex.HasValue)
             {
                 frameText = GetDisplayedFrameNumber(enginePosition.FrameIndex.Value).ToString(CultureInfo.InvariantCulture);
-                frameIdentity = enginePosition.IsFrameIndexAbsolute ? AbsoluteFrameIdentityText : SegmentLocalFrameIdentityText;
+                frameIdentity = enginePosition.IsFrameIndexAbsolute ? AbsoluteFrameIdentityLabel : SegmentLocalFrameIdentityLabel;
             }
 
             LogInfo(string.Format(
@@ -8354,8 +8291,8 @@ namespace FramePlayer
                 ffmpegEngine.LastSeekIndexWaitMilliseconds,
                 ffmpegEngine.LastSeekMaterializeMilliseconds,
                 ffmpegEngine.LastSeekForwardCacheWarmMilliseconds,
-                string.IsNullOrWhiteSpace(ffmpegEngine.LastSeekMode) ? NoneText : ffmpegEngine.LastSeekMode,
-                string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason) ? NoneText : ffmpegEngine.LastCacheRefillReason,
+                string.IsNullOrWhiteSpace(ffmpegEngine.LastSeekMode) ? NoneDisplayLabel : ffmpegEngine.LastSeekMode,
+                string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason) ? NoneDisplayLabel : ffmpegEngine.LastCacheRefillReason,
                 ffmpegEngine.LastCacheRefillMilliseconds,
                 string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillMode) ? "none" : ffmpegEngine.LastCacheRefillMode,
                 ffmpegEngine.LastCacheRefillStartingForwardCount,

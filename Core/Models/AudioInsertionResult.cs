@@ -1,9 +1,14 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace FramePlayer.Core.Models
 {
     public sealed class AudioInsertionResult
     {
+        [SuppressMessage(
+            "Major Code Smell",
+            "S107:Methods should not have too many parameters",
+            Justification = "Audio insertion results are immutable cold-path status snapshots, so explicit scalar fields are preferred over extra wrapper types.")]
         public AudioInsertionResult(
             bool succeeded,
             AudioInsertionPlan plan,

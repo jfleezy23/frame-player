@@ -1,10 +1,15 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using FramePlayer.Core.Models;
 
 namespace FramePlayer.Core.Coordination
 {
     public sealed class ReviewPaneState
     {
+        [SuppressMessage(
+            "Major Code Smell",
+            "S107:Methods should not have too many parameters",
+            Justification = "Review pane state is an immutable coordination snapshot with explicit scalar fields for predictable pane orchestration and diagnostics.")]
         public ReviewPaneState(
             string paneId,
             string displayLabel,

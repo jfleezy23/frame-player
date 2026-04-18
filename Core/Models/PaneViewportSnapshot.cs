@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace FramePlayer.Core.Models
 {
@@ -6,6 +7,10 @@ namespace FramePlayer.Core.Models
     {
         private const double DefaultCenter = 0.5d;
 
+        [SuppressMessage(
+            "Major Code Smell",
+            "S107:Methods should not have too many parameters",
+            Justification = "Viewport snapshots intentionally keep explicit scalar crop and center fields so hot-path callers do not build extra transport objects.")]
         public PaneViewportSnapshot(
             double zoomFactor,
             double normalizedCenterX,

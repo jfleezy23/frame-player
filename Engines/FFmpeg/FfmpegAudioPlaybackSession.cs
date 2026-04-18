@@ -14,7 +14,6 @@ namespace FramePlayer.Engines.FFmpeg
 
         private readonly string _filePath;
         private readonly TimeSpan _startPosition;
-        private readonly CancellationToken _cancellationToken;
         private AVFormatContext* _formatContext;
         private AVCodecContext* _codecContext;
         private AVStream* _audioStream;
@@ -31,12 +30,10 @@ namespace FramePlayer.Engines.FFmpeg
 
         private FfmpegAudioPlaybackSession(
             string filePath,
-            TimeSpan startPosition,
-            CancellationToken cancellationToken)
+            TimeSpan startPosition)
         {
             _filePath = filePath ?? throw new ArgumentNullException(nameof(filePath));
             _startPosition = startPosition < TimeSpan.Zero ? TimeSpan.Zero : startPosition;
-            _cancellationToken = cancellationToken;
             _audioStreamIndex = -1;
         }
 
@@ -74,7 +71,7 @@ namespace FramePlayer.Engines.FFmpeg
             TimeSpan startPosition,
             CancellationToken cancellationToken)
         {
-            var session = new FfmpegAudioPlaybackSession(filePath, startPosition, cancellationToken);
+            var session = new FfmpegAudioPlaybackSession(filePath, startPosition);
             try
             {
                 session.Open();

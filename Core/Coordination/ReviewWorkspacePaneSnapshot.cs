@@ -1,10 +1,15 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using FramePlayer.Core.Models;
 
 namespace FramePlayer.Core.Coordination
 {
     public sealed class ReviewWorkspacePaneSnapshot
     {
+        [SuppressMessage(
+            "Major Code Smell",
+            "S107:Methods should not have too many parameters",
+            Justification = "Workspace pane snapshots intentionally keep explicit scalar fields and position state so frame review coordination remains easy to inspect.")]
         public ReviewWorkspacePaneSnapshot(
             string paneId,
             string sessionId,

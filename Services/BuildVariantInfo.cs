@@ -52,15 +52,9 @@ namespace FramePlayer.Services
 
         public Color AccentBorderColor { get; }
 
-        public bool UsesCustomVisibleSurface
-        {
-            get { return true; }
-        }
+        public static bool UsesCustomVisibleSurface => true;
 
-        public bool UsesZeroIndexedFrameDisplay
-        {
-            get { return false; }
-        }
+        public static bool UsesZeroIndexedFrameDisplay => false;
 
         private static BuildVariantInfo CreateCurrent()
         {

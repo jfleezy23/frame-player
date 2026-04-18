@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 using FramePlayer.Core.Abstractions;
@@ -10,6 +11,13 @@ namespace FramePlayer.Diagnostics
 {
     public static class WorkspaceCoordinatorProbe
     {
+        private const string PrimaryPaneId = "pane-primary";
+        private const string ComparePaneId = "pane-compare-a";
+
+        [SuppressMessage(
+            "Major Code Smell",
+            "S3776:Cognitive Complexity of methods should not be too high",
+            Justification = "This is a diagnostics-only workspace probe that intentionally exercises many coordination branches in one place to keep the synthetic scenario self-contained.")]
         public static WorkspaceCoordinatorProbeReport Run()
         {
             ReviewWorkspacePaneOperationResult GetPaneResult(
@@ -99,10 +107,10 @@ namespace FramePlayer.Diagnostics
             }
 
             using (var primaryEngine = new ProbeVideoReviewEngine(
-                @"C:\probe\primary.mp4",
+                "probe-primary.mp4",
                 new ReviewPosition(TimeSpan.FromSeconds(1d), 30L, true, true, null, null)))
             using (var compareEngine = new ProbeVideoReviewEngine(
-                @"C:\probe\compare-a.mp4",
+                "probe-compare-a.mp4",
                 new ReviewPosition(TimeSpan.FromSeconds(2d), 60L, true, true, null, null)))
             using (var primarySessionCoordinator = new ReviewSessionCoordinator(
                 primaryEngine,
@@ -120,18 +128,18 @@ namespace FramePlayer.Diagnostics
                     compareSessionCoordinator.RefreshFromEngine();
 
                     var secondPaneBound = workspaceCoordinator.TryBindPane(
-                        "pane-compare-a",
+                        ComparePaneId,
                         compareSessionCoordinator,
                         "Compare A",
                         TimeSpan.FromMilliseconds(120d));
 
                     var beforeSelectionPanes = workspaceCoordinator.GetBoundPanes();
                     var workspaceSnapshotBeforeSelection = workspaceCoordinator.GetWorkspaceSnapshot();
-                    var secondPaneLookupBeforeSelection = workspaceCoordinator.TryGetBoundPane("pane-compare-a", out var comparePaneBeforeSelection);
-                    var snapshotPrimaryLookupBeforeSelection = workspaceCoordinator.TryGetPaneSnapshot("pane-primary", out var primarySnapshotBeforeSelection);
-                    var snapshotSecondaryLookupBeforeSelection = workspaceCoordinator.TryGetPaneSnapshot("pane-compare-a", out var secondarySnapshotBeforeSelection);
-                    var snapshotMissingPaneLookupFails = !workspaceCoordinator.TryGetPaneSnapshot("pane-missing", out var unusedMissingPaneSnapshot);
-                    var focusedSecondary = workspaceCoordinator.TrySelectPane("pane-compare-a", WorkspacePaneSelectionMode.Focused);
+                    var secondPaneLookupBeforeSelection = workspaceCoordinator.TryGetBoundPane(ComparePaneId, out var comparePaneBeforeSelection);
+                    var snapshotPrimaryLookupBeforeSelection = workspaceCoordinator.TryGetPaneSnapshot(PrimaryPaneId, out var primarySnapshotBeforeSelection);
+                    var snapshotSecondaryLookupBeforeSelection = workspaceCoordinator.TryGetPaneSnapshot(ComparePaneId, out var secondarySnapshotBeforeSelection);
+                    var snapshotMissingPaneLookupFails = !workspaceCoordinator.TryGetPaneSnapshot("pane-missing", out _);
+                    var focusedSecondary = workspaceCoordinator.TrySelectPane(ComparePaneId, WorkspacePaneSelectionMode.Focused);
                     var focusedPlayResult = workspaceCoordinator
                         .PlayWithPaneResultsAsync(SynchronizedOperationScope.FocusedPane)
                         .GetAwaiter()
@@ -155,7 +163,7 @@ namespace FramePlayer.Diagnostics
                     var focusedPlayPaneResult = focusedPlayResult != null ? focusedPlayResult.FocusedPaneResult : null;
                     var workspaceWhileSecondaryFocused = workspaceCoordinator.CurrentWorkspace;
                     var workspaceSnapshotWhileSecondaryFocused = workspaceCoordinator.GetWorkspaceSnapshot();
-                    var snapshotSecondaryLookupWhileSecondaryFocused = workspaceCoordinator.TryGetPaneSnapshot("pane-compare-a", out var secondarySnapshotWhileSecondaryFocused);
+                    var snapshotSecondaryLookupWhileSecondaryFocused = workspaceCoordinator.TryGetPaneSnapshot(ComparePaneId, out var secondarySnapshotWhileSecondaryFocused);
                     var primaryPlayCallsAfterFocusedSecondary = primaryEngine.PlayCallCount;
                     var primaryPauseCallsAfterFocusedSecondary = primaryEngine.PauseCallCount;
                     var primarySeekToTimeCallsAfterFocusedSecondary = primaryEngine.SeekToTimeCallCount;
@@ -198,27 +206,26 @@ namespace FramePlayer.Diagnostics
                     var secondaryStepBackwardCallsAfterAllPanes = compareEngine.StepBackwardCallCount;
                     var secondaryStepForwardCallsAfterAllPanes = compareEngine.StepForwardCallCount;
 
-                    var allPanePlayPrimaryResult = GetPaneResult(allPanePlayResult, "pane-primary");
-                    var allPanePlaySecondaryResult = GetPaneResult(allPanePlayResult, "pane-compare-a");
-                    var allPaneSeekPrimaryResult = GetPaneResult(allPaneSeekResult, "pane-primary");
-                    var allPaneSeekSecondaryResult = GetPaneResult(allPaneSeekResult, "pane-compare-a");
-                    var allPaneStepBackwardPrimaryResult = GetPaneResult(allPaneStepBackwardResult, "pane-primary");
-                    var allPaneStepBackwardSecondaryResult = GetPaneResult(allPaneStepBackwardResult, "pane-compare-a");
-                    var allPaneStepForwardPrimaryResult = GetPaneResult(allPaneStepForwardResult, "pane-primary");
-                    var allPaneStepForwardSecondaryResult = GetPaneResult(allPaneStepForwardResult, "pane-compare-a");
-                    var workspaceSnapshotAfterAllPaneOperations = workspaceCoordinator.GetWorkspaceSnapshot();
-                    var snapshotPrimaryLookupAfterAllPaneOperations = workspaceCoordinator.TryGetPaneSnapshot("pane-primary", out var primarySnapshotAfterAllPaneOperations);
-                    var snapshotSecondaryLookupAfterAllPaneOperations = workspaceCoordinator.TryGetPaneSnapshot("pane-compare-a", out var secondarySnapshotAfterAllPaneOperations);
+                    var allPanePlayPrimaryResult = GetPaneResult(allPanePlayResult, PrimaryPaneId);
+                    var allPanePlaySecondaryResult = GetPaneResult(allPanePlayResult, ComparePaneId);
+                    var allPaneSeekPrimaryResult = GetPaneResult(allPaneSeekResult, PrimaryPaneId);
+                    var allPaneSeekSecondaryResult = GetPaneResult(allPaneSeekResult, ComparePaneId);
+                    var allPaneStepBackwardPrimaryResult = GetPaneResult(allPaneStepBackwardResult, PrimaryPaneId);
+                    var allPaneStepBackwardSecondaryResult = GetPaneResult(allPaneStepBackwardResult, ComparePaneId);
+                    var allPaneStepForwardPrimaryResult = GetPaneResult(allPaneStepForwardResult, PrimaryPaneId);
+                    var allPaneStepForwardSecondaryResult = GetPaneResult(allPaneStepForwardResult, ComparePaneId);
+                    var snapshotPrimaryLookupAfterAllPaneOperations = workspaceCoordinator.TryGetPaneSnapshot(PrimaryPaneId, out var primarySnapshotAfterAllPaneOperations);
+                    var snapshotSecondaryLookupAfterAllPaneOperations = workspaceCoordinator.TryGetPaneSnapshot(ComparePaneId, out var secondarySnapshotAfterAllPaneOperations);
 
                     bool failureSecondPaneBound;
                     ReviewWorkspaceOperationResult failureAllPanePlayResult;
                     int failurePrimaryPlayCalls;
                     int failureSecondaryPlayCalls;
                     using (var failurePrimaryEngine = new ProbeVideoReviewEngine(
-                        @"C:\probe\failure-primary.mp4",
+                        "probe-failure-primary.mp4",
                         new ReviewPosition(TimeSpan.FromSeconds(1d), 30L, true, true, null, null)))
                     using (var failureCompareEngine = new ProbeVideoReviewEngine(
-                        @"C:\probe\failure-compare-a.mp4",
+                        "probe-failure-compare-a.mp4",
                         new ReviewPosition(TimeSpan.FromSeconds(2d), 60L, true, true, null, null),
                         throwOnPlay: true))
                     using (var failurePrimarySessionCoordinator = new ReviewSessionCoordinator(
@@ -268,7 +275,7 @@ namespace FramePlayer.Diagnostics
                         ? failureAllPanePlayResult.PaneResults[1]
                         : null;
 
-                    var focusedPrimaryAgain = workspaceCoordinator.TrySelectPane("pane-primary", WorkspacePaneSelectionMode.Focused);
+                    var focusedPrimaryAgain = workspaceCoordinator.TrySelectPane(PrimaryPaneId, WorkspacePaneSelectionMode.Focused);
                     workspaceCoordinator.PlayAsync(SynchronizedOperationScope.FocusedPane).GetAwaiter().GetResult();
                     workspaceCoordinator.PauseAsync(SynchronizedOperationScope.FocusedPane).GetAwaiter().GetResult();
                     workspaceCoordinator.SeekToTimeAsync(TimeSpan.FromSeconds(5d), SynchronizedOperationScope.FocusedPane).GetAwaiter().GetResult();
@@ -279,7 +286,7 @@ namespace FramePlayer.Diagnostics
                     return new WorkspaceCoordinatorProbeReport
                     {
                         PaneCount = workspace.PaneCount,
-                        PrimaryPaneId = workspace.PrimaryPaneId,
+                        WorkspacePrimaryPaneId = workspace.PrimaryPaneId,
                         ActivePaneId = workspace.ActivePaneId,
                         FocusedPaneId = workspace.FocusedPaneId,
                         PaneIds = workspace.Panes != null
@@ -292,7 +299,7 @@ namespace FramePlayer.Diagnostics
                         AddedSecondPane = secondPaneBound,
                         SecondPaneLookupBeforeSelection = secondPaneLookupBeforeSelection,
                         SecondPaneDisplayLabelBeforeSelection = comparePaneBeforeSelection != null ? comparePaneBeforeSelection.DisplayLabel : string.Empty,
-                        SecondPanePresent = workspace.TryGetPane("pane-compare-a", out var comparePane),
+                        SecondPanePresent = workspace.TryGetPane(ComparePaneId, out var comparePane),
                         SnapshotPrimaryLookupBeforeSelection = snapshotPrimaryLookupBeforeSelection,
                         SnapshotSecondaryLookupBeforeSelection = snapshotSecondaryLookupBeforeSelection,
                         SnapshotMissingPaneLookupFails = snapshotMissingPaneLookupFails,
@@ -360,11 +367,11 @@ namespace FramePlayer.Diagnostics
                                                            secondaryStepForwardCallsAfterFocusedSecondary == 1,
                         FocusedRoutingIgnoredPrimaryActivePane = string.Equals(
                                                                     workspaceWhileSecondaryFocused.ActivePaneId,
-                                                                    "pane-primary",
+                                                                    PrimaryPaneId,
                                                                     StringComparison.Ordinal) &&
                                                                 string.Equals(
                                                                     workspaceWhileSecondaryFocused.FocusedPaneId,
-                                                                    "pane-compare-a",
+                                                                    ComparePaneId,
                                                                     StringComparison.Ordinal) &&
                                                                 secondaryPlayCallsAfterFocusedSecondary == 1 &&
                                                                 primaryPlayCallsAfterFocusedSecondary == 0,
@@ -378,8 +385,8 @@ namespace FramePlayer.Diagnostics
                                                          secondaryStepBackwardCallsAfterAllPanes == 2,
                         AllPaneStepForwardReachedBoth = primaryStepForwardCallsAfterAllPanes == 1 &&
                                                         secondaryStepForwardCallsAfterAllPanes == 2,
-                        AllPaneOrderingFocusedFirst = string.Equals(GetPaneIdAt(allPanePlayResult, 0), "pane-compare-a", StringComparison.Ordinal) &&
-                                                     string.Equals(GetPaneIdAt(allPanePlayResult, 1), "pane-primary", StringComparison.Ordinal),
+                        AllPaneOrderingFocusedFirst = string.Equals(GetPaneIdAt(allPanePlayResult, 0), ComparePaneId, StringComparison.Ordinal) &&
+                                                     string.Equals(GetPaneIdAt(allPanePlayResult, 1), PrimaryPaneId, StringComparison.Ordinal),
                         AllPanePlayResultPaneCount = allPanePlayResult != null ? allPanePlayResult.PaneCount : 0,
                         AllPanePauseResultPaneCount = allPanePauseResult != null ? allPanePauseResult.PaneCount : 0,
                         AllPaneSeekResultPaneCount = allPaneSeekResult != null ? allPaneSeekResult.PaneCount : 0,
@@ -468,7 +475,7 @@ namespace FramePlayer.Diagnostics
                         FailureAllPaneCollectedBothResults = failureAllPanePlayResult != null &&
                                                              failureAllPanePlayResult.PaneCount == 2,
                         FailureAllPanePreservedOrder = string.Equals(GetPaneIdAt(failureAllPanePlayResult, 0), "pane-failure-compare-a", StringComparison.Ordinal) &&
-                                                       string.Equals(GetPaneIdAt(failureAllPanePlayResult, 1), "pane-primary", StringComparison.Ordinal),
+                                                       string.Equals(GetPaneIdAt(failureAllPanePlayResult, 1), PrimaryPaneId, StringComparison.Ordinal),
                         FailureAggregateInspectable = failureAllPanePlayResult != null &&
                                                      failureAllPanePlayResult.HasFailures &&
                                                      failureAllPanePlayResult.FailedPaneCount == 1 &&
@@ -507,7 +514,7 @@ namespace FramePlayer.Diagnostics
         {
             public int PaneCount { get; set; }
 
-            public string PrimaryPaneId { get; set; }
+            public string WorkspacePrimaryPaneId { get; set; }
 
             public string ActivePaneId { get; set; }
 
@@ -741,7 +748,7 @@ namespace FramePlayer.Diagnostics
 
             public string CurrentFilePath { get; private set; }
 
-            public string LastErrorMessage { get; private set; }
+            public string LastErrorMessage { get; } = string.Empty;
 
             public VideoMediaInfo MediaInfo
             {

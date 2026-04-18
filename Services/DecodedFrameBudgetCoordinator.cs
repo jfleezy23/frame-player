@@ -5,6 +5,12 @@ using FramePlayer.Engines.FFmpeg;
 
 namespace FramePlayer.Services
 {
+    internal static class DecodeBackendNames
+    {
+        public const string Cpu = "ffmpeg-cpu";
+        public const string Vulkan = "ffmpeg-vulkan";
+    }
+
     internal enum DecodedFrameBudgetBand
     {
         SinglePaneCpu = 0,
@@ -76,7 +82,7 @@ namespace FramePlayer.Services
                 10,
                 1,
                 1,
-                "ffmpeg-cpu",
+                DecodeBackendNames.Cpu,
                 false);
         }
 
@@ -214,7 +220,7 @@ namespace FramePlayer.Services
                 state.IsOpen = isOpen;
                 state.IsGpuActive = gpuActive;
                 state.ActualDecodeBackend = string.IsNullOrWhiteSpace(actualDecodeBackend)
-                    ? (gpuActive ? "ffmpeg-vulkan" : "ffmpeg-cpu")
+                    ? (gpuActive ? DecodeBackendNames.Vulkan : DecodeBackendNames.Cpu)
                     : actualDecodeBackend;
                 state.ApproximateFrameBytes = approximateFrameBytes;
                 state.OperationalQueueDepth = Math.Max(0, operationalQueueDepth);
@@ -557,7 +563,7 @@ namespace FramePlayer.Services
         {
             if (state == null)
             {
-                return "ffmpeg-cpu";
+                return DecodeBackendNames.Cpu;
             }
 
             if (!string.IsNullOrWhiteSpace(state.ActualDecodeBackend))
@@ -565,7 +571,7 @@ namespace FramePlayer.Services
                 return state.ActualDecodeBackend;
             }
 
-            return state.IsGpuActive ? "ffmpeg-vulkan" : "ffmpeg-cpu";
+            return state.IsGpuActive ? DecodeBackendNames.Vulkan : DecodeBackendNames.Cpu;
         }
 
         private static void ReduceTargetsToFitBudget(
@@ -639,7 +645,7 @@ namespace FramePlayer.Services
             {
                 PaneId = paneId ?? string.Empty;
                 CurrentAllocation = currentAllocation;
-                ActualDecodeBackend = "ffmpeg-cpu";
+                ActualDecodeBackend = DecodeBackendNames.Cpu;
             }
 
             public string PaneId { get; }

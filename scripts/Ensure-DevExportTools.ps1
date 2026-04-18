@@ -32,6 +32,40 @@ function Get-Sha256 {
     return (Get-FileHash -Path $FilePath -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
+function Test-ManifestLeafName {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Value
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value) -or [System.IO.Path]::IsPathRooted($Value)) {
+        return $false
+    }
+
+    return [string]::Equals(
+        [System.IO.Path]::GetFileName($Value),
+        $Value,
+        [System.StringComparison]::Ordinal)
+}
+
+function Assert-HttpsUrl {
+    param(
+        [string]$Url,
+        [Parameter(Mandatory = $true)]
+        [string]$Label
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Url)) {
+        return
+    }
+
+    $parsedUri = $null
+    if (-not [System.Uri]::TryCreate($Url, [System.UriKind]::Absolute, [ref]$parsedUri) -or
+        -not [string]::Equals($parsedUri.Scheme, [System.Uri]::UriSchemeHttps, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "$Label must be an absolute HTTPS URL."
+    }
+}
+
 function Test-ToolsDirectory {
     param(
         [Parameter(Mandatory = $true)]
@@ -105,6 +139,22 @@ if (-not (Test-Path -LiteralPath $resolvedManifestPath)) {
 $manifest = Get-Content -LiteralPath $resolvedManifestPath -Raw | ConvertFrom-Json
 $expectedFileHashes = Get-ManifestFileHashes -Manifest $manifest
 $requiredToolFiles = @("ffmpeg.exe", "ffprobe.exe")
+
+if (-not [string]::IsNullOrWhiteSpace($manifest.assetName) -and -not (Test-ManifestLeafName -Value $manifest.assetName)) {
+    Complete-BestEffort "Export-tools manifest assetName must be a leaf filename."
+}
+
+$invalidManifestFileEntries = @($expectedFileHashes.Keys | Where-Object { -not (Test-ManifestLeafName -Value $_) })
+if ($invalidManifestFileEntries.Count -gt 0) {
+    Complete-BestEffort "Export-tools manifest contains invalid file entries: $($invalidManifestFileEntries -join ', ')."
+}
+
+try {
+    Assert-HttpsUrl -Url ([string]$manifest.assetUrl) -Label "Export-tools manifest assetUrl"
+}
+catch {
+    Complete-BestEffort $_.Exception.Message
+}
 
 if ($expectedFileHashes.Count -eq 0) {
     Complete-BestEffort "Export-tools manifest does not yet contain pinned file hashes. Build the tool bundle locally with .\scripts\ffmpeg\Build-FFmpeg-Tools-8.1.ps1 and update Runtime\export-tools-manifest.json."

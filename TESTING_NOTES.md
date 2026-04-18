@@ -51,6 +51,11 @@ Release: `1.8.0`
 
 ## Automated regression coverage
 
+- The repository-carried PowerShell harness is still the primary product-level validation surface:
+  - `scripts\Run-RegressionSuite.ps1` for app-driven regression coverage
+  - `scripts\Run-ReviewEngine-ManualTests.ps1` for deterministic manual review-engine sweeps, launched headlessly through the app runtime
+  - `scripts\Build-TestDrop.ps1` for packaged runtime/test-drop validation
+- Small unit tests can complement these harnesses for cold-path service logic, but they do not replace the app-driven harness for frame-review behavior.
 - The supported full-corpus regression path now runs hidden-window timed playback, loop playback, clip export, and side-by-side compare export coverage for both audio-bearing and video-only files.
 - Audio insertion and crop-aware zoom/export remain manual-regression coverage for this MVP slice; there is still no committed automated UI test source under `tests\`.
 - Full-corpus trim/export coverage is expected on the active supported container set: `.avi`, `.mov`, `.m4v`, `.mp4`, `.mkv`, and `.wmv`.

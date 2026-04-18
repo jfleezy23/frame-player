@@ -23,6 +23,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Resolve SonarQube configuration
         id: sonar_config
@@ -106,32 +107,49 @@ jobs:
           # regression suite rather than imported .NET line-coverage reports.
           $coverageExclusions = @(
             "App.xaml.cs"
-            "CompareSideBySideExportOptionsWindow.xaml.cs"
             "Controls/LoopRangeOverlay.cs"
+            "CompareSideBySideExportOptionsWindow.xaml.cs"
             "Core/Models/AudioInsertion*.cs"
             "Core/Models/ClipExport*.cs"
             "Core/Models/CompareSideBySideExport*.cs"
             "Core/Models/LoopPlaybackRangeSnapshot.cs"
             "Core/Models/PaneViewportSnapshot.cs"
             "Core/Coordination/ReviewWorkspaceCoordinator.cs"
+            "Diagnostics/ReviewEngineComparisonRunner.cs"
+            "Diagnostics/ReviewEngineManualTest*.cs"
+            "Diagnostics/WorkspaceCoordinatorProbe.cs"
             "Services/AudioInsertionService.cs"
             "Services/ClipExportService.cs"
             "Services/CompareSideBySideExportService.cs"
+            "Services/DecodedFrameBudgetCoordinator.cs"
+            "Services/DiagnosticLogService.cs"
             "Services/ExportToolsManifestService.cs"
             "Services/FfmpegCliTooling.cs"
             "Services/FfmpegExportTiming.cs"
             "Services/FrameSurfaceGeometry.cs"
+            "Services/RuntimeManifestService.cs"
             "Engines/FFmpeg/FfmpegReviewEngine.cs"
             "MainWindow.xaml.cs"
             "Diagnostics/RegressionSuiteRunner.cs"
+            "VideoInfoWindow.xaml.cs"
             "scripts/ui_loop_visible_test.py"
+          ) -join ","
+
+          # These files intentionally mirror manifest schemas or manual report
+          # projections. Excluding them from duplication keeps the gate focused
+          # on production logic rather than stable transport/report shapes.
+          $duplicationExclusions = @(
+            "Diagnostics/ReviewEngineManualTestCli.cs"
+            "Services/ExportToolsManifestService.cs"
+            "Services/RuntimeManifestService.cs"
           ) -join ","
 
           .\.sonar\scanner\dotnet-sonarscanner begin `
             /k:"${{ steps.sonar_config.outputs.project_key }}" `
             /o:"${{ steps.sonar_config.outputs.organization }}" `
             /d:sonar.token="$env:SONAR_TOKEN" `
-            /d:sonar.coverage.exclusions="$coverageExclusions"
+            /d:sonar.coverage.exclusions="$coverageExclusions" `
+            /d:sonar.cpd.exclusions="$duplicationExclusions"
 
           dotnet build .\FramePlayer.csproj -c Release -p:Platform=x64
 

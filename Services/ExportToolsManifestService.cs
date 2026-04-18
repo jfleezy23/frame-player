@@ -33,6 +33,12 @@ namespace FramePlayer.Services
 
             foreach (var file in manifest.Files)
             {
+                if (!IsSafeLeafFileName(file.Key))
+                {
+                    errorMessage = "The bundled FFmpeg export tools manifest contains an invalid file entry.";
+                    return false;
+                }
+
                 var filePath = Path.Combine(toolsDirectory, file.Key);
                 if (!File.Exists(filePath))
                 {
@@ -84,6 +90,19 @@ namespace FramePlayer.Services
                 var hashBytes = sha256.ComputeHash(stream);
                 return string.Concat(hashBytes.Select(hashByte => hashByte.ToString("x2")));
             }
+        }
+
+        private static bool IsSafeLeafFileName(string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(fileName) || Path.IsPathRooted(fileName))
+            {
+                return false;
+            }
+
+            return string.Equals(
+                Path.GetFileName(fileName),
+                fileName,
+                StringComparison.Ordinal);
         }
 
         [DataContract]

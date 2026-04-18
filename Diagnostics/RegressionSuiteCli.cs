@@ -98,6 +98,7 @@ namespace FramePlayer.Diagnostics
             }
             catch
             {
+                // Best-effort failure logging must never hide the original regression-suite exception path.
             }
         }
 

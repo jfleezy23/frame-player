@@ -1,10 +1,15 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using FramePlayer.Engines.FFmpeg;
 
 namespace FramePlayer.Core.Models
 {
     public sealed class ClipExportRequest
     {
+        [SuppressMessage(
+            "Major Code Smell",
+            "S107:Methods should not have too many parameters",
+            Justification = "Clip export requests are immutable cold-path transport models; grouping these fields would add indirection without reducing behavioral risk.")]
         public ClipExportRequest(
             string sourceFilePath,
             string outputFilePath,
