@@ -43,7 +43,7 @@
         <TextBlock Margin="0,8,0,0"
                    Foreground="#B8C0CC"
                    TextWrapping="Wrap"
-                   Text="Choose whether to export the current pane-local loops or the full aligned videos, then choose which pane supplies the audio track." />
+                   Text="Choose whether to export the current pane-local loops or the full aligned sources, then choose which pane supplies the audio track." />
       </StackPanel>
 
       <Border Grid.Row="1"
@@ -136,7 +136,7 @@
             <TextBlock Margin="22,2,0,0"
                        Foreground="#B8C0CC"
                        TextWrapping="Wrap"
-                       Text="Uses each pane's pane-local A/B range and pads the shorter pane with black video at the tail." />
+                       Text="Uses each pane's pane-local A/B range and extends the shorter pane with black video at the end." />
             <RadioButton x:Name="WholeVideoModeRadioButton"
                          Margin="0,12,0,0"
                          Checked="ExportModeRadioButton_Checked"
@@ -144,7 +144,7 @@
             <TextBlock Margin="22,2,0,0"
                        Foreground="#B8C0CC"
                        TextWrapping="Wrap"
-                       Text="Exports both full files and preserves the current compare alignment with leading black padding where needed." />
+                       Text="Exports both full sources and preserves the current compare alignment with leading black padding where needed." />
             <TextBlock x:Name="LoopAvailabilityTextBlock"
                        Margin="0,12,0,0"
                        Foreground="#F1C96B"

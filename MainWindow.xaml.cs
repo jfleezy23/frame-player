@@ -1279,7 +1279,7 @@ namespace FramePlayer
         {
             if (!PaneHasLoadedMedia(primaryPaneSnapshot) || !PaneHasLoadedMedia(comparePaneSnapshot))
             {
-                return "Compare: Load two videos";
+                return "Compare: Load two videos to begin";
             }
 
             if (primaryPaneSnapshot.HasAbsoluteFrameIdentity &&
@@ -1302,7 +1302,7 @@ namespace FramePlayer
                     Math.Abs(frameDelta) == 1 ? "frame" : "frames");
             }
 
-            return "Compare: Time-based only";
+            return "Compare: Time-based alignment";
         }
 
         private static string GetComparePaneSideLabel(string paneId)
@@ -2340,7 +2340,7 @@ namespace FramePlayer
 
             var dialog = new OpenFileDialog
             {
-                Title = "Open Video File",
+                Title = "Open Video",
                 Filter = GetOpenFileFilter()
             };
 
@@ -4674,7 +4674,7 @@ namespace FramePlayer
                     var durationText = exportResult.ProbedDuration.HasValue
                         ? FormatTime(exportResult.ProbedDuration.Value)
                         : FormatTime(exportResult.Plan.Duration);
-                    SetPlaybackMessage("Clip exported.");
+                    SetPlaybackMessage("Clip export completed.");
                     LogInfo(string.Format(
                         CultureInfo.InvariantCulture,
                         "Clip export completed for {0}: source {1}, output {2}, start {3}, end-exclusive {4}, duration {5}, strategy {6}, elapsed {7:0.0} ms.",
@@ -4774,7 +4774,7 @@ namespace FramePlayer
             {
                 SetPlaybackMessage(string.Format(
                     CultureInfo.InvariantCulture,
-                    "Exporting side-by-side compare ({0})...",
+                    "Exporting side-by-side compare video ({0})...",
                     mode == CompareSideBySideExportMode.Loop ? "loop" : "whole video"));
                 LogInfo(string.Format(
                     CultureInfo.InvariantCulture,
@@ -4831,7 +4831,7 @@ namespace FramePlayer
             var durationText = exportResult.ProbedDuration.HasValue
                 ? FormatTime(exportResult.ProbedDuration.Value)
                 : FormatTime(exportResult.Plan.OutputDuration);
-            SetPlaybackMessage("Side-by-side compare exported.");
+            SetPlaybackMessage("Side-by-side compare export completed.");
             LogInfo(string.Format(
                 CultureInfo.InvariantCulture,
                 "Side-by-side compare export completed: output {0}, mode {1}, audio {2}, duration {3}, output size {4}x{5}, probed audio {6}, elapsed {7:0.0} ms.",
@@ -5128,13 +5128,13 @@ namespace FramePlayer
 
             if (!IsCompareModeEnabled)
             {
-                failureMessage = "Enable two-pane compare and load both panes before exporting a side-by-side compare.";
+                failureMessage = "Enable two-pane compare and load both panes before exporting a side-by-side compare video.";
                 return false;
             }
 
             if (workspaceSnapshot == null)
             {
-                failureMessage = "Load media into both compare panes before exporting a side-by-side compare.";
+                failureMessage = "Load media into both compare panes before exporting a side-by-side compare video.";
                 return false;
             }
 
@@ -5142,7 +5142,7 @@ namespace FramePlayer
             ReviewWorkspacePaneSnapshot comparePaneSnapshot;
             if (!TryResolveLoadedComparePaneSnapshots(workspaceSnapshot, out primaryPaneSnapshot, out comparePaneSnapshot))
             {
-                failureMessage = "Load media into both compare panes before exporting a side-by-side compare.";
+                failureMessage = "Load media into both compare panes before exporting a side-by-side compare video.";
                 return false;
             }
 
@@ -5150,7 +5150,7 @@ namespace FramePlayer
             var compareEngine = GetEngineForPane(ComparePaneId) as FfmpegReviewEngine;
             if (primaryEngine == null || !primaryEngine.IsMediaOpen || compareEngine == null || !compareEngine.IsMediaOpen)
             {
-                failureMessage = "Both compare review engines must stay available during side-by-side export.";
+                failureMessage = "Both compare review engines must remain available during side-by-side export.";
                 return false;
             }
 
@@ -5381,7 +5381,7 @@ namespace FramePlayer
         {
             if (mediaInfo == null)
             {
-                return "Video: unknown";
+                return "Video: unavailable";
             }
 
             var resolution = mediaInfo.DisplayWidth.HasValue && mediaInfo.DisplayHeight.HasValue
@@ -5427,7 +5427,7 @@ namespace FramePlayer
         private static string BuildCompareExportPositionSummary(ReviewWorkspacePaneSnapshot paneSnapshot)
         {
             return paneSnapshot == null
-                ? "Current sync position: unknown"
+                ? "Current sync position: unavailable"
                 : "Current sync position: " + FormatTime(paneSnapshot.PresentationTime);
         }
 
@@ -5435,12 +5435,12 @@ namespace FramePlayer
         {
             if (loopRange == null || !loopRange.HasAnyMarkers)
             {
-                return "Loop: not set";
+                return "Loop range: not set";
             }
 
             return string.Format(
                 CultureInfo.InvariantCulture,
-                "Loop: {0} -> {1}",
+                "Loop range: {0} -> {1}",
                 FormatLoopBoundaryLabel(loopRange.LoopIn, isStartBoundary: true),
                 FormatLoopBoundaryLabel(loopRange.LoopOut, isStartBoundary: false));
         }
@@ -5452,14 +5452,14 @@ namespace FramePlayer
             if (!TryResolveCompareSideBySideExportContext(workspaceSnapshot, null, out exportContext, out failureMessage))
             {
                 toolTip = string.IsNullOrWhiteSpace(failureMessage)
-                    ? "Enable two-pane compare and load both panes before exporting a side-by-side compare."
+                    ? "Enable two-pane compare and load both panes before exporting a side-by-side compare video."
                     : failureMessage;
                 return false;
             }
 
             toolTip = exportContext.IsLoopModeAvailable
-                ? "Export both compare panes as one side-by-side MP4. The dialog lets you choose loop or whole-video mode."
-                : "Export both compare panes as one side-by-side MP4. Whole-video mode is available; loop mode is currently unavailable.";
+                ? "Export both compare panes to a single side-by-side MP4. The dialog lets you choose Loop or Whole Video."
+                : "Export both compare panes to a single side-by-side MP4. Whole Video is available; Loop is currently unavailable.";
             return true;
         }
 
@@ -7419,7 +7419,7 @@ namespace FramePlayer
         {
             if (!_isMediaLoaded)
             {
-                SetPlaybackMessage("Load a video to inspect its details.");
+                SetPlaybackMessage("Load a video to view its details.");
                 return;
             }
 
@@ -7816,7 +7816,7 @@ namespace FramePlayer
         {
             var dialog = new SaveFileDialog
             {
-                Title = "Export Diagnostics",
+                Title = "Export Diagnostic Report",
                 Filter = "Text Files|*.txt|All Files|*.*",
                 FileName = string.Format(
                     CultureInfo.InvariantCulture,
@@ -7845,7 +7845,7 @@ namespace FramePlayer
 
                 var report = _diagnosticLogService.BuildReport(new[]
                 {
-                    "Frame Player Diagnostics",
+                    "Frame Player Diagnostic Report",
                     string.Format(CultureInfo.InvariantCulture, "Generated: {0:yyyy-MM-dd HH:mm:ss.fff zzz}", DateTime.Now),
                     string.Format(CultureInfo.InvariantCulture, "Session started: {0:yyyy-MM-dd HH:mm:ss.fff zzz}", _diagnosticLogService.SessionStarted),
                     "Build variant: " + _buildVariant.BuildDisplayName,
@@ -7927,14 +7927,14 @@ namespace FramePlayer
 
                 File.WriteAllText(dialog.FileName, report);
                 LogInfo("Diagnostics exported to " + GetSafeFileDisplay(dialog.FileName));
-                SetPlaybackMessage("Diagnostics exported.");
+                SetPlaybackMessage("Diagnostic report exported.");
             }
             catch (Exception ex)
             {
                 LogError("Diagnostics export failed.", ex);
                 MessageBox.Show(
                     this,
-                    "Frame Player could not write the diagnostics file.\r\n\r\n" + ex.Message,
+                    "Frame Player could not write the diagnostic report.\r\n\r\n" + ex.Message,
                     "Export Failed",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);

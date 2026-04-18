@@ -520,7 +520,7 @@
             <MenuItem x:Name="VideoInfoMenuItem"
                       Header="Video _Info..."
                       Click="VideoInfoMenuItem_Click" />
-            <MenuItem Header="Export _Diagnostics..."
+            <MenuItem Header="Export _Diagnostic Report..."
                       InputGestureText="Ctrl+Shift+E"
                       Click="ExportDiagnosticsMenuItem_Click" />
             <Separator Style="{StaticResource TitleBarMenuSeparatorStyle}" />
@@ -576,7 +576,7 @@
                       Click="ReplaceAudioTrackMenuItem_Click" />
           </MenuItem>
           <MenuItem Style="{StaticResource TitleBarTopLevelMenuItemStyle}" Header="_Help">
-            <MenuItem Header="_Controls and Shortcuts"
+            <MenuItem Header="_Controls and Shortcuts..."
                       InputGestureText="F1"
                       Click="HelpMenuItem_Click" />
             <Separator Style="{StaticResource TitleBarMenuSeparatorStyle}" />
@@ -698,7 +698,7 @@
                        Foreground="{StaticResource MutedBrush}"
                        FontSize="11"
                        TextTrimming="CharacterEllipsis"
-                       Text="Compare: Load two videos | Last align: none" />
+                       Text="Compare: Load two videos to begin | Last alignment: none" />
           </Grid>
         </Border>
       </Grid>
@@ -828,14 +828,14 @@
                              FontSize="30"
                              FontWeight="SemiBold"
                              TextAlignment="Center"
-                             Text="Drop a video here" />
+                             Text="Drop a video here to begin" />
                   <TextBlock x:Name="PrimaryEmptyStateBodyTextBlock"
                              Margin="0,12,0,0"
                              Foreground="{StaticResource MutedBrush}"
                              FontSize="15"
                              TextAlignment="Center"
                              TextWrapping="Wrap"
-                             Text="Or open a video to begin" />
+                             Text="Or choose Open Video" />
                   <Button Margin="0,14,0,0"
                           Style="{StaticResource EmptyStateActionButtonStyle}"
                           HorizontalAlignment="Center"
@@ -1093,14 +1093,14 @@
                              FontSize="28"
                              FontWeight="SemiBold"
                              TextAlignment="Center"
-                             Text="Add a compare video" />
+                             Text="Add a second video for compare review" />
                   <TextBlock x:Name="CompareEmptyStateBodyTextBlock"
                              Margin="0,12,0,0"
                              Foreground="{StaticResource MutedBrush}"
                              FontSize="15"
                              TextAlignment="Center"
                              TextWrapping="Wrap"
-                             Text="Load a second video to compare against the left pane" />
+                             Text="Open a second video to compare against the primary pane" />
                   <Button Margin="0,14,0,0"
                           Style="{StaticResource EmptyStateActionButtonStyle}"
                           HorizontalAlignment="Center"
@@ -1462,7 +1462,7 @@
                        FontSize="12"
                        Width="360"
                        TextTrimming="CharacterEllipsis"
-                       Text="A/V playback + frame review" />
+                       Text="Ready for playback and frame review" />
           </StatusBarItem>
           <Separator />
           <StatusBarItem>
