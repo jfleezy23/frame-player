@@ -31,6 +31,7 @@ namespace FramePlayer.Diagnostics
         private const string LifecycleCategory = "lifecycle";
         private const string ForwardOnlyStepProofCheckName = "forward-only-step-proof";
         private const string NoneText = "(none)";
+        private const string WarningClassification = "warning";
         private static readonly StringComparer FilePathComparer = StringComparer.OrdinalIgnoreCase;
         private static readonly HashSet<string> SupportedRegressionExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -1412,7 +1413,7 @@ namespace FramePlayer.Diagnostics
                 scope,
                 category,
                 name,
-                "warning",
+                WarningClassification,
                 message,
                 expectedFrameIndex,
                 actualFrameIndex,
@@ -1514,7 +1515,7 @@ namespace FramePlayer.Diagnostics
                 fileReports.Count,
                 checks.Count,
                 checks.Count(check => string.Equals(check.Classification, "pass", StringComparison.OrdinalIgnoreCase)),
-                checks.Count(check => string.Equals(check.Classification, "warning", StringComparison.OrdinalIgnoreCase)),
+                checks.Count(check => string.Equals(check.Classification, WarningClassification, StringComparison.OrdinalIgnoreCase)),
                 checks.Count(check => string.Equals(check.Classification, "fail", StringComparison.OrdinalIgnoreCase)));
         }
 
@@ -1680,8 +1681,8 @@ namespace FramePlayer.Diagnostics
 
                 var classification = checks.Any(check => string.Equals(check.Classification, "fail", StringComparison.OrdinalIgnoreCase))
                     ? "fail"
-                    : checks.Any(check => string.Equals(check.Classification, "warning", StringComparison.OrdinalIgnoreCase))
-                        ? "warning"
+                    : checks.Any(check => string.Equals(check.Classification, WarningClassification, StringComparison.OrdinalIgnoreCase))
+                        ? WarningClassification
                         : "pass";
 
                 return new RegressionPackagingReport(
