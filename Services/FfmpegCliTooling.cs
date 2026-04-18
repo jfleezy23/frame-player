@@ -2,7 +2,9 @@ using System;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 
 namespace FramePlayer.Services
 {
@@ -39,6 +41,28 @@ namespace FramePlayer.Services
 
         public static FfmpegProcessResult RunProcess(string filePath, string arguments, string workingDirectory)
         {
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                throw new ArgumentException("A process file path is required.", nameof(filePath));
+            }
+
+            if (!File.Exists(filePath))
+            {
+                throw new FileNotFoundException("The configured process executable could not be found.", filePath);
+            }
+
+            var resolvedWorkingDirectory = string.IsNullOrWhiteSpace(workingDirectory)
+                ? AppDomain.CurrentDomain.BaseDirectory
+                : workingDirectory;
+            if (!Directory.Exists(resolvedWorkingDirectory))
+            {
+                throw new DirectoryNotFoundException(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "The configured process working directory does not exist: {0}",
+                        resolvedWorkingDirectory));
+            }
+
             var startInfo = new ProcessStartInfo
             {
                 FileName = filePath,
@@ -46,20 +70,27 @@ namespace FramePlayer.Services
                 CreateNoWindow = true,
                 RedirectStandardError = true,
                 RedirectStandardOutput = true,
+                StandardErrorEncoding = Encoding.UTF8,
+                StandardOutputEncoding = Encoding.UTF8,
                 UseShellExecute = false,
-                WorkingDirectory = string.IsNullOrWhiteSpace(workingDirectory)
-                    ? AppDomain.CurrentDomain.BaseDirectory
-                    : workingDirectory
+                WorkingDirectory = resolvedWorkingDirectory
             };
 
             using (var process = new Process { StartInfo = startInfo })
             {
                 process.Start();
-                var standardOutput = process.StandardOutput.ReadToEnd();
-                var standardError = process.StandardError.ReadToEnd();
+
+                // Drain both redirected streams concurrently so FFmpeg failures
+                // cannot block on a full output buffer during export/probe work.
+                var standardOutputTask = process.StandardOutput.ReadToEndAsync();
+                var standardErrorTask = process.StandardError.ReadToEndAsync();
+                Task.WaitAll(standardOutputTask, standardErrorTask);
                 process.WaitForExit();
 
-                return new FfmpegProcessResult(process.ExitCode, standardOutput, standardError);
+                return new FfmpegProcessResult(
+                    process.ExitCode,
+                    standardOutputTask.Result,
+                    standardErrorTask.Result);
             }
         }
 

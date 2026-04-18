@@ -21,10 +21,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5
         with:
           global-json-file: .\global.json
 
@@ -38,20 +40,20 @@ jobs:
 
       - name: Upload release zip
         id: upload_release_zip
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: FramePlayer-TestDrop-${{ github.run_number }}
           path: artifacts/FramePlayer-CustomFFmpeg-*.zip
           if-no-files-found: error
 
       - name: Attest release zip provenance
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
         with:
           subject-name: FramePlayer-TestDrop-${{ github.run_number }}
           subject-digest: sha256:${{ steps.upload_release_zip.outputs.artifact-digest }}
 
       - name: Upload packaged folder
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: FramePlayer-TestDrop-Folder-${{ github.run_number }}
           path: bin/TestDrop/**

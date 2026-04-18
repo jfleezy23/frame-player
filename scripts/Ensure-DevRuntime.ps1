@@ -48,6 +48,40 @@ function Get-Sha256 {
     return (Get-FileHash -Path $FilePath -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
+function Test-ManifestLeafName {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Value
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value) -or [System.IO.Path]::IsPathRooted($Value)) {
+        return $false
+    }
+
+    return [string]::Equals(
+        [System.IO.Path]::GetFileName($Value),
+        $Value,
+        [System.StringComparison]::Ordinal)
+}
+
+function Assert-HttpsUrl {
+    param(
+        [string]$Url,
+        [Parameter(Mandatory = $true)]
+        [string]$Label
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Url)) {
+        return
+    }
+
+    $parsedUri = $null
+    if (-not [System.Uri]::TryCreate($Url, [System.UriKind]::Absolute, [ref]$parsedUri) -or
+        -not [string]::Equals($parsedUri.Scheme, [System.Uri]::UriSchemeHttps, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "$Label must be an absolute HTTPS URL."
+    }
+}
+
 function Test-RuntimeIntegrity {
     param(
         [Parameter(Mandatory = $true)]
@@ -89,6 +123,17 @@ if (-not (Test-Path $resolvedManifestPath)) {
 
 $manifest = Get-Content $resolvedManifestPath -Raw | ConvertFrom-Json
 $expectedFileHashes = Get-ManifestFileHashes -Manifest $manifest
+
+if (-not [string]::IsNullOrWhiteSpace($manifest.assetName) -and -not (Test-ManifestLeafName -Value $manifest.assetName)) {
+    throw "Runtime manifest assetName must be a leaf filename."
+}
+
+$invalidManifestFileEntries = @($expectedFileHashes.Keys | Where-Object { -not (Test-ManifestLeafName -Value $_) })
+if ($invalidManifestFileEntries.Count -gt 0) {
+    throw "Runtime manifest contains invalid file entries: $($invalidManifestFileEntries -join ', ')."
+}
+
+Assert-HttpsUrl -Url ([string]$manifest.assetUrl) -Label "Runtime manifest assetUrl"
 
 $requiredRuntimeFiles = @(
     "avcodec-62.dll",
