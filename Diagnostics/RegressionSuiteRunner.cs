@@ -1946,15 +1946,15 @@ namespace FramePlayer.Diagnostics
                        playbackStateText.Contains("playing", StringComparison.OrdinalIgnoreCase);
             }
 
-            private static int CountObservedFrameWraps(IReadOnlyList<long> observedFrameIndices)
+            private static int CountObservedFrameWraps(long[] observedFrameIndices)
             {
-                if (observedFrameIndices == null || observedFrameIndices.Count <= 1)
+                if (observedFrameIndices == null || observedFrameIndices.Length <= 1)
                 {
                     return 0;
                 }
 
                 var observedWrapCount = 0;
-                for (var observationIndex = 1; observationIndex < observedFrameIndices.Count; observationIndex++)
+                for (var observationIndex = 1; observationIndex < observedFrameIndices.Length; observationIndex++)
                 {
                     if (observedFrameIndices[observationIndex] < observedFrameIndices[observationIndex - 1])
                     {
