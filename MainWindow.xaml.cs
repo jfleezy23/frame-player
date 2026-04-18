@@ -7894,15 +7894,17 @@ namespace FramePlayer
                 advancedFields.Add(new VideoInfoField("Audio stream index", FormatInspectorIndex(mediaInfo.AudioStreamIndex)));
             }
 
-            return new VideoInfoSnapshot(
-                "Video Info - " + paneLabel,
-                paneLabel,
-                fileName,
-                filePath,
-                new VideoInfoSection(summaryFields),
-                new VideoInfoSection(videoFields),
-                audioSection,
-                new VideoInfoSection(advancedFields));
+            return new VideoInfoSnapshot
+            {
+                WindowTitle = "Video Info - " + paneLabel,
+                PaneLabel = paneLabel,
+                FileName = fileName,
+                FilePath = filePath,
+                SummarySection = new VideoInfoSection(summaryFields),
+                VideoSection = new VideoInfoSection(videoFields),
+                AudioSection = audioSection,
+                AdvancedSection = new VideoInfoSection(advancedFields)
+            };
         }
 
         private static string FormatInspectorDuration(TimeSpan duration)

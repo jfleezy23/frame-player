@@ -65,41 +65,21 @@ namespace FramePlayer
 
     internal sealed class VideoInfoSnapshot
     {
-        public VideoInfoSnapshot(
-            string windowTitle,
-            string paneLabel,
-            string fileName,
-            string filePath,
-            VideoInfoSection summarySection,
-            VideoInfoSection videoSection,
-            VideoInfoSection audioSection,
-            VideoInfoSection advancedSection)
-        {
-            WindowTitle = windowTitle ?? string.Empty;
-            PaneLabel = paneLabel ?? string.Empty;
-            FileName = fileName ?? string.Empty;
-            FilePath = filePath ?? string.Empty;
-            SummarySection = summarySection ?? VideoInfoSection.Empty;
-            VideoSection = videoSection ?? VideoInfoSection.Empty;
-            AudioSection = audioSection ?? VideoInfoSection.Empty;
-            AdvancedSection = advancedSection ?? VideoInfoSection.Empty;
-        }
+        public string WindowTitle { get; set; } = string.Empty;
 
-        public string WindowTitle { get; }
+        public string PaneLabel { get; set; } = string.Empty;
 
-        public string PaneLabel { get; }
+        public string FileName { get; set; } = string.Empty;
 
-        public string FileName { get; }
+        public string FilePath { get; set; } = string.Empty;
 
-        public string FilePath { get; }
+        public VideoInfoSection SummarySection { get; set; } = VideoInfoSection.Empty;
 
-        public VideoInfoSection SummarySection { get; }
+        public VideoInfoSection VideoSection { get; set; } = VideoInfoSection.Empty;
 
-        public VideoInfoSection VideoSection { get; }
+        public VideoInfoSection AudioSection { get; set; } = VideoInfoSection.Empty;
 
-        public VideoInfoSection AudioSection { get; }
-
-        public VideoInfoSection AdvancedSection { get; }
+        public VideoInfoSection AdvancedSection { get; set; } = VideoInfoSection.Empty;
     }
 
     internal sealed class VideoInfoSection

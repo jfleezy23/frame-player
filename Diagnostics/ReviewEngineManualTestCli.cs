@@ -152,23 +152,6 @@ namespace FramePlayer.Diagnostics
             }
         }
 
-        private static ReviewEngineScenarioReport GetScenarioReportForBackend(
-            ReviewEngineManualTestFileReport fileReport,
-            string backendName)
-        {
-            if (fileReport == null || fileReport.ComparisonReport == null || string.IsNullOrWhiteSpace(backendName))
-            {
-                return null;
-            }
-
-            if (string.Equals(backendName, "custom-ffmpeg", StringComparison.OrdinalIgnoreCase))
-            {
-                return fileReport.ComparisonReport.CustomFfmpeg;
-            }
-
-            return null;
-        }
-
         private static string FormatDuration(TimeSpan value)
         {
             return value.ToString("c", CultureInfo.InvariantCulture);
@@ -504,6 +487,23 @@ namespace FramePlayer.Diagnostics
                     StepForward = ReviewEngineStepOperationExport.FromStepOperationSnapshot(scenario != null ? scenario.ForwardStepResult : null),
                     ScenarioError = scenario != null ? scenario.ScenarioError ?? string.Empty : string.Empty
                 };
+            }
+
+            private static ReviewEngineScenarioReport GetScenarioReportForBackend(
+                ReviewEngineManualTestFileReport fileReport,
+                string backendName)
+            {
+                if (fileReport == null || fileReport.ComparisonReport == null || string.IsNullOrWhiteSpace(backendName))
+                {
+                    return null;
+                }
+
+                if (string.Equals(backendName, "custom-ffmpeg", StringComparison.OrdinalIgnoreCase))
+                {
+                    return fileReport.ComparisonReport.CustomFfmpeg;
+                }
+
+                return null;
             }
         }
 

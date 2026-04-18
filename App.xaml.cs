@@ -49,7 +49,7 @@ namespace FramePlayer
                 {
                     AppendCliStartupLog(startupLogPath, "RegressionSuiteCli.RunAsync failed: " + ex);
                     RegressionSuiteCli.TryWriteFailure(regressionSuiteRequestPath, ex);
-                    System.Diagnostics.Trace.WriteLine("Regression suite execution failed: " + ex);
+                    System.Diagnostics.Trace.TraceError("Regression suite execution failed: " + ex);
                     Shutdown(1);
                 }
 
@@ -77,7 +77,7 @@ namespace FramePlayer
                 {
                     AppendCliStartupLog(startupLogPath, "ReviewEngineManualTestCli.RunAsync failed: " + ex);
                     ReviewEngineManualTestCli.TryWriteFailure(manualTestRequestPath, ex);
-                    System.Diagnostics.Trace.WriteLine("Review engine manual tests failed: " + ex);
+                    System.Diagnostics.Trace.TraceError("Review engine manual tests failed: " + ex);
                     Shutdown(1);
                 }
 
