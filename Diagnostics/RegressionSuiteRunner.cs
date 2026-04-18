@@ -2387,6 +2387,57 @@ namespace FramePlayer.Diagnostics
                         checks.AddRange(await controller.RunUiStepRoundTripAsync(filePath, "ui-drag-slider-seek", cancellationToken).ConfigureAwait(true));
 
                         var primaryFullViewport = controller.CapturePaneViewportSnapshot(PrimaryPaneId);
+                        await controller.ZoomInFocusedPaneAsync(PrimaryPaneId).ConfigureAwait(true);
+                        var primaryShortcutZoomViewport = controller.CapturePaneViewportSnapshot(PrimaryPaneId);
+                        var shortcutResetZoomState = controller.CaptureResetZoomCommandState();
+                        var primaryShortcutZoomApplied = primaryShortcutZoomViewport != null &&
+                                                         primaryShortcutZoomViewport.IsZoomed &&
+                                                         (primaryShortcutZoomViewport.SourceCropWidth < primaryFullViewport.SourceCropWidth ||
+                                                          primaryShortcutZoomViewport.SourceCropHeight < primaryFullViewport.SourceCropHeight ||
+                                                          primaryShortcutZoomViewport.SourceCropX != primaryFullViewport.SourceCropX ||
+                                                          primaryShortcutZoomViewport.SourceCropY != primaryFullViewport.SourceCropY) &&
+                                                         shortcutResetZoomState.IsEnabled;
+                        checks.Add(primaryShortcutZoomApplied
+                            ? Pass(
+                                filePath,
+                                "ui",
+                                "coverage",
+                                "ui-zoom-shortcut-single-pane-apply",
+                                string.Format(
+                                    CultureInfo.InvariantCulture,
+                                    "Single-pane shortcut zoom applied immediately after load while paused ({0}).",
+                                    FormatViewportSnapshot(primaryShortcutZoomViewport)))
+                            : Fail(
+                                filePath,
+                                "ui",
+                                "coverage",
+                                "ui-zoom-shortcut-single-pane-apply",
+                                string.Format(
+                                    CultureInfo.InvariantCulture,
+                                    "Single-pane shortcut zoom did not apply as expected. Full={0}; zoomed={1}; reset-enabled={2}; reset-tooltip='{3}'.",
+                                    FormatViewportSnapshot(primaryFullViewport),
+                                    FormatViewportSnapshot(primaryShortcutZoomViewport),
+                                    shortcutResetZoomState.IsEnabled,
+                                    shortcutResetZoomState.ToolTip)));
+                        await controller.ZoomOutFocusedPaneAsync(PrimaryPaneId).ConfigureAwait(true);
+                        var primaryShortcutZoomOutViewport = controller.CapturePaneViewportSnapshot(PrimaryPaneId);
+                        checks.Add(ViewportSnapshotsMatch(primaryFullViewport, primaryShortcutZoomOutViewport)
+                            ? Pass(
+                                filePath,
+                                "ui",
+                                "coverage",
+                                "ui-zoom-shortcut-single-pane-out",
+                                "Single-pane shortcut zoom-out returned to the full-frame viewport.")
+                            : Fail(
+                                filePath,
+                                "ui",
+                                "coverage",
+                                "ui-zoom-shortcut-single-pane-out",
+                                string.Format(
+                                    CultureInfo.InvariantCulture,
+                                    "Single-pane shortcut zoom-out did not return to full frame. Expected {0}; actual {1}.",
+                                    FormatViewportSnapshot(primaryFullViewport),
+                                    FormatViewportSnapshot(primaryShortcutZoomOutViewport))));
                         await controller.SetPaneViewportAsync(PrimaryPaneId, 2.6d, 0.68d, 0.34d).ConfigureAwait(true);
                         var primaryZoomViewport = controller.CapturePaneViewportSnapshot(PrimaryPaneId);
                         var resetZoomState = controller.CaptureResetZoomCommandState();
@@ -2983,6 +3034,66 @@ namespace FramePlayer.Diagnostics
                             var compareCompanionPath = ResolveCompareCompanionPath(filePath);
                             await controller.SetCompareModeAsync(true).ConfigureAwait(true);
                             await controller.OpenAsync(compareCompanionPath, ComparePaneId).ConfigureAwait(true);
+                            var primaryCompareFullViewport = controller.CapturePaneViewportSnapshot(PrimaryPaneId);
+                            var compareFullViewport = controller.CapturePaneViewportSnapshot(ComparePaneId);
+                            await controller.ZoomInFocusedPaneAsync(PrimaryPaneId).ConfigureAwait(true);
+                            var primaryShortcutCompareZoomViewport = controller.CapturePaneViewportSnapshot(PrimaryPaneId);
+                            var compareViewportAfterPrimaryShortcut = controller.CapturePaneViewportSnapshot(ComparePaneId);
+                            var primaryShortcutStayedLocal = primaryShortcutCompareZoomViewport != null &&
+                                                            primaryShortcutCompareZoomViewport.IsZoomed &&
+                                                            (primaryShortcutCompareZoomViewport.SourceCropWidth < primaryCompareFullViewport.SourceCropWidth ||
+                                                             primaryShortcutCompareZoomViewport.SourceCropHeight < primaryCompareFullViewport.SourceCropHeight ||
+                                                             primaryShortcutCompareZoomViewport.SourceCropX != primaryCompareFullViewport.SourceCropX ||
+                                                             primaryShortcutCompareZoomViewport.SourceCropY != primaryCompareFullViewport.SourceCropY) &&
+                                                            ViewportSnapshotsMatch(compareFullViewport, compareViewportAfterPrimaryShortcut);
+                            checks.Add(primaryShortcutStayedLocal
+                                ? Pass(
+                                    filePath,
+                                    "ui",
+                                    "coverage",
+                                    "ui-zoom-shortcut-compare-primary-local",
+                                    "Focused-pane zoom shortcut only changed the primary pane in compare mode.")
+                                : Fail(
+                                    filePath,
+                                    "ui",
+                                    "coverage",
+                                    "ui-zoom-shortcut-compare-primary-local",
+                                    string.Format(
+                                        CultureInfo.InvariantCulture,
+                                        "Primary focused zoom shortcut was not pane-local. Primary full={0}; primary zoomed={1}; compare expected full={2}; compare actual={3}.",
+                                        FormatViewportSnapshot(primaryCompareFullViewport),
+                                        FormatViewportSnapshot(primaryShortcutCompareZoomViewport),
+                                        FormatViewportSnapshot(compareFullViewport),
+                                        FormatViewportSnapshot(compareViewportAfterPrimaryShortcut))));
+                            await controller.ZoomInFocusedPaneAsync(ComparePaneId).ConfigureAwait(true);
+                            var compareShortcutZoomViewport = controller.CapturePaneViewportSnapshot(ComparePaneId);
+                            var primaryViewportAfterCompareShortcut = controller.CapturePaneViewportSnapshot(PrimaryPaneId);
+                            var compareShortcutStayedLocal = compareShortcutZoomViewport != null &&
+                                                            compareShortcutZoomViewport.IsZoomed &&
+                                                            (compareShortcutZoomViewport.SourceCropWidth < compareFullViewport.SourceCropWidth ||
+                                                             compareShortcutZoomViewport.SourceCropHeight < compareFullViewport.SourceCropHeight ||
+                                                             compareShortcutZoomViewport.SourceCropX != compareFullViewport.SourceCropX ||
+                                                             compareShortcutZoomViewport.SourceCropY != compareFullViewport.SourceCropY) &&
+                                                            ViewportSnapshotsMatch(primaryShortcutCompareZoomViewport, primaryViewportAfterCompareShortcut);
+                            checks.Add(compareShortcutStayedLocal
+                                ? Pass(
+                                    filePath,
+                                    "ui",
+                                    "coverage",
+                                    "ui-zoom-shortcut-compare-compare-local",
+                                    "Focused-pane zoom shortcut only changed the compare pane in compare mode.")
+                                : Fail(
+                                    filePath,
+                                    "ui",
+                                    "coverage",
+                                    "ui-zoom-shortcut-compare-compare-local",
+                                    string.Format(
+                                        CultureInfo.InvariantCulture,
+                                        "Compare focused zoom shortcut was not pane-local. Compare full={0}; compare zoomed={1}; primary expected={2}; primary actual={3}.",
+                                        FormatViewportSnapshot(compareFullViewport),
+                                        FormatViewportSnapshot(compareShortcutZoomViewport),
+                                        FormatViewportSnapshot(primaryShortcutCompareZoomViewport),
+                                        FormatViewportSnapshot(primaryViewportAfterCompareShortcut))));
                             await controller.SetPaneViewportAsync(PrimaryPaneId, 2.2d, 0.34d, 0.46d).ConfigureAwait(true);
                             await controller.SetPaneViewportAsync(ComparePaneId, 2.8d, 0.72d, 0.58d).ConfigureAwait(true);
                             var primaryPaneZoomViewport = controller.CapturePaneViewportSnapshot(PrimaryPaneId);
