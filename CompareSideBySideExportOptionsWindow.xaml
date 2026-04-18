@@ -1,0 +1,206 @@
+<Window x:Class="FramePlayer.CompareSideBySideExportOptionsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Export Side-by-Side Compare"
+        Width="700"
+        SizeToContent="Height"
+        MinWidth="700"
+        Background="#0F1216"
+        Foreground="#F5F7FA"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner">
+  <Window.Resources>
+    <Style TargetType="RadioButton">
+      <Setter Property="Foreground" Value="#F5F7FA" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Style.Triggers>
+        <Trigger Property="IsEnabled" Value="False">
+          <Setter Property="Foreground" Value="#95A2B3" />
+          <Setter Property="Opacity" Value="1" />
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+
+    <Style TargetType="Button">
+      <Setter Property="MinWidth" Value="92" />
+      <Setter Property="Padding" Value="16,6" />
+    </Style>
+  </Window.Resources>
+
+  <Border Padding="18">
+    <Grid>
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
+
+      <StackPanel>
+        <TextBlock FontSize="20"
+                   FontWeight="SemiBold"
+                   Text="Export Side-by-Side Compare" />
+        <TextBlock Margin="0,8,0,0"
+                   Foreground="#B8C0CC"
+                   TextWrapping="Wrap"
+                   Text="Choose whether to export the current pane-local loops or the full aligned videos, then choose which pane supplies the audio track." />
+      </StackPanel>
+
+      <Border Grid.Row="1"
+              Margin="0,16,0,0"
+              Padding="14"
+              Background="#171C22"
+              BorderBrush="#29323D"
+              BorderThickness="1">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+
+          <StackPanel Margin="0,0,10,0">
+            <TextBlock FontSize="14"
+                       FontWeight="SemiBold"
+                       Text="Primary Pane" />
+            <TextBlock x:Name="PrimaryFileNameTextBlock"
+                       Margin="0,6,0,0"
+                       FontWeight="SemiBold"
+                       TextWrapping="Wrap" />
+            <TextBlock x:Name="PrimaryVideoSummaryTextBlock"
+                       Margin="0,4,0,0"
+                       Foreground="#B8C0CC"
+                       TextWrapping="Wrap" />
+            <TextBlock x:Name="PrimaryAudioSummaryTextBlock"
+                       Margin="0,4,0,0"
+                       Foreground="#B8C0CC"
+                       TextWrapping="Wrap" />
+            <TextBlock x:Name="PrimaryPositionSummaryTextBlock"
+                       Margin="0,4,0,0"
+                       Foreground="#B8C0CC"
+                       TextWrapping="Wrap" />
+            <TextBlock x:Name="PrimaryLoopSummaryTextBlock"
+                       Margin="0,4,0,0"
+                       Foreground="#B8C0CC"
+                       TextWrapping="Wrap" />
+          </StackPanel>
+
+          <StackPanel Grid.Column="1"
+                      Margin="10,0,0,0">
+            <TextBlock FontSize="14"
+                       FontWeight="SemiBold"
+                       Text="Compare Pane" />
+            <TextBlock x:Name="CompareFileNameTextBlock"
+                       Margin="0,6,0,0"
+                       FontWeight="SemiBold"
+                       TextWrapping="Wrap" />
+            <TextBlock x:Name="CompareVideoSummaryTextBlock"
+                       Margin="0,4,0,0"
+                       Foreground="#B8C0CC"
+                       TextWrapping="Wrap" />
+            <TextBlock x:Name="CompareAudioSummaryTextBlock"
+                       Margin="0,4,0,0"
+                       Foreground="#B8C0CC"
+                       TextWrapping="Wrap" />
+            <TextBlock x:Name="ComparePositionSummaryTextBlock"
+                       Margin="0,4,0,0"
+                       Foreground="#B8C0CC"
+                       TextWrapping="Wrap" />
+            <TextBlock x:Name="CompareLoopSummaryTextBlock"
+                       Margin="0,4,0,0"
+                       Foreground="#B8C0CC"
+                       TextWrapping="Wrap" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <Grid Grid.Row="2"
+            Margin="0,16,0,0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <Border Margin="0,0,10,0"
+                Padding="14"
+                Background="#171C22"
+                BorderBrush="#29323D"
+                BorderThickness="1">
+          <StackPanel>
+            <TextBlock FontSize="14"
+                       FontWeight="SemiBold"
+                       Text="Export Mode" />
+            <RadioButton x:Name="LoopModeRadioButton"
+                         Margin="0,10,0,0"
+                         Checked="ExportModeRadioButton_Checked"
+                         Content="Loop" />
+            <TextBlock Margin="22,2,0,0"
+                       Foreground="#B8C0CC"
+                       TextWrapping="Wrap"
+                       Text="Uses each pane's pane-local A/B range and pads the shorter pane with black video at the tail." />
+            <RadioButton x:Name="WholeVideoModeRadioButton"
+                         Margin="0,12,0,0"
+                         Checked="ExportModeRadioButton_Checked"
+                         Content="Whole Video" />
+            <TextBlock Margin="22,2,0,0"
+                       Foreground="#B8C0CC"
+                       TextWrapping="Wrap"
+                       Text="Exports both full files and preserves the current compare alignment with leading black padding where needed." />
+            <TextBlock x:Name="LoopAvailabilityTextBlock"
+                       Margin="0,12,0,0"
+                       Foreground="#F1C96B"
+                       TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+
+        <Border Grid.Column="1"
+                Margin="10,0,0,0"
+                Padding="14"
+                Background="#171C22"
+                BorderBrush="#29323D"
+                BorderThickness="1">
+          <StackPanel>
+            <TextBlock FontSize="14"
+                       FontWeight="SemiBold"
+                       Text="Audio Source" />
+            <RadioButton x:Name="PrimaryAudioRadioButton"
+                         Margin="0,10,0,0"
+                         Checked="AudioSourceRadioButton_Checked"
+                         Content="Primary pane" />
+            <RadioButton x:Name="CompareAudioRadioButton"
+                         Margin="0,12,0,0"
+                         Checked="AudioSourceRadioButton_Checked"
+                         Content="Compare pane" />
+            <TextBlock x:Name="AudioBehaviorTextBlock"
+                       Margin="0,12,0,0"
+                       Foreground="#B8C0CC"
+                       TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+      </Grid>
+
+      <Grid Grid.Row="3"
+            Margin="0,18,0,0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <TextBlock x:Name="ModeBehaviorTextBlock"
+                   Grid.Column="0"
+                   Margin="0,0,16,0"
+                   VerticalAlignment="Center"
+                   Foreground="#B8C0CC"
+                   TextWrapping="Wrap" />
+        <Button Grid.Column="1"
+                Margin="0,0,10,0"
+                Content="Cancel"
+                IsCancel="True" />
+        <Button Grid.Column="2"
+                Content="Continue"
+                IsDefault="True"
+                Click="ContinueButton_Click" />
+      </Grid>
+    </Grid>
+  </Border>
+</Window>

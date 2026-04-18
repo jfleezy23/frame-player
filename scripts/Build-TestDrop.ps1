@@ -16,25 +16,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-function Resolve-MSBuildPath {
-    $vswherePath = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
-    if (Test-Path $vswherePath) {
-        $resolvedPath = & $vswherePath -latest -products * -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" |
-            Select-Object -First 1
-
-        if (-not [string]::IsNullOrWhiteSpace($resolvedPath) -and (Test-Path $resolvedPath)) {
-            return $resolvedPath
-        }
-    }
-
-    $fallbackPath = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\amd64\MSBuild.exe"
-    if (Test-Path $fallbackPath) {
-        return $fallbackPath
-    }
-
-    throw "MSBuild was not found. Install Visual Studio Build Tools 2022 with .NET desktop build tools."
-}
-
 function Get-ManifestFileHashes {
     param(
         [Parameter(Mandatory = $true)]
@@ -144,7 +125,7 @@ $resolvedIntermediateDirectory = Assert-PathWithin -Path $resolvedIntermediateDi
 
 $ensureRuntimeScript = Join-Path $PSScriptRoot "Ensure-DevRuntime.ps1"
 $ensureExportToolsScript = Join-Path $PSScriptRoot "Ensure-DevExportTools.ps1"
-$msbuildPath = Resolve-MSBuildPath
+$projectPath = Join-Path $repoRoot "FramePlayer.csproj"
 $manifestPath = Join-Path $repoRoot "Runtime\runtime-manifest.json"
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 $expectedRuntimeFiles = Get-ManifestFileHashes -Manifest $manifest
@@ -193,9 +174,9 @@ if (-not $msbuildIntermediatePath.EndsWith("\")) {
     $msbuildIntermediatePath += "\"
 }
 
-& $msbuildPath (Join-Path $repoRoot "FramePlayer.csproj") /t:Restore,Build /p:Configuration=$Configuration /p:Platform=$Platform /p:OutputPath=$msbuildOutputPath /p:IntermediateOutputPath=$msbuildIntermediatePath
+& dotnet build $projectPath -c $Configuration -p:Platform=$Platform -p:OutputPath=$msbuildOutputPath -p:IntermediateOutputPath=$msbuildIntermediatePath
 if ($LASTEXITCODE -ne 0) {
-    throw "MSBuild failed while producing the test drop."
+    throw "dotnet build failed while producing the test drop."
 }
 
 $exePath = Join-Path $resolvedOutputDirectory "FramePlayer.exe"

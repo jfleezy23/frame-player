@@ -1,29 +1,34 @@
-<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">x64</Platform>
-    <ProjectGuid>{A6F0D60A-4E80-4A9D-8D41-357C57BAA6D9}</ProjectGuid>
     <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
     <RootNamespace>FramePlayer</RootNamespace>
-    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
-    <FileAlignment>512</FileAlignment>
-    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
-    <Deterministic>true</Deterministic>
-    <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
     <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
     <ApplicationIcon>Assets\FramePlayer.ico</ApplicationIcon>
+    <Platforms>x64</Platforms>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+    <DefaultItemExcludes>$(DefaultItemExcludes);src\**;tests\**;tmp\**;packages\**;artifacts\**;downloads\**;dist\**</DefaultItemExcludes>
     <FramePlayerVariant Condition="'$(FramePlayerVariant)' == ''">Standard</FramePlayerVariant>
     <VariantDefineConstants Condition="'$(FramePlayerVariant)' == 'CustomFfmpeg'">FRAMEPLAYER_COMPARE_BUILD;FRAMEPLAYER_FORCE_CUSTOM_FFMPEG</VariantDefineConstants>
     <VariantAssemblyName Condition="'$(FramePlayerVariant)' == 'CustomFfmpeg'">Frame Player - Custom FFmpeg</VariantAssemblyName>
     <VariantAssemblyName Condition="'$(VariantAssemblyName)' == ''">FramePlayer</VariantAssemblyName>
     <AssemblyName>$(VariantAssemblyName)</AssemblyName>
   </PropertyGroup>
+
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
     <DebugSymbols>true</DebugSymbols>
-    <DebugType>full</DebugType>
+    <DebugType>portable</DebugType>
     <Optimize>false</Optimize>
     <OutputPath>bin\Debug\</OutputPath>
     <DefineConstants>DEBUG;TRACE;$(VariantDefineConstants)</DefineConstants>
@@ -31,8 +36,9 @@
     <PlatformTarget>x64</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
+
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
-    <DebugType>pdbonly</DebugType>
+    <DebugType>portable</DebugType>
     <Optimize>true</Optimize>
     <OutputPath>bin\Release\</OutputPath>
     <DefineConstants>TRACE;$(VariantDefineConstants)</DefineConstants>
@@ -40,142 +46,47 @@
     <PlatformTarget>x64</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
+
   <ItemGroup>
-    <Reference Include="Microsoft.CSharp" />
-    <Reference Include="PresentationCore" />
-    <Reference Include="PresentationFramework" />
-    <Reference Include="System" />
-    <Reference Include="System.Core" />
-    <Reference Include="System.Data" />
-    <Reference Include="System.Drawing" />
-    <Reference Include="System.IO.Compression" />
-    <Reference Include="System.IO.Compression.FileSystem" />
-    <Reference Include="System.Runtime.Serialization" />
-    <Reference Include="System.Security" />
-    <Reference Include="System.Windows.Forms" />
-    <Reference Include="System.Xaml" />
-    <Reference Include="System.Xml" />
-    <Reference Include="System.Xml.Linq" />
-    <Reference Include="WindowsBase" />
+    <Compile Remove="src\**\*.cs" />
+    <Compile Remove="tests\**\*.cs" />
+    <Compile Remove="tmp\**\*.cs" />
+    <Compile Remove="packages\**\*.cs" />
+    <Compile Remove="artifacts\**\*.cs" />
+    <Compile Remove="downloads\**\*.cs" />
+    <Compile Remove="dist\**\*.cs" />
+    <Compile Remove="Controls\LoopRangeOverlay.cs" />
+    <Page Remove="src\**\*.xaml" />
+    <Page Remove="tests\**\*.xaml" />
+    <Page Remove="tmp\**\*.xaml" />
+    <Page Remove="packages\**\*.xaml" />
+    <Page Remove="artifacts\**\*.xaml" />
+    <Page Remove="downloads\**\*.xaml" />
+    <Page Remove="dist\**\*.xaml" />
+    <ApplicationDefinition Remove="src\**\*.xaml" />
+    <ApplicationDefinition Remove="tests\**\*.xaml" />
+    <ApplicationDefinition Remove="tmp\**\*.xaml" />
+    <ApplicationDefinition Remove="packages\**\*.xaml" />
+    <ApplicationDefinition Remove="artifacts\**\*.xaml" />
+    <ApplicationDefinition Remove="downloads\**\*.xaml" />
+    <ApplicationDefinition Remove="dist\**\*.xaml" />
   </ItemGroup>
-  <ItemGroup>
-    <ApplicationDefinition Include="App.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </ApplicationDefinition>
-    <Compile Include="App.xaml.cs">
-      <DependentUpon>App.xaml</DependentUpon>
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="AboutWindow.xaml.cs">
-      <DependentUpon>AboutWindow.xaml</DependentUpon>
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="HelpWindow.xaml.cs">
-      <DependentUpon>HelpWindow.xaml</DependentUpon>
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="VideoInfoWindow.xaml.cs">
-      <DependentUpon>VideoInfoWindow.xaml</DependentUpon>
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="Core\Abstractions\IVideoReviewEngine.cs" />
-    <Compile Include="Core\Events\FramePresentedEventArgs.cs" />
-    <Compile Include="Core\Events\ReviewSessionChangedEventArgs.cs" />
-    <Compile Include="Core\Events\ReviewWorkspacePreparationChangedEventArgs.cs" />
-    <Compile Include="Core\Events\ReviewWorkspaceChangedEventArgs.cs" />
-    <Compile Include="Core\Events\VideoReviewEngineStateChangedEventArgs.cs" />
-    <Compile Include="Core\Coordination\MultiVideoWorkspaceState.cs" />
-    <Compile Include="Core\Coordination\ReviewWorkspacePreparationPhase.cs" />
-    <Compile Include="Core\Coordination\ReviewWorkspacePreparationState.cs" />
-    <Compile Include="Core\Coordination\ReviewWorkspaceOperationResult.cs" />
-    <Compile Include="Core\Coordination\ReviewWorkspacePaneSnapshot.cs" />
-    <Compile Include="Core\Coordination\ReviewWorkspacePaneOperationResult.cs" />
-    <Compile Include="Core\Coordination\ReviewWorkspacePaneOperationOutcome.cs" />
-    <Compile Include="Core\Coordination\ReviewWorkspaceSnapshot.cs" />
-    <Compile Include="Core\Coordination\ReviewSessionCoordinator.cs" />
-    <Compile Include="Core\Coordination\ReviewWorkspaceCoordinator.cs" />
-    <Compile Include="Core\Coordination\ReviewPaneState.cs" />
-    <Compile Include="Core\Coordination\SynchronizedOperationScope.cs" />
-    <Compile Include="Core\Coordination\TimelineSynchronizationMode.cs" />
-    <Compile Include="Core\Coordination\WorkspacePaneSelectionMode.cs" />
-    <Compile Include="Core\Models\DecodedFrameBuffer.cs" />
-    <Compile Include="Core\Models\ClipExportPlan.cs" />
-    <Compile Include="Core\Models\ClipExportRequest.cs" />
-    <Compile Include="Core\Models\ClipExportResult.cs" />
-    <Compile Include="Core\Models\FrameDescriptor.cs" />
-    <Compile Include="Core\Models\FrameStepResult.cs" />
-    <Compile Include="Core\Models\LoopPlaybackRangeSnapshot.cs" />
-    <Compile Include="Core\Models\ReviewPlaybackState.cs" />
-    <Compile Include="Core\Models\ReviewPosition.cs" />
-    <Compile Include="Core\Models\ReviewSessionSnapshot.cs" />
-    <Compile Include="Core\Models\VideoMediaInfo.cs" />
-    <Compile Include="Diagnostics\ReviewEngineComparisonRunner.cs" />
-    <Compile Include="Diagnostics\ReviewEngineManualTestRunner.cs" />
-    <Compile Include="Diagnostics\RegressionSuiteCli.cs" />
-    <Compile Include="Diagnostics\RegressionSuiteRunner.cs" />
-    <Compile Include="Diagnostics\WorkspaceCoordinatorProbe.cs" />
-    <Compile Include="Engines\FFmpeg\FfmpegAudioPlaybackSession.cs" />
-    <Compile Include="Engines\FFmpeg\FfmpegAudioStreamInfo.cs" />
-    <Compile Include="Engines\FFmpeg\FfmpegDecodedFrameCache.cs" />
-    <Compile Include="Engines\FFmpeg\FfmpegFrameConverter.cs" />
-    <Compile Include="Engines\FFmpeg\FfmpegGlobalFrameIndex.cs" />
-    <Compile Include="Engines\FFmpeg\FfmpegHardwareDeviceCache.cs" />
-    <Compile Include="Engines\FFmpeg\FfmpegNativeHelpers.cs" />
-    <Compile Include="Engines\FFmpeg\FfmpegReviewEngineOptions.cs" />
-    <Compile Include="Engines\FFmpeg\FfmpegReviewEngine.cs" />
-    <Compile Include="Engines\FFmpeg\GpuBackendPreference.cs" />
-    <Compile Include="Engines\FFmpeg\WinMmAudioOutput.cs" />
-    <Compile Include="MainWindow.xaml.cs">
-      <DependentUpon>MainWindow.xaml</DependentUpon>
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="Services\AppPreferences.cs" />
-    <Compile Include="Services\AppPreferencesService.cs" />
-    <Compile Include="Services\BuildVariantInfo.cs" />
-    <Compile Include="Services\ExportToolsManifestService.cs" />
-    <Compile Include="Services\DecodedFrameBudgetCoordinator.cs" />
-    <Compile Include="Services\DiagnosticLogService.cs" />
-    <Compile Include="Services\FrameSurfaceGeometry.cs" />
-    <Compile Include="Services\FfmpegReviewEngineOptionsProvider.cs" />
-    <Compile Include="Services\RecentFilesService.cs" />
-    <Compile Include="Services\VideoReviewEngineFactory.cs" />
-    <Compile Include="Services\WpfFrameBufferPresenter.cs" />
-    <Compile Include="Controls\LoopRangeOverlay.cs" />
-    <Page Include="AboutWindow.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
-    <Page Include="HelpWindow.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
-    <Page Include="MainWindow.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
-    <Page Include="VideoInfoWindow.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
-  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="FFmpeg.AutoGen" Version="8.0.0.1" />
   </ItemGroup>
+
   <ItemGroup>
-    <Compile Include="Services\RuntimeManifestService.cs" />
-    <Compile Include="Services\ClipExportService.cs" />
-    <None Include="Assets\FramePlayer.ico" />
-    <None Include="Runtime\README.md" />
-    <None Include="scripts\ffmpeg\Build-FFmpeg-Tools-8.1.ps1" />
-    <None Include="scripts\Build-FramePlayer.ps1" />
-    <None Include="scripts\Build-Comparison-Variants.ps1" />
-    <None Include="scripts\Create-Comparison-Shortcuts.ps1" />
-    <None Include="scripts\Ensure-DevExportTools.ps1" />
-    <None Include="scripts\Ensure-DevRuntime.ps1" />
-    <None Include="scripts\Run-ReviewEngine-ManualTests.ps1" />
-    <None Include="scripts\Run-RegressionSuite.ps1" />
+    <ProjectReference Include="src\FramePlayer.Controls\FramePlayer.Controls.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="LICENSE" />
+    <None Remove="THIRD_PARTY_NOTICES.md" />
+    <None Remove="Runtime\runtime-manifest.json" />
+    <None Remove="Runtime\export-tools-manifest.json" />
+    <None Remove="Runtime\ffmpeg\*.dll" />
+    <None Remove="Runtime\ffmpeg-tools\*.*" />
     <None Include="LICENSE">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
@@ -190,29 +101,23 @@
       <Link>ffmpeg-tools\%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <EmbeddedResource Include="Runtime\runtime-manifest.json" />
-    <EmbeddedResource Include="Runtime\export-tools-manifest.json" />
+    <EmbeddedResource Include="Runtime\runtime-manifest.json" LogicalName="FramePlayer.Runtime.runtime-manifest.json" />
+    <EmbeddedResource Include="Runtime\export-tools-manifest.json" LogicalName="FramePlayer.Runtime.export-tools-manifest.json" />
   </ItemGroup>
-  <Target Name="EnsureBundledRuntime" BeforeTargets="PrepareForBuild"
+
+  <Target Name="EnsureBundledRuntime"
+          BeforeTargets="PrepareForBuild"
           Condition="'$(OS)' == 'Windows_NT' and '$(SkipRuntimeBootstrap)' != 'true' and !Exists('Runtime\\ffmpeg\\avcodec-62.dll')">
     <Message Importance="high"
              Text="FFmpeg runtime DLLs are missing. Downloading the pinned runtime for this build..." />
     <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\scripts\Ensure-DevRuntime.ps1&quot;"
           WorkingDirectory="$(MSBuildProjectDirectory)" />
   </Target>
-  <Target Name="WarnIfBundledRuntimeMissing" BeforeTargets="Build"
+
+  <Target Name="WarnIfBundledRuntimeMissing"
+          BeforeTargets="Build"
           Condition="'$(SkipRuntimeBootstrap)' != 'true' and !Exists('Runtime\\ffmpeg\\avcodec-62.dll')">
     <Message Importance="high"
              Text="FFmpeg runtime DLLs are not present in Runtime\\ffmpeg. Frame Player attempted to bootstrap them automatically. If the download failed, run .\\scripts\\Ensure-DevRuntime.ps1 manually and rebuild." />
   </Target>
-  <Target Name="CopyBundledRuntimeToOutput" AfterTargets="Build"
-          Condition="Exists('Runtime\\ffmpeg\\avcodec-62.dll')">
-    <ItemGroup>
-      <BundledRuntimeFiles Include="$(MSBuildProjectDirectory)\Runtime\ffmpeg\*.dll" />
-    </ItemGroup>
-    <Copy SourceFiles="@(BundledRuntimeFiles)"
-          DestinationFolder="$(OutDir)"
-          SkipUnchangedFiles="true" />
-  </Target>
-  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

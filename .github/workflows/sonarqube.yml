@@ -62,15 +62,7 @@ jobs:
         if: steps.sonar_config.outputs.enabled == 'true'
         uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5
         with:
-          dotnet-version: '8.0.x'
-
-      - name: Setup NuGet
-        if: steps.sonar_config.outputs.enabled == 'true'
-        uses: NuGet/setup-nuget@12c57947e9458a5b976961b08ea0706a17dd71ae # v3
-
-      - name: Setup MSBuild
-        if: steps.sonar_config.outputs.enabled == 'true'
-        uses: microsoft/setup-msbuild@30375c66a4eea26614e0d39710365f22f8b0af57 # v3
+          global-json-file: .\global.json
 
       - name: Cache SonarQube packages
         if: steps.sonar_config.outputs.enabled == 'true'
@@ -114,11 +106,16 @@ jobs:
           # regression suite rather than imported .NET line-coverage reports.
           $coverageExclusions = @(
             "App.xaml.cs"
+            "CompareSideBySideExportOptionsWindow.xaml.cs"
             "Core/Models/ClipExport*.cs"
+            "Core/Models/CompareSideBySideExport*.cs"
             "Core/Models/LoopPlaybackRangeSnapshot.cs"
             "Core/Coordination/ReviewWorkspaceCoordinator.cs"
             "Services/ClipExportService.cs"
+            "Services/CompareSideBySideExportService.cs"
             "Services/ExportToolsManifestService.cs"
+            "Services/FfmpegCliTooling.cs"
+            "Services/FfmpegExportTiming.cs"
             "Engines/FFmpeg/FfmpegReviewEngine.cs"
             "MainWindow.xaml.cs"
             "Diagnostics/RegressionSuiteRunner.cs"
@@ -131,7 +128,7 @@ jobs:
             /d:sonar.token="$env:SONAR_TOKEN" `
             /d:sonar.coverage.exclusions="$coverageExclusions"
 
-          msbuild .\FramePlayer.csproj /t:Restore,Build /p:Configuration=Release /p:Platform=x64
+          dotnet build .\FramePlayer.csproj -c Release -p:Platform=x64
 
           .\.sonar\scanner\dotnet-sonarscanner end `
             /d:sonar.token="$env:SONAR_TOKEN"

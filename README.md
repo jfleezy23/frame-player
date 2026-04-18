@@ -21,6 +21,7 @@ Frame Player is a frames-first WPF review tool built on a custom FFmpeg engine w
 - Supports whole-media loop playback and exact A/B loop playback on the main transport using `[` and `]`
 - In compare mode, the pane-local sliders can carry independent pane-local loop boxes for focused review
 - Saves reviewed shared-loop and pane-local loop ranges as MP4 clip exports through a bundled FFmpeg CLI toolset
+- Exports two-pane compare sessions as full-resolution side-by-side MP4 output in loop or whole-video mode, with audio selectable from either pane
 - Shows a labeled pixel coordinate readout for the hovered pane
 - Includes a structured `Video Info` inspector for FFmpeg-reported pane media metadata, including right-click access on video panes and compare-friendly modeless windows
 - Shows playback state, FPS, frame-step size, duration, frame number, and a frame-derived timecode readout
@@ -96,15 +97,15 @@ That script:
 4. Restores NuGet packages
 5. Builds the app in `Release|x64`
 
-If the self-built runtime has not been staged yet, run `.\scripts\ffmpeg\Build-FFmpeg-8.1.ps1` first if you want a local candidate/runtime archive. If you also want clip export available in the local build, run `.\scripts\ffmpeg\Build-FFmpeg-Tools-8.1.ps1` and then `.\scripts\Ensure-DevExportTools.ps1`. Regular Visual Studio and MSBuild builds still bootstrap `Runtime\ffmpeg` automatically when it is missing, and clean bootstrap environments fall back to the verified `v1.5.0` release asset.
+If the self-built runtime has not been staged yet, run `.\scripts\ffmpeg\Build-FFmpeg-8.1.ps1` first if you want a local candidate/runtime archive. If you also want clip export available in the local build, run `.\scripts\ffmpeg\Build-FFmpeg-Tools-8.1.ps1` and then `.\scripts\Ensure-DevExportTools.ps1`. Regular Visual Studio and `dotnet` CLI builds still bootstrap `Runtime\ffmpeg` automatically when it is missing, and clean bootstrap environments fall back to the verified `v1.5.0` release asset.
 
 For phase-1 GPU validation, keep the default `Playback > Use GPU Acceleration` setting enabled and test on a machine with a working Vulkan loader/driver. Unsupported systems and unsupported codec/device combinations stay on CPU decode automatically.
 
 ## Requirements
 
 - Windows 10 or later
-- Visual Studio 2022 Build Tools or Visual Studio 2022 with `.NET desktop development`
-- `.NET Framework 4.8 Developer Pack`
+- .NET 10 SDK (`10.0.2xx`)
+- Visual Studio 2026 Build Tools or Visual Studio 2026 with `.NET desktop development` for fully supported `net10.0-windows` targeting
 - PowerShell 5.1 or later
 
 For Vulkan-backed GPU decode testing, the local machine also needs a working Vulkan loader/driver. CPU decode remains the default fallback when Vulkan is unavailable or unsupported.
@@ -119,12 +120,12 @@ For most machines, use the helper script:
 
 If the active runtime directory is missing, run `.\scripts\ffmpeg\Build-FFmpeg-8.1.ps1` once, then `.\scripts\Ensure-DevRuntime.ps1`, and rebuild. If the export-tools manifest has been pinned locally and you want clip export enabled, run `.\scripts\ffmpeg\Build-FFmpeg-Tools-8.1.ps1` and `.\scripts\Ensure-DevExportTools.ps1` too.
 
-If you need to call MSBuild directly, use a Visual Studio Developer PowerShell or a machine with Visual Studio Build Tools installed:
+If you need to build directly instead of using the helper script, use a machine with the .NET 10 SDK installed:
 
 ```powershell
 .\scripts\Ensure-DevRuntime.ps1
 .\scripts\Ensure-DevExportTools.ps1
-& "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\amd64\MSBuild.exe" .\FramePlayer.csproj /t:Restore,Build /p:Configuration=Release /p:Platform=x64
+dotnet build .\FramePlayer.csproj -c Release -p:Platform=x64
 ```
 
 To build the local MSIX package:

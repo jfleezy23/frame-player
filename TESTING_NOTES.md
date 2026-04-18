@@ -8,7 +8,7 @@ Release: `1.6.0`
 - Video playback, audio playback, basic A/V sync, seek-to-time, seek-to-frame, exact frame stepping, and opportunistic Vulkan decode with strict CPU fallback are implemented in the custom engine.
 - The latest UI pass combined Play/Pause into one toggle, restored the normal visual tone, removed temporary custom-build banners, added a cache status indicator, and fixed arrow-key stepping immediately after frame entry.
 - The latest GPU/cache pass adds a visible GPU toggle, pane-aware decoded-frame budgeting, shared Vulkan warmup, and backend-aware compare behavior without changing the frames-first review contract.
-- The latest release polish pass adds live timeline scrubbing, A/B loop playback on the main transport, pane-local compare loop boxes, pane-local compare navigation, Inspector V2 with pane context-menu access, pending frame-number honesty while background indexing is still resolving absolute frame identity, follow-up fixes for fullscreen status-bar chrome plus pane-local frame clamping, and reviewed-loop MP4 clip export through a separate FFmpeg CLI bundle.
+- The latest release polish pass adds live timeline scrubbing, A/B loop playback on the main transport, pane-local compare loop boxes, pane-local compare navigation, Inspector V2 with pane context-menu access, pending frame-number honesty while background indexing is still resolving absolute frame identity, follow-up fixes for fullscreen status-bar chrome plus pane-local frame clamping, reviewed-loop MP4 clip export through a separate FFmpeg CLI bundle, and side-by-side compare export with loop and whole-video modes.
 
 ## Manual test checklist
 
@@ -32,13 +32,16 @@ Release: `1.6.0`
 - In two-pane mode, set different pane-local loop boxes on Primary and Compare and confirm each pane slider shows its own boxed range instead of sharing one loop box.
 - In two-pane mode, confirm only the Primary and Compare pane timelines expose pane-local `Set Position A Here`, `Set Position B Here`, `Loop Playback`, and `Save Loop As Clip...` actions.
 - In two-pane mode, right-click each pane and use `Save Loop As Clip...` to confirm Primary and Compare can each export their own pane-local loop as separate MP4 clips.
+- In two-pane mode, use `Playback > Export Side-by-Side Compare...`, choose `Loop`, select audio from both panes on separate runs, and confirm the merged MP4 keeps both panes at full reviewed raster size without downscaling.
+- In two-pane mode, use `Playback > Export Side-by-Side Compare...`, choose `Whole Video`, and confirm the merged MP4 preserves the current compare alignment by adding black lead-in to the earlier pane instead of trimming it away.
+- If the selected side-by-side export audio source has no audio stream, confirm the merged MP4 still exports successfully as silent video.
 - Right-click the primary pane and the compare pane, open `Video Info...` from both, and confirm two inspector windows can stay open at once with the correct pane-specific FFmpeg metadata.
 - Try at least one video with audio and confirm audio starts during playback.
 - If possible, try one video-only clip and confirm playback still works without audio errors.
 
 ## Automated regression coverage
 
-- The supported full-corpus regression path now runs hidden-window timed playback, loop playback, and clip export coverage for both audio-bearing and video-only files.
+- The supported full-corpus regression path now runs hidden-window timed playback, loop playback, clip export, and side-by-side compare export coverage for both audio-bearing and video-only files.
 - Full-corpus trim/export coverage is expected on the active supported container set: `.avi`, `.mov`, `.m4v`, `.mp4`, `.mkv`, and `.wmv`.
 - `.ts` remains intentionally outside the active supported surface and is skipped by the full-corpus regression suite instead of counted as a product failure.
 

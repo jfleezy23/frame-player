@@ -51,6 +51,7 @@ namespace FramePlayer
         private readonly BuildVariantInfo _buildVariant;
         private readonly AppPreferencesService _appPreferencesService;
         private readonly ClipExportService _clipExportService;
+        private readonly CompareSideBySideExportService _compareSideBySideExportService;
         private readonly DiagnosticLogService _diagnosticLogService;
         private readonly FfmpegReviewEngineOptionsProvider _ffmpegReviewEngineOptionsProvider;
         private readonly RecentFilesService _recentFilesService;
@@ -187,6 +188,25 @@ namespace FramePlayer
             public FfmpegReviewEngine Engine { get; }
         }
 
+        private sealed class CompareSideBySideExportContext
+        {
+            public ReviewWorkspacePaneSnapshot PrimaryPaneSnapshot { get; init; }
+
+            public ReviewWorkspacePaneSnapshot ComparePaneSnapshot { get; init; }
+
+            public FfmpegReviewEngine PrimaryEngine { get; init; }
+
+            public FfmpegReviewEngine CompareEngine { get; init; }
+
+            public LoopPlaybackPaneRangeSnapshot PrimaryLoopRange { get; init; }
+
+            public LoopPlaybackPaneRangeSnapshot CompareLoopRange { get; init; }
+
+            public bool IsLoopModeAvailable { get; init; }
+
+            public string LoopModeUnavailableReason { get; init; } = string.Empty;
+        }
+
         private sealed class TimelineContextCommandTarget
         {
             public TimelineContextCommandTarget(string paneId, TimeSpan target)
@@ -235,6 +255,7 @@ namespace FramePlayer
             _appPreferencesService = new AppPreferencesService();
             _diagnosticLogService = new DiagnosticLogService();
             _clipExportService = new ClipExportService();
+            _compareSideBySideExportService = new CompareSideBySideExportService();
             _ffmpegReviewEngineOptionsProvider = new FfmpegReviewEngineOptionsProvider(_appPreferencesService);
             _recentFilesService = new RecentFilesService();
             _videoReviewEngineFactory = new VideoReviewEngineFactory(_ffmpegReviewEngineOptionsProvider);
@@ -415,11 +436,15 @@ namespace FramePlayer
                 : DwmWindowCornerPreference.DoNotRound;
             try
             {
-                DwmSetWindowAttribute(
+                var hresult = DwmSetWindowAttribute(
                     handle,
                     DwmaWindowCornerPreference,
                     ref preference,
                     sizeof(int));
+                if (hresult != 0)
+                {
+                    return;
+                }
             }
             catch (DllNotFoundException)
             {
@@ -1048,7 +1073,7 @@ namespace FramePlayer
                 : "Or open a video to begin";
         }
 
-        private string BuildPaneTitleText(ReviewWorkspacePaneSnapshot paneSnapshot)
+        private static string BuildPaneTitleText(ReviewWorkspacePaneSnapshot paneSnapshot)
         {
             if (string.Equals(paneSnapshot.PaneId, ComparePaneId, StringComparison.Ordinal))
             {
@@ -1095,7 +1120,7 @@ namespace FramePlayer
                 _lastCompareAlignmentStatus);
         }
 
-        private string BuildCompareRelationshipText(
+        private static string BuildCompareRelationshipText(
             ReviewWorkspacePaneSnapshot primaryPaneSnapshot,
             ReviewWorkspacePaneSnapshot comparePaneSnapshot)
         {
@@ -1165,10 +1190,7 @@ namespace FramePlayer
 
         private async Task RunFocusedPaneActionAsync(string paneId, Func<Task> action)
         {
-            if (action == null)
-            {
-                throw new ArgumentNullException(nameof(action));
-            }
+            ArgumentNullException.ThrowIfNull(action);
 
             if (!TrySelectPaneForPaneCommand(paneId))
             {
@@ -1381,6 +1403,18 @@ namespace FramePlayer
             // Let the popup close before showing the save dialog from a pane context menu.
             await Dispatcher.Yield(DispatcherPriority.Background);
             await ExportLoopClipAsync(null, paneId);
+        }
+
+        private async void ExportSideBySideCompareMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            await PromptAndExportSideBySideCompareAsync();
+        }
+
+        private async void PaneExportSideBySideCompareMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            // Let the popup close before showing the compare export dialog from a pane context menu.
+            await Dispatcher.Yield(DispatcherPriority.Background);
+            await PromptAndExportSideBySideCompareAsync();
         }
 
         private async void TimelineSetLoopPositionAMenuItem_Click(object sender, RoutedEventArgs e)
@@ -1743,7 +1777,7 @@ namespace FramePlayer
 
         private void Window_PreviewDragOver(object sender, DragEventArgs e)
         {
-            UpdateDropEffects(e, preferredPaneId: null);
+            UpdateDropEffects(e);
         }
 
         private async void VideoPane_Drop(object sender, DragEventArgs e)
@@ -1753,7 +1787,7 @@ namespace FramePlayer
 
         private void VideoPane_PreviewDragOver(object sender, DragEventArgs e)
         {
-            UpdateDropEffects(e, (sender as FrameworkElement)?.Tag as string);
+            UpdateDropEffects(e);
         }
 
         private async Task HandleDroppedFilesAsync(DragEventArgs e, string preferredPaneId)
@@ -1788,7 +1822,7 @@ namespace FramePlayer
             e.Handled = true;
         }
 
-        private void UpdateDropEffects(DragEventArgs e, string preferredPaneId)
+        private static void UpdateDropEffects(DragEventArgs e)
         {
             var files = GetDroppedFiles(e);
             var hasSupportedFile = files != null && files.Any(IsSupportedVideoFile);
@@ -1819,7 +1853,7 @@ namespace FramePlayer
                 : resolvedPaneId;
         }
 
-        private string TryFindPaneId(DependencyObject originalSource)
+        private static string TryFindPaneId(DependencyObject originalSource)
         {
             var current = originalSource;
             while (current != null)
@@ -3601,10 +3635,7 @@ namespace FramePlayer
 
         private async Task RunWithCacheStatusAsync(string activeMessage, Func<Task> operation)
         {
-            if (operation == null)
-            {
-                throw new ArgumentNullException(nameof(operation));
-            }
+            ArgumentNullException.ThrowIfNull(operation);
 
             BeginCacheStatus(activeMessage);
             await Dispatcher.Yield(DispatcherPriority.Render);
@@ -4219,6 +4250,575 @@ namespace FramePlayer
                     string.Empty,
                     string.Empty);
             }
+        }
+
+        private async Task<CompareSideBySideExportResult> PromptAndExportSideBySideCompareAsync()
+        {
+            CompareSideBySideExportContext exportContext;
+            if (!TryResolveCompareSideBySideExportContextWithUserFeedback(
+                _workspaceCoordinator.GetWorkspaceSnapshot(),
+                null,
+                out exportContext))
+            {
+                return null;
+            }
+
+            CompareSideBySideExportDialogSelection selection;
+            if (!TryPromptForCompareSideBySideExportOptions(exportContext, out selection))
+            {
+                return null;
+            }
+
+            return await ExportSideBySideCompareAsync(
+                null,
+                selection.Mode,
+                selection.AudioSource).ConfigureAwait(true);
+        }
+
+        private async Task<CompareSideBySideExportResult> ExportSideBySideCompareAsync(
+            string outputPath,
+            CompareSideBySideExportMode mode,
+            CompareSideBySideExportAudioSource audioSource)
+        {
+            CompareSideBySideExportContext exportContext;
+            if (!TryResolveCompareSideBySideExportContextWithUserFeedback(
+                _workspaceCoordinator.GetWorkspaceSnapshot(),
+                mode,
+                out exportContext))
+            {
+                return null;
+            }
+
+            await PausePlaybackAsync(logAction: false, operationScope: SynchronizedOperationScope.AllPanes);
+
+            if (!TryResolveCompareSideBySideExportContextWithUserFeedback(
+                _workspaceCoordinator.GetWorkspaceSnapshot(),
+                mode,
+                out exportContext))
+            {
+                return null;
+            }
+
+            var resolvedOutputPath = outputPath;
+            if (string.IsNullOrWhiteSpace(resolvedOutputPath) &&
+                !TryPromptForCompareSideBySideExportPath(exportContext, mode, out resolvedOutputPath))
+            {
+                return null;
+            }
+
+            var request = BuildCompareSideBySideExportRequest(exportContext, resolvedOutputPath, mode, audioSource);
+            try
+            {
+                SetPlaybackMessage(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Exporting side-by-side compare ({0})...",
+                    mode == CompareSideBySideExportMode.Loop ? "loop" : "whole video"));
+                LogInfo(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Starting side-by-side compare export: mode {0}, audio {1}, output {2}.",
+                    mode,
+                    audioSource,
+                    GetSafeFileDisplay(resolvedOutputPath)));
+
+                var exportResult = await _compareSideBySideExportService.ExportAsync(request).ConfigureAwait(true);
+                if (exportResult == null)
+                {
+                    return null;
+                }
+
+                if (exportResult.Succeeded)
+                {
+                    ReportSuccessfulCompareSideBySideExport(exportResult);
+                }
+                else
+                {
+                    ReportFailedCompareSideBySideExport(exportResult.Message);
+                }
+
+                return exportResult;
+            }
+            catch (Exception ex)
+            {
+                return CreateFailedCompareSideBySideExportResult(ex.Message);
+            }
+        }
+
+        private bool TryResolveCompareSideBySideExportContextWithUserFeedback(
+            ReviewWorkspaceSnapshot workspaceSnapshot,
+            CompareSideBySideExportMode? requiredMode,
+            out CompareSideBySideExportContext exportContext)
+        {
+            string failureMessage;
+            if (TryResolveCompareSideBySideExportContext(workspaceSnapshot, requiredMode, out exportContext, out failureMessage))
+            {
+                return true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(failureMessage))
+            {
+                SetPlaybackMessage(failureMessage);
+                LogWarning(failureMessage);
+            }
+
+            return false;
+        }
+
+        private void ReportSuccessfulCompareSideBySideExport(CompareSideBySideExportResult exportResult)
+        {
+            var durationText = exportResult.ProbedDuration.HasValue
+                ? FormatTime(exportResult.ProbedDuration.Value)
+                : FormatTime(exportResult.Plan.OutputDuration);
+            SetPlaybackMessage("Side-by-side compare exported.");
+            LogInfo(string.Format(
+                CultureInfo.InvariantCulture,
+                "Side-by-side compare export completed: output {0}, mode {1}, audio {2}, duration {3}, output size {4}x{5}, probed audio {6}, elapsed {7:0.0} ms.",
+                GetSafeFileDisplay(exportResult.Plan.OutputFilePath),
+                exportResult.Plan.Mode,
+                exportResult.Plan.AudioSource,
+                durationText,
+                exportResult.ProbedVideoWidth.GetValueOrDefault(exportResult.Plan.OutputWidth),
+                exportResult.ProbedVideoHeight.GetValueOrDefault(exportResult.Plan.OutputHeight),
+                exportResult.ProbedHasAudioStream.HasValue
+                    ? exportResult.ProbedHasAudioStream.Value.ToString()
+                    : exportResult.Plan.SelectedAudioHasStream.ToString(),
+                exportResult.Elapsed.TotalMilliseconds));
+        }
+
+        private void ReportFailedCompareSideBySideExport(string message)
+        {
+            var sanitizedMessage = SanitizeSensitiveText(message);
+            SetPlaybackMessage("Side-by-side compare export failed.");
+            LogError("Side-by-side compare export failed: " + sanitizedMessage);
+        }
+
+        private CompareSideBySideExportResult CreateFailedCompareSideBySideExportResult(string message)
+        {
+            ReportFailedCompareSideBySideExport(message);
+            return new CompareSideBySideExportResult
+            {
+                Succeeded = false,
+                Plan = null,
+                Message = SanitizeSensitiveText(message),
+                ExitCode = -1,
+                Elapsed = TimeSpan.Zero,
+                ProbedDuration = null,
+                ProbedVideoWidth = null,
+                ProbedVideoHeight = null,
+                ProbedHasAudioStream = null,
+                StandardOutput = string.Empty,
+                StandardError = string.Empty
+            };
+        }
+
+        private bool TryResolveCompareSideBySideExportContext(
+            ReviewWorkspaceSnapshot workspaceSnapshot,
+            CompareSideBySideExportMode? requiredMode,
+            out CompareSideBySideExportContext exportContext,
+            out string failureMessage)
+        {
+            exportContext = null;
+            failureMessage = string.Empty;
+
+            if (!_compareSideBySideExportService.IsBundledToolingAvailable)
+            {
+                failureMessage = _compareSideBySideExportService.GetToolAvailabilityMessage();
+                return false;
+            }
+
+            if (!IsCompareModeEnabled)
+            {
+                failureMessage = "Enable two-pane compare and load both panes before exporting a side-by-side compare.";
+                return false;
+            }
+
+            if (workspaceSnapshot == null)
+            {
+                failureMessage = "Load media into both compare panes before exporting a side-by-side compare.";
+                return false;
+            }
+
+            ReviewWorkspacePaneSnapshot primaryPaneSnapshot;
+            ReviewWorkspacePaneSnapshot comparePaneSnapshot;
+            if (!TryResolveLoadedComparePaneSnapshots(workspaceSnapshot, out primaryPaneSnapshot, out comparePaneSnapshot))
+            {
+                failureMessage = "Load media into both compare panes before exporting a side-by-side compare.";
+                return false;
+            }
+
+            var primaryEngine = GetEngineForPane(PrimaryPaneId) as FfmpegReviewEngine;
+            var compareEngine = GetEngineForPane(ComparePaneId) as FfmpegReviewEngine;
+            if (primaryEngine == null || !primaryEngine.IsMediaOpen || compareEngine == null || !compareEngine.IsMediaOpen)
+            {
+                failureMessage = "Both compare review engines must stay available during side-by-side export.";
+                return false;
+            }
+
+            var primaryLoopRange = primaryPaneSnapshot.LoopRange;
+            var compareLoopRange = comparePaneSnapshot.LoopRange;
+            var isLoopModeAvailable = EvaluateCompareSideBySideLoopModeAvailability(
+                primaryPaneSnapshot,
+                comparePaneSnapshot,
+                primaryEngine,
+                compareEngine,
+                ref primaryLoopRange,
+                ref compareLoopRange,
+                out var loopModeFailureMessage);
+
+            if (requiredMode == CompareSideBySideExportMode.Loop && !isLoopModeAvailable)
+            {
+                failureMessage = loopModeFailureMessage;
+                return false;
+            }
+
+            exportContext = new CompareSideBySideExportContext
+            {
+                PrimaryPaneSnapshot = primaryPaneSnapshot,
+                ComparePaneSnapshot = comparePaneSnapshot,
+                PrimaryEngine = primaryEngine,
+                CompareEngine = compareEngine,
+                PrimaryLoopRange = primaryLoopRange,
+                CompareLoopRange = compareLoopRange,
+                IsLoopModeAvailable = isLoopModeAvailable,
+                LoopModeUnavailableReason = loopModeFailureMessage ?? string.Empty
+            };
+            return true;
+        }
+
+        private static bool TryResolveLoadedComparePaneSnapshots(
+            ReviewWorkspaceSnapshot workspaceSnapshot,
+            out ReviewWorkspacePaneSnapshot primaryPaneSnapshot,
+            out ReviewWorkspacePaneSnapshot comparePaneSnapshot)
+        {
+            primaryPaneSnapshot = default;
+            comparePaneSnapshot = default;
+
+            if (!workspaceSnapshot.TryGetPane(PrimaryPaneId, out primaryPaneSnapshot) ||
+                !workspaceSnapshot.TryGetPane(ComparePaneId, out comparePaneSnapshot))
+            {
+                return false;
+            }
+
+            return PaneHasLoadedMedia(primaryPaneSnapshot) &&
+                   PaneHasLoadedMedia(comparePaneSnapshot);
+        }
+
+        private static bool EvaluateCompareSideBySideLoopModeAvailability(
+            ReviewWorkspacePaneSnapshot primaryPaneSnapshot,
+            ReviewWorkspacePaneSnapshot comparePaneSnapshot,
+            FfmpegReviewEngine primaryEngine,
+            FfmpegReviewEngine compareEngine,
+            ref LoopPlaybackPaneRangeSnapshot primaryLoopRange,
+            ref LoopPlaybackPaneRangeSnapshot compareLoopRange,
+            out string loopModeFailureMessage)
+        {
+            loopModeFailureMessage = string.Empty;
+
+            if ((primaryLoopRange == null || !primaryLoopRange.HasAnyMarkers) ||
+                (compareLoopRange == null || !compareLoopRange.HasAnyMarkers))
+            {
+                loopModeFailureMessage = "Loop mode requires pane-local A/B markers on both panes.";
+                return false;
+            }
+
+            if (!primaryLoopRange.HasLoopIn || !primaryLoopRange.HasLoopOut)
+            {
+                loopModeFailureMessage = "Loop mode requires both loop-in and loop-out on the primary pane.";
+                return false;
+            }
+
+            if (!compareLoopRange.HasLoopIn || !compareLoopRange.HasLoopOut)
+            {
+                loopModeFailureMessage = "Loop mode requires both loop-in and loop-out on the compare pane.";
+                return false;
+            }
+
+            primaryLoopRange = PromotePendingLoopRangeFromIndexedFrameIdentity(
+                primaryLoopRange,
+                primaryPaneSnapshot.PaneId,
+                primaryPaneSnapshot.SessionId,
+                primaryPaneSnapshot.DisplayLabel,
+                primaryEngine);
+            compareLoopRange = PromotePendingLoopRangeFromIndexedFrameIdentity(
+                compareLoopRange,
+                comparePaneSnapshot.PaneId,
+                comparePaneSnapshot.SessionId,
+                comparePaneSnapshot.DisplayLabel,
+                compareEngine);
+
+            if (primaryLoopRange.HasPendingMarkers || compareLoopRange.HasPendingMarkers)
+            {
+                loopModeFailureMessage = "Loop mode is disabled while pane-local markers are still pending exact frame identity.";
+                return false;
+            }
+
+            if (primaryLoopRange.IsInvalidRange || compareLoopRange.IsInvalidRange)
+            {
+                loopModeFailureMessage = "Loop mode is disabled because one or both pane-local loop ranges are invalid.";
+                return false;
+            }
+
+            return true;
+        }
+
+        private bool TryPromptForCompareSideBySideExportOptions(
+            CompareSideBySideExportContext exportContext,
+            out CompareSideBySideExportDialogSelection selection)
+        {
+            selection = null;
+            if (exportContext == null)
+            {
+                return false;
+            }
+
+            var initialMode = exportContext.IsLoopModeAvailable
+                ? CompareSideBySideExportMode.Loop
+                : CompareSideBySideExportMode.WholeVideo;
+            var snapshot = BuildCompareSideBySideExportDialogSnapshot(exportContext, initialMode, CompareSideBySideExportAudioSource.Primary);
+            var window = new CompareSideBySideExportOptionsWindow(snapshot)
+            {
+                Owner = this
+            };
+            if (window.ShowDialog() != true || window.Selection == null)
+            {
+                return false;
+            }
+
+            selection = window.Selection;
+            return true;
+        }
+
+        private bool TryPromptForCompareSideBySideExportPath(
+            CompareSideBySideExportContext exportContext,
+            CompareSideBySideExportMode mode,
+            out string outputPath)
+        {
+            outputPath = string.Empty;
+            if (exportContext == null)
+            {
+                return false;
+            }
+
+            var dialog = new SaveFileDialog
+            {
+                Title = "Export Side-by-Side Compare",
+                Filter = "MP4 Video|*.mp4",
+                DefaultExt = ".mp4",
+                AddExtension = true,
+                OverwritePrompt = true,
+                CheckPathExists = true,
+                FileName = BuildSuggestedCompareExportFileName(exportContext, mode)
+            };
+
+            var sourceDirectory = Path.GetDirectoryName(exportContext.PrimaryPaneSnapshot.CurrentFilePath);
+            if (!string.IsNullOrWhiteSpace(sourceDirectory) && Directory.Exists(sourceDirectory))
+            {
+                dialog.InitialDirectory = sourceDirectory;
+            }
+
+            if (dialog.ShowDialog(this) != true)
+            {
+                return false;
+            }
+
+            outputPath = dialog.FileName;
+            return true;
+        }
+
+        private static CompareSideBySideExportRequest BuildCompareSideBySideExportRequest(
+            CompareSideBySideExportContext exportContext,
+            string outputPath,
+            CompareSideBySideExportMode mode,
+            CompareSideBySideExportAudioSource audioSource)
+        {
+            return new CompareSideBySideExportRequest
+            {
+                OutputFilePath = outputPath,
+                Mode = mode,
+                AudioSource = audioSource,
+                PrimarySessionSnapshot = BuildReviewSessionSnapshot(exportContext.PrimaryPaneSnapshot, exportContext.PrimaryEngine),
+                CompareSessionSnapshot = BuildReviewSessionSnapshot(exportContext.ComparePaneSnapshot, exportContext.CompareEngine),
+                PrimaryLoopRange = exportContext.PrimaryLoopRange,
+                CompareLoopRange = exportContext.CompareLoopRange,
+                PrimaryEngine = exportContext.PrimaryEngine,
+                CompareEngine = exportContext.CompareEngine
+            };
+        }
+
+        private static CompareSideBySideExportDialogSnapshot BuildCompareSideBySideExportDialogSnapshot(
+            CompareSideBySideExportContext exportContext,
+            CompareSideBySideExportMode initialMode,
+            CompareSideBySideExportAudioSource initialAudioSource)
+        {
+            var primaryMediaInfo = exportContext.PrimaryEngine != null ? exportContext.PrimaryEngine.MediaInfo : VideoMediaInfo.Empty;
+            var compareMediaInfo = exportContext.CompareEngine != null ? exportContext.CompareEngine.MediaInfo : VideoMediaInfo.Empty;
+            return new CompareSideBySideExportDialogSnapshot
+            {
+                PrimaryFileName = Path.GetFileName(exportContext.PrimaryPaneSnapshot.CurrentFilePath) ?? string.Empty,
+                PrimaryVideoSummary = BuildCompareExportVideoSummary(primaryMediaInfo),
+                PrimaryAudioSummary = BuildCompareExportAudioSummary(primaryMediaInfo),
+                PrimaryPositionSummary = BuildCompareExportPositionSummary(exportContext.PrimaryPaneSnapshot),
+                PrimaryLoopSummary = BuildCompareExportLoopSummary(exportContext.PrimaryLoopRange),
+                CompareFileName = Path.GetFileName(exportContext.ComparePaneSnapshot.CurrentFilePath) ?? string.Empty,
+                CompareVideoSummary = BuildCompareExportVideoSummary(compareMediaInfo),
+                CompareAudioSummary = BuildCompareExportAudioSummary(compareMediaInfo),
+                ComparePositionSummary = BuildCompareExportPositionSummary(exportContext.ComparePaneSnapshot),
+                CompareLoopSummary = BuildCompareExportLoopSummary(exportContext.CompareLoopRange),
+                PrimaryHasAudio = primaryMediaInfo.HasAudioStream,
+                CompareHasAudio = compareMediaInfo.HasAudioStream,
+                IsLoopModeAvailable = exportContext.IsLoopModeAvailable,
+                LoopModeUnavailableReason = exportContext.LoopModeUnavailableReason ?? string.Empty,
+                InitialMode = initialMode,
+                InitialAudioSource = initialAudioSource,
+                PrimaryAudioLabel = "Primary pane",
+                CompareAudioLabel = "Compare pane"
+            };
+        }
+
+        private static string BuildCompareExportVideoSummary(VideoMediaInfo mediaInfo)
+        {
+            if (mediaInfo == null)
+            {
+                return "Video: unknown";
+            }
+
+            var resolution = mediaInfo.DisplayWidth.HasValue && mediaInfo.DisplayHeight.HasValue
+                ? string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0}x{1}",
+                    mediaInfo.DisplayWidth.Value,
+                    mediaInfo.DisplayHeight.Value)
+                : string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0}x{1}",
+                    mediaInfo.PixelWidth,
+                    mediaInfo.PixelHeight);
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "Video: {0} | {1} | {2}",
+                string.IsNullOrWhiteSpace(mediaInfo.VideoCodecName) ? "Unknown codec" : mediaInfo.VideoCodecName,
+                resolution,
+                FormatInspectorFrameRate(mediaInfo.FramesPerSecond));
+        }
+
+        private static string BuildCompareExportAudioSummary(VideoMediaInfo mediaInfo)
+        {
+            if (mediaInfo == null || !mediaInfo.HasAudioStream)
+            {
+                return "Audio: no audio stream";
+            }
+
+            var channelSummary = mediaInfo.AudioChannelCount > 0
+                ? string.Format(CultureInfo.InvariantCulture, "{0} ch", mediaInfo.AudioChannelCount)
+                : "channel count unknown";
+            var sampleRateSummary = mediaInfo.AudioSampleRate > 0
+                ? string.Format(CultureInfo.InvariantCulture, "{0} Hz", mediaInfo.AudioSampleRate)
+                : "sample rate unknown";
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "Audio: {0} | {1} | {2}",
+                string.IsNullOrWhiteSpace(mediaInfo.AudioCodecName) ? "Unknown codec" : mediaInfo.AudioCodecName,
+                channelSummary,
+                sampleRateSummary);
+        }
+
+        private static string BuildCompareExportPositionSummary(ReviewWorkspacePaneSnapshot paneSnapshot)
+        {
+            return paneSnapshot == null
+                ? "Current sync position: unknown"
+                : "Current sync position: " + FormatTime(paneSnapshot.PresentationTime);
+        }
+
+        private static string BuildCompareExportLoopSummary(LoopPlaybackPaneRangeSnapshot loopRange)
+        {
+            if (loopRange == null || !loopRange.HasAnyMarkers)
+            {
+                return "Loop: not set";
+            }
+
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "Loop: {0} -> {1}",
+                FormatLoopBoundaryLabel(loopRange.LoopIn, isStartBoundary: true),
+                FormatLoopBoundaryLabel(loopRange.LoopOut, isStartBoundary: false));
+        }
+
+        private bool CanExportSideBySideCompare(ReviewWorkspaceSnapshot workspaceSnapshot, out string toolTip)
+        {
+            CompareSideBySideExportContext exportContext;
+            string failureMessage;
+            if (!TryResolveCompareSideBySideExportContext(workspaceSnapshot, null, out exportContext, out failureMessage))
+            {
+                toolTip = string.IsNullOrWhiteSpace(failureMessage)
+                    ? "Enable two-pane compare and load both panes before exporting a side-by-side compare."
+                    : failureMessage;
+                return false;
+            }
+
+            toolTip = exportContext.IsLoopModeAvailable
+                ? "Export both compare panes as one side-by-side MP4. The dialog lets you choose loop or whole-video mode."
+                : "Export both compare panes as one side-by-side MP4. Whole-video mode is available; loop mode is currently unavailable.";
+            return true;
+        }
+
+        private static ReviewSessionSnapshot BuildReviewSessionSnapshot(
+            ReviewWorkspacePaneSnapshot paneSnapshot,
+            FfmpegReviewEngine engine)
+        {
+            if (paneSnapshot == null || engine == null)
+            {
+                return ReviewSessionSnapshot.Empty;
+            }
+
+            return new ReviewSessionSnapshot(
+                paneSnapshot.SessionId,
+                paneSnapshot.DisplayLabel,
+                paneSnapshot.PlaybackState,
+                engine.CurrentFilePath,
+                engine.MediaInfo,
+                engine.Position);
+        }
+
+        private static string BuildSuggestedCompareExportFileName(
+            CompareSideBySideExportContext exportContext,
+            CompareSideBySideExportMode mode)
+        {
+            var primaryBaseName = SanitizeFileNameSegment(Path.GetFileNameWithoutExtension(exportContext.PrimaryPaneSnapshot.CurrentFilePath));
+            var compareBaseName = SanitizeFileNameSegment(Path.GetFileNameWithoutExtension(exportContext.ComparePaneSnapshot.CurrentFilePath));
+            var modeSegment = mode == CompareSideBySideExportMode.Loop ? "loop" : "whole";
+            var rangeSegment = string.Empty;
+            if (mode == CompareSideBySideExportMode.Loop)
+            {
+                var primaryLoopInTime = GetCompareLoopBoundaryTime(exportContext.PrimaryLoopRange, useLoopIn: true);
+                var primaryLoopOutTime = GetCompareLoopBoundaryTime(exportContext.PrimaryLoopRange, useLoopIn: false);
+                var compareLoopInTime = GetCompareLoopBoundaryTime(exportContext.CompareLoopRange, useLoopIn: true);
+                var compareLoopOutTime = GetCompareLoopBoundaryTime(exportContext.CompareLoopRange, useLoopIn: false);
+                rangeSegment = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "-{0}-{1}-{2}-{3}",
+                    FormatClipFileNameTime(primaryLoopInTime),
+                    FormatClipFileNameTime(primaryLoopOutTime),
+                    FormatClipFileNameTime(compareLoopInTime),
+                    FormatClipFileNameTime(compareLoopOutTime));
+            }
+
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}-vs-{1}-side-by-side-{2}{3}.mp4",
+                string.IsNullOrWhiteSpace(primaryBaseName) ? "primary" : primaryBaseName,
+                string.IsNullOrWhiteSpace(compareBaseName) ? "compare" : compareBaseName,
+                modeSegment,
+                rangeSegment);
+        }
+
+        private static TimeSpan GetCompareLoopBoundaryTime(LoopPlaybackPaneRangeSnapshot loopRange, bool useLoopIn)
+        {
+            if (loopRange == null)
+            {
+                return TimeSpan.Zero;
+            }
+
+            var anchor = useLoopIn ? loopRange.LoopIn : loopRange.LoopOut;
+            return anchor != null ? anchor.PresentationTime : TimeSpan.Zero;
         }
 
         private bool TryResolveTimelineLoopCommandContext(
@@ -4918,7 +5518,7 @@ namespace FramePlayer
             return true;
         }
 
-        private ClipExportRequest BuildClipExportRequest(ClipExportTarget exportTarget, string outputPath)
+        private static ClipExportRequest BuildClipExportRequest(ClipExportTarget exportTarget, string outputPath)
         {
             var engine = exportTarget.Engine;
             var paneSnapshot = exportTarget.PaneSnapshot;
@@ -5098,7 +5698,11 @@ namespace FramePlayer
 
         private void UpdateLoopCommandMenuState(ReviewWorkspaceSnapshot workspaceSnapshot)
         {
-            if (SetLoopInMenuItem == null || SetLoopOutMenuItem == null || ClearLoopPointsMenuItem == null || SaveLoopAsClipMenuItem == null)
+            if (SetLoopInMenuItem == null ||
+                SetLoopOutMenuItem == null ||
+                ClearLoopPointsMenuItem == null ||
+                SaveLoopAsClipMenuItem == null ||
+                ExportSideBySideCompareMenuItem == null)
             {
                 return;
             }
@@ -5121,6 +5725,11 @@ namespace FramePlayer
             var canExportLoopClip = CanExportLoopClip(workspaceSnapshot, null, out clipExportToolTip);
             SaveLoopAsClipMenuItem.IsEnabled = canExportLoopClip;
             SaveLoopAsClipMenuItem.ToolTip = clipExportToolTip;
+
+            string compareExportToolTip;
+            var canExportCompare = CanExportSideBySideCompare(workspaceSnapshot, out compareExportToolTip);
+            ExportSideBySideCompareMenuItem.IsEnabled = canExportCompare;
+            ExportSideBySideCompareMenuItem.ToolTip = compareExportToolTip;
         }
 
         private void UpdatePaneLoopUi(ReviewWorkspaceSnapshot workspaceSnapshot, string paneId)
@@ -5224,7 +5833,7 @@ namespace FramePlayer
             return paneLabel + " pane-local A/B loop range.";
         }
 
-        private LoopPlaybackPaneRangeSnapshot GetPaneLocalLoopRange(ReviewWorkspaceSnapshot workspaceSnapshot, string paneId)
+        private static LoopPlaybackPaneRangeSnapshot GetPaneLocalLoopRange(ReviewWorkspaceSnapshot workspaceSnapshot, string paneId)
         {
             ReviewWorkspacePaneSnapshot paneSnapshot;
             return workspaceSnapshot != null &&
@@ -5323,7 +5932,7 @@ namespace FramePlayer
             return true;
         }
 
-        private LoopRangeEvaluation EvaluateSharedLoopRange(
+        private static LoopRangeEvaluation EvaluateSharedLoopRange(
             ReviewWorkspaceSnapshot workspaceSnapshot,
             SynchronizedOperationScope operationScope)
         {
@@ -5952,9 +6561,9 @@ namespace FramePlayer
 
         private static bool HaveLoopTargetPanesReachedBoundary(
             ReviewPaneState[] targetPanes,
-            IReadOnlyList<LoopPlaybackPaneRangeSnapshot> paneRanges)
+            LoopPlaybackPaneRangeSnapshot[] paneRanges)
         {
-            if (targetPanes == null || paneRanges == null || targetPanes.Length != paneRanges.Count)
+            if (targetPanes == null || paneRanges == null || targetPanes.Length != paneRanges.Length)
             {
                 return false;
             }
@@ -6192,9 +6801,18 @@ namespace FramePlayer
                 menuItems[1].IsEnabled = canExport;
                 menuItems[1].ToolTip = toolTip;
             }
+
+            if (menuItems.Length > 2)
+            {
+                string toolTip;
+                var canExport = CanExportSideBySideCompare(_workspaceCoordinator.GetWorkspaceSnapshot(), out toolTip);
+                menuItems[2].Visibility = IsCompareModeEnabled ? Visibility.Visible : Visibility.Collapsed;
+                menuItems[2].IsEnabled = canExport;
+                menuItems[2].ToolTip = toolTip;
+            }
         }
 
-        private VideoInfoSnapshot BuildVideoInfoSnapshot(string paneLabel, VideoMediaInfo mediaInfo)
+        private static VideoInfoSnapshot BuildVideoInfoSnapshot(string paneLabel, VideoMediaInfo mediaInfo)
         {
             var filePath = string.IsNullOrWhiteSpace(mediaInfo.FilePath)
                 ? string.Empty
@@ -6285,14 +6903,14 @@ namespace FramePlayer
                 new VideoInfoSection(advancedFields));
         }
 
-        private string FormatInspectorDuration(TimeSpan duration)
+        private static string FormatInspectorDuration(TimeSpan duration)
         {
             return duration > TimeSpan.Zero
                 ? FormatTime(duration)
                 : "Unknown";
         }
 
-        private static void AddInspectorFieldIfKnown(ICollection<VideoInfoField> fields, string label, string value)
+        private static void AddInspectorFieldIfKnown(List<VideoInfoField> fields, string label, string value)
         {
             if (fields == null || string.IsNullOrWhiteSpace(label) || string.IsNullOrWhiteSpace(value))
             {
@@ -6593,11 +7211,13 @@ namespace FramePlayer
                 return string.Empty;
             }
 
-            return Regex.Replace(
+            return SensitivePathRegex().Replace(
                 value,
-                @"(?i)(?:[A-Z]:\\|\\\\)[^\r\n]+?(?=(?:\s|$))",
                 match => GetSafeFileDisplay(match.Value));
         }
+
+        [GeneratedRegex(@"(?i)(?:[A-Z]:\\|\\\\)[^\r\n]+?(?=(?:\s|$))")]
+        private static partial Regex SensitivePathRegex();
 
         private void LogInfo(string message)
         {
@@ -6722,8 +7342,8 @@ namespace FramePlayer
             _ = StepFrameAsync(_heldFrameStepDirection);
         }
 
-        [DllImport("dwmapi.dll")]
-        private static extern int DwmSetWindowAttribute(
+        [LibraryImport("dwmapi.dll")]
+        private static partial int DwmSetWindowAttribute(
             IntPtr hwnd,
             int dwAttribute,
             ref DwmWindowCornerPreference pvAttribute,

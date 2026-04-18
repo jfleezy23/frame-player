@@ -10,12 +10,6 @@ $ErrorActionPreference = "Stop"
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $projectPath = Join-Path $projectRoot "FramePlayer.csproj"
-$msbuildPath = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe"
-
-if (-not (Test-Path -LiteralPath $msbuildPath))
-{
-    throw "MSBuild was not found at $msbuildPath."
-}
 
 $variants = @(
     [pscustomobject]@{
@@ -32,13 +26,12 @@ foreach ($variant in $variants)
 {
     Write-Host ("Building {0}..." -f $variant.BuildName)
 
-    & $msbuildPath $projectPath `
-        /t:Build `
-        /p:Configuration=$Configuration `
-        /p:Platform=$Platform `
-        /p:FramePlayerVariant=$($variant.Variant) `
-        /p:OutputPath=$($variant.OutputPath) `
-        /p:IntermediateOutputPath=$($variant.IntermediatePath)
+    & dotnet build $projectPath `
+        -c $Configuration `
+        -p:Platform=$Platform `
+        -p:FramePlayerVariant=$($variant.Variant) `
+        -p:OutputPath=$($variant.OutputPath) `
+        -p:IntermediateOutputPath=$($variant.IntermediatePath)
 
     if ($LASTEXITCODE -ne 0)
     {

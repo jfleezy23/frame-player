@@ -32,8 +32,8 @@ This note documents the `v1.7.1` release. It is the maintainer-facing summary of
 Validation captured for this release:
 
 - Local compile validation:
-  - tool: Visual Studio 2022 Build Tools MSBuild
-  - command: `MSBuild.exe FramePlayer.csproj /t:Restore,Build /p:Configuration=Release /p:Platform=x64`
+  - tool: .NET SDK `10.0.202`
+  - command: `dotnet build FramePlayer.csproj -c Release -p:Platform=x64`
   - result: `Build succeeded`, `0 Warning(s)`, `0 Error(s)`
 - Packaged release validation:
   - command: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Build-TestDrop.ps1 -Configuration Release -Platform x64`

@@ -82,7 +82,7 @@ GitHub Actions Windows CI now runs compile validation only on clean runners:
 
 ```powershell
 .\scripts\Ensure-DevRuntime.ps1
-msbuild .\FramePlayer.csproj /t:Restore,Build /p:Configuration=Release /p:Platform=x64
+dotnet build .\FramePlayer.csproj -c Release -p:Platform=x64
 ```
 
 This is intentional and now supported. Clean GitHub runners do not have staged local FFmpeg runtime artifacts, so the workflow restores the runtime from the verified `v1.5.0` release asset currently recorded in `Runtime\runtime-manifest.json`.
