@@ -109,7 +109,7 @@ function Resolve-RegressionInputFiles
 
     if (Test-Path -LiteralPath $DefaultCorpusPath)
     {
-        $corpusFiles = Get-ChildItem -LiteralPath $DefaultCorpusPath -File |
+        $corpusFiles = Get-ChildItem -LiteralPath $DefaultCorpusPath -File -Recurse:$IncludeSubdirectories |
             Where-Object { $Extensions -contains $_.Extension.ToLowerInvariant() } |
             Sort-Object FullName
 
