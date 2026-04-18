@@ -7,6 +7,8 @@ namespace FramePlayer.Core.Models
         private string _outputFilePath = string.Empty;
         private ReviewSessionSnapshot _primarySessionSnapshot = ReviewSessionSnapshot.Empty;
         private ReviewSessionSnapshot _compareSessionSnapshot = ReviewSessionSnapshot.Empty;
+        private PaneViewportSnapshot _primaryViewportSnapshot = PaneViewportSnapshot.CreateFullFrame(1, 1);
+        private PaneViewportSnapshot _compareViewportSnapshot = PaneViewportSnapshot.CreateFullFrame(1, 1);
 
         public string OutputFilePath
         {
@@ -28,6 +30,28 @@ namespace FramePlayer.Core.Models
         {
             get { return _compareSessionSnapshot; }
             init { _compareSessionSnapshot = value ?? ReviewSessionSnapshot.Empty; }
+        }
+
+        public PaneViewportSnapshot PrimaryViewportSnapshot
+        {
+            get { return _primaryViewportSnapshot; }
+            init
+            {
+                _primaryViewportSnapshot = value ?? PaneViewportSnapshot.CreateFullFrame(
+                    PrimarySessionSnapshot.MediaInfo.PixelWidth,
+                    PrimarySessionSnapshot.MediaInfo.PixelHeight);
+            }
+        }
+
+        public PaneViewportSnapshot CompareViewportSnapshot
+        {
+            get { return _compareViewportSnapshot; }
+            init
+            {
+                _compareViewportSnapshot = value ?? PaneViewportSnapshot.CreateFullFrame(
+                    CompareSessionSnapshot.MediaInfo.PixelWidth,
+                    CompareSessionSnapshot.MediaInfo.PixelHeight);
+            }
         }
 
         public LoopPlaybackPaneRangeSnapshot PrimaryLoopRange { get; init; }

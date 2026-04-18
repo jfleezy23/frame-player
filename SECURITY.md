@@ -6,7 +6,7 @@ Please do not open a public GitHub issue for suspected security vulnerabilities.
 
 For sensitive reports:
 
-- use GitHub's private vulnerability reporting for this repository if it is available
+- use GitHub's private vulnerability reporting for this repository
 - otherwise contact the maintainer directly through GitHub: [jfleezy23](https://github.com/jfleezy23)
 
 When reporting an issue, include:
@@ -21,7 +21,7 @@ When reporting an issue, include:
 This repository currently uses a mix of GitHub-native security tooling and workflow guardrails to reduce drift and catch issues earlier:
 
 - `main` requires pull requests before merge, including for administrators.
-- `Windows CI` is required before merges into `main`.
+- The `build` check from `Windows CI` is required before merges into `main`.
 - Merged branches are deleted automatically to reduce branch sprawl and stale release drift.
 - `Windows CI` runs on pushes and pull requests and verifies the pinned runtime restore plus a Release `x64` build.
 - GitHub code scanning is enabled through GitHub's default CodeQL setup for `actions` and `csharp`.

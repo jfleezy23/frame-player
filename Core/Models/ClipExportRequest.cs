@@ -13,7 +13,8 @@ namespace FramePlayer.Core.Models
             bool isPaneLocal,
             ReviewSessionSnapshot sessionSnapshot,
             LoopPlaybackPaneRangeSnapshot loopRange,
-            FfmpegReviewEngine engine)
+            FfmpegReviewEngine engine,
+            PaneViewportSnapshot viewportSnapshot)
         {
             SourceFilePath = sourceFilePath ?? string.Empty;
             OutputFilePath = outputFilePath ?? string.Empty;
@@ -23,6 +24,9 @@ namespace FramePlayer.Core.Models
             SessionSnapshot = sessionSnapshot ?? ReviewSessionSnapshot.Empty;
             LoopRange = loopRange;
             Engine = engine;
+            ViewportSnapshot = viewportSnapshot ?? PaneViewportSnapshot.CreateFullFrame(
+                SessionSnapshot.MediaInfo.PixelWidth,
+                SessionSnapshot.MediaInfo.PixelHeight);
         }
 
         public string SourceFilePath { get; }
@@ -40,5 +44,7 @@ namespace FramePlayer.Core.Models
         public LoopPlaybackPaneRangeSnapshot LoopRange { get; }
 
         public FfmpegReviewEngine Engine { get; }
+
+        public PaneViewportSnapshot ViewportSnapshot { get; }
     }
 }

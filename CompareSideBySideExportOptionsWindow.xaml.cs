@@ -91,11 +91,11 @@ namespace FramePlayer
         {
             if (LoopModeRadioButton.IsChecked == true)
             {
-                ModeBehaviorTextBlock.Text = "Loop mode uses each pane's A/B range as its own trim window and extends the shorter pane with black video.";
+                ModeBehaviorTextBlock.Text = "Loop mode uses each pane's A/B range as its trim window and extends the shorter pane with black video as needed.";
                 return;
             }
 
-            ModeBehaviorTextBlock.Text = "Whole-video mode uses the current compare positions as the sync point and adds black video before the earlier pane when needed.";
+            ModeBehaviorTextBlock.Text = "Whole Video uses the current compare positions as the sync point and adds black video before the earlier pane when needed.";
         }
 
         private void UpdateAudioBehaviorText()
@@ -104,8 +104,8 @@ namespace FramePlayer
                 ? _snapshot.CompareHasAudio
                 : _snapshot.PrimaryHasAudio;
             AudioBehaviorTextBlock.Text = selectedPaneHasAudio
-                ? "The selected pane's audio will be aligned to the merged export and padded to the output duration."
-                : "The selected pane has no audio stream. The merged export will be silent.";
+                ? "The selected pane's audio will be aligned to the merged export and padded to match the output duration."
+                : "The selected pane has no audio stream. The exported video will be silent.";
         }
     }
 

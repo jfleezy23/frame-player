@@ -26,8 +26,9 @@ The current expected GitHub repository settings are:
 
 - `main` requires pull requests before merge
 - branch protection applies to administrators
+- pull requests are required, but approving review count is currently `0`
 - merged branches are deleted automatically
-- `Windows CI / build` is a required merge check on `main`
+- the required merge check on `main` is the `build` job from the `Windows CI` workflow
 - SonarQube is active, but is not currently a required merge check
 
 If the required check name changes in GitHub Actions, branch protection must be updated immediately or merges may be blocked unexpectedly.
@@ -43,6 +44,7 @@ Purpose:
 Current role:
 
 - required on `main`
+- required through the `build` job context
 - restores the pinned FFmpeg runtime
 - runs Release `x64` restore/build
 

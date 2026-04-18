@@ -15,6 +15,7 @@ namespace FramePlayer.Core.Models
             long? startFrameIndex,
             long? endFrameIndex,
             string endBoundaryStrategy,
+            PaneViewportSnapshot viewportSnapshot,
             string ffmpegArguments,
             string ffmpegPath,
             string ffprobePath)
@@ -29,6 +30,7 @@ namespace FramePlayer.Core.Models
             StartFrameIndex = startFrameIndex;
             EndFrameIndex = endFrameIndex;
             EndBoundaryStrategy = endBoundaryStrategy ?? string.Empty;
+            ViewportSnapshot = viewportSnapshot ?? PaneViewportSnapshot.CreateFullFrame(1, 1);
             FfmpegArguments = ffmpegArguments ?? string.Empty;
             FfmpegPath = ffmpegPath ?? string.Empty;
             FfprobePath = ffprobePath ?? string.Empty;
@@ -53,6 +55,8 @@ namespace FramePlayer.Core.Models
         public long? EndFrameIndex { get; }
 
         public string EndBoundaryStrategy { get; }
+
+        public PaneViewportSnapshot ViewportSnapshot { get; }
 
         public string FfmpegArguments { get; }
 

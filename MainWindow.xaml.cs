@@ -34,6 +34,15 @@ namespace FramePlayer
         private const string ComparePaneId = "pane-compare-a";
         private const string CompareSessionId = "compare-a";
         private const string DefaultCompareAlignmentStatus = "Last align: none";
+        private const string PrimaryPaneTitle = "Primary";
+        private const string PrimaryPaneDisplayLabel = "Primary pane";
+        private const string ComparePaneDisplayLabel = "Compare pane";
+        private const string NoneText = "(none)";
+        private const string UnavailableText = "(unavailable)";
+        private const string UnknownText = "Unknown";
+        private const string LoopOffStatusText = "Loop: off";
+        private const string AbsoluteFrameIdentityText = "absolute";
+        private const string SegmentLocalFrameIdentityText = "segment-local";
         private const double CompareModePreferredMinWindowWidth = 1180d;
         private const int ControlModifiedFrameStep = 10;
         private const int ShiftModifiedFrameStep = 100;
@@ -43,6 +52,10 @@ namespace FramePlayer
         private static readonly TimeSpan FrameStepRepeatInterval = TimeSpan.FromMilliseconds(60);
         private static readonly TimeSpan SliderScrubThrottleInterval = TimeSpan.FromMilliseconds(75);
         private static readonly TimeSpan LoopPlaybackMinimumEndTolerance = TimeSpan.FromMilliseconds(100);
+        private const double MinimumPaneZoomFactor = 1d;
+        private const double MaximumPaneZoomFactor = 12d;
+        private const double PaneZoomWheelStep = 1.1d;
+        private const double PanePanDragThreshold = 2d;
 
         private readonly DispatcherTimer _positionTimer;
         private readonly DispatcherTimer _frameStepRepeatTimer;
@@ -50,6 +63,7 @@ namespace FramePlayer
         private readonly DispatcherTimer _paneSliderScrubTimer;
         private readonly BuildVariantInfo _buildVariant;
         private readonly AppPreferencesService _appPreferencesService;
+        private readonly AudioInsertionService _audioInsertionService;
         private readonly ClipExportService _clipExportService;
         private readonly CompareSideBySideExportService _compareSideBySideExportService;
         private readonly DiagnosticLogService _diagnosticLogService;
@@ -96,6 +110,7 @@ namespace FramePlayer
         private Task _activeSliderScrubSeekTask = Task.CompletedTask;
         private Task _activePaneSliderScrubSeekTask = Task.CompletedTask;
         private SynchronizedOperationScope _lastPlaybackScope = SynchronizedOperationScope.FocusedPane;
+        private readonly Dictionary<string, PaneViewportState> _paneViewportStates = new Dictionary<string, PaneViewportState>(StringComparer.Ordinal);
 
         private sealed class LoopRangeEvaluation
         {
@@ -207,6 +222,60 @@ namespace FramePlayer
             public string LoopModeUnavailableReason { get; init; } = string.Empty;
         }
 
+        private sealed class AudioInsertionTarget
+        {
+            public AudioInsertionTarget(
+                string paneId,
+                string contextLabel,
+                ReviewWorkspacePaneSnapshot paneSnapshot,
+                ReviewSessionSnapshot sessionSnapshot,
+                FfmpegReviewEngine engine)
+            {
+                PaneId = paneId ?? string.Empty;
+                ContextLabel = contextLabel ?? string.Empty;
+                PaneSnapshot = paneSnapshot;
+                SessionSnapshot = sessionSnapshot ?? ReviewSessionSnapshot.Empty;
+                Engine = engine;
+            }
+
+            public string PaneId { get; }
+
+            public string ContextLabel { get; }
+
+            public ReviewWorkspacePaneSnapshot PaneSnapshot { get; }
+
+            public ReviewSessionSnapshot SessionSnapshot { get; }
+
+            public FfmpegReviewEngine Engine { get; }
+        }
+
+        private sealed class PaneViewportState
+        {
+            public double ZoomFactor { get; set; } = MinimumPaneZoomFactor;
+
+            public Point NormalizedCenter { get; set; } = new Point(0.5d, 0.5d);
+
+            public bool IsPanActive { get; set; }
+
+            public Point PanAnchorHostPoint { get; set; }
+
+            public Point PanAnchorNormalizedCenter { get; set; } = new Point(0.5d, 0.5d);
+
+            public bool IsZoomed
+            {
+                get { return ZoomFactor > 1.0001d; }
+            }
+
+            public void Reset()
+            {
+                ZoomFactor = MinimumPaneZoomFactor;
+                NormalizedCenter = new Point(0.5d, 0.5d);
+                IsPanActive = false;
+                PanAnchorHostPoint = default(Point);
+                PanAnchorNormalizedCenter = new Point(0.5d, 0.5d);
+            }
+        }
+
         private sealed class TimelineContextCommandTarget
         {
             public TimelineContextCommandTarget(string paneId, TimeSpan target)
@@ -254,6 +323,7 @@ namespace FramePlayer
 
             _appPreferencesService = new AppPreferencesService();
             _diagnosticLogService = new DiagnosticLogService();
+            _audioInsertionService = new AudioInsertionService();
             _clipExportService = new ClipExportService();
             _compareSideBySideExportService = new CompareSideBySideExportService();
             _ffmpegReviewEngineOptionsProvider = new FfmpegReviewEngineOptionsProvider(_appPreferencesService);
@@ -549,6 +619,220 @@ namespace FramePlayer
                 : snapshot.FocusedPaneId;
         }
 
+        private PaneViewportState GetPaneViewportState(string paneId)
+        {
+            var resolvedPaneId = string.IsNullOrWhiteSpace(paneId)
+                ? PrimaryPaneId
+                : paneId;
+            if (!_paneViewportStates.TryGetValue(resolvedPaneId, out var viewportState))
+            {
+                viewportState = new PaneViewportState();
+                _paneViewportStates[resolvedPaneId] = viewportState;
+            }
+
+            return viewportState;
+        }
+
+        private void ResetZoomForFocusedPane()
+        {
+            ResetZoomForPane(GetFocusedPaneId());
+        }
+
+        private void ZoomInFocusedPane()
+        {
+            AdjustFocusedPaneZoom(zoomIn: true);
+        }
+
+        private void ZoomOutFocusedPane()
+        {
+            AdjustFocusedPaneZoom(zoomIn: false);
+        }
+
+        private void AdjustFocusedPaneZoom(bool zoomIn)
+        {
+            AdjustPaneZoom(GetFocusedPaneId(), zoomIn);
+        }
+
+        private void AdjustPaneZoom(string paneId, bool zoomIn)
+        {
+            var workspaceSnapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
+            string toolTip;
+            if (!CanAdjustPaneViewportZoom(workspaceSnapshot, paneId, zoomIn, out toolTip))
+            {
+                if (!string.IsNullOrWhiteSpace(toolTip))
+                {
+                    SetPlaybackMessage(toolTip);
+                }
+
+                return;
+            }
+
+            var resolvedPaneId = string.IsNullOrWhiteSpace(paneId)
+                ? PrimaryPaneId
+                : paneId;
+            var viewportState = GetPaneViewportState(resolvedPaneId);
+            var scaleMultiplier = zoomIn
+                ? PaneZoomWheelStep
+                : 1d / PaneZoomWheelStep;
+            var targetZoomFactor = viewportState.ZoomFactor * scaleMultiplier;
+            targetZoomFactor = Math.Max(MinimumPaneZoomFactor, Math.Min(MaximumPaneZoomFactor, targetZoomFactor));
+            if (targetZoomFactor <= 1.0001d)
+            {
+                viewportState.Reset();
+                SetPlaybackMessage(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0} zoom reset to the full frame.",
+                    GetPaneDisplayLabel(resolvedPaneId)));
+            }
+            else
+            {
+                viewportState.ZoomFactor = targetZoomFactor;
+                SetPlaybackMessage(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0} zoom: {1:0}%.",
+                    GetPaneDisplayLabel(resolvedPaneId),
+                    viewportState.ZoomFactor * 100d));
+            }
+
+            UpdatePaneViewportLayout(resolvedPaneId);
+            UpdateViewportCommandState(_workspaceCoordinator.GetWorkspaceSnapshot());
+            FocusPreferredVideoSurface();
+        }
+
+        private void ResetZoomForPane(string paneId)
+        {
+            if (string.IsNullOrWhiteSpace(paneId))
+            {
+                paneId = PrimaryPaneId;
+            }
+
+            var viewportState = GetPaneViewportState(paneId);
+            if (!viewportState.IsZoomed)
+            {
+                return;
+            }
+
+            viewportState.Reset();
+            UpdatePaneViewportLayout(paneId);
+            UpdateViewportCommandState(_workspaceCoordinator.GetWorkspaceSnapshot());
+            if (string.Equals(GetFocusedPaneId(), paneId, StringComparison.Ordinal))
+            {
+                ClearPointerCoordinates();
+            }
+
+            SetPlaybackMessage(string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} zoom reset.",
+                string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
+                    ? ComparePaneDisplayLabel
+                    : PrimaryPaneDisplayLabel));
+        }
+
+        private bool CanAdjustPaneViewportZoom(
+            ReviewWorkspaceSnapshot workspaceSnapshot,
+            string paneId,
+            bool zoomIn,
+            out string toolTip)
+        {
+            toolTip = string.Empty;
+            var resolvedPaneId = string.IsNullOrWhiteSpace(paneId)
+                ? PrimaryPaneId
+                : paneId;
+            ReviewWorkspacePaneSnapshot paneSnapshot;
+            if (workspaceSnapshot == null || !workspaceSnapshot.TryGetPane(resolvedPaneId, out paneSnapshot) || !PaneHasLoadedMedia(paneSnapshot))
+            {
+                toolTip = "Load media in the selected pane before changing zoom.";
+                return false;
+            }
+
+            var engine = GetEngineForPane(resolvedPaneId);
+            if (engine == null || !engine.IsMediaOpen)
+            {
+                toolTip = "Load media in the selected pane before changing zoom.";
+                return false;
+            }
+
+            if (engine.IsPlaying)
+            {
+                toolTip = "Pause playback before changing zoom. A freshly loaded file already counts as paused.";
+                return false;
+            }
+
+            var viewportState = GetPaneViewportState(resolvedPaneId);
+            if (zoomIn)
+            {
+                if (viewportState.ZoomFactor >= MaximumPaneZoomFactor - 0.001d)
+                {
+                    toolTip = GetPaneDisplayLabel(resolvedPaneId) + " is already at the maximum zoom.";
+                    return false;
+                }
+
+                toolTip = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Zoom in on the focused {0} while paused. A freshly loaded file already counts as paused.",
+                    string.Equals(resolvedPaneId, ComparePaneId, StringComparison.Ordinal)
+                        ? "compare pane"
+                        : "pane");
+                return true;
+            }
+
+            if (!viewportState.IsZoomed)
+            {
+                toolTip = "The selected pane is already showing the full frame.";
+                return false;
+            }
+
+            toolTip = string.Format(
+                CultureInfo.InvariantCulture,
+                "Zoom out on the focused {0} while paused. A freshly loaded file already counts as paused.",
+                string.Equals(resolvedPaneId, ComparePaneId, StringComparison.Ordinal)
+                    ? "compare pane"
+                    : "pane");
+            return true;
+        }
+
+        private void ResetPaneViewport(string paneId)
+        {
+            GetPaneViewportState(paneId).Reset();
+            UpdatePaneViewportLayout(paneId);
+        }
+
+        private void ResetPaneViewportIfSessionChanged(
+            MultiVideoWorkspaceState previousWorkspaceState,
+            MultiVideoWorkspaceState currentWorkspaceState,
+            string paneId)
+        {
+            ReviewPaneState previousPaneState = null;
+            ReviewPaneState currentPaneState = null;
+            if (previousWorkspaceState != null)
+            {
+                previousWorkspaceState.TryGetPane(paneId, out previousPaneState);
+            }
+
+            if (currentWorkspaceState != null)
+            {
+                currentWorkspaceState.TryGetPane(paneId, out currentPaneState);
+            }
+
+            var previousSessionId = previousPaneState != null && previousPaneState.Session != null
+                ? previousPaneState.Session.SessionId ?? string.Empty
+                : string.Empty;
+            var currentSessionId = currentPaneState != null && currentPaneState.Session != null
+                ? currentPaneState.Session.SessionId ?? string.Empty
+                : string.Empty;
+            var previousFilePath = previousPaneState != null && previousPaneState.Session != null
+                ? previousPaneState.Session.CurrentFilePath ?? string.Empty
+                : string.Empty;
+            var currentFilePath = currentPaneState != null && currentPaneState.Session != null
+                ? currentPaneState.Session.CurrentFilePath ?? string.Empty
+                : string.Empty;
+            if (!string.Equals(previousSessionId, currentSessionId, StringComparison.Ordinal) ||
+                !string.Equals(previousFilePath, currentFilePath, StringComparison.OrdinalIgnoreCase))
+            {
+                ResetPaneViewport(paneId);
+            }
+        }
+
         private void SetSharedLoopCommandContext()
         {
             _activeLoopCommandPaneId = null;
@@ -593,8 +877,8 @@ namespace FramePlayer
             }
 
             return string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
-                ? "Compare pane"
-                : "Primary pane";
+                ? ComparePaneDisplayLabel
+                : PrimaryPaneDisplayLabel;
         }
 
         private static bool PaneHasLoadedMedia(ReviewWorkspacePaneSnapshot paneSnapshot)
@@ -703,6 +987,9 @@ namespace FramePlayer
                 CompareEmptyStateBodyTextBlock);
             UpdateCompareControlState(snapshot);
             UpdateLoopUi();
+            UpdateAudioInsertionCommandState(snapshot);
+            UpdateViewportCommandState(snapshot);
+            UpdateAllPaneViewportLayouts();
         }
 
         private void UpdateCompareControlState(ReviewWorkspaceSnapshot workspaceSnapshot)
@@ -985,7 +1272,7 @@ namespace FramePlayer
                 paneSnapshot = new ReviewWorkspacePaneSnapshot(
                     paneId,
                     string.Empty,
-                    string.Equals(paneId, ComparePaneId, StringComparison.Ordinal) ? "Compare A" : "Primary",
+                    string.Equals(paneId, ComparePaneId, StringComparison.Ordinal) ? "Compare A" : PrimaryPaneTitle,
                     false,
                     string.Equals(paneId, PrimaryPaneId, StringComparison.Ordinal),
                     false,
@@ -1080,7 +1367,7 @@ namespace FramePlayer
                 return "Compare";
             }
 
-            return "Primary";
+            return PrimaryPaneTitle;
         }
 
         private string BuildPaneStateText(ReviewWorkspacePaneSnapshot paneSnapshot)
@@ -1126,7 +1413,7 @@ namespace FramePlayer
         {
             if (!PaneHasLoadedMedia(primaryPaneSnapshot) || !PaneHasLoadedMedia(comparePaneSnapshot))
             {
-                return "Compare: Load two videos";
+                return "Compare: Load two videos to begin";
             }
 
             if (primaryPaneSnapshot.HasAbsoluteFrameIdentity &&
@@ -1149,7 +1436,7 @@ namespace FramePlayer
                     Math.Abs(frameDelta) == 1 ? "frame" : "frames");
             }
 
-            return "Compare: Time-based only";
+            return "Compare: Time-based alignment";
         }
 
         private static string GetComparePaneSideLabel(string paneId)
@@ -1408,6 +1695,35 @@ namespace FramePlayer
         private async void ExportSideBySideCompareMenuItem_Click(object sender, RoutedEventArgs e)
         {
             await PromptAndExportSideBySideCompareAsync();
+        }
+
+        private async void ReplaceAudioTrackMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            await ReplaceAudioTrackAsync();
+        }
+
+        private void ZoomInMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            ZoomInFocusedPane();
+            FocusPreferredVideoSurface();
+        }
+
+        private void ZoomOutMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            ZoomOutFocusedPane();
+            FocusPreferredVideoSurface();
+        }
+
+        private void ResetZoomMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            ResetZoomForFocusedPane();
+            FocusPreferredVideoSurface();
+        }
+
+        private void PaneResetZoomMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            ResetZoomForPane(GetPaneIdFromSender(sender));
+            FocusPreferredVideoSurface();
         }
 
         private async void PaneExportSideBySideCompareMenuItem_Click(object sender, RoutedEventArgs e)
@@ -1933,6 +2249,12 @@ namespace FramePlayer
                 return;
             }
 
+            if (_isMediaLoaded && TryHandleViewportShortcut(e))
+            {
+                e.Handled = true;
+                return;
+            }
+
             LoopPlaybackMarkerEndpoint loopMarkerEndpoint;
             if (_isMediaLoaded &&
                 Keyboard.Modifiers == ModifierKeys.None &&
@@ -2002,6 +2324,39 @@ namespace FramePlayer
                     e.Handled = true;
                     break;
             }
+        }
+
+        private bool TryHandleViewportShortcut(KeyEventArgs e)
+        {
+            if (e == null)
+            {
+                return false;
+            }
+
+            var modifiers = Keyboard.Modifiers;
+            if ((modifiers == ModifierKeys.None || modifiers == ModifierKeys.Shift) &&
+                (e.Key == Key.OemPlus || e.Key == Key.Add))
+            {
+                ZoomInFocusedPane();
+                return true;
+            }
+
+            if ((modifiers == ModifierKeys.None || modifiers == ModifierKeys.Shift) &&
+                (e.Key == Key.OemMinus || e.Key == Key.Subtract))
+            {
+                ZoomOutFocusedPane();
+                return true;
+            }
+
+            if (modifiers == ModifierKeys.None &&
+                (e.Key == Key.D0 || e.Key == Key.NumPad0))
+            {
+                ResetZoomForFocusedPane();
+                FocusPreferredVideoSurface();
+                return true;
+            }
+
+            return false;
         }
 
         private void Window_PreviewKeyUp(object sender, KeyEventArgs e)
@@ -2108,8 +2463,8 @@ namespace FramePlayer
                         "Decode backend: {0} | GPU active {1} | GPU status {2} | Fallback {3} | Cache budget {4:0.0} MiB | Queue depth {5}.",
                         string.IsNullOrWhiteSpace(ffmpegEngine.ActiveDecodeBackend) ? "(unknown)" : ffmpegEngine.ActiveDecodeBackend,
                         ffmpegEngine.IsGpuActive ? "yes" : "no",
-                        string.IsNullOrWhiteSpace(ffmpegEngine.GpuCapabilityStatus) ? "(none)" : ffmpegEngine.GpuCapabilityStatus,
-                        string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? "(none)" : ffmpegEngine.GpuFallbackReason,
+                        string.IsNullOrWhiteSpace(ffmpegEngine.GpuCapabilityStatus) ? NoneText : ffmpegEngine.GpuCapabilityStatus,
+                        string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? NoneText : ffmpegEngine.GpuFallbackReason,
                         ffmpegEngine.DecodedFrameCacheBudgetBytes / 1048576d,
                         ffmpegEngine.OperationalQueueDepth));
                     LogInfo(string.Format(
@@ -2172,7 +2527,7 @@ namespace FramePlayer
 
             var dialog = new OpenFileDialog
             {
-                Title = "Open Video File",
+                Title = "Open Video",
                 Filter = GetOpenFileFilter()
             };
 
@@ -2796,6 +3151,8 @@ namespace FramePlayer
             UpdatePlayPauseToggleVisuals();
             UpdateWorkspacePanePresentation();
             UpdateLoopUi();
+            UpdateAudioInsertionCommandState(_workspaceCoordinator.GetWorkspaceSnapshot());
+            UpdateViewportCommandState(_workspaceCoordinator.GetWorkspaceSnapshot());
 
             if (!_isMediaLoaded)
             {
@@ -2985,6 +3342,8 @@ namespace FramePlayer
                 return;
             }
 
+            var frameIdentityText = AbsoluteFrameIdentityText;
+            string currentFrameToolTip;
             if (totalFrames > 0)
             {
                 CurrentFrameTextBlock.Text = string.Format(
@@ -2994,14 +3353,14 @@ namespace FramePlayer
                         : "Frame {0} / {1}",
                     currentFrame.ToString(frameFormat, CultureInfo.InvariantCulture),
                     totalFrameDisplay.ToString(frameFormat, CultureInfo.InvariantCulture));
-                CurrentFrameTextBlock.ToolTip = _buildVariant.UsesZeroIndexedFrameDisplay
+                currentFrameToolTip = _buildVariant.UsesZeroIndexedFrameDisplay
                     ? string.Format(
                         CultureInfo.InvariantCulture,
                         "Current zero-indexed frame {0}. Last zero-indexed frame {1}. Total decoded frames: {2}. Identity: {3}.",
                         currentFrame,
                         totalFrameDisplay,
                         totalFrames,
-                        isAbsoluteFrameIndex ? "absolute" : "segment-local")
+                        frameIdentityText)
                     : string.Format(CultureInfo.InvariantCulture, "Current frame {0} of {1}.", currentFrame, totalFrames);
             }
             else
@@ -3010,30 +3369,38 @@ namespace FramePlayer
                     CultureInfo.InvariantCulture,
                     _buildVariant.UsesZeroIndexedFrameDisplay ? "Frame {0} (0-index)" : "Frame {0}",
                     currentFrame.ToString(frameFormat, CultureInfo.InvariantCulture));
-                CurrentFrameTextBlock.ToolTip = _buildVariant.UsesZeroIndexedFrameDisplay
+                currentFrameToolTip = _buildVariant.UsesZeroIndexedFrameDisplay
                     ? string.Format(
                         CultureInfo.InvariantCulture,
                         "Current zero-indexed frame {0}. Identity: {1}.",
                         currentFrame,
-                        isAbsoluteFrameIndex ? "absolute" : "segment-local")
+                        frameIdentityText)
                     : string.Format(CultureInfo.InvariantCulture, "Current frame {0}.", currentFrame);
             }
+            CurrentFrameTextBlock.ToolTip = currentFrameToolTip;
 
-            FrameNumberTextBox.ToolTip = totalFrames > 0
-                ? _buildVariant.UsesZeroIndexedFrameDisplay
+            string frameNumberToolTip;
+            if (totalFrames > 0)
+            {
+                frameNumberToolTip = _buildVariant.UsesZeroIndexedFrameDisplay
                     ? string.Format(
                         CultureInfo.InvariantCulture,
                         "Current / last zero-indexed frames: {0} / {1}. Identity: {2}. Type a zero-indexed frame number and press Enter.",
                         currentFrame,
                         totalFrameDisplay,
-                        isAbsoluteFrameIndex ? "absolute" : "segment-local")
-                    : string.Format(CultureInfo.InvariantCulture, "Current / total frames: {0} / {1}. Type a frame number and press Enter.", currentFrame, totalFrames)
-                : string.Format(
+                        frameIdentityText)
+                    : string.Format(CultureInfo.InvariantCulture, "Current / total frames: {0} / {1}. Type a frame number and press Enter.", currentFrame, totalFrames);
+            }
+            else
+            {
+                frameNumberToolTip = string.Format(
                     CultureInfo.InvariantCulture,
                     "Current frame: {0}. Identity: {1}. {2}",
                     currentFrame,
-                    isAbsoluteFrameIndex ? "absolute" : "segment-local",
+                    frameIdentityText,
                     GetFrameNumberInputToolTip());
+            }
+            FrameNumberTextBox.ToolTip = frameNumberToolTip;
 
             TimecodeTextBlock.Text = string.Format(
                 CultureInfo.InvariantCulture,
@@ -3291,11 +3658,15 @@ namespace FramePlayer
                 return;
             }
 
+            var previousWorkspaceState = e != null ? e.PreviousWorkspace : MultiVideoWorkspaceState.Empty;
+            var currentWorkspaceState = e != null ? e.CurrentWorkspace : MultiVideoWorkspaceState.Empty;
             var previousSession = e != null ? e.PreviousWorkspace.FocusedSession : ReviewSessionSnapshot.Empty;
             var currentSession = e != null ? e.CurrentWorkspace.FocusedSession : ReviewSessionSnapshot.Empty;
             var wasMediaLoaded = previousSession.IsMediaOpen;
             var shouldRestartLoopPlayback = ShouldRestartLoopPlayback(e);
             ApplySessionSnapshot(currentSession);
+            ResetPaneViewportIfSessionChanged(previousWorkspaceState, currentWorkspaceState, PrimaryPaneId);
+            ResetPaneViewportIfSessionChanged(previousWorkspaceState, currentWorkspaceState, ComparePaneId);
             UpdateWorkspacePanePresentation();
 
             var focusedEngine = GetFocusedPaneEngine();
@@ -3385,10 +3756,12 @@ namespace FramePlayer
             if (ReferenceEquals(sender, _compareVideoReviewEngine))
             {
                 CompareVideoSurface.Source = imageSource;
+                UpdatePaneViewportLayout(ComparePaneId);
                 return;
             }
 
             CustomVideoSurface.Source = imageSource;
+            UpdatePaneViewportLayout(PrimaryPaneId);
         }
 
         private void UseGpuAccelerationMenuItem_Checked(object sender, RoutedEventArgs e)
@@ -3435,26 +3808,161 @@ namespace FramePlayer
             }
         }
 
-        private void VideoSurfaceHost_MouseMove(object sender, MouseEventArgs e)
+        private void VideoSurfaceHost_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
             var host = sender as FrameworkElement;
-            if (host == null)
+            var paneId = host != null ? host.Tag as string : null;
+            if (host == null || string.IsNullOrWhiteSpace(paneId) || !CanAdjustPaneViewport(paneId))
+            {
+                return;
+            }
+
+            TrySelectPaneForShell(paneId);
+            UpdateWorkspacePanePresentation();
+            var viewportState = GetPaneViewportState(paneId);
+            var targetZoomFactor = viewportState.ZoomFactor *
+                                   Math.Pow(PaneZoomWheelStep, (double)e.Delta / Mouse.MouseWheelDeltaForOneLine);
+            targetZoomFactor = Math.Max(MinimumPaneZoomFactor, Math.Min(MaximumPaneZoomFactor, targetZoomFactor));
+            if (targetZoomFactor <= 1.0001d)
+            {
+                viewportState.Reset();
+            }
+            else
+            {
+                viewportState.ZoomFactor = targetZoomFactor;
+            }
+
+            UpdatePaneViewportLayout(paneId);
+            UpdateViewportCommandState(_workspaceCoordinator.GetWorkspaceSnapshot());
+            e.Handled = true;
+        }
+
+        private void VideoSurfaceHost_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            var host = sender as FrameworkElement;
+            var paneId = host != null ? host.Tag as string : null;
+            if (host == null ||
+                string.IsNullOrWhiteSpace(paneId) ||
+                e.ChangedButton != MouseButton.Left ||
+                e.ClickCount > 1 ||
+                !CanAdjustPaneViewport(paneId))
+            {
+                return;
+            }
+
+            var viewportState = GetPaneViewportState(paneId);
+            if (!viewportState.IsZoomed)
+            {
+                return;
+            }
+
+            viewportState.IsPanActive = true;
+            viewportState.PanAnchorHostPoint = e.GetPosition(host);
+            viewportState.PanAnchorNormalizedCenter = viewportState.NormalizedCenter;
+            host.CaptureMouse();
+        }
+
+        private void VideoSurfaceHost_MouseMove(object sender, MouseEventArgs e)
+        {
+            FrameworkElement host;
+            string paneId;
+            if (!TryGetVideoSurfaceHostContext(sender, out host, out paneId))
             {
                 ClearPointerCoordinates();
                 return;
             }
 
-            var paneId = host.Tag as string;
-            if (string.IsNullOrWhiteSpace(paneId))
+            var hostPoint = e.GetPosition(host);
+            UpdatePaneViewportPan(host, paneId, e, hostPoint);
+            UpdatePointerCoordinates(paneId, hostPoint);
+        }
+
+        private void VideoSurfaceHost_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            var host = sender as FrameworkElement;
+            var paneId = host != null ? host.Tag as string : null;
+            if (host == null || string.IsNullOrWhiteSpace(paneId))
             {
-                ClearPointerCoordinates();
                 return;
             }
 
+            EndPaneViewportPan(host, paneId);
+        }
+
+        private void VideoSurfaceHost_MouseLeave(object sender, MouseEventArgs e)
+        {
+            ClearPointerCoordinates();
+        }
+
+        private void VideoSurfaceHost_LostMouseCapture(object sender, MouseEventArgs e)
+        {
+            var host = sender as FrameworkElement;
+            var paneId = host != null ? host.Tag as string : null;
+            if (host == null || string.IsNullOrWhiteSpace(paneId))
+            {
+                return;
+            }
+
+            EndPaneViewportPan(host, paneId);
+        }
+
+        private static bool TryGetVideoSurfaceHostContext(object sender, out FrameworkElement host, out string paneId)
+        {
+            host = sender as FrameworkElement;
+            paneId = host != null ? host.Tag as string : null;
+            return host != null && !string.IsNullOrWhiteSpace(paneId);
+        }
+
+        private void UpdatePaneViewportPan(
+            FrameworkElement host,
+            string paneId,
+            MouseEventArgs e,
+            Point currentHostPoint)
+        {
+            var viewportState = GetPaneViewportState(paneId);
+            if (!viewportState.IsPanActive)
+            {
+                return;
+            }
+
+            if (e.LeftButton != MouseButtonState.Pressed || !CanAdjustPaneViewport(paneId))
+            {
+                EndPaneViewportPan(host, paneId);
+                return;
+            }
+
+            var geometryBeforePan = GetFrameSurfaceGeometry(paneId);
+            if (!geometryBeforePan.HasVisibleFrame)
+            {
+                return;
+            }
+
+            var delta = currentHostPoint - viewportState.PanAnchorHostPoint;
+            if (Math.Abs(delta.X) < PanePanDragThreshold && Math.Abs(delta.Y) < PanePanDragThreshold)
+            {
+                return;
+            }
+
+            viewportState.NormalizedCenter = BuildPannedViewportCenter(viewportState, geometryBeforePan, delta);
+            UpdatePaneViewportLayout(paneId);
+        }
+
+        private static Point BuildPannedViewportCenter(
+            PaneViewportState viewportState,
+            FrameSurfaceGeometry geometryBeforePan,
+            Vector delta)
+        {
+            return new Point(
+                viewportState.PanAnchorNormalizedCenter.X - (delta.X / geometryBeforePan.RenderedRect.Width),
+                viewportState.PanAnchorNormalizedCenter.Y - (delta.Y / geometryBeforePan.RenderedRect.Height));
+        }
+
+        private void UpdatePointerCoordinates(string paneId, Point hostPoint)
+        {
             var geometry = GetFrameSurfaceGeometry(paneId);
             int sourcePixelX;
             int sourcePixelY;
-            if (!geometry.TryMapPointToSourcePixel(e.GetPosition(host), out sourcePixelX, out sourcePixelY))
+            if (!geometry.TryMapPointToSourcePixel(hostPoint, out sourcePixelX, out sourcePixelY))
             {
                 ClearPointerCoordinates();
                 return;
@@ -3462,7 +3970,7 @@ namespace FramePlayer
 
             var paneLabel = string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
                 ? "Compare"
-                : "Primary";
+                : PrimaryPaneTitle;
             SetPointerCoordinates(string.Format(
                 CultureInfo.InvariantCulture,
                 "Pixel: {0} ({1},{2})",
@@ -3471,9 +3979,15 @@ namespace FramePlayer
                 sourcePixelY));
         }
 
-        private void VideoSurfaceHost_MouseLeave(object sender, MouseEventArgs e)
+        private void VideoSurfaceHost_SizeChanged(object sender, SizeChangedEventArgs e)
         {
-            ClearPointerCoordinates();
+            var paneId = GetPaneIdFromSender(sender);
+            if (string.IsNullOrWhiteSpace(paneId))
+            {
+                return;
+            }
+
+            UpdatePaneViewportLayout(paneId);
         }
 
         private void ToggleFullScreen()
@@ -3576,11 +4090,13 @@ namespace FramePlayer
             if (string.Equals(paneId, ComparePaneId, StringComparison.Ordinal))
             {
                 CompareVideoSurface.Source = null;
+                UpdatePaneViewportLayout(ComparePaneId);
                 ClearPointerCoordinates();
                 return;
             }
 
             CustomVideoSurface.Source = null;
+            UpdatePaneViewportLayout(PrimaryPaneId);
             ClearPointerCoordinates();
         }
 
@@ -3607,6 +4123,8 @@ namespace FramePlayer
             _suppressLoopRestart = false;
             _isLoopRestartInFlight = false;
             ResetCompareAlignmentStatus();
+            ResetPaneViewport(PrimaryPaneId);
+            ResetPaneViewport(ComparePaneId);
             ClearPaneSurface(GetFocusedPaneId());
             ApplySessionSnapshot(_workspaceCoordinator.Reset(clearFilePath ? string.Empty : _currentFilePath));
 
@@ -3722,8 +4240,8 @@ namespace FramePlayer
                 CultureInfo.InvariantCulture,
                 "Backend: {0}. GPU status: {1}. Fallback: {2}. Queue depth: {3}. Index: {4}. Frame identity: {5}. Review cache budget is {6:0.0} MiB and currently uses about {7:0.0} MiB with up to {8} prior and {9} forward decoded frames. Last refill: {10} ({11:0.0} ms, {12}). Timeline seeks show the landed frame first.",
                 string.IsNullOrWhiteSpace(ffmpegEngine.ActiveDecodeBackend) ? "(unknown)" : ffmpegEngine.ActiveDecodeBackend,
-                string.IsNullOrWhiteSpace(ffmpegEngine.GpuCapabilityStatus) ? "(none)" : ffmpegEngine.GpuCapabilityStatus,
-                string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? "(none)" : ffmpegEngine.GpuFallbackReason,
+                string.IsNullOrWhiteSpace(ffmpegEngine.GpuCapabilityStatus) ? NoneText : ffmpegEngine.GpuCapabilityStatus,
+                string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? NoneText : ffmpegEngine.GpuFallbackReason,
                 ffmpegEngine.OperationalQueueDepth,
                 ffmpegEngine.GlobalFrameIndexStatus,
                 positionIdentity,
@@ -3731,7 +4249,7 @@ namespace FramePlayer
                 approximateCacheMegabytes,
                 ffmpegEngine.MaxPreviousCachedFrameCount,
                 ffmpegEngine.MaxForwardCachedFrameCount,
-                string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason) ? "(none)" : ffmpegEngine.LastCacheRefillReason,
+                string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason) ? NoneText : ffmpegEngine.LastCacheRefillReason,
                 ffmpegEngine.LastCacheRefillMilliseconds,
                 string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillMode) ? "none" : ffmpegEngine.LastCacheRefillMode);
             SetCacheStatus(message, tooltip, false);
@@ -3975,16 +4493,86 @@ namespace FramePlayer
             FocusPreferredVideoSurface();
         }
 
+        private bool CanAdjustPaneViewport(string paneId)
+        {
+            var engine = GetEngineForPane(paneId);
+            return engine != null &&
+                   engine.IsMediaOpen &&
+                   !engine.IsPlaying;
+        }
+
+        private void EndPaneViewportPan(FrameworkElement host, string paneId)
+        {
+            var viewportState = GetPaneViewportState(paneId);
+            if (!viewportState.IsPanActive)
+            {
+                return;
+            }
+
+            viewportState.IsPanActive = false;
+            if (host != null && host.IsMouseCaptured)
+            {
+                host.ReleaseMouseCapture();
+            }
+
+            var geometry = GetFrameSurfaceGeometry(paneId);
+            if (geometry.HasVisibleFrame)
+            {
+                viewportState.NormalizedCenter = geometry.NormalizedCenter;
+                if (geometry.ZoomFactor <= 1.0001d)
+                {
+                    viewportState.ZoomFactor = MinimumPaneZoomFactor;
+                }
+            }
+        }
+
+        private void UpdateAllPaneViewportLayouts()
+        {
+            UpdatePaneViewportLayout(PrimaryPaneId);
+            UpdatePaneViewportLayout(ComparePaneId);
+        }
+
+        private void UpdatePaneViewportLayout(string paneId)
+        {
+            FrameworkElement host;
+            FrameworkElement viewport;
+            Image image;
+            if (!TryGetVideoSurfaceElements(paneId, out host, out viewport, out image))
+            {
+                return;
+            }
+
+            var geometry = GetFrameSurfaceGeometry(paneId);
+            var viewportState = GetPaneViewportState(paneId);
+            if (!geometry.HasVisibleFrame)
+            {
+                viewport.Width = 0d;
+                viewport.Height = 0d;
+                Canvas.SetLeft(viewport, 0d);
+                Canvas.SetTop(viewport, 0d);
+                return;
+            }
+
+            viewportState.ZoomFactor = geometry.ZoomFactor;
+            viewportState.NormalizedCenter = geometry.NormalizedCenter;
+            viewport.Width = geometry.RenderedRect.Width;
+            viewport.Height = geometry.RenderedRect.Height;
+            Canvas.SetLeft(viewport, geometry.RenderedRect.Left);
+            Canvas.SetTop(viewport, geometry.RenderedRect.Top);
+        }
+
         private FrameSurfaceGeometry GetFrameSurfaceGeometry(string paneId)
         {
             FrameworkElement host;
+            FrameworkElement viewport;
             Image image;
-            if (!TryGetVideoSurfaceElements(paneId, out host, out image))
+            if (!TryGetVideoSurfaceElements(paneId, out host, out viewport, out image))
             {
                 return FrameSurfaceGeometry.Empty;
             }
 
             var bitmapSource = image.Source as BitmapSource;
+            var viewportState = GetPaneViewportState(paneId);
             return bitmapSource == null
                 ? FrameSurfaceGeometry.Empty
                 : FrameSurfaceGeometry.Create(
@@ -3992,21 +4580,44 @@ namespace FramePlayer
                     bitmapSource.PixelWidth,
                     bitmapSource.PixelHeight,
                     bitmapSource.Width,
-                    bitmapSource.Height);
+                    bitmapSource.Height,
+                    viewportState.ZoomFactor,
+                    viewportState.NormalizedCenter);
         }
 
-        private bool TryGetVideoSurfaceElements(string paneId, out FrameworkElement host, out Image image)
+        private bool TryGetVideoSurfaceElements(
+            string paneId,
+            out FrameworkElement host,
+            out FrameworkElement viewport,
+            out Image image)
         {
             if (string.Equals(paneId, ComparePaneId, StringComparison.Ordinal))
             {
                 host = CompareVideoSurfaceHost;
+                viewport = CompareVideoViewport;
                 image = CompareVideoSurface;
-                return host != null && image != null;
+                return host != null && viewport != null && image != null;
             }
 
             host = CustomVideoSurfaceHost;
+            viewport = CustomVideoViewport;
             image = CustomVideoSurface;
-            return host != null && image != null;
+            return host != null && viewport != null && image != null;
+        }
+
+        private PaneViewportSnapshot BuildPaneViewportSnapshot(string paneId)
+        {
+            var geometry = GetFrameSurfaceGeometry(paneId);
+            if (geometry.HasVisibleFrame)
+            {
+                return geometry.CreateViewportSnapshot();
+            }
+
+            var engine = GetEngineForPane(paneId);
+            var mediaInfo = engine != null ? engine.MediaInfo : VideoMediaInfo.Empty;
+            return PaneViewportSnapshot.CreateFullFrame(
+                mediaInfo.PixelWidth > 0 ? mediaInfo.PixelWidth : 1,
+                mediaInfo.PixelHeight > 0 ? mediaInfo.PixelHeight : 1);
         }
 
         private void SetPointerCoordinates(string message)
@@ -4039,8 +4650,8 @@ namespace FramePlayer
                 UpdateLoopUi();
 
                 var paneLabel = string.Equals(loopContextPaneId, ComparePaneId, StringComparison.Ordinal)
-                    ? "Compare pane"
-                    : "Primary pane";
+                    ? ComparePaneDisplayLabel
+                    : PrimaryPaneDisplayLabel;
                 var paneAnchor = endpoint == LoopPlaybackMarkerEndpoint.In
                     ? (paneRange != null ? paneRange.LoopIn : null)
                     : (paneRange != null ? paneRange.LoopOut : null);
@@ -4132,8 +4743,8 @@ namespace FramePlayer
                     CultureInfo.InvariantCulture,
                     "{0} loop points {1}.",
                     string.Equals(loopContextPaneId, ComparePaneId, StringComparison.Ordinal)
-                        ? "Compare pane"
-                        : "Primary pane",
+                        ? ComparePaneDisplayLabel
+                        : PrimaryPaneDisplayLabel,
                     paneRange != null && paneRange.HasAnyMarkers ? "cleared" : "already clear"));
                 LogInfo(string.Format(
                     CultureInfo.InvariantCulture,
@@ -4148,6 +4759,117 @@ namespace FramePlayer
             UpdateLoopUi();
             SetPlaybackMessage("Loop points cleared.");
             LogInfo("Cleared loop points.");
+        }
+
+        private async Task<AudioInsertionResult> ReplaceAudioTrackAsync()
+        {
+            var workspaceSnapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
+            AudioInsertionTarget audioInsertionTarget;
+            string failureMessage;
+            if (!TryResolveAudioInsertionTarget(workspaceSnapshot, out audioInsertionTarget, out failureMessage))
+            {
+                if (!string.IsNullOrWhiteSpace(failureMessage))
+                {
+                    SetPlaybackMessage(failureMessage);
+                    LogWarning(failureMessage);
+                }
+
+                return null;
+            }
+
+            await PausePlaybackAsync(logAction: false, operationScope: SynchronizedOperationScope.FocusedPane);
+
+            workspaceSnapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
+            if (!TryResolveAudioInsertionTarget(workspaceSnapshot, out audioInsertionTarget, out failureMessage))
+            {
+                if (!string.IsNullOrWhiteSpace(failureMessage))
+                {
+                    SetPlaybackMessage(failureMessage);
+                    LogWarning(failureMessage);
+                }
+
+                return null;
+            }
+
+            string replacementAudioFilePath;
+            if (!TryPromptForReplacementAudioTrackPath(audioInsertionTarget, out replacementAudioFilePath))
+            {
+                return null;
+            }
+
+            string outputPath;
+            if (!TryPromptForAudioInsertionOutputPath(audioInsertionTarget, out outputPath))
+            {
+                return null;
+            }
+
+            return await ReplaceAudioTrackAsync(replacementAudioFilePath, outputPath).ConfigureAwait(true);
+        }
+
+        private async Task<AudioInsertionResult> ReplaceAudioTrackAsync(
+            string replacementAudioFilePath,
+            string outputPath)
+        {
+            var workspaceSnapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
+            AudioInsertionTarget audioInsertionTarget;
+            string failureMessage;
+            if (!TryResolveAudioInsertionTarget(workspaceSnapshot, out audioInsertionTarget, out failureMessage))
+            {
+                if (!string.IsNullOrWhiteSpace(failureMessage))
+                {
+                    SetPlaybackMessage(failureMessage);
+                    LogWarning(failureMessage);
+                }
+
+                return null;
+            }
+
+            await PausePlaybackAsync(logAction: false, operationScope: SynchronizedOperationScope.FocusedPane);
+
+            workspaceSnapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
+            if (!TryResolveAudioInsertionTarget(workspaceSnapshot, out audioInsertionTarget, out failureMessage))
+            {
+                if (!string.IsNullOrWhiteSpace(failureMessage))
+                {
+                    SetPlaybackMessage(failureMessage);
+                    LogWarning(failureMessage);
+                }
+
+                return null;
+            }
+
+            var request = BuildAudioInsertionRequest(audioInsertionTarget, replacementAudioFilePath, outputPath);
+            try
+            {
+                SetPlaybackMessage("Replacing audio track...");
+                LogInfo(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Starting audio insertion: source {0}, replacement {1}, output {2}.",
+                    GetSafeFileDisplay(request.SourceFilePath),
+                    GetSafeFileDisplay(request.ReplacementAudioFilePath),
+                    GetSafeFileDisplay(request.OutputFilePath)));
+
+                var insertionResult = await _audioInsertionService.InsertAsync(request).ConfigureAwait(true);
+                if (insertionResult == null)
+                {
+                    return null;
+                }
+
+                if (insertionResult.Succeeded)
+                {
+                    ReportSuccessfulAudioInsertion(insertionResult);
+                }
+                else
+                {
+                    ReportFailedAudioInsertion(insertionResult.Message);
+                }
+
+                return insertionResult;
+            }
+            catch (Exception ex)
+            {
+                return CreateFailedAudioInsertionResult(ex.Message);
+            }
         }
 
         private async Task<ClipExportResult> ExportLoopClipAsync(string outputPath, string paneId)
@@ -4211,7 +4933,7 @@ namespace FramePlayer
                     var durationText = exportResult.ProbedDuration.HasValue
                         ? FormatTime(exportResult.ProbedDuration.Value)
                         : FormatTime(exportResult.Plan.Duration);
-                    SetPlaybackMessage("Clip exported.");
+                    SetPlaybackMessage("Clip export completed.");
                     LogInfo(string.Format(
                         CultureInfo.InvariantCulture,
                         "Clip export completed for {0}: source {1}, output {2}, start {3}, end-exclusive {4}, duration {5}, strategy {6}, elapsed {7:0.0} ms.",
@@ -4222,7 +4944,7 @@ namespace FramePlayer
                         FormatTime(exportResult.Plan.EndTimeExclusive),
                         durationText,
                         string.IsNullOrWhiteSpace(exportResult.Plan.EndBoundaryStrategy)
-                            ? "(none)"
+                            ? NoneText
                             : exportResult.Plan.EndBoundaryStrategy,
                         exportResult.Elapsed.TotalMilliseconds));
                 }
@@ -4311,7 +5033,7 @@ namespace FramePlayer
             {
                 SetPlaybackMessage(string.Format(
                     CultureInfo.InvariantCulture,
-                    "Exporting side-by-side compare ({0})...",
+                    "Exporting side-by-side compare video ({0})...",
                     mode == CompareSideBySideExportMode.Loop ? "loop" : "whole video"));
                 LogInfo(string.Format(
                     CultureInfo.InvariantCulture,
@@ -4368,7 +5090,7 @@ namespace FramePlayer
             var durationText = exportResult.ProbedDuration.HasValue
                 ? FormatTime(exportResult.ProbedDuration.Value)
                 : FormatTime(exportResult.Plan.OutputDuration);
-            SetPlaybackMessage("Side-by-side compare exported.");
+            SetPlaybackMessage("Side-by-side compare export completed.");
             LogInfo(string.Format(
                 CultureInfo.InvariantCulture,
                 "Side-by-side compare export completed: output {0}, mode {1}, audio {2}, duration {3}, output size {4}x{5}, probed audio {6}, elapsed {7:0.0} ms.",
@@ -4410,6 +5132,244 @@ namespace FramePlayer
             };
         }
 
+        private void ReportSuccessfulAudioInsertion(AudioInsertionResult insertionResult)
+        {
+            var durationText = insertionResult.ProbedDuration.HasValue
+                ? FormatTime(insertionResult.ProbedDuration.Value)
+                : FormatTime(insertionResult.Plan.VideoDuration);
+            SetPlaybackMessage("Audio track replaced.");
+            LogInfo(string.Format(
+                CultureInfo.InvariantCulture,
+                "Audio insertion completed: source {0}, replacement {1}, output {2}, duration {3}, probed audio {4}, elapsed {5:0.0} ms.",
+                GetSafeFileDisplay(insertionResult.Plan.SourceFilePath),
+                GetSafeFileDisplay(insertionResult.Plan.ReplacementAudioFilePath),
+                GetSafeFileDisplay(insertionResult.Plan.OutputFilePath),
+                durationText,
+                insertionResult.ProbedHasAudioStream.HasValue
+                    ? insertionResult.ProbedHasAudioStream.Value.ToString()
+                    : "unknown",
+                insertionResult.Elapsed.TotalMilliseconds));
+        }
+
+        private void ReportFailedAudioInsertion(string message)
+        {
+            var sanitizedMessage = SanitizeSensitiveText(message);
+            SetPlaybackMessage("Audio insertion failed.");
+            LogError("Audio insertion failed: " + sanitizedMessage);
+        }
+
+        private AudioInsertionResult CreateFailedAudioInsertionResult(string message)
+        {
+            ReportFailedAudioInsertion(message);
+            return new AudioInsertionResult(
+                false,
+                null,
+                SanitizeSensitiveText(message),
+                -1,
+                TimeSpan.Zero,
+                null,
+                null,
+                string.Empty,
+                string.Empty);
+        }
+
+        private void UpdateAudioInsertionCommandState(ReviewWorkspaceSnapshot workspaceSnapshot)
+        {
+            if (ReplaceAudioTrackMenuItem == null)
+            {
+                return;
+            }
+
+            string toolTip;
+            var canReplaceAudioTrack = CanReplaceAudioTrack(workspaceSnapshot, out toolTip);
+            ReplaceAudioTrackMenuItem.IsEnabled = canReplaceAudioTrack;
+            ReplaceAudioTrackMenuItem.ToolTip = toolTip;
+        }
+
+        private bool CanReplaceAudioTrack(ReviewWorkspaceSnapshot workspaceSnapshot, out string toolTip)
+        {
+            AudioInsertionTarget audioInsertionTarget;
+            string failureMessage;
+            if (!TryResolveAudioInsertionTarget(workspaceSnapshot, out audioInsertionTarget, out failureMessage))
+            {
+                toolTip = string.IsNullOrWhiteSpace(failureMessage)
+                    ? "Load a single-pane H.264 MP4 before replacing the audio track."
+                    : failureMessage;
+                return false;
+            }
+
+            toolTip = "Replace the reviewed source audio with a WAV or MP3 track and write a new MP4 copy.";
+            return true;
+        }
+
+        private bool TryResolveAudioInsertionTarget(
+            ReviewWorkspaceSnapshot workspaceSnapshot,
+            out AudioInsertionTarget audioInsertionTarget,
+            out string failureMessage)
+        {
+            audioInsertionTarget = null;
+            failureMessage = string.Empty;
+
+            if (!_audioInsertionService.IsBundledToolingAvailable)
+            {
+                failureMessage = _audioInsertionService.GetToolAvailabilityMessage();
+                return false;
+            }
+
+            if (IsCompareModeEnabled)
+            {
+                failureMessage = "Audio insertion is unavailable while two-pane compare mode is enabled.";
+                return false;
+            }
+
+            if (workspaceSnapshot == null)
+            {
+                failureMessage = "Load a single-pane H.264 MP4 before replacing the audio track.";
+                return false;
+            }
+
+            var paneSnapshot = workspaceSnapshot.FocusedPane ?? workspaceSnapshot.PrimaryPane;
+            if (paneSnapshot == null || !PaneHasLoadedMedia(paneSnapshot))
+            {
+                failureMessage = "Load a single-pane H.264 MP4 before replacing the audio track.";
+                return false;
+            }
+
+            var engine = GetEngineForPane(paneSnapshot.PaneId) as FfmpegReviewEngine;
+            if (engine == null || !engine.IsMediaOpen)
+            {
+                failureMessage = "The active review engine is unavailable for audio insertion.";
+                return false;
+            }
+
+            var sessionSnapshot = BuildReviewSessionSnapshot(paneSnapshot, engine);
+            var sourceFilePath = sessionSnapshot.CurrentFilePath;
+            if (!string.Equals(Path.GetExtension(sourceFilePath), ".mp4", StringComparison.OrdinalIgnoreCase))
+            {
+                failureMessage = "Audio insertion is available only for loaded H.264 MP4 sources.";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(sessionSnapshot.MediaInfo.VideoCodecName))
+            {
+                failureMessage = "Audio insertion is unavailable because the loaded video's codec could not be resolved.";
+                return false;
+            }
+
+            if (!IsH264Codec(sessionSnapshot.MediaInfo.VideoCodecName))
+            {
+                failureMessage = "Audio insertion is available only for loaded MP4 sources with H.264 video.";
+                return false;
+            }
+
+            audioInsertionTarget = new AudioInsertionTarget(
+                paneSnapshot.PaneId,
+                "Main transport",
+                paneSnapshot,
+                sessionSnapshot,
+                engine);
+            return true;
+        }
+
+        private bool TryPromptForReplacementAudioTrackPath(
+            AudioInsertionTarget audioInsertionTarget,
+            out string replacementAudioFilePath)
+        {
+            replacementAudioFilePath = string.Empty;
+            if (audioInsertionTarget == null)
+            {
+                return false;
+            }
+
+            var dialog = new OpenFileDialog
+            {
+                Title = "Select Replacement Audio",
+                Filter = "Supported Audio Files|*.wav;*.mp3|WAV Files|*.wav|MP3 Files|*.mp3",
+                CheckFileExists = true,
+                Multiselect = false
+            };
+
+            var sourceDirectory = Path.GetDirectoryName(audioInsertionTarget.SessionSnapshot.CurrentFilePath);
+            if (!string.IsNullOrWhiteSpace(sourceDirectory) && Directory.Exists(sourceDirectory))
+            {
+                dialog.InitialDirectory = sourceDirectory;
+            }
+
+            if (dialog.ShowDialog(this) != true)
+            {
+                return false;
+            }
+
+            replacementAudioFilePath = dialog.FileName;
+            return true;
+        }
+
+        private bool TryPromptForAudioInsertionOutputPath(
+            AudioInsertionTarget audioInsertionTarget,
+            out string outputPath)
+        {
+            outputPath = string.Empty;
+            if (audioInsertionTarget == null)
+            {
+                return false;
+            }
+
+            var dialog = new SaveFileDialog
+            {
+                Title = "Replace Audio Track",
+                Filter = "MP4 Video|*.mp4",
+                DefaultExt = ".mp4",
+                AddExtension = true,
+                OverwritePrompt = true,
+                CheckPathExists = true,
+                FileName = BuildSuggestedAudioInsertionFileName(audioInsertionTarget)
+            };
+
+            var sourceDirectory = Path.GetDirectoryName(audioInsertionTarget.SessionSnapshot.CurrentFilePath);
+            if (!string.IsNullOrWhiteSpace(sourceDirectory) && Directory.Exists(sourceDirectory))
+            {
+                dialog.InitialDirectory = sourceDirectory;
+            }
+
+            if (dialog.ShowDialog(this) != true)
+            {
+                return false;
+            }
+
+            outputPath = dialog.FileName;
+            return true;
+        }
+
+        private static AudioInsertionRequest BuildAudioInsertionRequest(
+            AudioInsertionTarget audioInsertionTarget,
+            string replacementAudioFilePath,
+            string outputPath)
+        {
+            return new AudioInsertionRequest(
+                audioInsertionTarget.SessionSnapshot.CurrentFilePath,
+                replacementAudioFilePath,
+                outputPath,
+                audioInsertionTarget.ContextLabel,
+                audioInsertionTarget.SessionSnapshot);
+        }
+
+        private static string BuildSuggestedAudioInsertionFileName(AudioInsertionTarget audioInsertionTarget)
+        {
+            var sourceFilePath = audioInsertionTarget != null
+                ? audioInsertionTarget.SessionSnapshot.CurrentFilePath
+                : string.Empty;
+            var baseName = string.IsNullOrWhiteSpace(sourceFilePath)
+                ? "video"
+                : Path.GetFileNameWithoutExtension(sourceFilePath);
+            baseName = SanitizeFileNameSegment(baseName);
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}-audio-inserted.mp4",
+                string.IsNullOrWhiteSpace(baseName)
+                    ? "video"
+                    : baseName);
+        }
+
         private bool TryResolveCompareSideBySideExportContext(
             ReviewWorkspaceSnapshot workspaceSnapshot,
             CompareSideBySideExportMode? requiredMode,
@@ -4427,13 +5387,13 @@ namespace FramePlayer
 
             if (!IsCompareModeEnabled)
             {
-                failureMessage = "Enable two-pane compare and load both panes before exporting a side-by-side compare.";
+                failureMessage = "Enable two-pane compare and load both panes before exporting a side-by-side compare video.";
                 return false;
             }
 
             if (workspaceSnapshot == null)
             {
-                failureMessage = "Load media into both compare panes before exporting a side-by-side compare.";
+                failureMessage = "Load media into both compare panes before exporting a side-by-side compare video.";
                 return false;
             }
 
@@ -4441,7 +5401,7 @@ namespace FramePlayer
             ReviewWorkspacePaneSnapshot comparePaneSnapshot;
             if (!TryResolveLoadedComparePaneSnapshots(workspaceSnapshot, out primaryPaneSnapshot, out comparePaneSnapshot))
             {
-                failureMessage = "Load media into both compare panes before exporting a side-by-side compare.";
+                failureMessage = "Load media into both compare panes before exporting a side-by-side compare video.";
                 return false;
             }
 
@@ -4449,7 +5409,7 @@ namespace FramePlayer
             var compareEngine = GetEngineForPane(ComparePaneId) as FfmpegReviewEngine;
             if (primaryEngine == null || !primaryEngine.IsMediaOpen || compareEngine == null || !compareEngine.IsMediaOpen)
             {
-                failureMessage = "Both compare review engines must stay available during side-by-side export.";
+                failureMessage = "Both compare review engines must remain available during side-by-side export.";
                 return false;
             }
 
@@ -4624,7 +5584,7 @@ namespace FramePlayer
             return true;
         }
 
-        private static CompareSideBySideExportRequest BuildCompareSideBySideExportRequest(
+        private CompareSideBySideExportRequest BuildCompareSideBySideExportRequest(
             CompareSideBySideExportContext exportContext,
             string outputPath,
             CompareSideBySideExportMode mode,
@@ -4637,6 +5597,8 @@ namespace FramePlayer
                 AudioSource = audioSource,
                 PrimarySessionSnapshot = BuildReviewSessionSnapshot(exportContext.PrimaryPaneSnapshot, exportContext.PrimaryEngine),
                 CompareSessionSnapshot = BuildReviewSessionSnapshot(exportContext.ComparePaneSnapshot, exportContext.CompareEngine),
+                PrimaryViewportSnapshot = BuildPaneViewportSnapshot(PrimaryPaneId),
+                CompareViewportSnapshot = BuildPaneViewportSnapshot(ComparePaneId),
                 PrimaryLoopRange = exportContext.PrimaryLoopRange,
                 CompareLoopRange = exportContext.CompareLoopRange,
                 PrimaryEngine = exportContext.PrimaryEngine,
@@ -4669,8 +5631,8 @@ namespace FramePlayer
                 LoopModeUnavailableReason = exportContext.LoopModeUnavailableReason ?? string.Empty,
                 InitialMode = initialMode,
                 InitialAudioSource = initialAudioSource,
-                PrimaryAudioLabel = "Primary pane",
-                CompareAudioLabel = "Compare pane"
+                PrimaryAudioLabel = PrimaryPaneDisplayLabel,
+                CompareAudioLabel = ComparePaneDisplayLabel
             };
         }
 
@@ -4678,7 +5640,7 @@ namespace FramePlayer
         {
             if (mediaInfo == null)
             {
-                return "Video: unknown";
+                return "Video: unavailable";
             }
 
             var resolution = mediaInfo.DisplayWidth.HasValue && mediaInfo.DisplayHeight.HasValue
@@ -4724,20 +5686,45 @@ namespace FramePlayer
         private static string BuildCompareExportPositionSummary(ReviewWorkspacePaneSnapshot paneSnapshot)
         {
             return paneSnapshot == null
-                ? "Current sync position: unknown"
+                ? "Current sync position: unavailable"
                 : "Current sync position: " + FormatTime(paneSnapshot.PresentationTime);
+        }
+
+        private static string BuildCacheRefillSummary(FfmpegReviewEngine ffmpegEngine)
+        {
+            if (ffmpegEngine == null)
+            {
+                return UnavailableText;
+            }
+
+            var refillReason = string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason)
+                ? NoneText
+                : ffmpegEngine.LastCacheRefillReason;
+            var refillMode = string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillMode)
+                ? "none"
+                : ffmpegEngine.LastCacheRefillMode;
+            var afterLandingText = ffmpegEngine.LastCacheRefillAfterLanding ? "yes" : "no";
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}, {1:0.0} ms, mode {2}, after landing {3}, forward {4}->{5}",
+                refillReason,
+                ffmpegEngine.LastCacheRefillMilliseconds,
+                refillMode,
+                afterLandingText,
+                ffmpegEngine.LastCacheRefillStartingForwardCount,
+                ffmpegEngine.LastCacheRefillCompletedForwardCount);
         }
 
         private static string BuildCompareExportLoopSummary(LoopPlaybackPaneRangeSnapshot loopRange)
         {
             if (loopRange == null || !loopRange.HasAnyMarkers)
             {
-                return "Loop: not set";
+                return "Loop range: not set";
             }
 
             return string.Format(
                 CultureInfo.InvariantCulture,
-                "Loop: {0} -> {1}",
+                "Loop range: {0} -> {1}",
                 FormatLoopBoundaryLabel(loopRange.LoopIn, isStartBoundary: true),
                 FormatLoopBoundaryLabel(loopRange.LoopOut, isStartBoundary: false));
         }
@@ -4749,14 +5736,80 @@ namespace FramePlayer
             if (!TryResolveCompareSideBySideExportContext(workspaceSnapshot, null, out exportContext, out failureMessage))
             {
                 toolTip = string.IsNullOrWhiteSpace(failureMessage)
-                    ? "Enable two-pane compare and load both panes before exporting a side-by-side compare."
+                    ? "Enable two-pane compare and load both panes before exporting a side-by-side compare video."
                     : failureMessage;
                 return false;
             }
 
             toolTip = exportContext.IsLoopModeAvailable
-                ? "Export both compare panes as one side-by-side MP4. The dialog lets you choose loop or whole-video mode."
-                : "Export both compare panes as one side-by-side MP4. Whole-video mode is available; loop mode is currently unavailable.";
+                ? "Export both compare panes to a single side-by-side MP4. The dialog lets you choose Loop or Whole Video."
+                : "Export both compare panes to a single side-by-side MP4. Whole Video is available; Loop is currently unavailable.";
+            return true;
+        }
+
+        private void UpdateViewportCommandState(ReviewWorkspaceSnapshot workspaceSnapshot)
+        {
+            if (ZoomInMenuItem == null &&
+                ZoomOutMenuItem == null &&
+                ResetZoomMenuItem == null)
+            {
+                return;
+            }
+
+            var focusedPaneId = workspaceSnapshot != null && !string.IsNullOrWhiteSpace(workspaceSnapshot.FocusedPaneId)
+                ? workspaceSnapshot.FocusedPaneId
+                : GetFocusedPaneId();
+            if (ZoomInMenuItem != null)
+            {
+                string toolTip;
+                var canZoomIn = CanAdjustPaneViewportZoom(workspaceSnapshot, focusedPaneId, zoomIn: true, out toolTip);
+                ZoomInMenuItem.IsEnabled = canZoomIn;
+                ZoomInMenuItem.ToolTip = toolTip;
+            }
+
+            if (ZoomOutMenuItem != null)
+            {
+                string toolTip;
+                var canZoomOut = CanAdjustPaneViewportZoom(workspaceSnapshot, focusedPaneId, zoomIn: false, out toolTip);
+                ZoomOutMenuItem.IsEnabled = canZoomOut;
+                ZoomOutMenuItem.ToolTip = toolTip;
+            }
+
+            if (ResetZoomMenuItem != null)
+            {
+                string toolTip;
+                var canResetZoom = CanResetPaneViewport(workspaceSnapshot, focusedPaneId, out toolTip);
+                ResetZoomMenuItem.IsEnabled = canResetZoom;
+                ResetZoomMenuItem.ToolTip = toolTip;
+            }
+        }
+
+        private bool CanResetPaneViewport(
+            ReviewWorkspaceSnapshot workspaceSnapshot,
+            string paneId,
+            out string toolTip)
+        {
+            toolTip = string.Empty;
+            var resolvedPaneId = string.IsNullOrWhiteSpace(paneId)
+                ? PrimaryPaneId
+                : paneId;
+            ReviewWorkspacePaneSnapshot paneSnapshot;
+            if (workspaceSnapshot == null || !workspaceSnapshot.TryGetPane(resolvedPaneId, out paneSnapshot) || !PaneHasLoadedMedia(paneSnapshot))
+            {
+                toolTip = "Load media in the selected pane before resetting zoom.";
+                return false;
+            }
+
+            var viewportState = GetPaneViewportState(resolvedPaneId);
+            if (!viewportState.IsZoomed)
+            {
+                toolTip = "The selected pane is already showing the full frame.";
+                return false;
+            }
+
+            toolTip = string.Equals(resolvedPaneId, ComparePaneId, StringComparison.Ordinal)
+                ? "Reset zoom and pan for the focused compare pane."
+                : "Reset zoom and pan for the focused pane.";
             return true;
         }
 
@@ -4776,6 +5829,17 @@ namespace FramePlayer
                 engine.CurrentFilePath,
                 engine.MediaInfo,
                 engine.Position);
+        }
+
+        private static bool IsH264Codec(string codecName)
+        {
+            if (string.IsNullOrWhiteSpace(codecName))
+            {
+                return false;
+            }
+
+            var normalizedCodec = codecName.Replace(".", string.Empty).Trim();
+            return string.Equals(normalizedCodec, "h264", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string BuildSuggestedCompareExportFileName(
@@ -5518,7 +6582,7 @@ namespace FramePlayer
             return true;
         }
 
-        private static ClipExportRequest BuildClipExportRequest(ClipExportTarget exportTarget, string outputPath)
+        private ClipExportRequest BuildClipExportRequest(ClipExportTarget exportTarget, string outputPath)
         {
             var engine = exportTarget.Engine;
             var paneSnapshot = exportTarget.PaneSnapshot;
@@ -5540,7 +6604,8 @@ namespace FramePlayer
                 exportTarget.IsPaneLocal,
                 sessionSnapshot,
                 exportTarget.LoopRange,
-                exportTarget.Engine);
+                exportTarget.Engine,
+                BuildPaneViewportSnapshot(exportTarget.PaneId));
         }
 
         private bool CanExportLoopClip(ReviewWorkspaceSnapshot workspaceSnapshot, string paneId, out string toolTip)
@@ -5628,8 +6693,8 @@ namespace FramePlayer
         private static string GetPaneDisplayLabel(string paneId)
         {
             return string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
-                ? "Compare pane"
-                : "Primary pane";
+                ? ComparePaneDisplayLabel
+                : PrimaryPaneDisplayLabel;
         }
 
         private void UpdateLoopUi()
@@ -5690,7 +6755,7 @@ namespace FramePlayer
                 return;
             }
 
-            LoopStatusTextBlock.Text = string.IsNullOrWhiteSpace(message) ? "Loop: off" : message;
+            LoopStatusTextBlock.Text = string.IsNullOrWhiteSpace(message) ? LoopOffStatusText : message;
             LoopStatusTextBlock.ToolTip = string.IsNullOrWhiteSpace(toolTip)
                 ? "Loop playback status for the main transport."
                 : toolTip;
@@ -5759,11 +6824,11 @@ namespace FramePlayer
 
                 if (loopStatusTextBlock != null)
                 {
-                    loopStatusTextBlock.Text = IsLoopPlaybackEnabled ? "Loop: full media" : "Loop: off";
+                    loopStatusTextBlock.Text = IsLoopPlaybackEnabled ? "Loop: full media" : LoopOffStatusText;
                     loopStatusTextBlock.ToolTip = string.Format(
                         CultureInfo.InvariantCulture,
                         "{0} loop playback status. With no pane-local A/B markers, pane playback loops the full media only when loop playback is enabled.",
-                        string.Equals(paneId, ComparePaneId, StringComparison.Ordinal) ? "Compare pane" : "Primary pane");
+                        string.Equals(paneId, ComparePaneId, StringComparison.Ordinal) ? ComparePaneDisplayLabel : PrimaryPaneDisplayLabel);
                 }
 
                 return;
@@ -5788,7 +6853,7 @@ namespace FramePlayer
         {
             if (paneRange == null || !paneRange.HasAnyMarkers)
             {
-                return "Loop: off";
+                return LoopOffStatusText;
             }
 
             var rangeDisplay = string.Format(
@@ -5813,8 +6878,8 @@ namespace FramePlayer
         private static string BuildPaneLoopStatusToolTip(string paneId, LoopPlaybackPaneRangeSnapshot paneRange)
         {
             var paneLabel = string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
-                ? "Compare pane"
-                : "Primary pane";
+                ? ComparePaneDisplayLabel
+                : PrimaryPaneDisplayLabel;
             if (paneRange == null || !paneRange.HasAnyMarkers)
             {
                 return paneLabel + " loop playback status.";
@@ -6039,13 +7104,13 @@ namespace FramePlayer
         {
             if (evaluation == null || !evaluation.HasMarkers)
             {
-                return IsLoopPlaybackEnabled ? "Loop: full media" : "Loop: off";
+                return IsLoopPlaybackEnabled ? "Loop: full media" : LoopOffStatusText;
             }
 
             var focusedPaneRange = evaluation.FocusedPaneRange;
             if (focusedPaneRange == null || !focusedPaneRange.HasAnyMarkers)
             {
-                return IsLoopPlaybackEnabled ? "Loop: pending scope" : "Loop: off";
+                return IsLoopPlaybackEnabled ? "Loop: pending scope" : LoopOffStatusText;
             }
 
             var rangeDisplay = string.Format(
@@ -6659,7 +7724,7 @@ namespace FramePlayer
         {
             if (!_isMediaLoaded)
             {
-                SetPlaybackMessage("Load a video to inspect its details.");
+                SetPlaybackMessage("Load a video to view its details.");
                 return;
             }
 
@@ -6671,7 +7736,7 @@ namespace FramePlayer
 
             var paneLabel = string.Equals(resolvedPaneId, ComparePaneId, StringComparison.Ordinal)
                 ? "Compare"
-                : "Primary";
+                : PrimaryPaneTitle;
             var engine = GetEngineForPane(resolvedPaneId);
             if (engine == null || !engine.IsMediaOpen)
             {
@@ -6797,18 +7862,26 @@ namespace FramePlayer
             if (menuItems.Length > 1)
             {
                 string toolTip;
-                var canExport = CanExportLoopClip(_workspaceCoordinator.GetWorkspaceSnapshot(), paneId, out toolTip);
-                menuItems[1].IsEnabled = canExport;
+                var canResetZoom = CanResetPaneViewport(_workspaceCoordinator.GetWorkspaceSnapshot(), paneId, out toolTip);
+                menuItems[1].IsEnabled = canResetZoom;
                 menuItems[1].ToolTip = toolTip;
             }
 
             if (menuItems.Length > 2)
             {
                 string toolTip;
-                var canExport = CanExportSideBySideCompare(_workspaceCoordinator.GetWorkspaceSnapshot(), out toolTip);
-                menuItems[2].Visibility = IsCompareModeEnabled ? Visibility.Visible : Visibility.Collapsed;
+                var canExport = CanExportLoopClip(_workspaceCoordinator.GetWorkspaceSnapshot(), paneId, out toolTip);
                 menuItems[2].IsEnabled = canExport;
                 menuItems[2].ToolTip = toolTip;
+            }
+
+            if (menuItems.Length > 3)
+            {
+                string toolTip;
+                var canExport = CanExportSideBySideCompare(_workspaceCoordinator.GetWorkspaceSnapshot(), out toolTip);
+                menuItems[3].Visibility = IsCompareModeEnabled ? Visibility.Visible : Visibility.Collapsed;
+                menuItems[3].IsEnabled = canExport;
+                menuItems[3].ToolTip = toolTip;
             }
         }
 
@@ -6907,7 +7980,7 @@ namespace FramePlayer
         {
             return duration > TimeSpan.Zero
                 ? FormatTime(duration)
-                : "Unknown";
+                : UnknownText;
         }
 
         private static void AddInspectorFieldIfKnown(List<VideoInfoField> fields, string label, string value)
@@ -6924,21 +7997,21 @@ namespace FramePlayer
         {
             return framesPerSecond > 0d
                 ? string.Format(CultureInfo.InvariantCulture, "{0:0.###} fps", framesPerSecond)
-                : "Unknown";
+                : UnknownText;
         }
 
         private static string FormatInspectorResolution(int width, int height)
         {
             return width > 0 && height > 0
                 ? string.Format(CultureInfo.InvariantCulture, "{0} x {1}", width, height)
-                : "Unknown";
+                : UnknownText;
         }
 
         private static string FormatInspectorResolution(int? width, int? height)
         {
             return width.HasValue && height.HasValue
                 ? FormatInspectorResolution(width.Value, height.Value)
-                : "Unknown";
+                : UnknownText;
         }
 
         private static string FormatInspectorRatio(int? numerator, int? denominator)
@@ -6948,21 +8021,21 @@ namespace FramePlayer
                    numerator.Value > 0 &&
                    denominator.Value > 0
                 ? string.Format(CultureInfo.InvariantCulture, "{0}:{1}", numerator.Value, denominator.Value)
-                : "Unknown";
+                : UnknownText;
         }
 
         private static string FormatInspectorText(string value)
         {
             if (string.IsNullOrWhiteSpace(value))
             {
-                return "Unknown";
+                return UnknownText;
             }
 
             var trimmedValue = value.Trim();
             return trimmedValue.Equals("unknown", StringComparison.OrdinalIgnoreCase) ||
                    trimmedValue.Equals("unspecified", StringComparison.OrdinalIgnoreCase) ||
                    trimmedValue.StartsWith("reserved", StringComparison.OrdinalIgnoreCase)
-                ? "Unknown"
+                ? UnknownText
                 : trimmedValue;
         }
 
@@ -6970,14 +8043,14 @@ namespace FramePlayer
         {
             return bitDepth.HasValue && bitDepth.Value > 0
                 ? string.Format(CultureInfo.InvariantCulture, "{0}-bit", bitDepth.Value)
-                : "Unknown";
+                : UnknownText;
         }
 
         private static string FormatInspectorBitRate(long? bitsPerSecond)
         {
             if (!bitsPerSecond.HasValue || bitsPerSecond.Value <= 0L)
             {
-                return "Unknown";
+                return UnknownText;
             }
 
             var units = new[] { "bit/s", "Kbit/s", "Mbit/s", "Gbit/s" };
@@ -7002,28 +8075,28 @@ namespace FramePlayer
         {
             return sampleRate > 0
                 ? string.Format(CultureInfo.InvariantCulture, "{0:N0} Hz", sampleRate)
-                : "Unknown";
+                : UnknownText;
         }
 
         private static string FormatInspectorChannelCount(int channelCount)
         {
             return channelCount > 0
                 ? string.Format(CultureInfo.InvariantCulture, "{0} channel(s)", channelCount)
-                : "Unknown";
+                : UnknownText;
         }
 
         private static string FormatInspectorIndex(int streamIndex)
         {
             return streamIndex >= 0
                 ? streamIndex.ToString(CultureInfo.InvariantCulture)
-                : "Unknown";
+                : UnknownText;
         }
 
         private static string FormatInspectorFraction(int numerator, int denominator)
         {
             return numerator > 0 && denominator > 0
                 ? string.Format(CultureInfo.InvariantCulture, "{0}/{1}", numerator, denominator)
-                : "Unknown";
+                : UnknownText;
         }
 
         private void ShowHelpWindow()
@@ -7048,7 +8121,7 @@ namespace FramePlayer
         {
             var dialog = new SaveFileDialog
             {
-                Title = "Export Diagnostics",
+                Title = "Export Diagnostic Report",
                 Filter = "Text Files|*.txt|All Files|*.*",
                 FileName = string.Format(
                     CultureInfo.InvariantCulture,
@@ -7077,7 +8150,7 @@ namespace FramePlayer
 
                 var report = _diagnosticLogService.BuildReport(new[]
                 {
-                    "Frame Player Diagnostics",
+                    "Frame Player Diagnostic Report",
                     string.Format(CultureInfo.InvariantCulture, "Generated: {0:yyyy-MM-dd HH:mm:ss.fff zzz}", DateTime.Now),
                     string.Format(CultureInfo.InvariantCulture, "Session started: {0:yyyy-MM-dd HH:mm:ss.fff zzz}", _diagnosticLogService.SessionStarted),
                     "Build variant: " + _buildVariant.BuildDisplayName,
@@ -7097,19 +8170,19 @@ namespace FramePlayer
                     "Playback state: " + (_isPlaying ? "Playing" : "Paused/Idle"),
                     "Audio stream: " + (focusedEngine != null && focusedEngine.MediaInfo.HasAudioStream ? "Yes" : "No"),
                     "Audio playback available: " + (focusedEngine != null && focusedEngine.MediaInfo.IsAudioPlaybackAvailable ? "Yes" : "No"),
-                    "Audio codec: " + (focusedEngine == null || string.IsNullOrWhiteSpace(focusedEngine.MediaInfo.AudioCodecName) ? "(none)" : focusedEngine.MediaInfo.AudioCodecName),
+                    "Audio codec: " + (focusedEngine == null || string.IsNullOrWhiteSpace(focusedEngine.MediaInfo.AudioCodecName) ? NoneText : focusedEngine.MediaInfo.AudioCodecName),
                     "Audio details: " + GetAudioTooltipText(focusedEngine != null ? focusedEngine.MediaInfo : VideoMediaInfo.Empty),
-                    "Frame index status: " + (ffmpegEngine != null ? ffmpegEngine.GlobalFrameIndexStatus : "(unavailable)"),
+                    "Frame index status: " + (ffmpegEngine != null ? ffmpegEngine.GlobalFrameIndexStatus : UnavailableText),
                     "Frame index available: " + (ffmpegEngine != null && ffmpegEngine.IsGlobalFrameIndexAvailable ? "Yes" : "No"),
-                    "Indexed frame count: " + (ffmpegEngine != null ? ffmpegEngine.IndexedFrameCount.ToString(CultureInfo.InvariantCulture) : "(unavailable)"),
-                    "Decode backend: " + (ffmpegEngine != null ? ffmpegEngine.ActiveDecodeBackend : "(unavailable)"),
+                    "Indexed frame count: " + (ffmpegEngine != null ? ffmpegEngine.IndexedFrameCount.ToString(CultureInfo.InvariantCulture) : UnavailableText),
+                    "Decode backend: " + (ffmpegEngine != null ? ffmpegEngine.ActiveDecodeBackend : UnavailableText),
                     "GPU active: " + (ffmpegEngine != null && ffmpegEngine.IsGpuActive ? "Yes" : "No"),
-                    "GPU status: " + (ffmpegEngine != null ? ffmpegEngine.GpuCapabilityStatus : "(unavailable)"),
-                    "GPU fallback reason: " + (ffmpegEngine != null && !string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? ffmpegEngine.GpuFallbackReason : "(none)"),
+                    "GPU status: " + (ffmpegEngine != null ? ffmpegEngine.GpuCapabilityStatus : UnavailableText),
+                    "GPU fallback reason: " + (ffmpegEngine != null && !string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? ffmpegEngine.GpuFallbackReason : NoneText),
                     "Decode cache budget: " + (ffmpegEngine != null
                         ? string.Format(CultureInfo.InvariantCulture, "{0:0.0} MiB", ffmpegEngine.DecodedFrameCacheBudgetBytes / 1048576d)
-                        : "(unavailable)"),
-                    "Operational queue depth: " + (ffmpegEngine != null ? ffmpegEngine.OperationalQueueDepth.ToString(CultureInfo.InvariantCulture) : "(unavailable)"),
+                        : UnavailableText),
+                    "Operational queue depth: " + (ffmpegEngine != null ? ffmpegEngine.OperationalQueueDepth.ToString(CultureInfo.InvariantCulture) : UnavailableText),
                     "Review cache window: " + (ffmpegEngine != null
                         ? string.Format(
                             CultureInfo.InvariantCulture,
@@ -7119,18 +8192,8 @@ namespace FramePlayer
                             ffmpegEngine.MaxPreviousCachedFrameCount,
                             ffmpegEngine.MaxForwardCachedFrameCount,
                             ffmpegEngine.ApproximateCachedFrameBytes / 1048576d)
-                        : "(unavailable)"),
-                    "Last cache refill: " + (ffmpegEngine != null
-                        ? string.Format(
-                            CultureInfo.InvariantCulture,
-                            "{0}, {1:0.0} ms, mode {2}, after landing {3}, forward {4}->{5}",
-                            string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason) ? "(none)" : ffmpegEngine.LastCacheRefillReason,
-                            ffmpegEngine.LastCacheRefillMilliseconds,
-                            string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillMode) ? "none" : ffmpegEngine.LastCacheRefillMode,
-                            ffmpegEngine.LastCacheRefillAfterLanding ? "yes" : "no",
-                            ffmpegEngine.LastCacheRefillStartingForwardCount,
-                            ffmpegEngine.LastCacheRefillCompletedForwardCount)
-                        : "(unavailable)"),
+                        : UnavailableText),
+                    "Last cache refill: " + BuildCacheRefillSummary(ffmpegEngine),
                     "Open timing: " + (ffmpegEngine != null
                         ? string.Format(
                             CultureInfo.InvariantCulture,
@@ -7143,7 +8206,7 @@ namespace FramePlayer
                             ffmpegEngine.LastOpenFirstFrameDecodeMilliseconds,
                             ffmpegEngine.LastOpenInitialCacheWarmMilliseconds,
                             ffmpegEngine.LastGlobalFrameIndexBuildMilliseconds)
-                        : "(unavailable)"),
+                        : UnavailableText),
                     "Full screen: " + (_isFullScreen ? "Yes" : "No"),
                     string.Format(CultureInfo.InvariantCulture, "Clock position: {0} / {1}", FormatTime(currentPosition), FormatTime(_mediaDuration)),
                     string.Format(CultureInfo.InvariantCulture, "Timecode: {0}", _isMediaLoaded ? FormatTimecode(currentFrameIndex) : "--:--:--:--"),
@@ -7154,19 +8217,19 @@ namespace FramePlayer
                         !string.IsNullOrWhiteSpace(displayedTotalFrame) ? " / " + displayedTotalFrame : string.Empty),
                     string.Format(CultureInfo.InvariantCulture, "Frame rate: {0:0.###} fps", _framesPerSecond),
                     "Frame step: " + FormatStepDuration(_positionStep),
-                    "Last error: " + (string.IsNullOrWhiteSpace(_lastMediaErrorMessage) ? "(none)" : _lastMediaErrorMessage)
+                    "Last error: " + (string.IsNullOrWhiteSpace(_lastMediaErrorMessage) ? NoneText : _lastMediaErrorMessage)
                 });
 
                 File.WriteAllText(dialog.FileName, report);
                 LogInfo("Diagnostics exported to " + GetSafeFileDisplay(dialog.FileName));
-                SetPlaybackMessage("Diagnostics exported.");
+                SetPlaybackMessage("Diagnostic report exported.");
             }
             catch (Exception ex)
             {
                 LogError("Diagnostics export failed.", ex);
                 MessageBox.Show(
                     this,
-                    "Frame Player could not write the diagnostics file.\r\n\r\n" + ex.Message,
+                    "Frame Player could not write the diagnostic report.\r\n\r\n" + ex.Message,
                     "Export Failed",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
@@ -7193,7 +8256,7 @@ namespace FramePlayer
         private static string GetSafeFileDisplay(string filePath)
         {
             return string.IsNullOrWhiteSpace(filePath)
-                ? "(none)"
+                ? NoneText
                 : Path.GetFileName(filePath);
         }
 
@@ -7255,12 +8318,12 @@ namespace FramePlayer
             var landedPosition = GetDisplayPosition();
             var focusedEngine = GetFocusedPaneEngine();
             var enginePosition = focusedEngine != null ? focusedEngine.Position : null;
-            var frameText = "(unavailable)";
+            var frameText = UnavailableText;
             var frameIdentity = "unavailable";
             if (enginePosition != null && enginePosition.FrameIndex.HasValue)
             {
                 frameText = GetDisplayedFrameNumber(enginePosition.FrameIndex.Value).ToString(CultureInfo.InvariantCulture);
-                frameIdentity = enginePosition.IsFrameIndexAbsolute ? "absolute" : "segment-local";
+                frameIdentity = enginePosition.IsFrameIndexAbsolute ? AbsoluteFrameIdentityText : SegmentLocalFrameIdentityText;
             }
 
             LogInfo(string.Format(
@@ -7291,8 +8354,8 @@ namespace FramePlayer
                 ffmpegEngine.LastSeekIndexWaitMilliseconds,
                 ffmpegEngine.LastSeekMaterializeMilliseconds,
                 ffmpegEngine.LastSeekForwardCacheWarmMilliseconds,
-                string.IsNullOrWhiteSpace(ffmpegEngine.LastSeekMode) ? "(none)" : ffmpegEngine.LastSeekMode,
-                string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason) ? "(none)" : ffmpegEngine.LastCacheRefillReason,
+                string.IsNullOrWhiteSpace(ffmpegEngine.LastSeekMode) ? NoneText : ffmpegEngine.LastSeekMode,
+                string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason) ? NoneText : ffmpegEngine.LastCacheRefillReason,
                 ffmpegEngine.LastCacheRefillMilliseconds,
                 string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillMode) ? "none" : ffmpegEngine.LastCacheRefillMode,
                 ffmpegEngine.LastCacheRefillStartingForwardCount,

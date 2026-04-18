@@ -7,9 +7,17 @@ This note documents the `v1.8.0` release. It is the maintainer-facing summary of
 - Two-pane compare review can now render directly to a merged side-by-side MP4:
   - `Playback > Export Side-by-Side Compare...` opens a compare-only export flow
   - the same compare export entrypoint is also available from both compare-pane context menus
+- Audio replacement is now available for the single-pane MVP path:
+  - `Audio Insertion > Replace Audio Track...` stays available only for loaded H.264 `.mp4` review sources
+  - replacement audio accepts `.wav` or `.mp3`, replaces any existing source audio, keeps the source video duration fixed, and always writes a new `.mp4`
+  - two-pane compare keeps the command visible but disabled with an explicit tooltip because audio insertion is intentionally single-pane only
 - Compare export supports two review-aligned modes in one dialog:
   - `Loop` exports each pane's own pane-local A/B review range and pads the shorter pane with black video at the tail
   - `Whole Video` exports both full files and preserves the current compare alignment by adding black lead-in to the earlier pane
+- Review zoom is now pane-local and export-aware:
+  - mouse-wheel zoom and paused left-drag pan apply independently per pane
+  - zoom survives play, pause, seek, and frame-step until `Playback > Reset Zoom` or the pane context-menu reset action is used
+  - reviewed loop export and side-by-side compare export now render the pane crop that the reviewer actually chose instead of always exporting the uncropped full frame
 - Audio ownership is now explicit:
   - the export dialog lets the reviewer choose `Primary` or `Compare` as the output audio source
   - if the chosen pane has no audio stream, the export still succeeds as a silent video-only MP4
@@ -24,13 +32,14 @@ This note documents the `v1.8.0` release. It is the maintainer-facing summary of
 ## What Stays Deferred
 
 - Side-by-side compare export remains fixed to MP4/H.264 output on Windows for this release line.
+- Audio insertion is intentionally limited to single-pane H.264 `.mp4` sources and always keeps the original full-frame picture; zoom does not affect audio insertion output.
 - No batch export, alternate layout chooser, container chooser, or codec chooser ships in `v1.8.0`.
 - If a full-resolution side-by-side canvas cannot be encoded safely within the fixed MP4/H.264 contract, the export fails clearly instead of reducing resolution.
 
 ## Runtime And CI Truth
 
 - Product version: `v1.8.0`
-- Current published clean-runner bootstrap asset: `v1.5.0`
+- Current pinned clean-runner runtime bootstrap asset: `v1.5.0`
 - `Runtime\runtime-manifest.json` remains pinned to the verified runtime bundle because the playback DLL payload itself did not change for this release.
 
 ## Validation Evidence
@@ -49,6 +58,11 @@ Green validation captured for this release:
   - files tested: `17`
   - checks run: `998`
   - pass / warning / fail: `970 / 28 / 0`
+- Additional manual regression focus for the MVP-finish slice:
+  - audio insertion with `.wav` and `.mp3` replacements on H.264 `.mp4`
+  - disabled-state and tooltip coverage for two-pane compare plus unsupported sources
+  - paused zoom/pan persistence in single-pane and two-pane review
+  - crop-aware loop export and crop-aware side-by-side compare export validation
 
 Known non-blocking warnings remain the intentional frames-first pre-index and tiny-clip skips:
 

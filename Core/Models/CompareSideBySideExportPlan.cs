@@ -24,6 +24,8 @@ namespace FramePlayer.Core.Models
         private int _compareRenderHeight = 1;
         private int _outputWidth = 1;
         private int _outputHeight = 1;
+        private PaneViewportSnapshot _primaryViewportSnapshot = PaneViewportSnapshot.CreateFullFrame(1, 1);
+        private PaneViewportSnapshot _compareViewportSnapshot = PaneViewportSnapshot.CreateFullFrame(1, 1);
         private string _ffmpegArguments = string.Empty;
         private string _ffmpegPath = string.Empty;
         private string _ffprobePath = string.Empty;
@@ -150,6 +152,18 @@ namespace FramePlayer.Core.Models
         {
             get { return _outputHeight; }
             init { _outputHeight = Math.Max(1, value); }
+        }
+
+        public PaneViewportSnapshot PrimaryViewportSnapshot
+        {
+            get { return _primaryViewportSnapshot; }
+            init { _primaryViewportSnapshot = value ?? PaneViewportSnapshot.CreateFullFrame(1, 1); }
+        }
+
+        public PaneViewportSnapshot CompareViewportSnapshot
+        {
+            get { return _compareViewportSnapshot; }
+            init { _compareViewportSnapshot = value ?? PaneViewportSnapshot.CreateFullFrame(1, 1); }
         }
 
         public bool SelectedAudioHasStream { get; init; }
