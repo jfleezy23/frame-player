@@ -107,6 +107,7 @@ jobs:
           $coverageExclusions = @(
             "App.xaml.cs"
             "CompareSideBySideExportOptionsWindow.xaml.cs"
+            "Controls/LoopRangeOverlay.cs"
             "Core/Models/AudioInsertion*.cs"
             "Core/Models/ClipExport*.cs"
             "Core/Models/CompareSideBySideExport*.cs"

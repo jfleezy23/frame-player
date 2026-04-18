@@ -3342,6 +3342,10 @@ namespace FramePlayer
                 return;
             }
 
+            var frameIdentityText = isAbsoluteFrameIndex
+                ? AbsoluteFrameIdentityText
+                : SegmentLocalFrameIdentityText;
+            string currentFrameToolTip;
             if (totalFrames > 0)
             {
                 CurrentFrameTextBlock.Text = string.Format(
@@ -3351,14 +3355,14 @@ namespace FramePlayer
                         : "Frame {0} / {1}",
                     currentFrame.ToString(frameFormat, CultureInfo.InvariantCulture),
                     totalFrameDisplay.ToString(frameFormat, CultureInfo.InvariantCulture));
-                CurrentFrameTextBlock.ToolTip = _buildVariant.UsesZeroIndexedFrameDisplay
+                currentFrameToolTip = _buildVariant.UsesZeroIndexedFrameDisplay
                     ? string.Format(
                         CultureInfo.InvariantCulture,
                         "Current zero-indexed frame {0}. Last zero-indexed frame {1}. Total decoded frames: {2}. Identity: {3}.",
                         currentFrame,
                         totalFrameDisplay,
                         totalFrames,
-                        isAbsoluteFrameIndex ? AbsoluteFrameIdentityText : SegmentLocalFrameIdentityText)
+                        frameIdentityText)
                     : string.Format(CultureInfo.InvariantCulture, "Current frame {0} of {1}.", currentFrame, totalFrames);
             }
             else
@@ -3367,30 +3371,38 @@ namespace FramePlayer
                     CultureInfo.InvariantCulture,
                     _buildVariant.UsesZeroIndexedFrameDisplay ? "Frame {0} (0-index)" : "Frame {0}",
                     currentFrame.ToString(frameFormat, CultureInfo.InvariantCulture));
-                CurrentFrameTextBlock.ToolTip = _buildVariant.UsesZeroIndexedFrameDisplay
+                currentFrameToolTip = _buildVariant.UsesZeroIndexedFrameDisplay
                     ? string.Format(
                         CultureInfo.InvariantCulture,
                         "Current zero-indexed frame {0}. Identity: {1}.",
                         currentFrame,
-                        isAbsoluteFrameIndex ? AbsoluteFrameIdentityText : SegmentLocalFrameIdentityText)
+                        frameIdentityText)
                     : string.Format(CultureInfo.InvariantCulture, "Current frame {0}.", currentFrame);
             }
+            CurrentFrameTextBlock.ToolTip = currentFrameToolTip;
 
-            FrameNumberTextBox.ToolTip = totalFrames > 0
-                ? _buildVariant.UsesZeroIndexedFrameDisplay
+            string frameNumberToolTip;
+            if (totalFrames > 0)
+            {
+                frameNumberToolTip = _buildVariant.UsesZeroIndexedFrameDisplay
                     ? string.Format(
                         CultureInfo.InvariantCulture,
                         "Current / last zero-indexed frames: {0} / {1}. Identity: {2}. Type a zero-indexed frame number and press Enter.",
                         currentFrame,
                         totalFrameDisplay,
-                        isAbsoluteFrameIndex ? AbsoluteFrameIdentityText : SegmentLocalFrameIdentityText)
-                    : string.Format(CultureInfo.InvariantCulture, "Current / total frames: {0} / {1}. Type a frame number and press Enter.", currentFrame, totalFrames)
-                : string.Format(
+                        frameIdentityText)
+                    : string.Format(CultureInfo.InvariantCulture, "Current / total frames: {0} / {1}. Type a frame number and press Enter.", currentFrame, totalFrames);
+            }
+            else
+            {
+                frameNumberToolTip = string.Format(
                     CultureInfo.InvariantCulture,
                     "Current frame: {0}. Identity: {1}. {2}",
                     currentFrame,
-                    isAbsoluteFrameIndex ? AbsoluteFrameIdentityText : SegmentLocalFrameIdentityText,
+                    frameIdentityText,
                     GetFrameNumberInputToolTip());
+            }
+            FrameNumberTextBox.ToolTip = frameNumberToolTip;
 
             TimecodeTextBlock.Text = string.Format(
                 CultureInfo.InvariantCulture,
@@ -3896,7 +3908,7 @@ namespace FramePlayer
             EndPaneViewportPan(host, paneId);
         }
 
-        private bool TryGetVideoSurfaceHostContext(object sender, out FrameworkElement host, out string paneId)
+        private static bool TryGetVideoSurfaceHostContext(object sender, out FrameworkElement host, out string paneId)
         {
             host = sender as FrameworkElement;
             paneId = host != null ? host.Tag as string : null;
@@ -5678,6 +5690,31 @@ namespace FramePlayer
             return paneSnapshot == null
                 ? "Current sync position: unavailable"
                 : "Current sync position: " + FormatTime(paneSnapshot.PresentationTime);
+        }
+
+        private static string BuildCacheRefillSummary(FfmpegReviewEngine ffmpegEngine)
+        {
+            if (ffmpegEngine == null)
+            {
+                return UnavailableText;
+            }
+
+            var refillReason = string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason)
+                ? NoneText
+                : ffmpegEngine.LastCacheRefillReason;
+            var refillMode = string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillMode)
+                ? "none"
+                : ffmpegEngine.LastCacheRefillMode;
+            var afterLandingText = ffmpegEngine.LastCacheRefillAfterLanding ? "yes" : "no";
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}, {1:0.0} ms, mode {2}, after landing {3}, forward {4}->{5}",
+                refillReason,
+                ffmpegEngine.LastCacheRefillMilliseconds,
+                refillMode,
+                afterLandingText,
+                ffmpegEngine.LastCacheRefillStartingForwardCount,
+                ffmpegEngine.LastCacheRefillCompletedForwardCount);
         }
 
         private static string BuildCompareExportLoopSummary(LoopPlaybackPaneRangeSnapshot loopRange)
@@ -8158,17 +8195,7 @@ namespace FramePlayer
                             ffmpegEngine.MaxForwardCachedFrameCount,
                             ffmpegEngine.ApproximateCachedFrameBytes / 1048576d)
                         : UnavailableText),
-                    "Last cache refill: " + (ffmpegEngine != null
-                        ? string.Format(
-                            CultureInfo.InvariantCulture,
-                            "{0}, {1:0.0} ms, mode {2}, after landing {3}, forward {4}->{5}",
-                            string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason) ? NoneText : ffmpegEngine.LastCacheRefillReason,
-                            ffmpegEngine.LastCacheRefillMilliseconds,
-                            string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillMode) ? "none" : ffmpegEngine.LastCacheRefillMode,
-                            ffmpegEngine.LastCacheRefillAfterLanding ? "yes" : "no",
-                            ffmpegEngine.LastCacheRefillStartingForwardCount,
-                            ffmpegEngine.LastCacheRefillCompletedForwardCount)
-                        : UnavailableText),
+                    "Last cache refill: " + BuildCacheRefillSummary(ffmpegEngine),
                     "Open timing: " + (ffmpegEngine != null
                         ? string.Format(
                             CultureInfo.InvariantCulture,

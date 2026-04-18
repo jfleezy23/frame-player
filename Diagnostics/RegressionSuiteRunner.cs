@@ -4059,6 +4059,7 @@ namespace FramePlayer.Diagnostics
                     }
                     catch
                     {
+                        // Best-effort cleanup only; the temp file lives in a disposable directory.
                     }
                 }
             }
