@@ -1,6 +1,6 @@
 # Historical Custom FFmpeg Engine Plan
 
-This is a historical planning checkpoint kept for project history. It predates the current `v1.7.1` release. For current shipped behavior and release prep, see `docs\release-v1.7.1-keyboard-controls.md` and `docs\ffmpeg-8.1-build-notes.md`.
+This is a historical planning checkpoint kept for project history. It predates the current `v1.8.0` release. For current shipped behavior and release prep, see `docs\release-v1.8.0-side-by-side-compare.md` and `docs\ffmpeg-8.1-build-notes.md`.
 
 ## What Changed
 
