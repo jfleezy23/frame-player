@@ -31,7 +31,11 @@ namespace FramePlayer.Diagnostics
         private const string LifecycleCategory = "lifecycle";
         private const string ForwardOnlyStepProofCheckName = "forward-only-step-proof";
         private const string NoneText = "(none)";
+        private const string PassClassification = "pass";
+        private const string FailClassification = "fail";
         private const string WarningClassification = "warning";
+        private const string UiAudioInsertionWavCheckName = "ui-audio-insertion-wav";
+        private const string UiAudioInsertionMp3CheckName = "ui-audio-insertion-mp3";
         private static readonly StringComparer FilePathComparer = StringComparer.OrdinalIgnoreCase;
         private static readonly HashSet<string> SupportedRegressionExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -503,6 +507,7 @@ namespace FramePlayer.Diagnostics
                     var playbackAdvanced = playbackStartFrame.HasValue &&
                         playbackPosition.FrameIndex.HasValue &&
                         playbackPosition.FrameIndex.Value > playbackStartFrame.Value;
+                    var playbackLandedFrame = FormatFrameIndex(playbackPosition.FrameIndex);
 
                     checks.Add(playbackAdvanced
                         ? Pass(
@@ -514,7 +519,7 @@ namespace FramePlayer.Diagnostics
                                 CultureInfo.InvariantCulture,
                                 "Playback advanced from frame {0} to frame {1}, then paused cleanly.",
                                 playbackStartFrame.Value,
-                                playbackPosition.FrameIndex.HasValue ? playbackPosition.FrameIndex.Value.ToString(CultureInfo.InvariantCulture) : NoneText),
+                                playbackLandedFrame),
                             actualFrameIndex: playbackPosition.FrameIndex,
                             actualTime: playbackPosition.PresentationTime,
                             elapsedMilliseconds: metrics.PlaybackMilliseconds)
@@ -537,6 +542,7 @@ namespace FramePlayer.Diagnostics
                         var audioHealthy = engine.AudioStreamInfo.DecoderAvailable &&
                             engine.LastAudioSubmittedBytes > 0L &&
                             engine.LastPlaybackUsedAudioClock;
+                        var audioErrorMessage = TextOrNone(engine.LastAudioErrorMessage);
                         checks.Add(audioHealthy
                             ? Pass(
                                 filePath,
@@ -559,7 +565,7 @@ namespace FramePlayer.Diagnostics
                                     engine.AudioStreamInfo.DecoderAvailable ? "yes" : "no",
                                     engine.LastAudioSubmittedBytes,
                                     engine.LastPlaybackUsedAudioClock ? "yes" : "no",
-                                    string.IsNullOrWhiteSpace(engine.LastAudioErrorMessage) ? NoneText : engine.LastAudioErrorMessage)));
+                                    audioErrorMessage)));
                     }
                     else
                     {
@@ -1303,6 +1309,7 @@ namespace FramePlayer.Diagnostics
             }
 
             var position = stepResult.Position ?? ReviewPosition.Empty;
+            var stepMessage = TextOrNone(stepResult.Message);
             var success = stepResult.Success &&
                 position.IsFrameIndexAbsolute &&
                 position.FrameIndex.HasValue &&
@@ -1337,7 +1344,7 @@ namespace FramePlayer.Diagnostics
                         expectedFrameIndex,
                         FormatFrameIndex(position.FrameIndex),
                         stepResult.Success ? "yes" : "no",
-                        string.IsNullOrWhiteSpace(stepResult.Message) ? NoneText : stepResult.Message),
+                        stepMessage),
                     expectedFrameIndex,
                     position.FrameIndex,
                     actualTime: position.PresentationTime,
@@ -1537,6 +1544,28 @@ namespace FramePlayer.Diagnostics
                 : NoneText;
         }
 
+        private static string TextOrNone(string value)
+        {
+            return string.IsNullOrWhiteSpace(value)
+                ? NoneText
+                : value;
+        }
+
+        private static string ResolvePackagingClassification(IEnumerable<RegressionCheckResult> checks)
+        {
+            if (checks.Any(check => string.Equals(check.Classification, FailClassification, StringComparison.OrdinalIgnoreCase)))
+            {
+                return FailClassification;
+            }
+
+            if (checks.Any(check => string.Equals(check.Classification, WarningClassification, StringComparison.OrdinalIgnoreCase)))
+            {
+                return WarningClassification;
+            }
+
+            return PassClassification;
+        }
+
         private static void Trace(string message)
         {
             var tracePath = DiagnosticTracePath;
@@ -1679,11 +1708,7 @@ namespace FramePlayer.Diagnostics
 
                 ValidateZip(packagedArtifactPath, expectedFiles, manifest, checks);
 
-                var classification = checks.Any(check => string.Equals(check.Classification, "fail", StringComparison.OrdinalIgnoreCase))
-                    ? "fail"
-                    : checks.Any(check => string.Equals(check.Classification, WarningClassification, StringComparison.OrdinalIgnoreCase))
-                        ? WarningClassification
-                        : "pass";
+                var classification = ResolvePackagingClassification(checks);
 
                 return new RegressionPackagingReport(
                     packagedOutputDirectory,
@@ -2239,7 +2264,7 @@ namespace FramePlayer.Diagnostics
                                     filePath,
                                     "ui",
                                     LifecycleCategory,
-                                    "ui-audio-insertion-wav",
+                                    UiAudioInsertionWavCheckName,
                                     "WAV audio insertion returned no result."));
                             }
                             else if (!wavInsertionResult.Succeeded)
@@ -2248,7 +2273,7 @@ namespace FramePlayer.Diagnostics
                                     filePath,
                                     "ui",
                                     LifecycleCategory,
-                                    "ui-audio-insertion-wav",
+                                    UiAudioInsertionWavCheckName,
                                     "WAV audio insertion failed: " + wavInsertionResult.Message));
                             }
                             else
@@ -2263,7 +2288,7 @@ namespace FramePlayer.Diagnostics
                                         filePath,
                                         "ui",
                                         CorrectnessCategory,
-                                        "ui-audio-insertion-wav",
+                                        UiAudioInsertionWavCheckName,
                                         string.Format(
                                             CultureInfo.InvariantCulture,
                                             "WAV audio insertion produced an MP4 with audio and preserved video duration within tolerance ({0:0.0} ms delta).",
@@ -2272,7 +2297,7 @@ namespace FramePlayer.Diagnostics
                                         filePath,
                                         "ui",
                                         CorrectnessCategory,
-                                        "ui-audio-insertion-wav",
+                                        UiAudioInsertionWavCheckName,
                                         string.Format(
                                             CultureInfo.InvariantCulture,
                                             "WAV audio insertion output did not meet expectations. Exists={0}; probed-audio={1}; duration-delta-ms={2:0.0}.",
@@ -2291,7 +2316,7 @@ namespace FramePlayer.Diagnostics
                                     filePath,
                                     "ui",
                                     LifecycleCategory,
-                                    "ui-audio-insertion-mp3",
+                                    UiAudioInsertionMp3CheckName,
                                     "MP3 audio insertion returned no result."));
                             }
                             else if (!mp3InsertionResult.Succeeded)
@@ -2300,7 +2325,7 @@ namespace FramePlayer.Diagnostics
                                     filePath,
                                     "ui",
                                     LifecycleCategory,
-                                    "ui-audio-insertion-mp3",
+                                    UiAudioInsertionMp3CheckName,
                                     "MP3 audio insertion failed: " + mp3InsertionResult.Message));
                             }
                             else
@@ -2315,7 +2340,7 @@ namespace FramePlayer.Diagnostics
                                         filePath,
                                         "ui",
                                         CorrectnessCategory,
-                                        "ui-audio-insertion-mp3",
+                                        UiAudioInsertionMp3CheckName,
                                         string.Format(
                                             CultureInfo.InvariantCulture,
                                             "MP3 audio insertion produced an MP4 with audio and preserved video duration within tolerance ({0:0.0} ms delta).",
@@ -2324,7 +2349,7 @@ namespace FramePlayer.Diagnostics
                                         filePath,
                                         "ui",
                                         CorrectnessCategory,
-                                        "ui-audio-insertion-mp3",
+                                        UiAudioInsertionMp3CheckName,
                                         string.Format(
                                             CultureInfo.InvariantCulture,
                                             "MP3 audio insertion output did not meet expectations. Exists={0}; probed-audio={1}; duration-delta-ms={2:0.0}.",
@@ -2866,10 +2891,11 @@ namespace FramePlayer.Diagnostics
                                             "ui-loop-export-main",
                                             "Main-loop clip export reported success but did not produce the expected output file."));
 
-                                    var mainExportZoomed = mainExportResult.Plan != null &&
-                                                          mainExportResult.Plan.ViewportSnapshot != null &&
-                                                          mainExportResult.Plan.ViewportSnapshot.IsZoomed &&
-                                                          ViewportSnapshotsMatch(primaryZoomViewport, mainExportResult.Plan.ViewportSnapshot);
+                                    var mainExportPlan = mainExportResult.Plan;
+                                    var mainExportViewport = mainExportPlan != null ? mainExportPlan.ViewportSnapshot : null;
+                                    var mainExportZoomed = mainExportViewport != null &&
+                                                          mainExportViewport.IsZoomed &&
+                                                          ViewportSnapshotsMatch(primaryZoomViewport, mainExportViewport);
                                     checks.Add(mainExportZoomed
                                         ? Pass(
                                             filePath,
@@ -2886,7 +2912,7 @@ namespace FramePlayer.Diagnostics
                                                 CultureInfo.InvariantCulture,
                                                 "Main-loop clip export did not preserve the active zoomed viewport. Expected {0}; actual {1}.",
                                                 FormatViewportSnapshot(primaryZoomViewport),
-                                                FormatViewportSnapshot(mainExportResult.Plan != null ? mainExportResult.Plan.ViewportSnapshot : null))));
+                                                FormatViewportSnapshot(mainExportViewport))));
 
                                     var expectedDuration = mainExportResult.Plan != null
                                         ? mainExportResult.Plan.Duration
@@ -3316,10 +3342,11 @@ namespace FramePlayer.Diagnostics
                                         "ui-loop-export-pane-primary",
                                         "Primary pane clip export reported success but did not produce the expected output file."));
 
-                                var primaryPaneExportZoomed = primaryPaneExport.Plan != null &&
-                                                              primaryPaneExport.Plan.ViewportSnapshot != null &&
-                                                              primaryPaneExport.Plan.ViewportSnapshot.IsZoomed &&
-                                                              ViewportSnapshotsMatch(primaryPaneZoomViewport, primaryPaneExport.Plan.ViewportSnapshot);
+                                var primaryPaneExportPlan = primaryPaneExport.Plan;
+                                var primaryPaneExportViewport = primaryPaneExportPlan != null ? primaryPaneExportPlan.ViewportSnapshot : null;
+                                var primaryPaneExportZoomed = primaryPaneExportViewport != null &&
+                                                              primaryPaneExportViewport.IsZoomed &&
+                                                              ViewportSnapshotsMatch(primaryPaneZoomViewport, primaryPaneExportViewport);
                                 checks.Add(primaryPaneExportZoomed
                                     ? Pass(
                                         filePath,
@@ -3336,7 +3363,7 @@ namespace FramePlayer.Diagnostics
                                             CultureInfo.InvariantCulture,
                                             "Primary pane clip export did not preserve the primary pane viewport. Expected {0}; actual {1}.",
                                             FormatViewportSnapshot(primaryPaneZoomViewport),
-                                            FormatViewportSnapshot(primaryPaneExport.Plan != null ? primaryPaneExport.Plan.ViewportSnapshot : null))));
+                                            FormatViewportSnapshot(primaryPaneExportViewport))));
                             }
                         }
                         finally
@@ -3387,10 +3414,11 @@ namespace FramePlayer.Diagnostics
                                         "ui-loop-export-pane-compare",
                                         "Compare pane clip export reported success but did not produce the expected output file."));
 
-                                var comparePaneExportZoomed = comparePaneExport.Plan != null &&
-                                                              comparePaneExport.Plan.ViewportSnapshot != null &&
-                                                              comparePaneExport.Plan.ViewportSnapshot.IsZoomed &&
-                                                              ViewportSnapshotsMatch(comparePaneZoomViewport, comparePaneExport.Plan.ViewportSnapshot);
+                                var comparePaneExportPlan = comparePaneExport.Plan;
+                                var comparePaneExportViewport = comparePaneExportPlan != null ? comparePaneExportPlan.ViewportSnapshot : null;
+                                var comparePaneExportZoomed = comparePaneExportViewport != null &&
+                                                              comparePaneExportViewport.IsZoomed &&
+                                                              ViewportSnapshotsMatch(comparePaneZoomViewport, comparePaneExportViewport);
                                 checks.Add(comparePaneExportZoomed
                                     ? Pass(
                                         filePath,
@@ -3407,7 +3435,7 @@ namespace FramePlayer.Diagnostics
                                             CultureInfo.InvariantCulture,
                                             "Compare pane clip export did not preserve the compare pane viewport. Expected {0}; actual {1}.",
                                             FormatViewportSnapshot(comparePaneZoomViewport),
-                                            FormatViewportSnapshot(comparePaneExport.Plan != null ? comparePaneExport.Plan.ViewportSnapshot : null))));
+                                            FormatViewportSnapshot(comparePaneExportViewport))));
 
                                 var paneLoopStartDeltaSeconds = Math.Abs(primaryPaneLoopUi.InPosition - comparePaneLoopUi.InPosition);
                                 var paneExportIndependent = comparePaneExport.Plan != null &&
@@ -3480,13 +3508,15 @@ namespace FramePlayer.Diagnostics
                                         "ui-compare-side-by-side-loop",
                                         "Loop-mode side-by-side compare export reported success but did not produce the expected output file."));
 
-                                var compareLoopZoomed = compareLoopMerge.Plan != null &&
-                                                        compareLoopMerge.Plan.PrimaryViewportSnapshot != null &&
-                                                        compareLoopMerge.Plan.CompareViewportSnapshot != null &&
-                                                        compareLoopMerge.Plan.PrimaryViewportSnapshot.IsZoomed &&
-                                                        compareLoopMerge.Plan.CompareViewportSnapshot.IsZoomed &&
-                                                        ViewportSnapshotsMatch(primaryPaneZoomViewport, compareLoopMerge.Plan.PrimaryViewportSnapshot) &&
-                                                        ViewportSnapshotsMatch(comparePaneZoomViewport, compareLoopMerge.Plan.CompareViewportSnapshot);
+                                var compareLoopPlan = compareLoopMerge.Plan;
+                                var compareLoopPrimaryViewport = compareLoopPlan != null ? compareLoopPlan.PrimaryViewportSnapshot : null;
+                                var compareLoopCompareViewport = compareLoopPlan != null ? compareLoopPlan.CompareViewportSnapshot : null;
+                                var compareLoopZoomed = compareLoopPrimaryViewport != null &&
+                                                        compareLoopCompareViewport != null &&
+                                                        compareLoopPrimaryViewport.IsZoomed &&
+                                                        compareLoopCompareViewport.IsZoomed &&
+                                                        ViewportSnapshotsMatch(primaryPaneZoomViewport, compareLoopPrimaryViewport) &&
+                                                        ViewportSnapshotsMatch(comparePaneZoomViewport, compareLoopCompareViewport);
                                 checks.Add(compareLoopZoomed
                                     ? Pass(
                                         filePath,
@@ -3503,9 +3533,9 @@ namespace FramePlayer.Diagnostics
                                             CultureInfo.InvariantCulture,
                                             "Loop-mode side-by-side compare export did not preserve pane-local viewports. Primary expected {0}, actual {1}; compare expected {2}, actual {3}.",
                                             FormatViewportSnapshot(primaryPaneZoomViewport),
-                                            FormatViewportSnapshot(compareLoopMerge.Plan != null ? compareLoopMerge.Plan.PrimaryViewportSnapshot : null),
+                                            FormatViewportSnapshot(compareLoopPrimaryViewport),
                                             FormatViewportSnapshot(comparePaneZoomViewport),
-                                            FormatViewportSnapshot(compareLoopMerge.Plan != null ? compareLoopMerge.Plan.CompareViewportSnapshot : null))));
+                                            FormatViewportSnapshot(compareLoopCompareViewport))));
 
                                 var expectedDuration = compareLoopMerge.Plan != null
                                     ? compareLoopMerge.Plan.OutputDuration
@@ -3656,13 +3686,15 @@ namespace FramePlayer.Diagnostics
                                         "ui-compare-side-by-side-whole",
                                         "Whole-video side-by-side compare export reported success but did not produce the expected output file."));
 
-                                var compareWholeZoomed = compareWholeMerge.Plan != null &&
-                                                         compareWholeMerge.Plan.PrimaryViewportSnapshot != null &&
-                                                         compareWholeMerge.Plan.CompareViewportSnapshot != null &&
-                                                         compareWholeMerge.Plan.PrimaryViewportSnapshot.IsZoomed &&
-                                                         compareWholeMerge.Plan.CompareViewportSnapshot.IsZoomed &&
-                                                         ViewportSnapshotsMatch(primaryPaneZoomViewport, compareWholeMerge.Plan.PrimaryViewportSnapshot) &&
-                                                         ViewportSnapshotsMatch(comparePaneZoomViewport, compareWholeMerge.Plan.CompareViewportSnapshot);
+                                var compareWholePlan = compareWholeMerge.Plan;
+                                var compareWholePrimaryViewport = compareWholePlan != null ? compareWholePlan.PrimaryViewportSnapshot : null;
+                                var compareWholeCompareViewport = compareWholePlan != null ? compareWholePlan.CompareViewportSnapshot : null;
+                                var compareWholeZoomed = compareWholePrimaryViewport != null &&
+                                                         compareWholeCompareViewport != null &&
+                                                         compareWholePrimaryViewport.IsZoomed &&
+                                                         compareWholeCompareViewport.IsZoomed &&
+                                                         ViewportSnapshotsMatch(primaryPaneZoomViewport, compareWholePrimaryViewport) &&
+                                                         ViewportSnapshotsMatch(comparePaneZoomViewport, compareWholeCompareViewport);
                                 checks.Add(compareWholeZoomed
                                     ? Pass(
                                         filePath,
@@ -3679,9 +3711,9 @@ namespace FramePlayer.Diagnostics
                                             CultureInfo.InvariantCulture,
                                             "Whole-video side-by-side compare export did not preserve pane-local viewports. Primary expected {0}, actual {1}; compare expected {2}, actual {3}.",
                                             FormatViewportSnapshot(primaryPaneZoomViewport),
-                                            FormatViewportSnapshot(compareWholeMerge.Plan != null ? compareWholeMerge.Plan.PrimaryViewportSnapshot : null),
+                                            FormatViewportSnapshot(compareWholePrimaryViewport),
                                             FormatViewportSnapshot(comparePaneZoomViewport),
-                                            FormatViewportSnapshot(compareWholeMerge.Plan != null ? compareWholeMerge.Plan.CompareViewportSnapshot : null))));
+                                            FormatViewportSnapshot(compareWholeCompareViewport))));
 
                                 var expectedDuration = compareWholeMerge.Plan != null
                                     ? compareWholeMerge.Plan.OutputDuration

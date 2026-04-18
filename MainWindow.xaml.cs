@@ -3342,9 +3342,7 @@ namespace FramePlayer
                 return;
             }
 
-            var frameIdentityText = isAbsoluteFrameIndex
-                ? AbsoluteFrameIdentityText
-                : SegmentLocalFrameIdentityText;
+            var frameIdentityText = AbsoluteFrameIdentityText;
             string currentFrameToolTip;
             if (totalFrames > 0)
             {
