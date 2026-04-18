@@ -106,11 +106,16 @@ jobs:
           # regression suite rather than imported .NET line-coverage reports.
           $coverageExclusions = @(
             "App.xaml.cs"
+            "CompareSideBySideExportOptionsWindow.xaml.cs"
             "Core/Models/ClipExport*.cs"
+            "Core/Models/CompareSideBySideExport*.cs"
             "Core/Models/LoopPlaybackRangeSnapshot.cs"
             "Core/Coordination/ReviewWorkspaceCoordinator.cs"
             "Services/ClipExportService.cs"
+            "Services/CompareSideBySideExportService.cs"
             "Services/ExportToolsManifestService.cs"
+            "Services/FfmpegCliTooling.cs"
+            "Services/FfmpegExportTiming.cs"
             "Engines/FFmpeg/FfmpegReviewEngine.cs"
             "MainWindow.xaml.cs"
             "Diagnostics/RegressionSuiteRunner.cs"
