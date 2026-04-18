@@ -4579,6 +4579,41 @@ namespace FramePlayer
                 return null;
             }
 
+            return await ReplaceAudioTrackAsync(replacementAudioFilePath, outputPath).ConfigureAwait(true);
+        }
+
+        private async Task<AudioInsertionResult> ReplaceAudioTrackAsync(
+            string replacementAudioFilePath,
+            string outputPath)
+        {
+            var workspaceSnapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
+            AudioInsertionTarget audioInsertionTarget;
+            string failureMessage;
+            if (!TryResolveAudioInsertionTarget(workspaceSnapshot, out audioInsertionTarget, out failureMessage))
+            {
+                if (!string.IsNullOrWhiteSpace(failureMessage))
+                {
+                    SetPlaybackMessage(failureMessage);
+                    LogWarning(failureMessage);
+                }
+
+                return null;
+            }
+
+            await PausePlaybackAsync(logAction: false, operationScope: SynchronizedOperationScope.FocusedPane);
+
+            workspaceSnapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
+            if (!TryResolveAudioInsertionTarget(workspaceSnapshot, out audioInsertionTarget, out failureMessage))
+            {
+                if (!string.IsNullOrWhiteSpace(failureMessage))
+                {
+                    SetPlaybackMessage(failureMessage);
+                    LogWarning(failureMessage);
+                }
+
+                return null;
+            }
+
             var request = BuildAudioInsertionRequest(audioInsertionTarget, replacementAudioFilePath, outputPath);
             try
             {
