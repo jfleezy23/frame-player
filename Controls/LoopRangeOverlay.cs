@@ -89,24 +89,20 @@ namespace FramePlayer.Controls
         {
             base.OnRender(drawingContext);
 
-            var width = ActualWidth;
-            var height = ActualHeight;
-            if (drawingContext == null || width <= 1d || height <= 1d)
+            if (!TryResolveRenderMetrics(drawingContext, out var width, out var height, out var maximum, out var pixelsPerDip))
             {
                 return;
             }
 
-            var maximum = Maximum > 0d ? Maximum : 1d;
-            var pixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
-            var hasIn = !double.IsNaN(InPosition);
-            var hasOut = !double.IsNaN(OutPosition);
+            var hasIn = HasBoundary(InPosition);
+            var hasOut = HasBoundary(OutPosition);
             if (!hasIn && !hasOut)
             {
                 return;
             }
 
-            var effectiveStart = hasIn ? Clamp(InPosition, maximum) : 0d;
-            var effectiveEnd = hasOut ? Clamp(OutPosition, maximum) : maximum;
+            var effectiveStart = ResolveBoundaryValue(hasIn, InPosition, maximum, 0d);
+            var effectiveEnd = ResolveBoundaryValue(hasOut, OutPosition, maximum, maximum);
             var effectiveStartX = ValueToX(effectiveStart, width, maximum);
             var effectiveEndX = ValueToX(effectiveEnd, width, maximum);
 
@@ -124,32 +120,93 @@ namespace FramePlayer.Controls
             var invalidPen = new Pen(new SolidColorBrush(Color.FromArgb(220, 248, 113, 113)), 1.5);
             invalidPen.Freeze();
 
-            if (IsInvalid)
-            {
-                drawingContext.DrawRectangle(invalidShadeBrush, null, new Rect(0d, 0d, width, height));
-            }
-            else
-            {
-                if (effectiveStartX > 0d)
-                {
-                    drawingContext.DrawRectangle(outerShadeBrush, null, new Rect(0d, 0d, effectiveStartX, height));
-                }
-
-                if (effectiveEndX < width)
-                {
-                    drawingContext.DrawRectangle(outerShadeBrush, null, new Rect(effectiveEndX, 0d, width - effectiveEndX, height));
-                }
-            }
+            DrawShadedRegions(drawingContext, width, height, effectiveStartX, effectiveEndX, outerShadeBrush, invalidShadeBrush);
 
             if (hasIn)
             {
-                DrawMarker(drawingContext, effectiveStartX, width, height, "[", IsInvalid ? invalidPen : (IsInPending ? pendingPen : readyPen), pixelsPerDip);
+                DrawMarker(
+                    drawingContext,
+                    effectiveStartX,
+                    width,
+                    height,
+                    "[",
+                    ResolveMarkerPen(IsInPending, readyPen, pendingPen, invalidPen),
+                    pixelsPerDip);
             }
 
             if (hasOut)
             {
-                DrawMarker(drawingContext, effectiveEndX, width, height, "]", IsInvalid ? invalidPen : (IsOutPending ? pendingPen : readyPen), pixelsPerDip);
+                DrawMarker(
+                    drawingContext,
+                    effectiveEndX,
+                    width,
+                    height,
+                    "]",
+                    ResolveMarkerPen(IsOutPending, readyPen, pendingPen, invalidPen),
+                    pixelsPerDip);
             }
+        }
+
+        private bool TryResolveRenderMetrics(
+            DrawingContext drawingContext,
+            out double width,
+            out double height,
+            out double maximum,
+            out double pixelsPerDip)
+        {
+            width = ActualWidth;
+            height = ActualHeight;
+            maximum = Maximum > 0d ? Maximum : 1d;
+            pixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+            return drawingContext != null && width > 1d && height > 1d;
+        }
+
+        private static bool HasBoundary(double value)
+        {
+            return !double.IsNaN(value);
+        }
+
+        private static double ResolveBoundaryValue(bool hasBoundary, double position, double maximum, double fallbackValue)
+        {
+            return hasBoundary
+                ? Clamp(position, maximum)
+                : fallbackValue;
+        }
+
+        private void DrawShadedRegions(
+            DrawingContext drawingContext,
+            double width,
+            double height,
+            double effectiveStartX,
+            double effectiveEndX,
+            Brush outerShadeBrush,
+            Brush invalidShadeBrush)
+        {
+            if (IsInvalid)
+            {
+                drawingContext.DrawRectangle(invalidShadeBrush, null, new Rect(0d, 0d, width, height));
+                return;
+            }
+
+            if (effectiveStartX > 0d)
+            {
+                drawingContext.DrawRectangle(outerShadeBrush, null, new Rect(0d, 0d, effectiveStartX, height));
+            }
+
+            if (effectiveEndX < width)
+            {
+                drawingContext.DrawRectangle(outerShadeBrush, null, new Rect(effectiveEndX, 0d, width - effectiveEndX, height));
+            }
+        }
+
+        private Pen ResolveMarkerPen(bool isPending, Pen readyPen, Pen pendingPen, Pen invalidPen)
+        {
+            if (IsInvalid)
+            {
+                return invalidPen;
+            }
+
+            return isPending ? pendingPen : readyPen;
         }
 
         private static void DrawMarker(DrawingContext drawingContext, double x, double width, double height, string text, Pen pen, double pixelsPerDip)

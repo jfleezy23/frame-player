@@ -639,12 +639,12 @@ namespace FramePlayer
             AdjustFocusedPaneZoom(zoomIn: false);
         }
 
-        private bool AdjustFocusedPaneZoom(bool zoomIn)
+        private void AdjustFocusedPaneZoom(bool zoomIn)
         {
-            return AdjustPaneZoom(GetFocusedPaneId(), zoomIn);
+            AdjustPaneZoom(GetFocusedPaneId(), zoomIn);
         }
 
-        private bool AdjustPaneZoom(string paneId, bool zoomIn)
+        private void AdjustPaneZoom(string paneId, bool zoomIn)
         {
             var workspaceSnapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
             string toolTip;
@@ -655,7 +655,7 @@ namespace FramePlayer
                     SetPlaybackMessage(toolTip);
                 }
 
-                return false;
+                return;
             }
 
             var resolvedPaneId = string.IsNullOrWhiteSpace(paneId)
@@ -688,7 +688,6 @@ namespace FramePlayer
             UpdatePaneViewportLayout(resolvedPaneId);
             UpdateViewportCommandState(_workspaceCoordinator.GetWorkspaceSnapshot());
             FocusPreferredVideoSurface();
-            return true;
         }
 
         private void ResetZoomForPane(string paneId)
