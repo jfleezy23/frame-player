@@ -1777,7 +1777,7 @@ namespace FramePlayer
 
         private void Window_PreviewDragOver(object sender, DragEventArgs e)
         {
-            UpdateDropEffects(e, preferredPaneId: null);
+            UpdateDropEffects(e);
         }
 
         private async void VideoPane_Drop(object sender, DragEventArgs e)
@@ -1787,7 +1787,7 @@ namespace FramePlayer
 
         private void VideoPane_PreviewDragOver(object sender, DragEventArgs e)
         {
-            UpdateDropEffects(e, (sender as FrameworkElement)?.Tag as string);
+            UpdateDropEffects(e);
         }
 
         private async Task HandleDroppedFilesAsync(DragEventArgs e, string preferredPaneId)
@@ -1822,7 +1822,7 @@ namespace FramePlayer
             e.Handled = true;
         }
 
-        private static void UpdateDropEffects(DragEventArgs e, string preferredPaneId)
+        private static void UpdateDropEffects(DragEventArgs e)
         {
             var files = GetDroppedFiles(e);
             var hasSupportedFile = files != null && files.Any(IsSupportedVideoFile);
@@ -6812,7 +6812,7 @@ namespace FramePlayer
             }
         }
 
-        private VideoInfoSnapshot BuildVideoInfoSnapshot(string paneLabel, VideoMediaInfo mediaInfo)
+        private static VideoInfoSnapshot BuildVideoInfoSnapshot(string paneLabel, VideoMediaInfo mediaInfo)
         {
             var filePath = string.IsNullOrWhiteSpace(mediaInfo.FilePath)
                 ? string.Empty
