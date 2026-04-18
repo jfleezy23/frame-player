@@ -3333,10 +3333,6 @@ namespace FramePlayer
                 return;
             }
 
-            var frameIdentityLabel = isAbsoluteFrameIndex
-                ? AbsoluteFrameIdentityLabel
-                : SegmentLocalFrameIdentityLabel;
-
             if (totalFrames > 0)
             {
                 CurrentFrameTextBlock.Text = string.Format(
@@ -3353,7 +3349,7 @@ namespace FramePlayer
                         currentFrame,
                         totalFrameDisplay,
                         totalFrames,
-                        frameIdentityLabel)
+                        AbsoluteFrameIdentityLabel)
                     : string.Format(CultureInfo.InvariantCulture, "Current frame {0} of {1}.", currentFrame, totalFrames);
             }
             else
@@ -3367,7 +3363,7 @@ namespace FramePlayer
                         CultureInfo.InvariantCulture,
                         "Current zero-indexed frame {0}. Identity: {1}.",
                         currentFrame,
-                        frameIdentityLabel)
+                        AbsoluteFrameIdentityLabel)
                     : string.Format(CultureInfo.InvariantCulture, "Current frame {0}.", currentFrame);
             }
 
@@ -3378,13 +3374,13 @@ namespace FramePlayer
                         "Current / last zero-indexed frames: {0} / {1}. Identity: {2}. Type a zero-indexed frame number and press Enter.",
                         currentFrame,
                         totalFrameDisplay,
-                        frameIdentityLabel)
+                        AbsoluteFrameIdentityLabel)
                     : string.Format(CultureInfo.InvariantCulture, "Current / total frames: {0} / {1}. Type a frame number and press Enter.", currentFrame, totalFrames)
                 : string.Format(
                     CultureInfo.InvariantCulture,
                     "Current frame: {0}. Identity: {1}. {2}",
                     currentFrame,
-                    frameIdentityLabel,
+                    AbsoluteFrameIdentityLabel,
                     GetFrameNumberInputToolTip());
 
             TimecodeTextBlock.Text = string.Format(
