@@ -34,6 +34,8 @@ namespace FramePlayer.Diagnostics
         private const string PackagingScope = "(packaging)";
         private const string WarningClassification = "warning";
         private const string ClickSeekInteraction = "click";
+        private const string UiAudioInsertionWavCheckName = "ui-audio-insertion-wav";
+        private const string UiAudioInsertionMp3CheckName = "ui-audio-insertion-mp3";
         private const string ForwardOnlyStepProofCheckName = "forward-only-step-proof";
         private const string NoneText = "(none)";
         private static readonly StringComparer FilePathComparer = StringComparer.OrdinalIgnoreCase;
@@ -2243,7 +2245,7 @@ namespace FramePlayer.Diagnostics
                                     filePath,
                                     "ui",
                                     LifecycleCategory,
-                                    "ui-audio-insertion-wav",
+                                    UiAudioInsertionWavCheckName,
                                     "WAV audio insertion returned no result."));
                             }
                             else if (!wavInsertionResult.Succeeded)
@@ -2252,7 +2254,7 @@ namespace FramePlayer.Diagnostics
                                     filePath,
                                     "ui",
                                     LifecycleCategory,
-                                    "ui-audio-insertion-wav",
+                                    UiAudioInsertionWavCheckName,
                                     "WAV audio insertion failed: " + wavInsertionResult.Message));
                             }
                             else
@@ -2267,7 +2269,7 @@ namespace FramePlayer.Diagnostics
                                         filePath,
                                         "ui",
                                         CorrectnessCategory,
-                                        "ui-audio-insertion-wav",
+                                        UiAudioInsertionWavCheckName,
                                         string.Format(
                                             CultureInfo.InvariantCulture,
                                             "WAV audio insertion produced an MP4 with audio and preserved video duration within tolerance ({0:0.0} ms delta).",
@@ -2276,7 +2278,7 @@ namespace FramePlayer.Diagnostics
                                         filePath,
                                         "ui",
                                         CorrectnessCategory,
-                                        "ui-audio-insertion-wav",
+                                        UiAudioInsertionWavCheckName,
                                         string.Format(
                                             CultureInfo.InvariantCulture,
                                             "WAV audio insertion output did not meet expectations. Exists={0}; probed-audio={1}; duration-delta-ms={2:0.0}.",
@@ -2295,7 +2297,7 @@ namespace FramePlayer.Diagnostics
                                     filePath,
                                     "ui",
                                     LifecycleCategory,
-                                    "ui-audio-insertion-mp3",
+                                    UiAudioInsertionMp3CheckName,
                                     "MP3 audio insertion returned no result."));
                             }
                             else if (!mp3InsertionResult.Succeeded)
@@ -2304,7 +2306,7 @@ namespace FramePlayer.Diagnostics
                                     filePath,
                                     "ui",
                                     LifecycleCategory,
-                                    "ui-audio-insertion-mp3",
+                                    UiAudioInsertionMp3CheckName,
                                     "MP3 audio insertion failed: " + mp3InsertionResult.Message));
                             }
                             else
@@ -2319,7 +2321,7 @@ namespace FramePlayer.Diagnostics
                                         filePath,
                                         "ui",
                                         CorrectnessCategory,
-                                        "ui-audio-insertion-mp3",
+                                        UiAudioInsertionMp3CheckName,
                                         string.Format(
                                             CultureInfo.InvariantCulture,
                                             "MP3 audio insertion produced an MP4 with audio and preserved video duration within tolerance ({0:0.0} ms delta).",
@@ -2328,7 +2330,7 @@ namespace FramePlayer.Diagnostics
                                         filePath,
                                         "ui",
                                         CorrectnessCategory,
-                                        "ui-audio-insertion-mp3",
+                                        UiAudioInsertionMp3CheckName,
                                         string.Format(
                                             CultureInfo.InvariantCulture,
                                             "MP3 audio insertion output did not meet expectations. Exists={0}; probed-audio={1}; duration-delta-ms={2:0.0}.",
