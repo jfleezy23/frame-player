@@ -63,10 +63,7 @@ namespace FramePlayer.Diagnostics
             string runtimeManifestPath,
             CancellationToken cancellationToken = default(CancellationToken))
         {
-            if (filePaths == null)
-            {
-                throw new ArgumentNullException(nameof(filePaths));
-            }
+            ArgumentNullException.ThrowIfNull(filePaths);
 
             var normalizedFilePaths = NormalizeFilePaths(filePaths).ToArray();
             if (normalizedFilePaths.Length == 0)
@@ -193,8 +190,8 @@ namespace FramePlayer.Diagnostics
             {
                 MediaProfile = mediaProfile;
                 DecodeProfile = decodeProfile ?? RegressionDecodeProfile.Empty;
-                Checks = checks != null ? checks.ToArray() : new RegressionCheckResult[0];
-                Notes = notes != null ? notes.ToArray() : new string[0];
+                Checks = checks != null ? checks.ToArray() : Array.Empty<RegressionCheckResult>();
+                Notes = notes != null ? notes.ToArray() : Array.Empty<string>();
                 Metrics = metrics ?? new RegressionMetrics();
             }
 
@@ -739,7 +736,7 @@ namespace FramePlayer.Diagnostics
             long targetFrameIndex,
             string checkPrefix,
             RegressionMetrics metrics,
-            ICollection<RegressionCheckResult> checks,
+            List<RegressionCheckResult> checks,
             CancellationToken cancellationToken)
         {
             try
@@ -838,7 +835,7 @@ namespace FramePlayer.Diagnostics
             long startFrameIndex,
             int stepWindow,
             RegressionMetrics metrics,
-            ICollection<RegressionCheckResult> checks,
+            List<RegressionCheckResult> checks,
             CancellationToken cancellationToken)
         {
             await engine.SeekToFrameAsync(startFrameIndex, cancellationToken).ConfigureAwait(false);
@@ -957,7 +954,7 @@ namespace FramePlayer.Diagnostics
             long startFrameIndex,
             int stepWindow,
             RegressionMetrics metrics,
-            ICollection<RegressionCheckResult> checks,
+            List<RegressionCheckResult> checks,
             CancellationToken cancellationToken)
         {
             await engine.SeekToFrameAsync(startFrameIndex, cancellationToken).ConfigureAwait(false);
@@ -1487,7 +1484,7 @@ namespace FramePlayer.Diagnostics
 
         private static RegressionSummary BuildSummary(
             RegressionPackagingReport packaging,
-            IReadOnlyCollection<RegressionFileReport> fileReports)
+            List<RegressionFileReport> fileReports)
         {
             var checks = new List<RegressionCheckResult>();
             if (packaging != null && packaging.Checks != null)
@@ -1574,9 +1571,9 @@ namespace FramePlayer.Diagnostics
                     return new RegressionPackagingReport(
                         packagedOutputDirectory,
                         packagedArtifactPath,
-                        new string[0],
-                        new string[0],
-                        new string[0],
+                        Array.Empty<string>(),
+                        Array.Empty<string>(),
+                        Array.Empty<string>(),
                         StaleRuntimeFiles,
                         checks.ToArray(),
                         "fail");
@@ -1584,7 +1581,7 @@ namespace FramePlayer.Diagnostics
 
                 var expectedFiles = manifest != null && manifest.Files != null
                     ? manifest.Files.Keys.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray()
-                    : new string[0];
+                    : Array.Empty<string>();
                 var presentRuntimeFiles = Directory.GetFiles(packagedOutputDirectory, "*.dll")
                     .Select(Path.GetFileName)
                     .Where(name => !string.IsNullOrWhiteSpace(name))
@@ -1697,7 +1694,7 @@ namespace FramePlayer.Diagnostics
                 string packagedArtifactPath,
                 string[] expectedFiles,
                 PackagingManifest manifest,
-                ICollection<RegressionCheckResult> checks)
+                List<RegressionCheckResult> checks)
             {
                 if (!File.Exists(packagedArtifactPath))
                 {
@@ -1867,10 +1864,8 @@ namespace FramePlayer.Diagnostics
                         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
                         if (Application.Current == null)
                         {
-                            new Application
-                            {
-                                ShutdownMode = ShutdownMode.OnExplicitShutdown
-                            };
+                            var application = new Application();
+                            application.ShutdownMode = ShutdownMode.OnExplicitShutdown;
                         }
 
                         RunOnUiThreadAsync(filePath, runPlaybackLifecycleChecks, cancellationToken).ContinueWith(
@@ -2074,7 +2069,7 @@ namespace FramePlayer.Diagnostics
                         var expectsPendingMarker = !preIndexClick.EngineFrameAbsolute;
                         var pendingMarkerHonest = expectsPendingMarker
                             ? pendingLoopUi.IsInPending &&
-                              pendingLoopUi.StatusText.IndexOf("pending", StringComparison.OrdinalIgnoreCase) >= 0
+                              (pendingLoopUi.StatusText ?? string.Empty).Contains("pending", StringComparison.OrdinalIgnoreCase)
                             : !pendingLoopUi.IsInvalid &&
                               !double.IsNaN(pendingLoopUi.InPosition);
                         checks.Add(pendingMarkerHonest
@@ -2601,10 +2596,10 @@ namespace FramePlayer.Diagnostics
 
                                 var fullMediaNonPlayingStates = fullMediaLoopObservations
                                     .Select(snapshot => snapshot.PlaybackStateText ?? string.Empty)
-                                    .Where(state => state.IndexOf("playing", StringComparison.OrdinalIgnoreCase) < 0)
+                                    .Where(state => !state.Contains("playing", StringComparison.OrdinalIgnoreCase))
                                     .ToArray();
                                 var fullMediaResumedAfterWrap = fullMediaLoopObservations.Count > 0 &&
-                                                                fullMediaLoopObservations[fullMediaLoopObservations.Count - 1].PlaybackStateText.IndexOf("playing", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                                                                (fullMediaLoopObservations[fullMediaLoopObservations.Count - 1].PlaybackStateText ?? string.Empty).Contains("playing", StringComparison.OrdinalIgnoreCase) &&
                                                                 fullMediaObservedPositions.Length > 0 &&
                                                                 fullMediaObservedPositions[fullMediaObservedPositions.Length - 1] > 0.10d;
                                 var fullMediaFramesMoved = fullMediaObservedFrameIndices.Distinct().Count() >= 2;
@@ -2962,7 +2957,7 @@ namespace FramePlayer.Diagnostics
                 string filePath,
                 string name,
                 double elapsedMilliseconds,
-                ICollection<RegressionCheckResult> checks)
+                List<RegressionCheckResult> checks)
             {
                 if (elapsedMilliseconds <= 0d)
                 {
@@ -2997,7 +2992,7 @@ namespace FramePlayer.Diagnostics
                 if (!snapshot.EngineFrameAbsolute)
                 {
                     if (allowPendingIdentity &&
-                        (snapshot.CurrentFrameText ?? string.Empty).IndexOf("--", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                        (snapshot.CurrentFrameText ?? string.Empty).Contains("--", StringComparison.OrdinalIgnoreCase) &&
                         !snapshot.DisplayedFrameNumber.HasValue)
                     {
                         return Warning(
@@ -3729,8 +3724,8 @@ namespace FramePlayer.Diagnostics
                     IEnumerable<string> notes,
                     RegressionMetrics metrics)
                 {
-                    Checks = checks != null ? checks.ToArray() : new RegressionCheckResult[0];
-                    Notes = notes != null ? notes.ToArray() : new string[0];
+                    Checks = checks != null ? checks.ToArray() : Array.Empty<RegressionCheckResult>();
+                    Notes = notes != null ? notes.ToArray() : Array.Empty<string>();
                     Metrics = metrics ?? new RegressionMetrics();
                 }
 
@@ -3841,7 +3836,7 @@ namespace FramePlayer.Diagnostics
             PackagedOutputDirectory = packagedOutputDirectory ?? string.Empty;
             PackagedArtifactPath = packagedArtifactPath ?? string.Empty;
             Packaging = packaging;
-            FileResults = fileResults ?? new RegressionFileReport[0];
+            FileResults = fileResults ?? Array.Empty<RegressionFileReport>();
             Summary = summary ?? new RegressionSummary(0, 0, 0, 0, 0);
         }
 
@@ -3872,11 +3867,11 @@ namespace FramePlayer.Diagnostics
         {
             OutputDirectory = outputDirectory ?? string.Empty;
             ArtifactPath = artifactPath ?? string.Empty;
-            ExpectedRuntimeFiles = expectedRuntimeFiles ?? new string[0];
-            PresentRuntimeFiles = presentRuntimeFiles ?? new string[0];
-            MissingRuntimeFiles = missingRuntimeFiles ?? new string[0];
-            StaleRuntimeFiles = staleRuntimeFiles ?? new string[0];
-            Checks = checks ?? new RegressionCheckResult[0];
+            ExpectedRuntimeFiles = expectedRuntimeFiles ?? Array.Empty<string>();
+            PresentRuntimeFiles = presentRuntimeFiles ?? Array.Empty<string>();
+            MissingRuntimeFiles = missingRuntimeFiles ?? Array.Empty<string>();
+            StaleRuntimeFiles = staleRuntimeFiles ?? Array.Empty<string>();
+            Checks = checks ?? Array.Empty<RegressionCheckResult>();
             Classification = classification ?? string.Empty;
         }
 
@@ -3914,11 +3909,11 @@ namespace FramePlayer.Diagnostics
             FileName = fileName ?? string.Empty;
             MediaProfile = mediaProfile ?? new RegressionMediaProfile(string.Empty, 0, 0, string.Empty, 0d, false, false, string.Empty, 0, 0);
             DecodeProfile = decodeProfile ?? RegressionDecodeProfile.Empty;
-            EngineChecks = engineChecks ?? new RegressionCheckResult[0];
-            UiChecks = uiChecks ?? new RegressionCheckResult[0];
+            EngineChecks = engineChecks ?? Array.Empty<RegressionCheckResult>();
+            UiChecks = uiChecks ?? Array.Empty<RegressionCheckResult>();
             EngineMetrics = engineMetrics ?? new RegressionMetrics();
             UiMetrics = uiMetrics ?? new RegressionMetrics();
-            Notes = notes ?? new string[0];
+            Notes = notes ?? Array.Empty<string>();
         }
 
         public string FilePath { get; }
