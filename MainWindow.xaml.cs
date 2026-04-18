@@ -1069,7 +1069,7 @@ namespace FramePlayer
                 : "Or open a video to begin";
         }
 
-        private string BuildPaneTitleText(ReviewWorkspacePaneSnapshot paneSnapshot)
+        private static string BuildPaneTitleText(ReviewWorkspacePaneSnapshot paneSnapshot)
         {
             if (string.Equals(paneSnapshot.PaneId, ComparePaneId, StringComparison.Ordinal))
             {
@@ -1116,7 +1116,7 @@ namespace FramePlayer
                 _lastCompareAlignmentStatus);
         }
 
-        private string BuildCompareRelationshipText(
+        private static string BuildCompareRelationshipText(
             ReviewWorkspacePaneSnapshot primaryPaneSnapshot,
             ReviewWorkspacePaneSnapshot comparePaneSnapshot)
         {
@@ -1186,10 +1186,7 @@ namespace FramePlayer
 
         private async Task RunFocusedPaneActionAsync(string paneId, Func<Task> action)
         {
-            if (action == null)
-            {
-                throw new ArgumentNullException(nameof(action));
-            }
+            ArgumentNullException.ThrowIfNull(action);
 
             if (!TrySelectPaneForPaneCommand(paneId))
             {
@@ -1821,7 +1818,7 @@ namespace FramePlayer
             e.Handled = true;
         }
 
-        private void UpdateDropEffects(DragEventArgs e, string preferredPaneId)
+        private static void UpdateDropEffects(DragEventArgs e, string preferredPaneId)
         {
             var files = GetDroppedFiles(e);
             var hasSupportedFile = files != null && files.Any(IsSupportedVideoFile);
@@ -1852,7 +1849,7 @@ namespace FramePlayer
                 : resolvedPaneId;
         }
 
-        private string TryFindPaneId(DependencyObject originalSource)
+        private static string TryFindPaneId(DependencyObject originalSource)
         {
             var current = originalSource;
             while (current != null)
@@ -3634,10 +3631,7 @@ namespace FramePlayer
 
         private async Task RunWithCacheStatusAsync(string activeMessage, Func<Task> operation)
         {
-            if (operation == null)
-            {
-                throw new ArgumentNullException(nameof(operation));
-            }
+            ArgumentNullException.ThrowIfNull(operation);
 
             BeginCacheStatus(activeMessage);
             await Dispatcher.Yield(DispatcherPriority.Render);
@@ -4486,7 +4480,7 @@ namespace FramePlayer
             return true;
         }
 
-        private bool TryResolveLoadedComparePaneSnapshots(
+        private static bool TryResolveLoadedComparePaneSnapshots(
             ReviewWorkspaceSnapshot workspaceSnapshot,
             out ReviewWorkspacePaneSnapshot primaryPaneSnapshot,
             out ReviewWorkspacePaneSnapshot comparePaneSnapshot)
@@ -4504,7 +4498,7 @@ namespace FramePlayer
                    PaneHasLoadedMedia(comparePaneSnapshot);
         }
 
-        private bool EvaluateCompareSideBySideLoopModeAvailability(
+        private static bool EvaluateCompareSideBySideLoopModeAvailability(
             ReviewWorkspacePaneSnapshot primaryPaneSnapshot,
             ReviewWorkspacePaneSnapshot comparePaneSnapshot,
             FfmpegReviewEngine primaryEngine,
@@ -5520,7 +5514,7 @@ namespace FramePlayer
             return true;
         }
 
-        private ClipExportRequest BuildClipExportRequest(ClipExportTarget exportTarget, string outputPath)
+        private static ClipExportRequest BuildClipExportRequest(ClipExportTarget exportTarget, string outputPath)
         {
             var engine = exportTarget.Engine;
             var paneSnapshot = exportTarget.PaneSnapshot;
@@ -5835,7 +5829,7 @@ namespace FramePlayer
             return paneLabel + " pane-local A/B loop range.";
         }
 
-        private LoopPlaybackPaneRangeSnapshot GetPaneLocalLoopRange(ReviewWorkspaceSnapshot workspaceSnapshot, string paneId)
+        private static LoopPlaybackPaneRangeSnapshot GetPaneLocalLoopRange(ReviewWorkspaceSnapshot workspaceSnapshot, string paneId)
         {
             ReviewWorkspacePaneSnapshot paneSnapshot;
             return workspaceSnapshot != null &&
@@ -5934,7 +5928,7 @@ namespace FramePlayer
             return true;
         }
 
-        private LoopRangeEvaluation EvaluateSharedLoopRange(
+        private static LoopRangeEvaluation EvaluateSharedLoopRange(
             ReviewWorkspaceSnapshot workspaceSnapshot,
             SynchronizedOperationScope operationScope)
         {
@@ -6563,9 +6557,9 @@ namespace FramePlayer
 
         private static bool HaveLoopTargetPanesReachedBoundary(
             ReviewPaneState[] targetPanes,
-            IReadOnlyList<LoopPlaybackPaneRangeSnapshot> paneRanges)
+            LoopPlaybackPaneRangeSnapshot[] paneRanges)
         {
-            if (targetPanes == null || paneRanges == null || targetPanes.Length != paneRanges.Count)
+            if (targetPanes == null || paneRanges == null || targetPanes.Length != paneRanges.Length)
             {
                 return false;
             }
@@ -6905,14 +6899,14 @@ namespace FramePlayer
                 new VideoInfoSection(advancedFields));
         }
 
-        private string FormatInspectorDuration(TimeSpan duration)
+        private static string FormatInspectorDuration(TimeSpan duration)
         {
             return duration > TimeSpan.Zero
                 ? FormatTime(duration)
                 : "Unknown";
         }
 
-        private static void AddInspectorFieldIfKnown(ICollection<VideoInfoField> fields, string label, string value)
+        private static void AddInspectorFieldIfKnown(List<VideoInfoField> fields, string label, string value)
         {
             if (fields == null || string.IsNullOrWhiteSpace(label) || string.IsNullOrWhiteSpace(value))
             {
