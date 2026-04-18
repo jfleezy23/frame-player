@@ -557,8 +557,17 @@
             <MenuItem x:Name="ExportSideBySideCompareMenuItem"
                       Header="Export _Side-by-Side Compare..."
                       Click="ExportSideBySideCompareMenuItem_Click" />
+            <MenuItem x:Name="ZoomInMenuItem"
+                      Header="Zoom _In"
+                      InputGestureText="="
+                      Click="ZoomInMenuItem_Click" />
+            <MenuItem x:Name="ZoomOutMenuItem"
+                      Header="Zoom _Out"
+                      InputGestureText="-"
+                      Click="ZoomOutMenuItem_Click" />
             <MenuItem x:Name="ResetZoomMenuItem"
                       Header="_Reset Zoom"
+                      InputGestureText="0"
                       Click="ResetZoomMenuItem_Click" />
             <Separator Style="{StaticResource TitleBarMenuSeparatorStyle}" />
             <MenuItem x:Name="UseGpuAccelerationMenuItem"

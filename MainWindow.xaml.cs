@@ -629,6 +629,68 @@ namespace FramePlayer
             ResetZoomForPane(GetFocusedPaneId());
         }
 
+        private void ZoomInFocusedPane()
+        {
+            AdjustFocusedPaneZoom(zoomIn: true);
+        }
+
+        private void ZoomOutFocusedPane()
+        {
+            AdjustFocusedPaneZoom(zoomIn: false);
+        }
+
+        private bool AdjustFocusedPaneZoom(bool zoomIn)
+        {
+            return AdjustPaneZoom(GetFocusedPaneId(), zoomIn);
+        }
+
+        private bool AdjustPaneZoom(string paneId, bool zoomIn)
+        {
+            var workspaceSnapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
+            string toolTip;
+            if (!CanAdjustPaneViewportZoom(workspaceSnapshot, paneId, zoomIn, out toolTip))
+            {
+                if (!string.IsNullOrWhiteSpace(toolTip))
+                {
+                    SetPlaybackMessage(toolTip);
+                }
+
+                return false;
+            }
+
+            var resolvedPaneId = string.IsNullOrWhiteSpace(paneId)
+                ? PrimaryPaneId
+                : paneId;
+            var viewportState = GetPaneViewportState(resolvedPaneId);
+            var scaleMultiplier = zoomIn
+                ? PaneZoomWheelStep
+                : 1d / PaneZoomWheelStep;
+            var targetZoomFactor = viewportState.ZoomFactor * scaleMultiplier;
+            targetZoomFactor = Math.Max(MinimumPaneZoomFactor, Math.Min(MaximumPaneZoomFactor, targetZoomFactor));
+            if (targetZoomFactor <= 1.0001d)
+            {
+                viewportState.Reset();
+                SetPlaybackMessage(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0} zoom reset to the full frame.",
+                    GetPaneDisplayLabel(resolvedPaneId)));
+            }
+            else
+            {
+                viewportState.ZoomFactor = targetZoomFactor;
+                SetPlaybackMessage(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0} zoom: {1:0}%.",
+                    GetPaneDisplayLabel(resolvedPaneId),
+                    viewportState.ZoomFactor * 100d));
+            }
+
+            UpdatePaneViewportLayout(resolvedPaneId);
+            UpdateViewportCommandState(_workspaceCoordinator.GetWorkspaceSnapshot());
+            FocusPreferredVideoSurface();
+            return true;
+        }
+
         private void ResetZoomForPane(string paneId)
         {
             if (string.IsNullOrWhiteSpace(paneId))
@@ -644,6 +706,7 @@ namespace FramePlayer
 
             viewportState.Reset();
             UpdatePaneViewportLayout(paneId);
+            UpdateViewportCommandState(_workspaceCoordinator.GetWorkspaceSnapshot());
             if (string.Equals(GetFocusedPaneId(), paneId, StringComparison.Ordinal))
             {
                 ClearPointerCoordinates();
@@ -655,6 +718,69 @@ namespace FramePlayer
                 string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
                     ? "Compare pane"
                     : "Primary pane"));
+        }
+
+        private bool CanAdjustPaneViewportZoom(
+            ReviewWorkspaceSnapshot workspaceSnapshot,
+            string paneId,
+            bool zoomIn,
+            out string toolTip)
+        {
+            toolTip = string.Empty;
+            var resolvedPaneId = string.IsNullOrWhiteSpace(paneId)
+                ? PrimaryPaneId
+                : paneId;
+            ReviewWorkspacePaneSnapshot paneSnapshot;
+            if (workspaceSnapshot == null || !workspaceSnapshot.TryGetPane(resolvedPaneId, out paneSnapshot) || !PaneHasLoadedMedia(paneSnapshot))
+            {
+                toolTip = "Load media in the selected pane before changing zoom.";
+                return false;
+            }
+
+            var engine = GetEngineForPane(resolvedPaneId);
+            if (engine == null || !engine.IsMediaOpen)
+            {
+                toolTip = "Load media in the selected pane before changing zoom.";
+                return false;
+            }
+
+            if (engine.IsPlaying)
+            {
+                toolTip = "Pause playback before changing zoom. A freshly loaded file already counts as paused.";
+                return false;
+            }
+
+            var viewportState = GetPaneViewportState(resolvedPaneId);
+            if (zoomIn)
+            {
+                if (viewportState.ZoomFactor >= MaximumPaneZoomFactor - 0.001d)
+                {
+                    toolTip = GetPaneDisplayLabel(resolvedPaneId) + " is already at the maximum zoom.";
+                    return false;
+                }
+
+                toolTip = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Zoom in on the focused {0} while paused. A freshly loaded file already counts as paused.",
+                    string.Equals(resolvedPaneId, ComparePaneId, StringComparison.Ordinal)
+                        ? "compare pane"
+                        : "pane");
+                return true;
+            }
+
+            if (!viewportState.IsZoomed)
+            {
+                toolTip = "The selected pane is already showing the full frame.";
+                return false;
+            }
+
+            toolTip = string.Format(
+                CultureInfo.InvariantCulture,
+                "Zoom out on the focused {0} while paused. A freshly loaded file already counts as paused.",
+                string.Equals(resolvedPaneId, ComparePaneId, StringComparison.Ordinal)
+                    ? "compare pane"
+                    : "pane");
+            return true;
         }
 
         private void ResetPaneViewport(string paneId)
@@ -1568,14 +1694,28 @@ namespace FramePlayer
             await ReplaceAudioTrackAsync();
         }
 
+        private void ZoomInMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            ZoomInFocusedPane();
+            FocusPreferredVideoSurface();
+        }
+
+        private void ZoomOutMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            ZoomOutFocusedPane();
+            FocusPreferredVideoSurface();
+        }
+
         private void ResetZoomMenuItem_Click(object sender, RoutedEventArgs e)
         {
             ResetZoomForFocusedPane();
+            FocusPreferredVideoSurface();
         }
 
         private void PaneResetZoomMenuItem_Click(object sender, RoutedEventArgs e)
         {
             ResetZoomForPane(GetPaneIdFromSender(sender));
+            FocusPreferredVideoSurface();
         }
 
         private async void PaneExportSideBySideCompareMenuItem_Click(object sender, RoutedEventArgs e)
@@ -2101,6 +2241,12 @@ namespace FramePlayer
                 return;
             }
 
+            if (_isMediaLoaded && TryHandleViewportShortcut(e))
+            {
+                e.Handled = true;
+                return;
+            }
+
             LoopPlaybackMarkerEndpoint loopMarkerEndpoint;
             if (_isMediaLoaded &&
                 Keyboard.Modifiers == ModifierKeys.None &&
@@ -2170,6 +2316,39 @@ namespace FramePlayer
                     e.Handled = true;
                     break;
             }
+        }
+
+        private bool TryHandleViewportShortcut(KeyEventArgs e)
+        {
+            if (e == null)
+            {
+                return false;
+            }
+
+            var modifiers = Keyboard.Modifiers;
+            if ((modifiers == ModifierKeys.None || modifiers == ModifierKeys.Shift) &&
+                (e.Key == Key.OemPlus || e.Key == Key.Add))
+            {
+                ZoomInFocusedPane();
+                return true;
+            }
+
+            if ((modifiers == ModifierKeys.None || modifiers == ModifierKeys.Shift) &&
+                (e.Key == Key.OemMinus || e.Key == Key.Subtract))
+            {
+                ZoomOutFocusedPane();
+                return true;
+            }
+
+            if (modifiers == ModifierKeys.None &&
+                (e.Key == Key.D0 || e.Key == Key.NumPad0))
+            {
+                ResetZoomForFocusedPane();
+                FocusPreferredVideoSurface();
+                return true;
+            }
+
+            return false;
         }
 
         private void Window_PreviewKeyUp(object sender, KeyEventArgs e)
@@ -3636,6 +3815,7 @@ namespace FramePlayer
             }
 
             UpdatePaneViewportLayout(paneId);
+            UpdateViewportCommandState(_workspaceCoordinator.GetWorkspaceSnapshot());
             e.Handled = true;
         }
 
@@ -5500,18 +5680,39 @@ namespace FramePlayer
 
         private void UpdateViewportCommandState(ReviewWorkspaceSnapshot workspaceSnapshot)
         {
-            if (ResetZoomMenuItem == null)
+            if (ZoomInMenuItem == null &&
+                ZoomOutMenuItem == null &&
+                ResetZoomMenuItem == null)
             {
                 return;
             }
 
-            string toolTip;
             var focusedPaneId = workspaceSnapshot != null && !string.IsNullOrWhiteSpace(workspaceSnapshot.FocusedPaneId)
                 ? workspaceSnapshot.FocusedPaneId
                 : GetFocusedPaneId();
-            var canResetZoom = CanResetPaneViewport(workspaceSnapshot, focusedPaneId, out toolTip);
-            ResetZoomMenuItem.IsEnabled = canResetZoom;
-            ResetZoomMenuItem.ToolTip = toolTip;
+            if (ZoomInMenuItem != null)
+            {
+                string toolTip;
+                var canZoomIn = CanAdjustPaneViewportZoom(workspaceSnapshot, focusedPaneId, zoomIn: true, out toolTip);
+                ZoomInMenuItem.IsEnabled = canZoomIn;
+                ZoomInMenuItem.ToolTip = toolTip;
+            }
+
+            if (ZoomOutMenuItem != null)
+            {
+                string toolTip;
+                var canZoomOut = CanAdjustPaneViewportZoom(workspaceSnapshot, focusedPaneId, zoomIn: false, out toolTip);
+                ZoomOutMenuItem.IsEnabled = canZoomOut;
+                ZoomOutMenuItem.ToolTip = toolTip;
+            }
+
+            if (ResetZoomMenuItem != null)
+            {
+                string toolTip;
+                var canResetZoom = CanResetPaneViewport(workspaceSnapshot, focusedPaneId, out toolTip);
+                ResetZoomMenuItem.IsEnabled = canResetZoom;
+                ResetZoomMenuItem.ToolTip = toolTip;
+            }
         }
 
         private bool CanResetPaneViewport(

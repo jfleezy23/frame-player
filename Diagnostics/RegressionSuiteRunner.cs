@@ -4207,6 +4207,8 @@ namespace FramePlayer.Diagnostics
                 private readonly MethodInfo _buildPaneViewportSnapshotMethod;
                 private readonly MethodInfo _updatePaneViewportLayoutMethod;
                 private readonly MethodInfo _resetZoomForPaneMethod;
+                private readonly MethodInfo _zoomInFocusedPaneMethod;
+                private readonly MethodInfo _zoomOutFocusedPaneMethod;
                 private readonly MethodInfo _setSharedLoopCommandContextMethod;
                 private readonly MethodInfo _setPaneLoopCommandContextMethod;
                 private readonly MethodInfo _trySelectPaneForShellMethod;
@@ -4242,6 +4244,8 @@ namespace FramePlayer.Diagnostics
                     _buildPaneViewportSnapshotMethod = RequireMethod(windowType, "BuildPaneViewportSnapshot", typeof(string));
                     _updatePaneViewportLayoutMethod = RequireMethod(windowType, "UpdatePaneViewportLayout", typeof(string));
                     _resetZoomForPaneMethod = RequireMethod(windowType, "ResetZoomForPane", typeof(string));
+                    _zoomInFocusedPaneMethod = RequireMethod(windowType, "ZoomInFocusedPane");
+                    _zoomOutFocusedPaneMethod = RequireMethod(windowType, "ZoomOutFocusedPane");
                     _setSharedLoopCommandContextMethod = RequireMethod(windowType, "SetSharedLoopCommandContext");
                     _setPaneLoopCommandContextMethod = RequireMethod(windowType, "SetPaneLoopCommandContext", typeof(string));
                     _trySelectPaneForShellMethod = RequireMethod(windowType, "TrySelectPaneForShell", typeof(string));
@@ -4478,6 +4482,28 @@ namespace FramePlayer.Diagnostics
                         ? PrimaryPaneId
                         : paneId;
                     _resetZoomForPaneMethod.Invoke(_window, new object[] { resolvedPaneId });
+                    await RefreshUiStateAsync().ConfigureAwait(true);
+                }
+
+                public async Task ZoomInFocusedPaneAsync(string paneId = null)
+                {
+                    if (!string.IsNullOrWhiteSpace(paneId))
+                    {
+                        await SelectPaneAsync(paneId).ConfigureAwait(true);
+                    }
+
+                    _zoomInFocusedPaneMethod.Invoke(_window, null);
+                    await RefreshUiStateAsync().ConfigureAwait(true);
+                }
+
+                public async Task ZoomOutFocusedPaneAsync(string paneId = null)
+                {
+                    if (!string.IsNullOrWhiteSpace(paneId))
+                    {
+                        await SelectPaneAsync(paneId).ConfigureAwait(true);
+                    }
+
+                    _zoomOutFocusedPaneMethod.Invoke(_window, null);
                     await RefreshUiStateAsync().ConfigureAwait(true);
                 }
 
