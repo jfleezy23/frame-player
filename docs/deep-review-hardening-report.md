@@ -15,12 +15,15 @@ Guardrail:
   - added manifest filename validation to runtime/export-tool integrity checks
   - enforced HTTPS-only download/timestamp URLs in bootstrap and packaging scripts
   - hardened FFmpeg CLI export/probe process handling to avoid redirected-output stalls on failure paths
+  - moved the manual review-engine PowerShell harness onto a headless app CLI path so it now runs under Frame Player's own runtime
+  - added cold-path unit coverage and CI checks that keep the existing PowerShell harness carried in-repo
 - The validation baseline remained clean:
   - Release `x64` build passed
   - `dotnet list package --vulnerable --include-transitive` reported no vulnerable packages
   - runtime/export-tool bootstrap scripts passed
   - packaged test drop build passed
   - MSIX packaging passed with `-UseDevCertificate`
+  - full-corpus regression and manual review-engine sweeps completed without failures
 
 ## Blocking security findings
 - None confirmed after this pass.
@@ -47,8 +50,9 @@ Resolved in this pass:
 
 ## Cold-path hardening opportunities
 - Runtime and export-tool manifest validation now rejects non-leaf file entries before hashing begins, in `Services/RuntimeManifestService.cs:34`, `Services/RuntimeManifestService.cs:36`, `Services/RuntimeManifestService.cs:95`, `Services/ExportToolsManifestService.cs:34`, `Services/ExportToolsManifestService.cs:36`, and `Services/ExportToolsManifestService.cs:95`.
-- A remaining low-risk follow-up is to add a CI policy check that fails pull requests when workflow files introduce unpinned GitHub Actions references. The repo documentation already expects SHA pinning; automating that expectation would reduce review drift further without touching product runtime.
-- Another low-risk follow-up is to add focused unit coverage around manifest validation and FFmpeg CLI failure-path handling once a buildable test project exists. Those areas are now more security-sensitive than functionally complex, which makes them good cold-path test candidates.
+- The repository-carried PowerShell harness remains the product-level validation source of truth, and CI now has a dedicated syntax/presence check to keep those scripts from silently drifting or disappearing.
+- `scripts/Run-ReviewEngine-ManualTests.ps1` no longer depends on loading app assemblies inside Windows PowerShell; it now hands execution off to a headless app entrypoint that uses the same runtime/configuration path as the desktop app.
+- A remaining low-risk follow-up is to add more focused unit coverage around export-plan construction and other service-level cold paths that do not require live playback.
 
 ## Critical-path risks or rejected hardening ideas
 - Rejected:
@@ -89,11 +93,9 @@ Resolved in this pass:
    Why it matters:
    FFmpeg interop genuinely needs unsafe code, but the project-wide switch keeps the trust boundary wider than ideal.
 
-6. No buildable test project files are currently present in the repo shape.
-   Evidence:
-   `tests/FramePlayer.Core.Tests/` exists on disk but currently contains only `bin/` and `obj/`, and the repo scan only surfaced `FramePlayer.csproj` and `src/FramePlayer.Controls/FramePlayer.Controls.csproj`.
+6. The repo now has a buildable cold-path test project in `tests/FramePlayer.Core.Tests`, but product behavior still depends mainly on app-driven PowerShell harness coverage rather than broad unit-test coverage.
    Why it matters:
-   This limits how safely the repo can tighten nullability, isolate services, or add more aggressive hardening later.
+   This is an improvement, but deeper cleanup work still needs more subsystem-level tests before nullability and structural refactors become low-risk.
 
 7. Source-level documentation remains sparse in non-generated code.
    Why it matters:
@@ -101,12 +103,13 @@ Resolved in this pass:
 
 ## Remediation roadmap
 ### Batch 1: zero-runtime-cost hardening
-- Keep workflow action references SHA-pinned and add an automated policy check so future PRs cannot silently reintroduce floating tags.
+- Keep workflow action references SHA-pinned and enforce that policy in CI so future PRs cannot silently reintroduce floating tags.
 - Continue using `persist-credentials: false` for checkout steps unless a workflow truly needs write-back behavior.
 - Keep packaging/bootstrap URLs HTTPS-only and keep PFX checks on literal paths.
+- Keep the repository-carried PowerShell harness syntax-checked in CI so those product-validation entrypoints remain present and parseable.
 
 ### Batch 2: cold-path-only safety improvements
-- Add a small buildable test project for services/scripts-adjacent logic, starting with manifest validation and FFmpeg CLI failure-path handling.
+- Expand the new buildable test project for services/scripts-adjacent logic, starting from the manifest validation and FFmpeg CLI failure-path tests landed in this pass.
 - If future export work revisits the public plan models, consider moving from raw FFmpeg command-line strings to structured argv construction internally. Do that only if interface churn is acceptable, because the current public plan models expose command strings.
 - Keep any future integrity or path validation at startup/package/export boundaries only; do not move it into playback loops.
 
@@ -125,8 +128,14 @@ Resolved in this pass:
 
 ## Validation performed
 - `dotnet build .\FramePlayer.csproj -c Release -p:Platform=x64`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Test-WorkflowActionPinning.ps1`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Test-RepoHarnessScripts.ps1`
+- `dotnet test .\tests\FramePlayer.Core.Tests\FramePlayer.Core.Tests.csproj -c Release`
 - `dotnet list .\FramePlayer.csproj package --vulnerable --include-transitive`
 - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Ensure-DevRuntime.ps1`
 - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Ensure-DevExportTools.ps1 -Required`
 - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Build-TestDrop.ps1 -RequireExportTools`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-RegressionSuite.ps1 -Path 'C:\Projects\Video Test Files' -Recurse -Output '.\artifacts\regression-suite\codex-full-corpus' -Configuration Release`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-ReviewEngine-ManualTests.ps1 -Path '.\dist\Frame Player\sample-test.mp4' -Output '.\artifacts\review-engine-manual-tests\codex-smoke' -Configuration Release`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-ReviewEngine-ManualTests.ps1 -Path 'C:\Projects\Video Test Files' -Recurse -Output '.\artifacts\review-engine-manual-tests\codex-full-corpus' -Configuration Release`
 - `powershell -NoProfile -ExecutionPolicy Bypass -File .\Packaging\MSIX\build-msix.ps1 -UseDevCertificate`

@@ -6,6 +6,11 @@
 
 The workflow is now custom-only. It is intended for local regression checks of the active engine, not backend comparison.
 
+The PowerShell harness launches `FramePlayer.exe` headlessly through the app's
+`--run-review-engine-manual-tests-request` entrypoint, so the sweep runs under
+the app's own .NET runtime instead of attempting to load `FramePlayer.dll`
+inside Windows PowerShell.
+
 ## How To Run
 
 Single file:
@@ -34,6 +39,16 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-ReviewEngi
   -Recurse `
   -Output ".\artifacts\review-engine-tests" `
   -Configuration Debug
+```
+
+Local supported-format corpus:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-ReviewEngine-ManualTests.ps1 `
+  -Path "C:\Projects\Video Test Files" `
+  -Recurse `
+  -Output ".\artifacts\review-engine-tests\full-corpus" `
+  -Configuration Release
 ```
 
 ## Supported Input Modes

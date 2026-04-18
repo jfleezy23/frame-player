@@ -33,23 +33,51 @@ namespace FramePlayer
             {
                 var startupLogPath = Path.Combine(Path.GetTempPath(), "frameplayer-regression-startup.log");
                 ShutdownMode = ShutdownMode.OnExplicitShutdown;
-                AppendRegressionStartupLog(startupLogPath, "Regression startup requested.");
-                AppendRegressionStartupLog(startupLogPath, "Request path: " + regressionSuiteRequestPath);
+                AppendCliStartupLog(startupLogPath, "Regression startup requested.");
+                AppendCliStartupLog(startupLogPath, "Request path: " + regressionSuiteRequestPath);
                 ConfigureBundledRuntime();
-                AppendRegressionStartupLog(startupLogPath, "Runtime configured. Root=" + (RuntimeDirectory ?? string.Empty));
+                AppendCliStartupLog(startupLogPath, "Runtime configured. Root=" + (RuntimeDirectory ?? string.Empty));
 
                 try
                 {
-                    AppendRegressionStartupLog(startupLogPath, "RegressionSuiteCli.RunAsync starting.");
+                    AppendCliStartupLog(startupLogPath, "RegressionSuiteCli.RunAsync starting.");
                     var exitCode = await RegressionSuiteCli.RunAsync(regressionSuiteRequestPath, default(System.Threading.CancellationToken));
-                    AppendRegressionStartupLog(startupLogPath, "RegressionSuiteCli.RunAsync completed with exit code " + exitCode.ToString());
+                    AppendCliStartupLog(startupLogPath, "RegressionSuiteCli.RunAsync completed with exit code " + exitCode.ToString());
                     Shutdown(exitCode);
                 }
                 catch (Exception ex)
                 {
-                    AppendRegressionStartupLog(startupLogPath, "RegressionSuiteCli.RunAsync failed: " + ex);
+                    AppendCliStartupLog(startupLogPath, "RegressionSuiteCli.RunAsync failed: " + ex);
                     RegressionSuiteCli.TryWriteFailure(regressionSuiteRequestPath, ex);
                     System.Diagnostics.Trace.WriteLine("Regression suite execution failed: " + ex);
+                    Shutdown(1);
+                }
+
+                return;
+            }
+
+            string manualTestRequestPath;
+            if (ReviewEngineManualTestCli.TryGetRequestPath(e.Args, out manualTestRequestPath))
+            {
+                var startupLogPath = Path.Combine(Path.GetTempPath(), "frameplayer-review-engine-manual-startup.log");
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                AppendCliStartupLog(startupLogPath, "Manual review-engine startup requested.");
+                AppendCliStartupLog(startupLogPath, "Request path: " + manualTestRequestPath);
+                ConfigureBundledRuntime();
+                AppendCliStartupLog(startupLogPath, "Runtime configured. Root=" + (RuntimeDirectory ?? string.Empty));
+
+                try
+                {
+                    AppendCliStartupLog(startupLogPath, "ReviewEngineManualTestCli.RunAsync starting.");
+                    var exitCode = await ReviewEngineManualTestCli.RunAsync(manualTestRequestPath, default(System.Threading.CancellationToken));
+                    AppendCliStartupLog(startupLogPath, "ReviewEngineManualTestCli.RunAsync completed with exit code " + exitCode.ToString());
+                    Shutdown(exitCode);
+                }
+                catch (Exception ex)
+                {
+                    AppendCliStartupLog(startupLogPath, "ReviewEngineManualTestCli.RunAsync failed: " + ex);
+                    ReviewEngineManualTestCli.TryWriteFailure(manualTestRequestPath, ex);
+                    System.Diagnostics.Trace.WriteLine("Review engine manual tests failed: " + ex);
                     Shutdown(1);
                 }
 
@@ -92,7 +120,7 @@ namespace FramePlayer
             FfmpegHardwareDeviceCache.StartVulkanWarmup();
         }
 
-        private static void AppendRegressionStartupLog(string logPath, string message)
+        private static void AppendCliStartupLog(string logPath, string message)
         {
             try
             {

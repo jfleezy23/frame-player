@@ -97,198 +97,6 @@ function Resolve-ManualTestInputFiles
     return @($resolvedFiles | Sort-Object)
 }
 
-function Get-ScenarioReportForBackend
-{
-    param(
-        $FileResult,
-        [string]$BackendName
-    )
-
-    return $FileResult.ComparisonReport.CustomFfmpeg
-}
-
-function Convert-ToDecodeSnapshot
-{
-    param(
-        $Snapshot
-    )
-
-    if ($null -eq $Snapshot)
-    {
-        return $null
-    }
-
-    return [pscustomobject]@{
-        DecodeBackend = $Snapshot.ActiveDecodeBackend
-        ActualBackendUsed = $Snapshot.ActualBackendUsed
-        GpuActive = $Snapshot.IsGpuActive
-        GpuStatus = $Snapshot.GpuCapabilityStatus
-        GpuFallbackReason = $Snapshot.GpuFallbackReason
-        BudgetBand = $Snapshot.BudgetBand
-        HostResourceClass = $Snapshot.HostResourceClass
-        QueueDepth = $Snapshot.OperationalQueueDepth
-        SessionCacheBudgetMiB = if ($Snapshot.SessionDecodedFrameCacheBudgetBytes -ne $null)
-        {
-            [math]::Round(($Snapshot.SessionDecodedFrameCacheBudgetBytes / 1MB), 3)
-        }
-        else
-        {
-            $null
-        }
-        CacheBudgetMiB = if ($Snapshot.DecodedFrameCacheBudgetBytes -ne $null)
-        {
-            [math]::Round(($Snapshot.DecodedFrameCacheBudgetBytes / 1MB), 3)
-        }
-        else
-        {
-            $null
-        }
-        CacheBack = $Snapshot.PreviousCachedFrameCount
-        CacheAhead = $Snapshot.ForwardCachedFrameCount
-        MaxCacheBack = $Snapshot.MaxPreviousCachedFrameCount
-        MaxCacheAhead = $Snapshot.MaxForwardCachedFrameCount
-        ApproximateCacheMiB = if ($Snapshot.ApproximateCachedFrameBytes -ne $null)
-        {
-            [math]::Round(($Snapshot.ApproximateCachedFrameBytes / 1MB), 3)
-        }
-        else
-        {
-            $null
-        }
-        HwTransferMilliseconds = $Snapshot.HardwareFrameTransferMilliseconds
-        BgraConversionMilliseconds = $Snapshot.BgraConversionMilliseconds
-    }
-}
-
-function Convert-ToBackendOutput
-{
-    param(
-        $FileResult,
-        $BackendResult
-    )
-
-    $scenario = Get-ScenarioReportForBackend -FileResult $FileResult -BackendName $BackendResult.BackendName
-    if ($null -eq $scenario)
-    {
-        return [pscustomobject]@{
-            BackendName = $BackendResult.BackendName
-            Classification = $BackendResult.Classification
-            Warnings = @($BackendResult.Warnings)
-            Failures = @($BackendResult.Failures)
-        }
-    }
-
-    return [pscustomobject]@{
-        BackendName = $BackendResult.BackendName
-        Classification = $BackendResult.Classification
-        Warnings = @($BackendResult.Warnings)
-        Failures = @($BackendResult.Failures)
-        Open = [pscustomobject]@{
-            Succeeded = $scenario.OpenResult.Succeeded
-            ElapsedMilliseconds = [math]::Round($scenario.OpenResult.ElapsedMilliseconds, 3)
-            Note = $scenario.OpenResult.Note
-            ErrorMessage = $scenario.OpenResult.ErrorMessage
-            Codec = $scenario.OpenResult.MediaInfo.VideoCodecName
-            Width = $scenario.OpenResult.MediaInfo.PixelWidth
-            Height = $scenario.OpenResult.MediaInfo.PixelHeight
-            Duration = [string]$scenario.OpenResult.MediaInfo.Duration
-            NominalFps = $scenario.OpenResult.MediaInfo.FramesPerSecond
-            HasAudioStream = $scenario.OpenResult.HasAudioStream
-            AudioPlaybackAvailable = $scenario.OpenResult.AudioPlaybackAvailable
-            AudioPlaybackActive = $scenario.OpenResult.AudioPlaybackActive
-            LastPlaybackUsedAudioClock = $scenario.OpenResult.LastPlaybackUsedAudioClock
-            LastAudioSubmittedBytes = $scenario.OpenResult.LastAudioSubmittedBytes
-            AudioCodecName = $scenario.OpenResult.AudioCodecName
-            AudioErrorMessage = $scenario.OpenResult.AudioErrorMessage
-            IsGlobalIndexAvailable = $scenario.OpenResult.IsGlobalFrameIndexAvailable
-            IndexedFrameCount = $scenario.OpenResult.IndexedFrameCount
-            UsedGlobalIndex = $scenario.OpenResult.UsedGlobalIndex
-            AnchorStrategy = $scenario.OpenResult.AnchorStrategy
-            AnchorFrameIndex = $scenario.OpenResult.AnchorFrameIndex
-            PositionFrameIndex = $scenario.OpenResult.Position.FrameIndex
-            PositionAbsolute = $scenario.OpenResult.Position.IsFrameIndexAbsolute
-            Decode = Convert-ToDecodeSnapshot -Snapshot $scenario.OpenResult
-        }
-        Playback = [pscustomobject]@{
-            Succeeded = $scenario.PlaybackResult.Succeeded
-            ElapsedMilliseconds = [math]::Round($scenario.PlaybackResult.ElapsedMilliseconds, 3)
-            Note = $scenario.PlaybackResult.Note
-            ErrorMessage = $scenario.PlaybackResult.ErrorMessage
-            FrameIndex = $scenario.PlaybackResult.Position.FrameIndex
-            IsFrameIndexAbsolute = $scenario.PlaybackResult.Position.IsFrameIndexAbsolute
-            HasAudioStream = $scenario.PlaybackResult.HasAudioStream
-            AudioPlaybackAvailable = $scenario.PlaybackResult.AudioPlaybackAvailable
-            AudioPlaybackActive = $scenario.PlaybackResult.AudioPlaybackActive
-            LastPlaybackUsedAudioClock = $scenario.PlaybackResult.LastPlaybackUsedAudioClock
-            LastAudioSubmittedBytes = $scenario.PlaybackResult.LastAudioSubmittedBytes
-            AudioCodecName = $scenario.PlaybackResult.AudioCodecName
-            AudioErrorMessage = $scenario.PlaybackResult.AudioErrorMessage
-            Decode = Convert-ToDecodeSnapshot -Snapshot $scenario.PlaybackResult
-        }
-        SeekToTime = [pscustomobject]@{
-            Succeeded = $scenario.SeekToTimeResult.Succeeded
-            ElapsedMilliseconds = [math]::Round($scenario.SeekToTimeResult.ElapsedMilliseconds, 3)
-            Note = $scenario.SeekToTimeResult.Note
-            ErrorMessage = $scenario.SeekToTimeResult.ErrorMessage
-            PresentationTime = [string]$scenario.SeekToTimeResult.Position.PresentationTime
-            FrameIndex = $scenario.SeekToTimeResult.Position.FrameIndex
-            IsFrameIndexAbsolute = $scenario.SeekToTimeResult.Position.IsFrameIndexAbsolute
-            UsedGlobalIndex = $scenario.SeekToTimeResult.UsedGlobalIndex
-            AnchorStrategy = $scenario.SeekToTimeResult.AnchorStrategy
-            AnchorFrameIndex = $scenario.SeekToTimeResult.AnchorFrameIndex
-            LastPlaybackUsedAudioClock = $scenario.SeekToTimeResult.LastPlaybackUsedAudioClock
-            LastAudioSubmittedBytes = $scenario.SeekToTimeResult.LastAudioSubmittedBytes
-            Decode = Convert-ToDecodeSnapshot -Snapshot $scenario.SeekToTimeResult
-        }
-        SeekToFrame = [pscustomobject]@{
-            Succeeded = $scenario.SeekToFrameResult.Succeeded
-            ElapsedMilliseconds = [math]::Round($scenario.SeekToFrameResult.ElapsedMilliseconds, 3)
-            Note = $scenario.SeekToFrameResult.Note
-            ErrorMessage = $scenario.SeekToFrameResult.ErrorMessage
-            PresentationTime = [string]$scenario.SeekToFrameResult.Position.PresentationTime
-            FrameIndex = $scenario.SeekToFrameResult.Position.FrameIndex
-            IsFrameIndexAbsolute = $scenario.SeekToFrameResult.Position.IsFrameIndexAbsolute
-            UsedGlobalIndex = $scenario.SeekToFrameResult.UsedGlobalIndex
-            AnchorStrategy = $scenario.SeekToFrameResult.AnchorStrategy
-            AnchorFrameIndex = $scenario.SeekToFrameResult.AnchorFrameIndex
-            LastPlaybackUsedAudioClock = $scenario.SeekToFrameResult.LastPlaybackUsedAudioClock
-            LastAudioSubmittedBytes = $scenario.SeekToFrameResult.LastAudioSubmittedBytes
-            Decode = Convert-ToDecodeSnapshot -Snapshot $scenario.SeekToFrameResult
-        }
-        StepBackward = [pscustomobject]@{
-            Succeeded = $scenario.BackwardStepResult.StepResult.Success
-            ElapsedMilliseconds = [math]::Round($scenario.BackwardStepResult.ElapsedMilliseconds, 3)
-            Message = $scenario.BackwardStepResult.StepResult.Message
-            FrameIndex = $scenario.BackwardStepResult.StepResult.Position.FrameIndex
-            IsFrameIndexAbsolute = $scenario.BackwardStepResult.StepResult.Position.IsFrameIndexAbsolute
-            WasCacheHit = $scenario.BackwardStepResult.StepResult.WasCacheHit
-            RequiredReconstruction = $scenario.BackwardStepResult.StepResult.RequiredReconstruction
-            UsedGlobalIndex = $scenario.BackwardStepResult.UsedGlobalIndex
-            AnchorStrategy = $scenario.BackwardStepResult.AnchorStrategy
-            AnchorFrameIndex = $scenario.BackwardStepResult.AnchorFrameIndex
-            LastPlaybackUsedAudioClock = $scenario.BackwardStepResult.LastPlaybackUsedAudioClock
-            LastAudioSubmittedBytes = $scenario.BackwardStepResult.LastAudioSubmittedBytes
-            Decode = Convert-ToDecodeSnapshot -Snapshot $scenario.BackwardStepResult
-        }
-        StepForward = [pscustomobject]@{
-            Succeeded = $scenario.ForwardStepResult.StepResult.Success
-            ElapsedMilliseconds = [math]::Round($scenario.ForwardStepResult.ElapsedMilliseconds, 3)
-            Message = $scenario.ForwardStepResult.StepResult.Message
-            FrameIndex = $scenario.ForwardStepResult.StepResult.Position.FrameIndex
-            IsFrameIndexAbsolute = $scenario.ForwardStepResult.StepResult.Position.IsFrameIndexAbsolute
-            WasCacheHit = $scenario.ForwardStepResult.StepResult.WasCacheHit
-            RequiredReconstruction = $scenario.ForwardStepResult.StepResult.RequiredReconstruction
-            UsedGlobalIndex = $scenario.ForwardStepResult.UsedGlobalIndex
-            AnchorStrategy = $scenario.ForwardStepResult.AnchorStrategy
-            AnchorFrameIndex = $scenario.ForwardStepResult.AnchorFrameIndex
-            LastPlaybackUsedAudioClock = $scenario.ForwardStepResult.LastPlaybackUsedAudioClock
-            LastAudioSubmittedBytes = $scenario.ForwardStepResult.LastAudioSubmittedBytes
-            Decode = Convert-ToDecodeSnapshot -Snapshot $scenario.ForwardStepResult
-        }
-        ScenarioError = $scenario.ScenarioError
-    }
-}
-
 function Convert-ToCsvRow
 {
     param(
@@ -406,7 +214,7 @@ function New-MarkdownSummary
     $lines = New-Object System.Collections.Generic.List[string]
     [void]$lines.Add("# Review Engine Manual Test Summary")
     [void]$lines.Add("")
-    [void]$lines.Add("- Generated (UTC): $($SessionReport.GeneratedAtUtc.ToString('o'))")
+    [void]$lines.Add("- Generated (UTC): $($SessionReport.GeneratedAtUtc)")
     [void]$lines.Add("- Files tested: $($SessionReport.Summary.FilesTested)")
     [void]$lines.Add("- Backend runs attempted: $($SessionReport.Summary.BackendRunsAttempted)")
     [void]$lines.Add("")
@@ -539,109 +347,93 @@ if ($resolvedFiles.Count -eq 0)
     throw "No input videos matched the supplied paths and extension filter."
 }
 
-$assemblyPath = Join-Path $projectRoot ("bin\\{0}\\FramePlayer.exe" -f $Configuration)
-if (-not (Test-Path -LiteralPath $assemblyPath))
+$appHostPath = Join-Path $projectRoot ("bin\\{0}\\FramePlayer.exe" -f $Configuration)
+if (-not (Test-Path -LiteralPath $appHostPath))
 {
-    throw "Build output not found at $assemblyPath. Build the project first."
-}
-
-$assemblyDirectory = Split-Path -Parent $assemblyPath
-[void][System.Reflection.Assembly]::LoadFrom((Join-Path $assemblyDirectory "FFmpeg.AutoGen.dll"))
-[void][System.Reflection.Assembly]::LoadFrom($assemblyPath)
-[FFmpeg.AutoGen.ffmpeg]::RootPath = $assemblyDirectory
-
-$sessionReport = [FramePlayer.Diagnostics.ReviewEngineManualTestRunner]::RunAsync(
-    [string[]]$resolvedFiles,
-    [Threading.CancellationToken]::None).GetAwaiter().GetResult()
-
-$fileOutputs = @(
-    foreach ($fileResult in $sessionReport.FileResults)
-    {
-        $backendOutputs = @(
-            foreach ($backendResult in $fileResult.BackendResults)
-            {
-                Convert-ToBackendOutput -FileResult $fileResult -BackendResult $backendResult
-            }
-        )
-
-        [pscustomobject]@{
-            FilePath = $fileResult.FilePath
-            FileName = [IO.Path]::GetFileName($fileResult.FilePath)
-            TestPlan = [pscustomobject]@{
-                SeekTime = [string]$fileResult.TestPlan.SeekTime
-                SeekFrameIndex = $fileResult.TestPlan.SeekFrameIndex
-                SeekTimeStrategy = $fileResult.TestPlan.SeekTimeStrategy
-                SeekFrameStrategy = $fileResult.TestPlan.SeekFrameStrategy
-                DurationKnown = $fileResult.TestPlan.DurationKnown
-                NominalFpsKnown = $fileResult.TestPlan.NominalFpsKnown
-                IndexAvailable = $fileResult.TestPlan.IndexAvailable
-                IndexedFrameCount = $fileResult.TestPlan.IndexedFrameCount
-                ReducedTestPathUsed = $fileResult.TestPlan.ReducedTestPathUsed
-                SequenceSummary = $fileResult.TestPlan.SequenceSummary
-                Warnings = @($fileResult.TestPlan.Warnings)
-                PreflightError = $fileResult.TestPlan.PreflightError
-            }
-            ComparisonHighlights = @($fileResult.ComparisonHighlights)
-            Backends = $backendOutputs
-        }
-    }
-)
-
-$csvRows = @(
-    foreach ($fileResult in $sessionReport.FileResults)
-    {
-        $backendOutputs = @(
-            foreach ($backendResult in $fileResult.BackendResults)
-            {
-                Convert-ToBackendOutput -FileResult $fileResult -BackendResult $backendResult
-            }
-        )
-
-        foreach ($backendOutput in $backendOutputs)
-        {
-            Convert-ToCsvRow -FileResult $fileResult -BackendOutput $backendOutput
-        }
-    }
-)
-
-$summaryObject = [pscustomobject]@{
-    FilesTested = $sessionReport.Summary.FilesTested
-    BackendRunsAttempted = $sessionReport.Summary.BackendRunsAttempted
-    Backends = @(
-        foreach ($backendSummary in $sessionReport.Summary.Backends)
-        {
-            [pscustomobject]@{
-                BackendName = $backendSummary.BackendName
-                Attempted = $backendSummary.Attempted
-                PassCount = $backendSummary.PassCount
-                WarningCount = $backendSummary.WarningCount
-                FailCount = $backendSummary.FailCount
-            }
-        }
-    )
-}
-
-$jsonObject = [pscustomobject]@{
-    GeneratedAtUtc = $sessionReport.GeneratedAtUtc.ToString("o")
-    InputFiles = @($sessionReport.InputFiles)
-    Summary = $summaryObject
-    Files = $fileOutputs
+    throw "Build output not found at $appHostPath. Build the project first."
 }
 
 $outputDirectory = (Resolve-Path -LiteralPath (New-Item -ItemType Directory -Path $Output -Force)).Path
 $jsonPath = Join-Path $outputDirectory "review-engine-manual-tests.json"
 $csvPath = Join-Path $outputDirectory "review-engine-manual-tests.csv"
 $markdownPath = Join-Path $outputDirectory "review-engine-manual-tests-summary.md"
+$requestPath = Join-Path $outputDirectory "review-engine-manual-tests-request.json"
+$errorPath = Join-Path $outputDirectory "review-engine-manual-tests-error.txt"
 
-$jsonObject | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $jsonPath -Encoding UTF8
+foreach ($artifactPath in @($jsonPath, $csvPath, $markdownPath, $requestPath, $errorPath))
+{
+    if (Test-Path -LiteralPath $artifactPath)
+    {
+        Remove-Item -LiteralPath $artifactPath -Force
+    }
+}
+
+$request = [pscustomobject]@{
+    filePaths = [string[]]$resolvedFiles
+    reportJsonPath = [string]$jsonPath
+    errorPath = [string]$errorPath
+}
+
+[System.IO.File]::WriteAllText(
+    $requestPath,
+    ($request | ConvertTo-Json -Depth 6),
+    (New-Object System.Text.UTF8Encoding($false)))
+
+$process = Start-Process -FilePath $appHostPath `
+    -ArgumentList ("--run-review-engine-manual-tests-request ""{0}""" -f $requestPath) `
+    -Wait `
+    -PassThru `
+    -WindowStyle Hidden
+
+if (-not (Test-Path -LiteralPath $jsonPath))
+{
+    $errorText = if (Test-Path -LiteralPath $errorPath)
+    {
+        Get-Content -LiteralPath $errorPath -Raw
+    }
+    else
+    {
+        ""
+    }
+
+    if ([string]::IsNullOrWhiteSpace($errorText))
+    {
+        throw "Manual review-engine child process failed with exit code $($process.ExitCode) before it could write a report."
+    }
+
+    throw "Manual review-engine child process failed with exit code $($process.ExitCode). $errorText"
+}
+
+$report = Get-Content -LiteralPath $jsonPath -Raw | ConvertFrom-Json
+$fileOutputs = @($report.Files)
+$backendSummaries = @($report.Summary.Backends)
+$csvRows = @(
+    foreach ($fileResult in $fileOutputs)
+    {
+        foreach ($backendOutput in @($fileResult.Backends))
+        {
+            Convert-ToCsvRow -FileResult $fileResult -BackendOutput $backendOutput
+        }
+    }
+)
+
 $csvRows | Export-Csv -LiteralPath $csvPath -NoTypeInformation -Encoding UTF8
-$markdown = New-MarkdownSummary -SessionReport $sessionReport -FileOutputs $fileOutputs
+$markdown = New-MarkdownSummary -SessionReport $report -FileOutputs $fileOutputs
 Set-Content -LiteralPath $markdownPath -Value $markdown -Encoding UTF8
 
+$passCount = ($backendSummaries | Measure-Object -Property PassCount -Sum).Sum
+$warningCount = ($backendSummaries | Measure-Object -Property WarningCount -Sum).Sum
+$failCount = ($backendSummaries | Measure-Object -Property FailCount -Sum).Sum
+if ($null -eq $passCount) { $passCount = 0 }
+if ($null -eq $warningCount) { $warningCount = 0 }
+if ($null -eq $failCount) { $failCount = 0 }
+
 Write-Host "Manual review-engine test run complete."
-Write-Host ("Files tested: {0}" -f $sessionReport.Summary.FilesTested)
-Write-Host ("Backend runs attempted: {0}" -f $sessionReport.Summary.BackendRunsAttempted)
-foreach ($backendSummary in $sessionReport.Summary.Backends)
+Write-Host ("Files tested: {0}" -f $report.Summary.FilesTested)
+Write-Host ("Backend runs attempted: {0}" -f $report.Summary.BackendRunsAttempted)
+Write-Host ("Pass / Warning / Fail: {0} / {1} / {2}" -f $passCount, $warningCount, $failCount)
+Write-Host ("Process exit code: {0}" -f $process.ExitCode)
+foreach ($backendSummary in $backendSummaries)
 {
     Write-Host ("{0}: pass={1}, warning={2}, fail={3}" -f $backendSummary.BackendName, $backendSummary.PassCount, $backendSummary.WarningCount, $backendSummary.FailCount)
 }
@@ -655,6 +447,22 @@ Write-Host ("Markdown: {0}" -f $markdownPath)
     JsonPath = $jsonPath
     CsvPath = $csvPath
     MarkdownPath = $markdownPath
-    FilesTested = $sessionReport.Summary.FilesTested
-    BackendRunsAttempted = $sessionReport.Summary.BackendRunsAttempted
+    FilesTested = $report.Summary.FilesTested
+    BackendRunsAttempted = $report.Summary.BackendRunsAttempted
+    PassCount = $passCount
+    WarningCount = $warningCount
+    FailCount = $failCount
+    ProcessExitCode = $process.ExitCode
 }
+
+if ($process.ExitCode -eq 1)
+{
+    exit 1
+}
+
+if ($failCount -gt 0)
+{
+    exit 2
+}
+
+exit 0

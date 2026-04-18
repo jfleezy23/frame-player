@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 
 [assembly: AssemblyTitle("Frame Player")]
 [assembly: AssemblyDescription("Compact frame-accurate video player with bundled FFmpeg runtime.")]
@@ -11,6 +12,7 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyCulture("")]
 [assembly: ComVisible(false)]
 [assembly: Guid("7fef1d37-6f2e-42fd-8870-89e60a707404")]
+[assembly: InternalsVisibleTo("FramePlayer.Core.Tests")]
 [assembly: AssemblyVersion("1.8.0.0")]
 [assembly: AssemblyFileVersion("1.8.0.0")]
 [assembly: AssemblyInformationalVersion("1.8.0")]
