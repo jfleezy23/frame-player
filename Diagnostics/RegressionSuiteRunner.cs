@@ -143,6 +143,33 @@ namespace FramePlayer.Diagnostics
             }
         }
 
+        private static string ResolveCompareCompanionPath(string primaryFilePath)
+        {
+            if (string.IsNullOrWhiteSpace(primaryFilePath) || !File.Exists(primaryFilePath))
+            {
+                return primaryFilePath ?? string.Empty;
+            }
+
+            if (!string.Equals(Path.GetExtension(primaryFilePath), ".avi", StringComparison.OrdinalIgnoreCase))
+            {
+                return primaryFilePath;
+            }
+
+            var directoryPath = Path.GetDirectoryName(primaryFilePath);
+            if (string.IsNullOrWhiteSpace(directoryPath) || !Directory.Exists(directoryPath))
+            {
+                return primaryFilePath;
+            }
+
+            var companionPath = Directory
+                .EnumerateFiles(directoryPath, "*.mp4", SearchOption.TopDirectoryOnly)
+                .Select(Path.GetFullPath)
+                .FirstOrDefault(candidatePath => !string.Equals(candidatePath, primaryFilePath, StringComparison.OrdinalIgnoreCase));
+            return string.IsNullOrWhiteSpace(companionPath)
+                ? primaryFilePath
+                : companionPath;
+        }
+
         private static bool IsSupportedVideoFile(string filePath)
         {
             var extension = Path.GetExtension(filePath);
@@ -2656,8 +2683,9 @@ namespace FramePlayer.Diagnostics
                             }
                         if (CanRunPaneLocalLoopCoverage(indexReady.IndexedFrameCount))
                         {
+                            var compareCompanionPath = ResolveCompareCompanionPath(filePath);
                             await controller.SetCompareModeAsync(true).ConfigureAwait(true);
-                            await controller.OpenAsync(filePath, ComparePaneId).ConfigureAwait(true);
+                            await controller.OpenAsync(compareCompanionPath, ComparePaneId).ConfigureAwait(true);
                         var primaryLoopInTarget = controller.GetSliderTargetFromRatio(0.20d);
                         var primaryLoopInSet = await controller.SetTimelineLoopMarkerAtAsync(
                             PrimaryPaneId,
@@ -2872,6 +2900,297 @@ namespace FramePlayer.Diagnostics
                             if (File.Exists(comparePaneExportOutputPath))
                             {
                                 File.Delete(comparePaneExportOutputPath);
+                            }
+                        }
+
+                        var compareLoopMergeOutputPath = Path.Combine(
+                            Path.GetTempPath(),
+                            "frameplayer-compare-side-by-side-loop-" + Guid.NewGuid().ToString("N") + ".mp4");
+                        try
+                        {
+                            var compareLoopMerge = await controller.ExportSideBySideCompareAsync(
+                                compareLoopMergeOutputPath,
+                                CompareSideBySideExportMode.Loop,
+                                CompareSideBySideExportAudioSource.Primary).ConfigureAwait(true);
+                            if (compareLoopMerge == null)
+                            {
+                                checks.Add(Warning(
+                                    filePath,
+                                    "ui",
+                                    "coverage",
+                                    "ui-compare-side-by-side-loop-skipped",
+                                    "Loop-mode side-by-side compare export was skipped because the compare export path was unavailable."));
+                            }
+                            else if (!compareLoopMerge.Succeeded)
+                            {
+                                checks.Add(Fail(
+                                    filePath,
+                                    "ui",
+                                    "lifecycle",
+                                    "ui-compare-side-by-side-loop",
+                                    "Loop-mode side-by-side compare export failed: " + compareLoopMerge.Message));
+                            }
+                            else
+                            {
+                                checks.Add(File.Exists(compareLoopMergeOutputPath)
+                                    ? Pass(
+                                        filePath,
+                                        "ui",
+                                        "lifecycle",
+                                        "ui-compare-side-by-side-loop",
+                                        "Loop-mode side-by-side compare export produced an MP4 output file.")
+                                    : Fail(
+                                        filePath,
+                                        "ui",
+                                        "lifecycle",
+                                        "ui-compare-side-by-side-loop",
+                                        "Loop-mode side-by-side compare export reported success but did not produce the expected output file."));
+
+                                var expectedDuration = compareLoopMerge.Plan != null
+                                    ? compareLoopMerge.Plan.OutputDuration
+                                    : TimeSpan.Zero;
+                                var actualDuration = compareLoopMerge.ProbedDuration ?? expectedDuration;
+                                var durationDelta = Math.Abs((actualDuration - expectedDuration).TotalMilliseconds);
+                                checks.Add(durationDelta <= 250d
+                                    ? Pass(
+                                        filePath,
+                                        "ui",
+                                        "correctness",
+                                        "ui-compare-side-by-side-loop-duration",
+                                        string.Format(
+                                            CultureInfo.InvariantCulture,
+                                            "Loop-mode side-by-side compare export duration matched the planned output within tolerance ({0:0.0} ms delta).",
+                                            durationDelta))
+                                    : Fail(
+                                        filePath,
+                                        "ui",
+                                        "correctness",
+                                        "ui-compare-side-by-side-loop-duration",
+                                        string.Format(
+                                            CultureInfo.InvariantCulture,
+                                            "Loop-mode side-by-side compare export duration drifted from the plan by {0:0.0} ms.",
+                                            durationDelta)));
+
+                                var dimensionsValid = compareLoopMerge.Plan != null &&
+                                                      compareLoopMerge.ProbedVideoWidth.HasValue &&
+                                                      compareLoopMerge.ProbedVideoHeight.HasValue &&
+                                                      compareLoopMerge.ProbedVideoWidth.Value >= compareLoopMerge.Plan.OutputWidth &&
+                                                      compareLoopMerge.ProbedVideoHeight.Value >= compareLoopMerge.Plan.OutputHeight;
+                                checks.Add(dimensionsValid
+                                    ? Pass(
+                                        filePath,
+                                        "ui",
+                                        "correctness",
+                                        "ui-compare-side-by-side-loop-dimensions",
+                                        string.Format(
+                                            CultureInfo.InvariantCulture,
+                                            "Loop-mode side-by-side compare export preserved the planned full-resolution canvas ({0}x{1}).",
+                                            compareLoopMerge.ProbedVideoWidth,
+                                            compareLoopMerge.ProbedVideoHeight))
+                                    : Fail(
+                                        filePath,
+                                        "ui",
+                                        "correctness",
+                                        "ui-compare-side-by-side-loop-dimensions",
+                                        string.Format(
+                                            CultureInfo.InvariantCulture,
+                                            "Loop-mode side-by-side compare export dimensions were smaller than expected. Planned={0}x{1}; probed={2}x{3}.",
+                                            compareLoopMerge.Plan != null ? compareLoopMerge.Plan.OutputWidth : 0,
+                                            compareLoopMerge.Plan != null ? compareLoopMerge.Plan.OutputHeight : 0,
+                                            compareLoopMerge.ProbedVideoWidth,
+                                            compareLoopMerge.ProbedVideoHeight)));
+
+                                var expectedAudio = compareLoopMerge.Plan != null && compareLoopMerge.Plan.SelectedAudioHasStream;
+                                var actualAudio = compareLoopMerge.ProbedHasAudioStream.GetValueOrDefault(false);
+                                checks.Add(actualAudio == expectedAudio
+                                    ? Pass(
+                                        filePath,
+                                        "ui",
+                                        "correctness",
+                                        "ui-compare-side-by-side-loop-audio-selection",
+                                        expectedAudio
+                                            ? "Loop-mode side-by-side compare export preserved the selected primary-pane audio track."
+                                            : "Loop-mode side-by-side compare export correctly produced a silent output when the selected primary pane had no audio.")
+                                    : Fail(
+                                        filePath,
+                                        "ui",
+                                        "correctness",
+                                        "ui-compare-side-by-side-loop-audio-selection",
+                                        string.Format(
+                                            CultureInfo.InvariantCulture,
+                                            "Loop-mode side-by-side compare export audio presence did not match the selected primary-pane audio source. Expected audio={0}; actual audio={1}.",
+                                            expectedAudio,
+                                            actualAudio)));
+
+                                if (!string.Equals(compareCompanionPath, filePath, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    checks.Add(string.Equals(Path.GetExtension(filePath), ".avi", StringComparison.OrdinalIgnoreCase) &&
+                                               string.Equals(Path.GetExtension(compareCompanionPath), ".mp4", StringComparison.OrdinalIgnoreCase)
+                                        ? Pass(
+                                            filePath,
+                                            "ui",
+                                            "coverage",
+                                            "ui-compare-side-by-side-mixed-pair",
+                                            "Side-by-side compare export covered an AVI primary plus MP4 compare pair.")
+                                        : Pass(
+                                            filePath,
+                                            "ui",
+                                            "coverage",
+                                            "ui-compare-side-by-side-secondary-pair",
+                                            "Side-by-side compare export covered a mixed compare pair."));
+                                }
+                            }
+                        }
+                        finally
+                        {
+                            if (File.Exists(compareLoopMergeOutputPath))
+                            {
+                                File.Delete(compareLoopMergeOutputPath);
+                            }
+                        }
+
+                        var compareWholeMergeOutputPath = Path.Combine(
+                            Path.GetTempPath(),
+                            "frameplayer-compare-side-by-side-whole-" + Guid.NewGuid().ToString("N") + ".mp4");
+                        try
+                        {
+                            var compareWholeMerge = await controller.ExportSideBySideCompareAsync(
+                                compareWholeMergeOutputPath,
+                                CompareSideBySideExportMode.WholeVideo,
+                                CompareSideBySideExportAudioSource.Compare).ConfigureAwait(true);
+                            if (compareWholeMerge == null)
+                            {
+                                checks.Add(Warning(
+                                    filePath,
+                                    "ui",
+                                    "coverage",
+                                    "ui-compare-side-by-side-whole-skipped",
+                                    "Whole-video side-by-side compare export was skipped because the compare export path was unavailable."));
+                            }
+                            else if (!compareWholeMerge.Succeeded)
+                            {
+                                checks.Add(Fail(
+                                    filePath,
+                                    "ui",
+                                    "lifecycle",
+                                    "ui-compare-side-by-side-whole",
+                                    "Whole-video side-by-side compare export failed: " + compareWholeMerge.Message));
+                            }
+                            else
+                            {
+                                checks.Add(File.Exists(compareWholeMergeOutputPath)
+                                    ? Pass(
+                                        filePath,
+                                        "ui",
+                                        "lifecycle",
+                                        "ui-compare-side-by-side-whole",
+                                        "Whole-video side-by-side compare export produced an MP4 output file.")
+                                    : Fail(
+                                        filePath,
+                                        "ui",
+                                        "lifecycle",
+                                        "ui-compare-side-by-side-whole",
+                                        "Whole-video side-by-side compare export reported success but did not produce the expected output file."));
+
+                                var expectedDuration = compareWholeMerge.Plan != null
+                                    ? compareWholeMerge.Plan.OutputDuration
+                                    : TimeSpan.Zero;
+                                var actualDuration = compareWholeMerge.ProbedDuration ?? expectedDuration;
+                                var durationDelta = Math.Abs((actualDuration - expectedDuration).TotalMilliseconds);
+                                checks.Add(durationDelta <= 250d
+                                    ? Pass(
+                                        filePath,
+                                        "ui",
+                                        "correctness",
+                                        "ui-compare-side-by-side-whole-duration",
+                                        string.Format(
+                                            CultureInfo.InvariantCulture,
+                                            "Whole-video side-by-side compare export duration matched the planned output within tolerance ({0:0.0} ms delta).",
+                                            durationDelta))
+                                    : Fail(
+                                        filePath,
+                                        "ui",
+                                        "correctness",
+                                        "ui-compare-side-by-side-whole-duration",
+                                        string.Format(
+                                            CultureInfo.InvariantCulture,
+                                            "Whole-video side-by-side compare export duration drifted from the plan by {0:0.0} ms.",
+                                            durationDelta)));
+
+                                var alignmentPreserved = compareWholeMerge.Plan != null &&
+                                                         (compareWholeMerge.Plan.PrimaryLeadingPad > TimeSpan.Zero ||
+                                                          compareWholeMerge.Plan.CompareLeadingPad > TimeSpan.Zero);
+                                checks.Add(alignmentPreserved
+                                    ? Pass(
+                                        filePath,
+                                        "ui",
+                                        "correctness",
+                                        "ui-compare-side-by-side-whole-alignment",
+                                        "Whole-video side-by-side compare export preserved the current compare alignment with a non-zero leading pad.")
+                                    : Fail(
+                                        filePath,
+                                        "ui",
+                                        "correctness",
+                                        "ui-compare-side-by-side-whole-alignment",
+                                        "Whole-video side-by-side compare export did not preserve the current compare alignment as a leading pad."));
+
+                                var dimensionsValid = compareWholeMerge.Plan != null &&
+                                                      compareWholeMerge.ProbedVideoWidth.HasValue &&
+                                                      compareWholeMerge.ProbedVideoHeight.HasValue &&
+                                                      compareWholeMerge.ProbedVideoWidth.Value >= compareWholeMerge.Plan.OutputWidth &&
+                                                      compareWholeMerge.ProbedVideoHeight.Value >= compareWholeMerge.Plan.OutputHeight;
+                                checks.Add(dimensionsValid
+                                    ? Pass(
+                                        filePath,
+                                        "ui",
+                                        "correctness",
+                                        "ui-compare-side-by-side-whole-dimensions",
+                                        string.Format(
+                                            CultureInfo.InvariantCulture,
+                                            "Whole-video side-by-side compare export preserved the planned full-resolution canvas ({0}x{1}).",
+                                            compareWholeMerge.ProbedVideoWidth,
+                                            compareWholeMerge.ProbedVideoHeight))
+                                    : Fail(
+                                        filePath,
+                                        "ui",
+                                        "correctness",
+                                        "ui-compare-side-by-side-whole-dimensions",
+                                        string.Format(
+                                            CultureInfo.InvariantCulture,
+                                            "Whole-video side-by-side compare export dimensions were smaller than expected. Planned={0}x{1}; probed={2}x{3}.",
+                                            compareWholeMerge.Plan != null ? compareWholeMerge.Plan.OutputWidth : 0,
+                                            compareWholeMerge.Plan != null ? compareWholeMerge.Plan.OutputHeight : 0,
+                                            compareWholeMerge.ProbedVideoWidth,
+                                            compareWholeMerge.ProbedVideoHeight)));
+
+                                var expectedAudio = compareWholeMerge.Plan != null && compareWholeMerge.Plan.SelectedAudioHasStream;
+                                var actualAudio = compareWholeMerge.ProbedHasAudioStream.GetValueOrDefault(false);
+                                checks.Add(actualAudio == expectedAudio
+                                    ? Pass(
+                                        filePath,
+                                        "ui",
+                                        "correctness",
+                                        "ui-compare-side-by-side-whole-audio-selection",
+                                        expectedAudio
+                                            ? "Whole-video side-by-side compare export preserved the selected compare-pane audio track."
+                                            : "Whole-video side-by-side compare export correctly produced a silent output when the selected compare pane had no audio.")
+                                    : Fail(
+                                        filePath,
+                                        "ui",
+                                        "correctness",
+                                        "ui-compare-side-by-side-whole-audio-selection",
+                                        string.Format(
+                                            CultureInfo.InvariantCulture,
+                                            "Whole-video side-by-side compare export audio presence did not match the selected compare-pane audio source. Expected audio={0}; actual audio={1}.",
+                                            expectedAudio,
+                                            actualAudio)));
+                            }
+                        }
+                        finally
+                        {
+                            if (File.Exists(compareWholeMergeOutputPath))
+                            {
+                                File.Delete(compareWholeMergeOutputPath);
                             }
                         }
 
@@ -3187,6 +3506,7 @@ namespace FramePlayer.Diagnostics
                 private readonly MethodInfo _setTimelineLoopMarkerAtAsyncMethod;
                 private readonly MethodInfo _clearLoopPointsMethod;
                 private readonly MethodInfo _exportLoopClipAsyncMethod;
+                private readonly MethodInfo _exportSideBySideCompareAsyncMethod;
                 private readonly MethodInfo _setSharedLoopCommandContextMethod;
                 private readonly MethodInfo _setPaneLoopCommandContextMethod;
                 private readonly FieldInfo _videoReviewEngineField;
@@ -3208,6 +3528,12 @@ namespace FramePlayer.Diagnostics
                     _setTimelineLoopMarkerAtAsyncMethod = RequireMethod(windowType, "SetTimelineLoopMarkerAtAsync", typeof(string), typeof(LoopPlaybackMarkerEndpoint), typeof(TimeSpan));
                     _clearLoopPointsMethod = RequireMethod(windowType, "ClearLoopPoints");
                     _exportLoopClipAsyncMethod = RequireMethod(windowType, "ExportLoopClipAsync", typeof(string), typeof(string));
+                    _exportSideBySideCompareAsyncMethod = RequireMethod(
+                        windowType,
+                        "ExportSideBySideCompareAsync",
+                        typeof(string),
+                        typeof(CompareSideBySideExportMode),
+                        typeof(CompareSideBySideExportAudioSource));
                     _setSharedLoopCommandContextMethod = RequireMethod(windowType, "SetSharedLoopCommandContext");
                     _setPaneLoopCommandContextMethod = RequireMethod(windowType, "SetPaneLoopCommandContext", typeof(string));
                     _videoReviewEngineField = RequireField(windowType, "_videoReviewEngine");
@@ -3310,6 +3636,19 @@ namespace FramePlayer.Diagnostics
                 public async Task<ClipExportResult> ExportLoopClipAsync(string outputPath, string paneId = null)
                 {
                     return await InvokeTaskWithResultAsync<ClipExportResult>(_exportLoopClipAsyncMethod, outputPath, paneId).ConfigureAwait(true);
+                }
+
+                public async Task<CompareSideBySideExportResult> ExportSideBySideCompareAsync(
+                    string outputPath,
+                    CompareSideBySideExportMode mode,
+                    CompareSideBySideExportAudioSource audioSource)
+                {
+                    return await InvokeTaskWithResultAsync<CompareSideBySideExportResult>(
+                            _exportSideBySideCompareAsyncMethod,
+                            outputPath,
+                            mode,
+                            audioSource)
+                        .ConfigureAwait(true);
                 }
 
                 public async Task SetCompareModeAsync(bool isEnabled)

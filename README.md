@@ -21,6 +21,7 @@ Frame Player is a frames-first WPF review tool built on a custom FFmpeg engine w
 - Supports whole-media loop playback and exact A/B loop playback on the main transport using `[` and `]`
 - In compare mode, the pane-local sliders can carry independent pane-local loop boxes for focused review
 - Saves reviewed shared-loop and pane-local loop ranges as MP4 clip exports through a bundled FFmpeg CLI toolset
+- Exports two-pane compare sessions as full-resolution side-by-side MP4 output in loop or whole-video mode, with audio selectable from either pane
 - Shows a labeled pixel coordinate readout for the hovered pane
 - Includes a structured `Video Info` inspector for FFmpeg-reported pane media metadata, including right-click access on video panes and compare-friendly modeless windows
 - Shows playback state, FPS, frame-step size, duration, frame number, and a frame-derived timecode readout
