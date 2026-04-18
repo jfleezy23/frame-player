@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace FramePlayer.Core.Models
 {
@@ -7,6 +8,10 @@ namespace FramePlayer.Core.Models
         public static VideoMediaInfo Empty { get; } =
             new VideoMediaInfo(string.Empty, TimeSpan.Zero, TimeSpan.Zero, 0d, 0, 0, string.Empty, -1, 0, 0, 0, 0);
 
+        [SuppressMessage(
+            "Major Code Smell",
+            "S107:Methods should not have too many parameters",
+            Justification = "Video media info is an immutable FFmpeg metadata snapshot; splitting it into builder layers would widen churn across decode and inspection call sites without a frame-first payoff.")]
         public VideoMediaInfo(
             string filePath,
             TimeSpan duration,

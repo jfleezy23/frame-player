@@ -130,6 +130,7 @@ namespace FramePlayer
             }
             catch
             {
+                // Best-effort CLI startup logging must never block app startup or headless test entrypoints.
             }
         }
 
