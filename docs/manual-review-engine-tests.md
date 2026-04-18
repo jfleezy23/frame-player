@@ -93,11 +93,11 @@ The script writes three files into the `-Output` directory:
 - `review-engine-manual-tests.json`
   Full structured report with per-file plan details, custom-engine outcomes, notes, warnings, and metrics.
 - `review-engine-manual-tests.csv`
-  One row per file for sorting, filtering, and spreadsheet review.
+  Granular rows for each operation in the standard sequence plus separate advisory, warning, and failure rows that were not already represented by an operation result.
 - `review-engine-manual-tests-summary.md`
-  Human-readable summary with custom-engine totals, per-file highlights, and warning/failure details.
+  Human-readable summary with scenario totals, operation totals, a per-file operation matrix, and explicit warning/failure/advisory sections.
 
-The script also prints a short console summary with pass/warning/fail counts and the output paths.
+The script also prints a short console summary with result-row totals, operation-row totals, pass/warning/fail/advisory counts, and the output paths.
 
 ## Supplemental UI Regression Checks
 
@@ -118,6 +118,8 @@ The scripted manual runner does not cover the new shell-only MVP features below.
   The sequence completed, but the runtime result or the exercised coverage was materially reduced.
 - `fail`
   One or more required operations did not complete successfully.
+- `advisory`
+  Planning or preflight context that should stay visible in the report but should not be mistaken for a runtime failure.
 
 Common warning cases:
 
@@ -128,7 +130,7 @@ Common warning cases:
 - Seek-to-time still lacked absolute frame identity in a case where the runner should have been able to recover it.
 - A very short clip caused step operations to hit a boundary during the reduced test path.
 
-Planning-only advisories remain visible under `testPlan.warnings` in the JSON report even when the backend classification is still `pass`.
+Planning-only advisories remain visible in the JSON report and are also emitted as explicit `plan-advisory` rows in the CSV and markdown summary even when the backend scenario classification remains `pass`.
 
 ## Known Limitations
 
