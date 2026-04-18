@@ -39,6 +39,7 @@ Green validation captured for this release:
 - Full packaged regression corpus:
   - command: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Run-RegressionSuite.ps1 -CorpusPath "C:\Projects\Video Test Files" -Recurse -MaxCorpusFiles 0 -Configuration Release -Output ".\artifacts\regression-suite-full"`
   - files tested: `18`
+  - note: the run includes the repo-carried `dist\Frame Player\sample-test.mp4` plus the `17` supported files from the external local corpus
   - checks run: `1358`
   - pass / warning / fail: `1329 / 29 / 0`
 

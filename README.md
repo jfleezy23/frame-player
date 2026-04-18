@@ -148,6 +148,7 @@ GitHub Actions Windows CI is compile validation on a clean runner. The workflow 
 
 - Releases: [github.com/jfleezy23/frame-player/releases](https://github.com/jfleezy23/frame-player/releases)
 - Current release note: [docs/release-v1.8.1-maintenance.md](docs/release-v1.8.1-maintenance.md)
+- Release checklist: [docs/release-checklist.md](docs/release-checklist.md)
 - Release verification notes: [TESTING_NOTES.md](TESTING_NOTES.md)
 - Security policy: [SECURITY.md](SECURITY.md)
 
