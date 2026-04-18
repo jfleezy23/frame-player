@@ -41,6 +41,8 @@ namespace FramePlayer
         private const string UnknownDisplayLabel = "Unknown";
         private const string AbsoluteFrameIdentityLabel = "absolute";
         private const string SegmentLocalFrameIdentityLabel = "segment-local";
+        private const string SupportedVideoExtensionsDescription = "AVI, MOV, M4V, MP4, MKV, WMV";
+        private const string OpenVideoFileFilter = "Supported Video Files|*.avi;*.mov;*.m4v;*.mp4;*.mkv;*.wmv|AVI Files|*.avi|MOV Files|*.mov|M4V Files|*.m4v|MP4 Files|*.mp4|MKV Files|*.mkv|WMV Files|*.wmv|All Files|*.*";
         private const string LoopOffStatusLabel = "Loop: off";
         private const string DefaultCompareAlignmentStatus = "Last align: none";
         private const double CompareModePreferredMinWindowWidth = 1180d;
@@ -438,6 +440,7 @@ namespace FramePlayer
             }
             catch (InvalidOperationException)
             {
+                // DragMove can race the native window state during caption interactions; ignoring keeps the shell gesture best-effort.
             }
         }
 
@@ -518,20 +521,12 @@ namespace FramePlayer
             }
             catch (DllNotFoundException)
             {
+                // Rounded corner hints are optional and unavailable on down-level Windows builds.
             }
             catch (EntryPointNotFoundException)
             {
+                // Rounded corner hints are optional and unavailable on Windows builds that expose older DWM entry points.
             }
-        }
-
-        private static string GetSupportedVideoExtensionsDescription()
-        {
-            return "AVI, MOV, M4V, MP4, MKV, WMV";
-        }
-
-        private static string GetOpenFileFilter()
-        {
-            return "Supported Video Files|*.avi;*.mov;*.m4v;*.mp4;*.mkv;*.wmv|AVI Files|*.avi|MOV Files|*.mov|M4V Files|*.m4v|MP4 Files|*.mp4|MKV Files|*.mkv|WMV Files|*.wmv|All Files|*.*";
         }
 
         private bool IsCompareModeEnabled
@@ -2115,7 +2110,7 @@ namespace FramePlayer
             {
                 MessageBox.Show(
                     this,
-                    "Drop a supported video file (" + GetSupportedVideoExtensionsDescription() + ").",
+                    "Drop a supported video file (" + SupportedVideoExtensionsDescription + ").",
                     "Unsupported File",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
@@ -2403,7 +2398,7 @@ namespace FramePlayer
                 LogWarning("Open requested for an unsupported file type: " + GetSafeFileDisplay(filePath));
                 MessageBox.Show(
                     this,
-                    "Supported file types are " + GetSupportedVideoExtensionsDescription() + ".",
+                    "Supported file types are " + SupportedVideoExtensionsDescription + ".",
                     "Unsupported File",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
@@ -2524,7 +2519,7 @@ namespace FramePlayer
             var dialog = new OpenFileDialog
             {
                 Title = "Open Video",
-                Filter = GetOpenFileFilter()
+                Filter = OpenVideoFileFilter
             };
 
             if (dialog.ShowDialog(this) == true)
