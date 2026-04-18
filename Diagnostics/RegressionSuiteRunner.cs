@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using System.IO.Compression;
@@ -5201,6 +5202,10 @@ namespace FramePlayer.Diagnostics
 
     public sealed class RegressionPackagingReport
     {
+        [SuppressMessage(
+            "Major Code Smell",
+            "S107:Methods should not have too many parameters",
+            Justification = "Regression packaging reports are immutable diagnostics snapshots with explicit scalar fields for stable serialization and review output.")]
         public RegressionPackagingReport(
             string outputDirectory,
             string artifactPath,
@@ -5240,6 +5245,10 @@ namespace FramePlayer.Diagnostics
 
     public sealed class RegressionFileReport
     {
+        [SuppressMessage(
+            "Major Code Smell",
+            "S107:Methods should not have too many parameters",
+            Justification = "Regression file reports are immutable diagnostics transport models that keep scalar fields explicit for reporting and corpus review.")]
         public RegressionFileReport(
             string filePath,
             string fileName,
@@ -5313,6 +5322,10 @@ namespace FramePlayer.Diagnostics
                 string.Empty,
                 0d);
 
+        [SuppressMessage(
+            "Major Code Smell",
+            "S107:Methods should not have too many parameters",
+            Justification = "Regression decode profiles are immutable diagnostics snapshots that intentionally mirror explicit decode counters and timings without extra wrapper layers.")]
         public RegressionDecodeProfile(
             string activeDecodeBackend,
             string actualBackendUsed,

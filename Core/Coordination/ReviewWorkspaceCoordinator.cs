@@ -195,7 +195,11 @@ namespace FramePlayer.Core.Coordination
                     _focusedPaneId = normalizedPaneId;
                     break;
                 case WorkspacePaneSelectionMode.ActiveAndFocused:
-                    goto default;
+                    changed = !string.Equals(_activePaneId, normalizedPaneId, StringComparison.Ordinal) ||
+                              !string.Equals(_focusedPaneId, normalizedPaneId, StringComparison.Ordinal);
+                    _activePaneId = normalizedPaneId;
+                    _focusedPaneId = normalizedPaneId;
+                    break;
                 default:
                     changed = !string.Equals(_activePaneId, normalizedPaneId, StringComparison.Ordinal) ||
                               !string.Equals(_focusedPaneId, normalizedPaneId, StringComparison.Ordinal);
