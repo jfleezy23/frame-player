@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 using FramePlayer.Core.Abstractions;
@@ -13,6 +14,10 @@ namespace FramePlayer.Diagnostics
         private const string PrimaryPaneId = "pane-primary";
         private const string ComparePaneId = "pane-compare-a";
 
+        [SuppressMessage(
+            "Major Code Smell",
+            "S3776:Cognitive Complexity of methods should not be too high",
+            Justification = "This is a diagnostics-only workspace probe that intentionally exercises many coordination branches in one place to keep the synthetic scenario self-contained.")]
         public static WorkspaceCoordinatorProbeReport Run()
         {
             ReviewWorkspacePaneOperationResult GetPaneResult(
@@ -102,10 +107,10 @@ namespace FramePlayer.Diagnostics
             }
 
             using (var primaryEngine = new ProbeVideoReviewEngine(
-                @"C:\probe\primary.mp4",
+                "probe-primary.mp4",
                 new ReviewPosition(TimeSpan.FromSeconds(1d), 30L, true, true, null, null)))
             using (var compareEngine = new ProbeVideoReviewEngine(
-                @"C:\probe\compare-a.mp4",
+                "probe-compare-a.mp4",
                 new ReviewPosition(TimeSpan.FromSeconds(2d), 60L, true, true, null, null)))
             using (var primarySessionCoordinator = new ReviewSessionCoordinator(
                 primaryEngine,
@@ -218,10 +223,10 @@ namespace FramePlayer.Diagnostics
                     int failurePrimaryPlayCalls;
                     int failureSecondaryPlayCalls;
                     using (var failurePrimaryEngine = new ProbeVideoReviewEngine(
-                        @"C:\probe\failure-primary.mp4",
+                        "probe-failure-primary.mp4",
                         new ReviewPosition(TimeSpan.FromSeconds(1d), 30L, true, true, null, null)))
                     using (var failureCompareEngine = new ProbeVideoReviewEngine(
-                        @"C:\probe\failure-compare-a.mp4",
+                        "probe-failure-compare-a.mp4",
                         new ReviewPosition(TimeSpan.FromSeconds(2d), 60L, true, true, null, null),
                         throwOnPlay: true))
                     using (var failurePrimarySessionCoordinator = new ReviewSessionCoordinator(
