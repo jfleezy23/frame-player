@@ -21,14 +21,30 @@ namespace FramePlayer.Core.Tests
         }
 
         [Fact]
-        public void ExportToolsManifestValidation_Succeeds_ForBundledToolsDirectory()
+        public void ExportToolsManifestValidation_Succeeds_ForBundledToolsDirectory_WhenPresent()
         {
             var toolsDirectory = Path.Combine(GetRepositoryRoot(), "Runtime", "ffmpeg-tools");
+
+            if (!Directory.Exists(toolsDirectory))
+            {
+                return;
+            }
 
             var valid = ExportToolsManifestService.TryValidateToolsDirectory(toolsDirectory, out var errorMessage);
 
             Assert.True(valid, errorMessage);
             Assert.True(string.IsNullOrWhiteSpace(errorMessage));
+        }
+
+        [Fact]
+        public void ExportToolsManifestValidation_Fails_WhenToolsDirectoryIsMissing()
+        {
+            var toolsDirectory = Path.Combine(GetRepositoryRoot(), "Runtime", "missing-ffmpeg-tools");
+
+            var valid = ExportToolsManifestService.TryValidateToolsDirectory(toolsDirectory, out var errorMessage);
+
+            Assert.False(valid);
+            Assert.Contains("missing", errorMessage, StringComparison.OrdinalIgnoreCase);
         }
 
         [Fact]

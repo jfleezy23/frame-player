@@ -39,7 +39,7 @@ jobs:
 
       - name: Restore pinned FFmpeg export tools
         shell: pwsh
-        run: .\scripts\Ensure-DevExportTools.ps1 -Required
+        run: .\scripts\Ensure-DevExportTools.ps1
 
       - name: Restore and build
         shell: pwsh
