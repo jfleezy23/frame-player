@@ -17,25 +17,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-function Resolve-MSBuildPath {
-    $vswherePath = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
-    if (Test-Path $vswherePath) {
-        $resolvedPath = & $vswherePath -latest -products * -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" |
-            Select-Object -First 1
-
-        if (-not [string]::IsNullOrWhiteSpace($resolvedPath) -and (Test-Path $resolvedPath)) {
-            return $resolvedPath
-        }
-    }
-
-    $fallbackPath = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\amd64\MSBuild.exe"
-    if (Test-Path $fallbackPath) {
-        return $fallbackPath
-    }
-
-    throw "MSBuild was not found. Install Visual Studio Build Tools 2022 with .NET desktop build tools."
-}
-
 function Get-ToolPath {
     param(
         [Parameter(Mandatory = $true)]
@@ -113,7 +94,6 @@ $packageRoot = Join-Path $buildRoot "PackageRoot"
 $assetsDir = Join-Path $packageRoot "Assets"
 $certificateDir = Join-Path $buildRoot "cert"
 $iconPath = Join-Path $repoRoot "Assets\FramePlayer.ico"
-$msbuildPath = Resolve-MSBuildPath
 $makeappxPath = Get-ToolPath -ToolName "makeappx.exe"
 $makepriPath = Get-ToolPath -ToolName "makepri.exe"
 $signtoolPath = Get-ToolPath -ToolName "signtool.exe"
@@ -122,7 +102,10 @@ $signtoolPath = Get-ToolPath -ToolName "signtool.exe"
 if (Test-Path -LiteralPath $ensureExportToolsScript) {
     & $ensureExportToolsScript | Out-Host
 }
-& $msbuildPath $projectPath /t:Restore,Build /p:Configuration=$Configuration /p:Platform=$Platform | Out-Host
+& dotnet build $projectPath -c $Configuration -p:Platform=$Platform | Out-Host
+if ($LASTEXITCODE -ne 0) {
+    throw "dotnet build failed while producing the MSIX package."
+}
 
 if (-not (Test-Path $releaseDir)) {
     throw "Release output directory '$releaseDir' was not produced."
