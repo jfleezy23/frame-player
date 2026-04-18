@@ -26,6 +26,11 @@ namespace FramePlayer.Diagnostics
     {
         private const string PrimaryPaneId = "pane-primary";
         private const string ComparePaneId = "pane-compare-a";
+        private const string EngineScope = "engine";
+        private const string CorrectnessCategory = "correctness";
+        private const string LifecycleCategory = "lifecycle";
+        private const string ForwardOnlyStepProofCheckName = "forward-only-step-proof";
+        private const string NoneText = "(none)";
         private static readonly StringComparer FilePathComparer = StringComparer.OrdinalIgnoreCase;
         private static readonly HashSet<string> SupportedRegressionExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -262,8 +267,8 @@ namespace FramePlayer.Diagnostics
                 {
                     checks.Add(Fail(
                         filePath,
-                        "engine",
-                        "correctness",
+                        EngineScope,
+                        CorrectnessCategory,
                         "open-first-frame",
                         "Opening the file failed: " + ex.Message));
 
@@ -287,11 +292,11 @@ namespace FramePlayer.Diagnostics
                     engine.GlobalFrameIndexStatus,
                     string.IsNullOrWhiteSpace(engine.ActiveDecodeBackend) ? "(unknown)" : engine.ActiveDecodeBackend,
                     engine.IsGpuActive ? "yes" : "no",
-                    string.IsNullOrWhiteSpace(engine.GpuCapabilityStatus) ? "(none)" : engine.GpuCapabilityStatus,
-                    string.IsNullOrWhiteSpace(engine.GpuFallbackReason) ? "(none)" : engine.GpuFallbackReason,
+                    string.IsNullOrWhiteSpace(engine.GpuCapabilityStatus) ? NoneText : engine.GpuCapabilityStatus,
+                    string.IsNullOrWhiteSpace(engine.GpuFallbackReason) ? NoneText : engine.GpuFallbackReason,
                     engine.OperationalQueueDepth,
-                    string.IsNullOrWhiteSpace(engine.BudgetBand) ? "(none)" : engine.BudgetBand,
-                    string.IsNullOrWhiteSpace(engine.HostResourceClass) ? "(none)" : engine.HostResourceClass,
+                    string.IsNullOrWhiteSpace(engine.BudgetBand) ? NoneText : engine.BudgetBand,
+                    string.IsNullOrWhiteSpace(engine.HostResourceClass) ? NoneText : engine.HostResourceClass,
                     engine.SessionDecodedFrameCacheBudgetBytes / 1048576d,
                     engine.DecodedFrameCacheBudgetBytes / 1048576d,
                     engine.LastHardwareFrameTransferMilliseconds,
@@ -304,14 +309,14 @@ namespace FramePlayer.Diagnostics
                     engine.ApproximateCachedFrameBytes / 1048576d,
                     engine.DecodedFrameCacheBudgetBytes / 1048576d,
                     engine.SessionDecodedFrameCacheBudgetBytes / 1048576d,
-                    string.IsNullOrWhiteSpace(engine.LastCacheRefillReason) ? "(none)" : engine.LastCacheRefillReason,
+                    string.IsNullOrWhiteSpace(engine.LastCacheRefillReason) ? NoneText : engine.LastCacheRefillReason,
                     engine.LastCacheRefillMilliseconds,
                     engine.LastCacheRefillStartingForwardCount,
                     engine.LastCacheRefillCompletedForwardCount));
 
                 checks.Add(EvaluateExpectedFrame(
                     filePath,
-                    "engine",
+                    EngineScope,
                     "open-first-frame",
                     0L,
                     initialPosition,
@@ -338,7 +343,7 @@ namespace FramePlayer.Diagnostics
                             CultureInfo.InvariantCulture,
                             "Pre-index seek cache: landed in {0:0.###} ms, refill {1} {2:0.###} ms ({3}), cache {4} back / {5} ahead, approx {6:0.0} MiB of {7:0.0} MiB budget. Backend {8}, GPU {9}, status {10}.",
                             preIndexSeek.Elapsed.TotalMilliseconds,
-                            string.IsNullOrWhiteSpace(engine.LastCacheRefillReason) ? "(none)" : engine.LastCacheRefillReason,
+                            string.IsNullOrWhiteSpace(engine.LastCacheRefillReason) ? NoneText : engine.LastCacheRefillReason,
                             engine.LastCacheRefillMilliseconds,
                             string.IsNullOrWhiteSpace(engine.LastCacheRefillMode) ? "none" : engine.LastCacheRefillMode,
                             engine.PreviousCachedFrameCount,
@@ -347,13 +352,13 @@ namespace FramePlayer.Diagnostics
                             engine.DecodedFrameCacheBudgetBytes / 1048576d,
                             string.IsNullOrWhiteSpace(engine.ActiveDecodeBackend) ? "(unknown)" : engine.ActiveDecodeBackend,
                             engine.IsGpuActive ? "active" : "inactive",
-                            string.IsNullOrWhiteSpace(engine.GpuCapabilityStatus) ? "(none)" : engine.GpuCapabilityStatus));
+                            string.IsNullOrWhiteSpace(engine.GpuCapabilityStatus) ? NoneText : engine.GpuCapabilityStatus));
                         if (preIndexPosition.IsFrameIndexAbsolute)
                         {
                             checks.Add(Pass(
                                 filePath,
-                                "engine",
-                                "correctness",
+                                EngineScope,
+                                CorrectnessCategory,
                                 "seek-to-time-before-index-ready",
                                 string.Format(
                                     CultureInfo.InvariantCulture,
@@ -371,8 +376,8 @@ namespace FramePlayer.Diagnostics
                         {
                             checks.Add(Warning(
                                 filePath,
-                                "engine",
-                                "correctness",
+                                EngineScope,
+                                CorrectnessCategory,
                                 "seek-to-time-before-index-ready",
                                 string.Format(
                                     CultureInfo.InvariantCulture,
@@ -391,8 +396,8 @@ namespace FramePlayer.Diagnostics
                     {
                         checks.Add(Fail(
                             filePath,
-                            "engine",
-                            "correctness",
+                            EngineScope,
+                            CorrectnessCategory,
                             "seek-to-time-before-index-ready",
                             "Pre-index seek-to-time failed: " + ex.Message));
                     }
@@ -404,8 +409,8 @@ namespace FramePlayer.Diagnostics
                 {
                     checks.Add(Pass(
                         filePath,
-                        "engine",
-                        "lifecycle",
+                        EngineScope,
+                        LifecycleCategory,
                         "background-index-ready",
                         string.Format(
                             CultureInfo.InvariantCulture,
@@ -419,8 +424,8 @@ namespace FramePlayer.Diagnostics
                 {
                     checks.Add(Warning(
                         filePath,
-                        "engine",
-                        "lifecycle",
+                        EngineScope,
+                        LifecycleCategory,
                         "background-index-ready",
                         string.Format(
                             CultureInfo.InvariantCulture,
@@ -464,8 +469,8 @@ namespace FramePlayer.Diagnostics
                     {
                         checks.Add(Warning(
                             filePath,
-                            "engine",
-                            "correctness",
+                            EngineScope,
+                            CorrectnessCategory,
                             "repeated-step-window",
                             "The indexed midpoint did not leave enough headroom for a repeated stepping window."));
                     }
@@ -474,8 +479,8 @@ namespace FramePlayer.Diagnostics
                 {
                     checks.Add(Warning(
                         filePath,
-                        "engine",
-                        "correctness",
+                        EngineScope,
+                        CorrectnessCategory,
                         "midpoint-frame-seek",
                         "The global index never became available, so exact midpoint frame-seek checks were skipped."));
                 }
@@ -501,21 +506,21 @@ namespace FramePlayer.Diagnostics
                     checks.Add(playbackAdvanced
                         ? Pass(
                             filePath,
-                            "engine",
-                            "lifecycle",
+                            EngineScope,
+                            LifecycleCategory,
                             "playback-pause-progress",
                             string.Format(
                                 CultureInfo.InvariantCulture,
                                 "Playback advanced from frame {0} to frame {1}, then paused cleanly.",
                                 playbackStartFrame.Value,
-                                playbackPosition.FrameIndex.HasValue ? playbackPosition.FrameIndex.Value.ToString(CultureInfo.InvariantCulture) : "(none)"),
+                                playbackPosition.FrameIndex.HasValue ? playbackPosition.FrameIndex.Value.ToString(CultureInfo.InvariantCulture) : NoneText),
                             actualFrameIndex: playbackPosition.FrameIndex,
                             actualTime: playbackPosition.PresentationTime,
                             elapsedMilliseconds: metrics.PlaybackMilliseconds)
                         : Fail(
                             filePath,
-                            "engine",
-                            "lifecycle",
+                            EngineScope,
+                            LifecycleCategory,
                             "playback-pause-progress",
                             string.Format(
                                 CultureInfo.InvariantCulture,
@@ -534,8 +539,8 @@ namespace FramePlayer.Diagnostics
                         checks.Add(audioHealthy
                             ? Pass(
                                 filePath,
-                                "engine",
-                                "correctness",
+                                EngineScope,
+                                CorrectnessCategory,
                                 "audio-playback-path",
                                 string.Format(
                                     CultureInfo.InvariantCulture,
@@ -544,8 +549,8 @@ namespace FramePlayer.Diagnostics
                                     engine.LastAudioSubmittedBytes))
                             : Fail(
                                 filePath,
-                                "engine",
-                                "correctness",
+                                EngineScope,
+                                CorrectnessCategory,
                                 "audio-playback-path",
                                 string.Format(
                                     CultureInfo.InvariantCulture,
@@ -553,14 +558,14 @@ namespace FramePlayer.Diagnostics
                                     engine.AudioStreamInfo.DecoderAvailable ? "yes" : "no",
                                     engine.LastAudioSubmittedBytes,
                                     engine.LastPlaybackUsedAudioClock ? "yes" : "no",
-                                    string.IsNullOrWhiteSpace(engine.LastAudioErrorMessage) ? "(none)" : engine.LastAudioErrorMessage)));
+                                    string.IsNullOrWhiteSpace(engine.LastAudioErrorMessage) ? NoneText : engine.LastAudioErrorMessage)));
                     }
                     else
                     {
                         checks.Add(Pass(
                             filePath,
-                            "engine",
-                            "lifecycle",
+                            EngineScope,
+                            LifecycleCategory,
                             "video-only-playback-path",
                             "No audio stream was present, and playback correctly ran video-only."));
                     }
@@ -569,8 +574,8 @@ namespace FramePlayer.Diagnostics
                 {
                     checks.Add(Fail(
                         filePath,
-                        "engine",
-                        "lifecycle",
+                        EngineScope,
+                        LifecycleCategory,
                         "playback-pause-progress",
                         "Playback/pause regression sequence failed: " + ex.Message));
                 }
@@ -603,7 +608,7 @@ namespace FramePlayer.Diagnostics
                             CultureInfo.InvariantCulture,
                             "Indexed seek cache: landed in {0:0.###} ms, refill {1} {2:0.###} ms ({3}), cache {4} back / {5} ahead, approx {6:0.0} MiB.",
                             indexedSeek.Elapsed.TotalMilliseconds,
-                            string.IsNullOrWhiteSpace(engine.LastCacheRefillReason) ? "(none)" : engine.LastCacheRefillReason,
+                            string.IsNullOrWhiteSpace(engine.LastCacheRefillReason) ? NoneText : engine.LastCacheRefillReason,
                             engine.LastCacheRefillMilliseconds,
                             string.IsNullOrWhiteSpace(engine.LastCacheRefillMode) ? "none" : engine.LastCacheRefillMode,
                             engine.PreviousCachedFrameCount,
@@ -614,8 +619,8 @@ namespace FramePlayer.Diagnostics
                         checks.Add(indexedSeekValid
                             ? Pass(
                                 filePath,
-                                "engine",
-                                "correctness",
+                                EngineScope,
+                                CorrectnessCategory,
                                 "seek-to-time-after-index-ready",
                                 string.Format(
                                     CultureInfo.InvariantCulture,
@@ -630,8 +635,8 @@ namespace FramePlayer.Diagnostics
                                 usedGlobalIndex: engine.LastOperationUsedGlobalIndex)
                             : Fail(
                                 filePath,
-                                "engine",
-                                "correctness",
+                                EngineScope,
+                                CorrectnessCategory,
                                 "seek-to-time-after-index-ready",
                                 string.Format(
                                     CultureInfo.InvariantCulture,
@@ -651,8 +656,8 @@ namespace FramePlayer.Diagnostics
                     {
                         checks.Add(Fail(
                             filePath,
-                            "engine",
-                            "correctness",
+                            EngineScope,
+                            CorrectnessCategory,
                             "seek-to-time-after-index-ready",
                             "Indexed seek-to-time failed: " + ex.Message));
                     }
@@ -675,8 +680,8 @@ namespace FramePlayer.Diagnostics
                 {
                     checks.Add(Warning(
                         filePath,
-                        "engine",
-                        "correctness",
+                        EngineScope,
+                        CorrectnessCategory,
                         "last-frame-end-of-video",
                         "The global index was unavailable, so exact last-frame regression checks were skipped."));
                 }
@@ -694,7 +699,7 @@ namespace FramePlayer.Diagnostics
                     ObserveCacheMetrics(metrics, engine);
                     checks.Add(EvaluateExpectedFrame(
                         filePath,
-                        "engine",
+                        EngineScope,
                         "close-reopen-first-frame",
                         0L,
                         engine.Position,
@@ -708,8 +713,8 @@ namespace FramePlayer.Diagnostics
                 {
                     checks.Add(Fail(
                         filePath,
-                        "engine",
-                        "lifecycle",
+                        EngineScope,
+                        LifecycleCategory,
                         "close-reopen-first-frame",
                         "Close/reopen failed: " + ex.Message));
                 }
@@ -747,7 +752,7 @@ namespace FramePlayer.Diagnostics
                 ObserveCacheMetrics(metrics, engine);
                 checks.Add(EvaluateExpectedFrame(
                     filePath,
-                    "engine",
+                    EngineScope,
                     checkPrefix + "-seek",
                     targetFrameIndex,
                     engine.Position,
@@ -764,8 +769,8 @@ namespace FramePlayer.Diagnostics
             {
                 checks.Add(Fail(
                     filePath,
-                    "engine",
-                    "correctness",
+                    EngineScope,
+                    CorrectnessCategory,
                     checkPrefix + "-seek",
                     "Seek-to-frame failed: " + ex.Message,
                     expectedFrameIndex: targetFrameIndex));
@@ -785,7 +790,7 @@ namespace FramePlayer.Diagnostics
                 ObserveCacheMetrics(metrics, engine);
                 checks.Add(EvaluateExpectedStep(
                     filePath,
-                    "engine",
+                    EngineScope,
                     checkPrefix + "-step-backward",
                     targetFrameIndex - 1L,
                     backward.Result,
@@ -795,8 +800,8 @@ namespace FramePlayer.Diagnostics
             {
                 checks.Add(Fail(
                     filePath,
-                    "engine",
-                    "correctness",
+                    EngineScope,
+                    CorrectnessCategory,
                     checkPrefix + "-step-backward",
                     "Backward step failed: " + ex.Message,
                     expectedFrameIndex: targetFrameIndex - 1L));
@@ -811,7 +816,7 @@ namespace FramePlayer.Diagnostics
                 ObserveCacheMetrics(metrics, engine);
                 checks.Add(EvaluateExpectedStep(
                     filePath,
-                    "engine",
+                    EngineScope,
                     checkPrefix + "-step-forward",
                     targetFrameIndex,
                     forward.Result,
@@ -821,8 +826,8 @@ namespace FramePlayer.Diagnostics
             {
                 checks.Add(Fail(
                     filePath,
-                    "engine",
-                    "correctness",
+                    EngineScope,
+                    CorrectnessCategory,
                     checkPrefix + "-step-forward",
                     "Forward step failed: " + ex.Message,
                     expectedFrameIndex: targetFrameIndex));
@@ -857,9 +862,9 @@ namespace FramePlayer.Diagnostics
                 {
                     checks.Add(Fail(
                         filePath,
-                        "engine",
-                        "correctness",
-                        "forward-only-step-proof",
+                        EngineScope,
+                        CorrectnessCategory,
+                        ForwardOnlyStepProofCheckName,
                         string.Format(
                             CultureInfo.InvariantCulture,
                             "Forward-only step {0} expected frame {1} but landed on {2}.",
@@ -867,7 +872,7 @@ namespace FramePlayer.Diagnostics
                             expectedFrame,
                             forward.Position != null && forward.Position.FrameIndex.HasValue
                                 ? forward.Position.FrameIndex.Value.ToString(CultureInfo.InvariantCulture)
-                                : "(none)"),
+                                : NoneText),
                         expectedFrameIndex: expectedFrame,
                         actualFrameIndex: forward.Position != null ? forward.Position.FrameIndex : null,
                         actualTime: forward.Position != null ? (TimeSpan?)forward.Position.PresentationTime : null,
@@ -895,9 +900,9 @@ namespace FramePlayer.Diagnostics
                 {
                     checks.Add(Pass(
                         filePath,
-                        "engine",
+                        EngineScope,
                         "behavior",
-                        "forward-only-step-proof",
+                        ForwardOnlyStepProofCheckName,
                         string.Format(
                             CultureInfo.InvariantCulture,
                             "Fresh-seek forward stepping stayed exact across {0} steps with no proactive forward cache. Starting forward cache: {1}; forward cache hits: {2}; forward reconstructions: {3}.",
@@ -913,9 +918,9 @@ namespace FramePlayer.Diagnostics
                 {
                     checks.Add(Fail(
                         filePath,
-                        "engine",
+                        EngineScope,
                         "behavior",
-                        "forward-only-step-proof",
+                        ForwardOnlyStepProofCheckName,
                         string.Format(
                             CultureInfo.InvariantCulture,
                             "Configured forward cache is 0, but fresh-seek forward stepping started with {0} forward frames and observed {1} forward cache hits across {2} steps.",
@@ -932,9 +937,9 @@ namespace FramePlayer.Diagnostics
 
             checks.Add(Pass(
                 filePath,
-                "engine",
+                EngineScope,
                 "behavior",
-                "forward-only-step-proof",
+                ForwardOnlyStepProofCheckName,
                 string.Format(
                     CultureInfo.InvariantCulture,
                     "Fresh-seek forward stepping stayed exact across {0} steps. Starting forward cache: {1}; configured forward cache: {2}; forward cache hits: {3}; forward reconstructions: {4}.",
@@ -974,8 +979,8 @@ namespace FramePlayer.Diagnostics
                 {
                     checks.Add(Fail(
                         filePath,
-                        "engine",
-                        "correctness",
+                        EngineScope,
+                        CorrectnessCategory,
                         "repeated-backward-steps",
                         string.Format(
                             CultureInfo.InvariantCulture,
@@ -984,7 +989,7 @@ namespace FramePlayer.Diagnostics
                             expectedFrame,
                             backward.Position != null && backward.Position.FrameIndex.HasValue
                                 ? backward.Position.FrameIndex.Value.ToString(CultureInfo.InvariantCulture)
-                                : "(none)"),
+                                : NoneText),
                         expectedFrameIndex: expectedFrame,
                         actualFrameIndex: backward.Position != null ? backward.Position.FrameIndex : null,
                         actualTime: backward.Position != null ? (TimeSpan?)backward.Position.PresentationTime : null,
@@ -1020,8 +1025,8 @@ namespace FramePlayer.Diagnostics
                 {
                     checks.Add(Fail(
                         filePath,
-                        "engine",
-                        "correctness",
+                        EngineScope,
+                        CorrectnessCategory,
                         "repeated-forward-steps",
                         string.Format(
                             CultureInfo.InvariantCulture,
@@ -1030,7 +1035,7 @@ namespace FramePlayer.Diagnostics
                             expectedFrame,
                             forward.Position != null && forward.Position.FrameIndex.HasValue
                                 ? forward.Position.FrameIndex.Value.ToString(CultureInfo.InvariantCulture)
-                                : "(none)"),
+                                : NoneText),
                         expectedFrameIndex: expectedFrame,
                         actualFrameIndex: forward.Position != null ? forward.Position.FrameIndex : null,
                         actualTime: forward.Position != null ? (TimeSpan?)forward.Position.PresentationTime : null,
@@ -1059,8 +1064,8 @@ namespace FramePlayer.Diagnostics
 
             checks.Add(Pass(
                 filePath,
-                "engine",
-                "correctness",
+                EngineScope,
+                CorrectnessCategory,
                 "repeated-step-roundtrip",
                 string.Format(
                     CultureInfo.InvariantCulture,
@@ -1247,7 +1252,7 @@ namespace FramePlayer.Diagnostics
                 ? Pass(
                     filePath,
                     scope,
-                    "correctness",
+                    CorrectnessCategory,
                     name,
                     message,
                     expectedFrameIndex,
@@ -1259,7 +1264,7 @@ namespace FramePlayer.Diagnostics
                 : Fail(
                     filePath,
                     scope,
-                    "correctness",
+                    CorrectnessCategory,
                     name,
                     string.Format(
                         CultureInfo.InvariantCulture,
@@ -1289,7 +1294,7 @@ namespace FramePlayer.Diagnostics
                 return Fail(
                     filePath,
                     scope,
-                    "correctness",
+                    CorrectnessCategory,
                     name,
                     "No step result was returned.",
                     expectedFrameIndex: expectedFrameIndex,
@@ -1306,7 +1311,7 @@ namespace FramePlayer.Diagnostics
                 ? Pass(
                     filePath,
                     scope,
-                    "correctness",
+                    CorrectnessCategory,
                     name,
                     string.Format(
                         CultureInfo.InvariantCulture,
@@ -1323,7 +1328,7 @@ namespace FramePlayer.Diagnostics
                 : Fail(
                     filePath,
                     scope,
-                    "correctness",
+                    CorrectnessCategory,
                     name,
                     string.Format(
                         CultureInfo.InvariantCulture,
@@ -1331,7 +1336,7 @@ namespace FramePlayer.Diagnostics
                         expectedFrameIndex,
                         FormatFrameIndex(position.FrameIndex),
                         stepResult.Success ? "yes" : "no",
-                        string.IsNullOrWhiteSpace(stepResult.Message) ? "(none)" : stepResult.Message),
+                        string.IsNullOrWhiteSpace(stepResult.Message) ? NoneText : stepResult.Message),
                     expectedFrameIndex,
                     position.FrameIndex,
                     actualTime: position.PresentationTime,
@@ -1528,7 +1533,7 @@ namespace FramePlayer.Diagnostics
         {
             return frameIndex.HasValue
                 ? frameIndex.Value.ToString(CultureInfo.InvariantCulture)
-                : "(none)";
+                : NoneText;
         }
 
         private static void Trace(string message)
@@ -2174,7 +2179,7 @@ namespace FramePlayer.Diagnostics
                         await controller.ClearLoopPointsAsync().ConfigureAwait(true);
                     }
 
-                    var indexReady = await controller.WaitForIndexReadyAsync(IndexReadyTimeout, cancellationToken).ConfigureAwait(true);
+                    var indexReady = await controller.WaitForIndexReadyUiAsync(IndexReadyTimeout, cancellationToken).ConfigureAwait(true);
                     metrics.UiIndexReadyMilliseconds = indexReady.ElapsedMilliseconds;
                     Trace("UI harness index-ready wait complete: " + filePath + " ready=" + indexReady.Ready.ToString());
                     if (indexReady.Ready)
@@ -2182,7 +2187,7 @@ namespace FramePlayer.Diagnostics
                         checks.Add(Pass(
                             filePath,
                             "ui",
-                            "lifecycle",
+                            LifecycleCategory,
                             "ui-background-index-ready",
                             string.Format(
                                 CultureInfo.InvariantCulture,
@@ -2197,7 +2202,7 @@ namespace FramePlayer.Diagnostics
                         checks.Add(Warning(
                             filePath,
                             "ui",
-                            "lifecycle",
+                            LifecycleCategory,
                             "ui-background-index-ready",
                             string.Format(
                                 CultureInfo.InvariantCulture,
@@ -2232,7 +2237,7 @@ namespace FramePlayer.Diagnostics
                                 checks.Add(Fail(
                                     filePath,
                                     "ui",
-                                    "lifecycle",
+                                    LifecycleCategory,
                                     "ui-audio-insertion-wav",
                                     "WAV audio insertion returned no result."));
                             }
@@ -2241,7 +2246,7 @@ namespace FramePlayer.Diagnostics
                                 checks.Add(Fail(
                                     filePath,
                                     "ui",
-                                    "lifecycle",
+                                    LifecycleCategory,
                                     "ui-audio-insertion-wav",
                                     "WAV audio insertion failed: " + wavInsertionResult.Message));
                             }
@@ -2256,7 +2261,7 @@ namespace FramePlayer.Diagnostics
                                     ? Pass(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-audio-insertion-wav",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -2265,7 +2270,7 @@ namespace FramePlayer.Diagnostics
                                     : Fail(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-audio-insertion-wav",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -2284,7 +2289,7 @@ namespace FramePlayer.Diagnostics
                                 checks.Add(Fail(
                                     filePath,
                                     "ui",
-                                    "lifecycle",
+                                    LifecycleCategory,
                                     "ui-audio-insertion-mp3",
                                     "MP3 audio insertion returned no result."));
                             }
@@ -2293,7 +2298,7 @@ namespace FramePlayer.Diagnostics
                                 checks.Add(Fail(
                                     filePath,
                                     "ui",
-                                    "lifecycle",
+                                    LifecycleCategory,
                                     "ui-audio-insertion-mp3",
                                     "MP3 audio insertion failed: " + mp3InsertionResult.Message));
                             }
@@ -2308,7 +2313,7 @@ namespace FramePlayer.Diagnostics
                                     ? Pass(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-audio-insertion-mp3",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -2317,7 +2322,7 @@ namespace FramePlayer.Diagnostics
                                     : Fail(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-audio-insertion-mp3",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -2582,7 +2587,7 @@ namespace FramePlayer.Diagnostics
                                         ? Pass(
                                             filePath,
                                             "ui",
-                                            "lifecycle",
+                                            LifecycleCategory,
                                             "ui-playback-pause-progress",
                                             string.Format(
                                                 CultureInfo.InvariantCulture,
@@ -2592,7 +2597,7 @@ namespace FramePlayer.Diagnostics
                                         : Fail(
                                             filePath,
                                             "ui",
-                                            "lifecycle",
+                                            LifecycleCategory,
                                             "ui-playback-pause-progress",
                                             string.Format(
                                                 CultureInfo.InvariantCulture,
@@ -2628,13 +2633,13 @@ namespace FramePlayer.Diagnostics
                                     ? Pass(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-zoom-single-pane-persists",
                                         "Single-pane zoom stayed intact through play, pause, seek, and frame-step operations.")
                                     : Fail(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-zoom-single-pane-persists",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -2654,7 +2659,7 @@ namespace FramePlayer.Diagnostics
                                     ? Pass(
                                         filePath,
                                         "ui",
-                                        "lifecycle",
+                                        LifecycleCategory,
                                         "ui-loop-main-entry-seek",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -2665,7 +2670,7 @@ namespace FramePlayer.Diagnostics
                                     : Fail(
                                         filePath,
                                         "ui",
-                                        "lifecycle",
+                                        LifecycleCategory,
                                         "ui-loop-main-entry-seek",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -2748,7 +2753,7 @@ namespace FramePlayer.Diagnostics
                                     ? Pass(
                                         filePath,
                                         "ui",
-                                        "lifecycle",
+                                        LifecycleCategory,
                                         "ui-loop-main-playback-bounded",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -2759,7 +2764,7 @@ namespace FramePlayer.Diagnostics
                                     : Fail(
                                         filePath,
                                         "ui",
-                                        "lifecycle",
+                                        LifecycleCategory,
                                         "ui-loop-main-playback-bounded",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -2774,7 +2779,7 @@ namespace FramePlayer.Diagnostics
                                         ? Pass(
                                             filePath,
                                             "ui",
-                                            "lifecycle",
+                                            LifecycleCategory,
                                             "ui-loop-main-playback-multiwrap",
                                             string.Format(
                                                 CultureInfo.InvariantCulture,
@@ -2784,7 +2789,7 @@ namespace FramePlayer.Diagnostics
                                         : Fail(
                                             filePath,
                                             "ui",
-                                            "lifecycle",
+                                            LifecycleCategory,
                                             "ui-loop-main-playback-multiwrap",
                                             string.Format(
                                                 CultureInfo.InvariantCulture,
@@ -2840,7 +2845,7 @@ namespace FramePlayer.Diagnostics
                                     checks.Add(Fail(
                                         filePath,
                                         "ui",
-                                        "lifecycle",
+                                        LifecycleCategory,
                                         "ui-loop-export-main",
                                         "Main-loop clip export failed: " + mainExportResult.Message));
                                 }
@@ -2850,13 +2855,13 @@ namespace FramePlayer.Diagnostics
                                         ? Pass(
                                             filePath,
                                             "ui",
-                                            "lifecycle",
+                                            LifecycleCategory,
                                             "ui-loop-export-main",
                                             "Main-loop clip export produced an MP4 output file.")
                                         : Fail(
                                             filePath,
                                             "ui",
-                                            "lifecycle",
+                                            LifecycleCategory,
                                             "ui-loop-export-main",
                                             "Main-loop clip export reported success but did not produce the expected output file."));
 
@@ -2868,13 +2873,13 @@ namespace FramePlayer.Diagnostics
                                         ? Pass(
                                             filePath,
                                             "ui",
-                                            "correctness",
+                                            CorrectnessCategory,
                                             "ui-loop-export-main-zoomed",
                                             "Main-loop clip export carried the current zoomed viewport into the export plan.")
                                         : Fail(
                                             filePath,
                                             "ui",
-                                            "correctness",
+                                            CorrectnessCategory,
                                             "ui-loop-export-main-zoomed",
                                             string.Format(
                                                 CultureInfo.InvariantCulture,
@@ -2891,7 +2896,7 @@ namespace FramePlayer.Diagnostics
                                         ? Pass(
                                             filePath,
                                             "ui",
-                                            "correctness",
+                                            CorrectnessCategory,
                                             "ui-loop-export-main-duration",
                                             string.Format(
                                                 CultureInfo.InvariantCulture,
@@ -2900,7 +2905,7 @@ namespace FramePlayer.Diagnostics
                                         : Fail(
                                             filePath,
                                             "ui",
-                                            "correctness",
+                                            CorrectnessCategory,
                                             "ui-loop-export-main-duration",
                                             string.Format(
                                                 CultureInfo.InvariantCulture,
@@ -2965,7 +2970,7 @@ namespace FramePlayer.Diagnostics
                                     ? Pass(
                                         filePath,
                                         "ui",
-                                        "lifecycle",
+                                        LifecycleCategory,
                                         "ui-loop-full-media-playback-wrap",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -2974,7 +2979,7 @@ namespace FramePlayer.Diagnostics
                                     : Fail(
                                         filePath,
                                         "ui",
-                                        "lifecycle",
+                                        LifecycleCategory,
                                         "ui-loop-full-media-playback-wrap",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -3016,13 +3021,13 @@ namespace FramePlayer.Diagnostics
                             ? Pass(
                                 filePath,
                                 "ui",
-                                "correctness",
+                                CorrectnessCategory,
                                 "ui-zoom-single-pane-reset",
                                 "Reset Zoom returned the primary pane to the full-frame view.")
                             : Fail(
                                 filePath,
                                 "ui",
-                                "correctness",
+                                CorrectnessCategory,
                                 "ui-zoom-single-pane-reset",
                                 string.Format(
                                     CultureInfo.InvariantCulture,
@@ -3144,13 +3149,13 @@ namespace FramePlayer.Diagnostics
                                     ? Pass(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-zoom-compare-playback-persists",
                                         "Two-pane zoom state stayed intact during focused-pane playback.")
                                     : Fail(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-zoom-compare-playback-persists",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -3290,7 +3295,7 @@ namespace FramePlayer.Diagnostics
                                 checks.Add(Fail(
                                     filePath,
                                     "ui",
-                                    "lifecycle",
+                                    LifecycleCategory,
                                     "ui-loop-export-pane-primary",
                                     "Primary pane clip export failed: " + primaryPaneExport.Message));
                             }
@@ -3300,13 +3305,13 @@ namespace FramePlayer.Diagnostics
                                     ? Pass(
                                         filePath,
                                         "ui",
-                                        "lifecycle",
+                                        LifecycleCategory,
                                         "ui-loop-export-pane-primary",
                                         "Primary pane clip export produced an MP4 output file.")
                                     : Fail(
                                         filePath,
                                         "ui",
-                                        "lifecycle",
+                                        LifecycleCategory,
                                         "ui-loop-export-pane-primary",
                                         "Primary pane clip export reported success but did not produce the expected output file."));
 
@@ -3318,13 +3323,13 @@ namespace FramePlayer.Diagnostics
                                     ? Pass(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-loop-export-pane-primary-zoomed",
                                         "Primary pane clip export preserved the primary pane's zoomed viewport.")
                                     : Fail(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-loop-export-pane-primary-zoomed",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -3361,7 +3366,7 @@ namespace FramePlayer.Diagnostics
                                 checks.Add(Fail(
                                     filePath,
                                     "ui",
-                                    "lifecycle",
+                                    LifecycleCategory,
                                     "ui-loop-export-pane-compare",
                                     "Compare pane clip export failed: " + comparePaneExport.Message));
                             }
@@ -3371,13 +3376,13 @@ namespace FramePlayer.Diagnostics
                                     ? Pass(
                                         filePath,
                                         "ui",
-                                        "lifecycle",
+                                        LifecycleCategory,
                                         "ui-loop-export-pane-compare",
                                         "Compare pane clip export produced an MP4 output file.")
                                     : Fail(
                                         filePath,
                                         "ui",
-                                        "lifecycle",
+                                        LifecycleCategory,
                                         "ui-loop-export-pane-compare",
                                         "Compare pane clip export reported success but did not produce the expected output file."));
 
@@ -3389,13 +3394,13 @@ namespace FramePlayer.Diagnostics
                                     ? Pass(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-loop-export-pane-compare-zoomed",
                                         "Compare pane clip export preserved the compare pane's zoomed viewport.")
                                     : Fail(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-loop-export-pane-compare-zoomed",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -3412,13 +3417,13 @@ namespace FramePlayer.Diagnostics
                                     ? Pass(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-loop-export-pane-independence",
                                         "Compare pane clip export respected the compare pane's own loop range instead of the primary pane range.")
                                     : Fail(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-loop-export-pane-independence",
                                         "Compare pane clip export did not line up with the compare pane's pane-local loop range."));
                             }
@@ -3454,7 +3459,7 @@ namespace FramePlayer.Diagnostics
                                 checks.Add(Fail(
                                     filePath,
                                     "ui",
-                                    "lifecycle",
+                                    LifecycleCategory,
                                     "ui-compare-side-by-side-loop",
                                     "Loop-mode side-by-side compare export failed: " + compareLoopMerge.Message));
                             }
@@ -3464,13 +3469,13 @@ namespace FramePlayer.Diagnostics
                                     ? Pass(
                                         filePath,
                                         "ui",
-                                        "lifecycle",
+                                        LifecycleCategory,
                                         "ui-compare-side-by-side-loop",
                                         "Loop-mode side-by-side compare export produced an MP4 output file.")
                                     : Fail(
                                         filePath,
                                         "ui",
-                                        "lifecycle",
+                                        LifecycleCategory,
                                         "ui-compare-side-by-side-loop",
                                         "Loop-mode side-by-side compare export reported success but did not produce the expected output file."));
 
@@ -3485,13 +3490,13 @@ namespace FramePlayer.Diagnostics
                                     ? Pass(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-compare-side-by-side-loop-zoomed",
                                         "Loop-mode side-by-side compare export preserved both panes' zoomed viewports.")
                                     : Fail(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-compare-side-by-side-loop-zoomed",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -3510,7 +3515,7 @@ namespace FramePlayer.Diagnostics
                                     ? Pass(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-compare-side-by-side-loop-duration",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -3519,7 +3524,7 @@ namespace FramePlayer.Diagnostics
                                     : Fail(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-compare-side-by-side-loop-duration",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -3537,7 +3542,7 @@ namespace FramePlayer.Diagnostics
                                     ? Pass(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-compare-side-by-side-loop-dimensions",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -3547,7 +3552,7 @@ namespace FramePlayer.Diagnostics
                                     : Fail(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-compare-side-by-side-loop-dimensions",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -3566,13 +3571,13 @@ namespace FramePlayer.Diagnostics
                                     ? Pass(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-compare-side-by-side-loop-audio-selection",
                                         loopAudioSuccessMessage)
                                     : Fail(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-compare-side-by-side-loop-audio-selection",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -3630,7 +3635,7 @@ namespace FramePlayer.Diagnostics
                                 checks.Add(Fail(
                                     filePath,
                                     "ui",
-                                    "lifecycle",
+                                    LifecycleCategory,
                                     "ui-compare-side-by-side-whole",
                                     "Whole-video side-by-side compare export failed: " + compareWholeMerge.Message));
                             }
@@ -3640,13 +3645,13 @@ namespace FramePlayer.Diagnostics
                                     ? Pass(
                                         filePath,
                                         "ui",
-                                        "lifecycle",
+                                        LifecycleCategory,
                                         "ui-compare-side-by-side-whole",
                                         "Whole-video side-by-side compare export produced an MP4 output file.")
                                     : Fail(
                                         filePath,
                                         "ui",
-                                        "lifecycle",
+                                        LifecycleCategory,
                                         "ui-compare-side-by-side-whole",
                                         "Whole-video side-by-side compare export reported success but did not produce the expected output file."));
 
@@ -3661,13 +3666,13 @@ namespace FramePlayer.Diagnostics
                                     ? Pass(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-compare-side-by-side-whole-zoomed",
                                         "Whole-video side-by-side compare export preserved both panes' zoomed viewports.")
                                     : Fail(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-compare-side-by-side-whole-zoomed",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -3686,7 +3691,7 @@ namespace FramePlayer.Diagnostics
                                     ? Pass(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-compare-side-by-side-whole-duration",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -3695,7 +3700,7 @@ namespace FramePlayer.Diagnostics
                                     : Fail(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-compare-side-by-side-whole-duration",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -3709,13 +3714,13 @@ namespace FramePlayer.Diagnostics
                                     ? Pass(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-compare-side-by-side-whole-alignment",
                                         "Whole-video side-by-side compare export preserved the current compare alignment with a non-zero leading pad.")
                                     : Fail(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-compare-side-by-side-whole-alignment",
                                         "Whole-video side-by-side compare export did not preserve the current compare alignment as a leading pad."));
 
@@ -3730,7 +3735,7 @@ namespace FramePlayer.Diagnostics
                                     ? Pass(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-compare-side-by-side-whole-dimensions",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -3740,7 +3745,7 @@ namespace FramePlayer.Diagnostics
                                     : Fail(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-compare-side-by-side-whole-dimensions",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -3759,13 +3764,13 @@ namespace FramePlayer.Diagnostics
                                     ? Pass(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-compare-side-by-side-whole-audio-selection",
                                         wholeAudioSuccessMessage)
                                     : Fail(
                                         filePath,
                                         "ui",
-                                        "correctness",
+                                        CorrectnessCategory,
                                         "ui-compare-side-by-side-whole-audio-selection",
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -3793,13 +3798,13 @@ namespace FramePlayer.Diagnostics
                                 ? Pass(
                                     filePath,
                                     "ui",
-                                    "correctness",
+                                    CorrectnessCategory,
                                     "ui-zoom-compare-reset",
                                     "Reset Zoom restored both panes to their full-frame view in compare mode.")
                                 : Fail(
                                     filePath,
                                     "ui",
-                                    "correctness",
+                                    CorrectnessCategory,
                                     "ui-zoom-compare-reset",
                                     string.Format(
                                         CultureInfo.InvariantCulture,
@@ -3843,7 +3848,7 @@ namespace FramePlayer.Diagnostics
                         checks.Add(Warning(
                             filePath,
                             "ui",
-                            "correctness",
+                            CorrectnessCategory,
                             "ui-index-dependent-slider-checks",
                             "Slider correctness checks that require the indexed last-frame boundary were skipped because the global index never became ready."));
                     }
@@ -3860,7 +3865,7 @@ namespace FramePlayer.Diagnostics
                     checks.Add(Fail(
                         filePath,
                         "ui",
-                        "lifecycle",
+                        LifecycleCategory,
                         "ui-regression-harness",
                         "UI regression harness failed: " + ex.Message));
                     return new UiRegressionResult(checks, notes, metrics);
@@ -4122,7 +4127,7 @@ namespace FramePlayer.Diagnostics
                         return Warning(
                             filePath,
                             "ui",
-                            "correctness",
+                            CorrectnessCategory,
                             name,
                             string.Format(
                                 CultureInfo.InvariantCulture,
@@ -4140,7 +4145,7 @@ namespace FramePlayer.Diagnostics
                     return Fail(
                         filePath,
                         "ui",
-                        "correctness",
+                        CorrectnessCategory,
                         name,
                         string.Format(
                             CultureInfo.InvariantCulture,
@@ -4169,7 +4174,7 @@ namespace FramePlayer.Diagnostics
                     return Pass(
                         filePath,
                         "ui",
-                        "correctness",
+                        CorrectnessCategory,
                         name,
                         string.Format(
                             CultureInfo.InvariantCulture,
@@ -4194,7 +4199,7 @@ namespace FramePlayer.Diagnostics
                 return Fail(
                     filePath,
                     "ui",
-                    "correctness",
+                    CorrectnessCategory,
                     name,
                     string.Format(
                         CultureInfo.InvariantCulture,
@@ -4203,7 +4208,7 @@ namespace FramePlayer.Diagnostics
                         snapshot.EngineFrameIndex.Value,
                         snapshot.DisplayedFrameNumber.HasValue
                             ? snapshot.DisplayedFrameNumber.Value.ToString(CultureInfo.InvariantCulture)
-                            : "(none)",
+                            : NoneText,
                         snapshot.CurrentPositionText,
                         snapshot.SliderValueSeconds,
                         snapshot.SliderMaximumSeconds),
@@ -4243,7 +4248,7 @@ namespace FramePlayer.Diagnostics
                     ? Pass(
                         filePath,
                         "ui",
-                        "correctness",
+                        CorrectnessCategory,
                         name,
                         string.Format(
                             CultureInfo.InvariantCulture,
@@ -4265,7 +4270,7 @@ namespace FramePlayer.Diagnostics
                     : Fail(
                         filePath,
                         "ui",
-                        "correctness",
+                        CorrectnessCategory,
                         name,
                         string.Format(
                             CultureInfo.InvariantCulture,
@@ -4273,7 +4278,7 @@ namespace FramePlayer.Diagnostics
                             FormatFrameIndex(snapshot.EngineFrameIndex),
                             snapshot.DisplayedFrameNumber.HasValue
                                 ? snapshot.DisplayedFrameNumber.Value.ToString(CultureInfo.InvariantCulture)
-                                : "(none)",
+                                : NoneText,
                             snapshot.SliderValueSeconds,
                             snapshot.SliderMaximumSeconds,
                             snapshot.CurrentPositionText),
@@ -4723,7 +4728,7 @@ namespace FramePlayer.Diagnostics
                     return result;
                 }
 
-                public async Task<IndexReadyUiResult> WaitForIndexReadyAsync(TimeSpan timeout, CancellationToken cancellationToken)
+                public async Task<IndexReadyUiResult> WaitForIndexReadyUiAsync(TimeSpan timeout, CancellationToken cancellationToken)
                 {
                     var stopwatch = Stopwatch.StartNew();
                     while (stopwatch.Elapsed < timeout)
@@ -4821,7 +4826,7 @@ namespace FramePlayer.Diagnostics
                         checks.Add(Fail(
                             filePath,
                             "ui",
-                            "correctness",
+                            CorrectnessCategory,
                             prefix + "-step-roundtrip",
                             "UI step roundtrip started without an absolute engine frame."));
                         return checks;
@@ -4833,7 +4838,7 @@ namespace FramePlayer.Diagnostics
                         checks.Add(Warning(
                             filePath,
                             "ui",
-                            "correctness",
+                            CorrectnessCategory,
                             prefix + "-step-roundtrip",
                             "UI step roundtrip skipped because the current frame was already at the start boundary."));
                         return checks;
