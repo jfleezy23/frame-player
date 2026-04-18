@@ -71,7 +71,7 @@ namespace FramePlayer.Services
                 builder.AppendLine();
             }
 
-            builder.AppendLine("Session Event Log");
+            builder.AppendLine("Event Log");
             builder.AppendLine("---------");
 
             foreach (var entry in Snapshot())

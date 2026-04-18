@@ -3803,7 +3803,7 @@ namespace FramePlayer
             UpdateWorkspacePanePresentation();
             var viewportState = GetPaneViewportState(paneId);
             var targetZoomFactor = viewportState.ZoomFactor *
-                                   Math.Pow(PaneZoomWheelStep, e.Delta / Mouse.MouseWheelDeltaForOneLine);
+                                   Math.Pow(PaneZoomWheelStep, (double)e.Delta / Mouse.MouseWheelDeltaForOneLine);
             targetZoomFactor = Math.Max(MinimumPaneZoomFactor, Math.Min(MaximumPaneZoomFactor, targetZoomFactor));
             if (targetZoomFactor <= 1.0001d)
             {
@@ -3846,64 +3846,17 @@ namespace FramePlayer
 
         private void VideoSurfaceHost_MouseMove(object sender, MouseEventArgs e)
         {
-            var host = sender as FrameworkElement;
-            if (host == null)
+            FrameworkElement host;
+            string paneId;
+            if (!TryGetVideoSurfaceHostContext(sender, out host, out paneId))
             {
                 ClearPointerCoordinates();
                 return;
             }
 
-            var paneId = host.Tag as string;
-            if (string.IsNullOrWhiteSpace(paneId))
-            {
-                ClearPointerCoordinates();
-                return;
-            }
-
-            var viewportState = GetPaneViewportState(paneId);
-            if (viewportState.IsPanActive)
-            {
-                if (e.LeftButton != MouseButtonState.Pressed || !CanAdjustPaneViewport(paneId))
-                {
-                    EndPaneViewportPan(host, paneId);
-                }
-                else
-                {
-                    var geometryBeforePan = GetFrameSurfaceGeometry(paneId);
-                    if (geometryBeforePan.HasVisibleFrame)
-                    {
-                        var currentHostPoint = e.GetPosition(host);
-                        var delta = currentHostPoint - viewportState.PanAnchorHostPoint;
-                        if (Math.Abs(delta.X) >= PanePanDragThreshold || Math.Abs(delta.Y) >= PanePanDragThreshold)
-                        {
-                            var updatedCenter = new Point(
-                                viewportState.PanAnchorNormalizedCenter.X - (delta.X / geometryBeforePan.RenderedRect.Width),
-                                viewportState.PanAnchorNormalizedCenter.Y - (delta.Y / geometryBeforePan.RenderedRect.Height));
-                            viewportState.NormalizedCenter = updatedCenter;
-                            UpdatePaneViewportLayout(paneId);
-                        }
-                    }
-                }
-            }
-
-            var geometry = GetFrameSurfaceGeometry(paneId);
-            int sourcePixelX;
-            int sourcePixelY;
-            if (!geometry.TryMapPointToSourcePixel(e.GetPosition(host), out sourcePixelX, out sourcePixelY))
-            {
-                ClearPointerCoordinates();
-                return;
-            }
-
-            var paneLabel = string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
-                ? "Compare"
-                : "Primary";
-            SetPointerCoordinates(string.Format(
-                CultureInfo.InvariantCulture,
-                "Pixel: {0} ({1},{2})",
-                paneLabel,
-                sourcePixelX,
-                sourcePixelY));
+            var hostPoint = e.GetPosition(host);
+            UpdatePaneViewportPan(host, paneId, e, hostPoint);
+            UpdatePointerCoordinates(paneId, hostPoint);
         }
 
         private void VideoSurfaceHost_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -3933,6 +3886,79 @@ namespace FramePlayer
             }
 
             EndPaneViewportPan(host, paneId);
+        }
+
+        private bool TryGetVideoSurfaceHostContext(object sender, out FrameworkElement host, out string paneId)
+        {
+            host = sender as FrameworkElement;
+            paneId = host != null ? host.Tag as string : null;
+            return host != null && !string.IsNullOrWhiteSpace(paneId);
+        }
+
+        private void UpdatePaneViewportPan(
+            FrameworkElement host,
+            string paneId,
+            MouseEventArgs e,
+            Point currentHostPoint)
+        {
+            var viewportState = GetPaneViewportState(paneId);
+            if (!viewportState.IsPanActive)
+            {
+                return;
+            }
+
+            if (e.LeftButton != MouseButtonState.Pressed || !CanAdjustPaneViewport(paneId))
+            {
+                EndPaneViewportPan(host, paneId);
+                return;
+            }
+
+            var geometryBeforePan = GetFrameSurfaceGeometry(paneId);
+            if (!geometryBeforePan.HasVisibleFrame)
+            {
+                return;
+            }
+
+            var delta = currentHostPoint - viewportState.PanAnchorHostPoint;
+            if (Math.Abs(delta.X) < PanePanDragThreshold && Math.Abs(delta.Y) < PanePanDragThreshold)
+            {
+                return;
+            }
+
+            viewportState.NormalizedCenter = BuildPannedViewportCenter(viewportState, geometryBeforePan, delta);
+            UpdatePaneViewportLayout(paneId);
+        }
+
+        private static Point BuildPannedViewportCenter(
+            PaneViewportState viewportState,
+            FrameSurfaceGeometry geometryBeforePan,
+            Vector delta)
+        {
+            return new Point(
+                viewportState.PanAnchorNormalizedCenter.X - (delta.X / geometryBeforePan.RenderedRect.Width),
+                viewportState.PanAnchorNormalizedCenter.Y - (delta.Y / geometryBeforePan.RenderedRect.Height));
+        }
+
+        private void UpdatePointerCoordinates(string paneId, Point hostPoint)
+        {
+            var geometry = GetFrameSurfaceGeometry(paneId);
+            int sourcePixelX;
+            int sourcePixelY;
+            if (!geometry.TryMapPointToSourcePixel(hostPoint, out sourcePixelX, out sourcePixelY))
+            {
+                ClearPointerCoordinates();
+                return;
+            }
+
+            var paneLabel = string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
+                ? "Compare"
+                : "Primary";
+            SetPointerCoordinates(string.Format(
+                CultureInfo.InvariantCulture,
+                "Pixel: {0} ({1},{2})",
+                paneLabel,
+                sourcePixelX,
+                sourcePixelY));
         }
 
         private void VideoSurfaceHost_SizeChanged(object sender, SizeChangedEventArgs e)
