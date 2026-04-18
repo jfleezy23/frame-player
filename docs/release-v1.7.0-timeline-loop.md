@@ -70,6 +70,4 @@ Known non-blocking warnings remain the intentional frames-first pre-index ones:
 - Treat `v1.7.0` as the feature release that makes timeline right-click loop/clipping control part of the shipped workflow.
 - Keep `Properties\AssemblyInfo.cs` as the canonical product-version source.
 - Keep the app-driven regression suite as the source of truth for loop/export validation; the Sonar coverage exclusions intentionally reflect that desktop-path testing model.
-- Release assets for this cut are expected to include:
-  - `FramePlayer-CustomFFmpeg-1.7.0.zip`
-  - the usual `bin\TestDrop` package output
+- Release outputs for this cut should match the validated versioned application artifact and `bin\TestDrop` verification output.

@@ -24,19 +24,15 @@ Use it after feature work is done and before building or publishing release arti
   - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-RegressionSuite.ps1 -CorpusPath "C:\Projects\Video Test Files" -Recurse -MaxCorpusFiles 0 -Configuration Release -Output ".\artifacts\regression-suite-full"`
 - Review warnings before ship and confirm they are limited to known non-blocking frames-first pending-index or tiny-clip coverage cases.
 
-## Packaging Gate
+## Distribution Gate
 
 Do not run these until the repo state and validation evidence above are accepted.
 
-- Build the portable test drop:
+- Build the release verification output:
   - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Build-TestDrop.ps1 -Configuration Release -Platform x64 -RequireExportTools`
-- Build the signed MSIX for the intended distribution path:
-  - local test signing:
-    - `powershell -ExecutionPolicy Bypass -File .\Packaging\MSIX\build-msix.ps1 -UseDevCertificate -CertificatePassword "<local-password>"`
-  - production signing:
-    - `powershell -ExecutionPolicy Bypass -File .\Packaging\MSIX\build-msix.ps1 -SigningPfxPath "<trusted-signing-cert.pfx>" -SigningPfxPassword "<pfx-password>" -TimestampUrl "<approved-timestamp-url>"`
+- Build the signed install artifact using the maintained signing flow and organization-approved signing inputs.
 - Verify the produced artifact names match the intended product version.
-- Prefer the signed MSIX for real deployment; treat the portable ZIP as a test/convenience artifact unless distribution constraints require otherwise.
+- Prefer the signed install artifact for real deployment; treat loose-file test outputs as validation artifacts only when necessary.
 
 ## Publish Gate
 

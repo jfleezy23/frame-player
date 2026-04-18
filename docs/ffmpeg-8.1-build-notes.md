@@ -72,7 +72,7 @@ Both paths are intentionally ignored by git. `scripts\Ensure-DevRuntime.ps1` res
 ## Current Restore Model
 
 - `Runtime\runtime-manifest.json` records the expected FFmpeg 8.1 DLL hashes, archive filename, archive SHA256, and source-build provenance.
-- `scripts\Ensure-DevRuntime.ps1` restores `Runtime\ffmpeg\` from `Runtime\ffmpeg-8.1-candidate\` or `artifacts\FramePlayer-ffmpeg-runtime-x64.zip` before attempting any remote download path.
+- `scripts\Ensure-DevRuntime.ps1` restores `Runtime\ffmpeg\` from `Runtime\ffmpeg-8.1-candidate\` or the staged local runtime archive before attempting any remote download path.
 - If neither local source exists, the script downloads the pinned runtime from the verified runtime-only `v1.5.0` release asset currently declared in the manifest and validates both the archive SHA256 and extracted DLL hashes.
 - `Runtime\runtime-manifest.json` now also records that the current source-built runtime targets FFmpeg Vulkan hardware-device support while still requiring a system Vulkan loader at runtime.
 

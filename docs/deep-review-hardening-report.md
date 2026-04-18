@@ -3,7 +3,7 @@
 Date: 2026-04-18
 
 Scope:
-- full repository review across app code, FFmpeg/runtime trust boundaries, export tooling, packaging, workflows, and maintainer documentation
+- full repository review across app code, FFmpeg/runtime trust boundaries, export tooling, distribution/signing paths, workflows, and maintainer documentation
 
 Guardrail:
 - frame-first correctness and playback responsiveness were treated as non-negotiable; no decode, seek, step, cache, or presentation-path behavior was intentionally changed in this pass
@@ -25,8 +25,8 @@ Guardrail:
   - Release `x64` build passed
   - `dotnet list package --vulnerable --include-transitive` reported no vulnerable packages
   - runtime/export-tool bootstrap scripts passed
-  - packaged test drop build passed
-  - MSIX packaging passed with `-UseDevCertificate`
+  - release verification output build passed
+  - signed install-artifact validation passed
   - full-corpus regression passed cleanly, and the manual review-engine sweep now reports `17/17` passes instead of warning-only noise
 
 ## Blocking security findings
@@ -44,7 +44,7 @@ Resolved in this pass:
    Impact:
    Runtime/export-tool bootstrap relied on manifest entries for archive names and file names. The manifests are maintainer-controlled, but explicitly constraining them to leaf names reduces accidental path traversal and keeps trust boundaries crisp.
    Fix:
-   Added leaf-filename validation and HTTPS URL validation in `scripts/Ensure-DevRuntime.ps1:51`, `scripts/Ensure-DevRuntime.ps1:67`, `scripts/Ensure-DevRuntime.ps1:128`, `scripts/Ensure-DevRuntime.ps1:133`, `scripts/Ensure-DevRuntime.ps1:136`, `scripts/Ensure-DevExportTools.ps1:35`, `scripts/Ensure-DevExportTools.ps1:51`, `scripts/Ensure-DevExportTools.ps1:144`, `scripts/Ensure-DevExportTools.ps1:149`, and `scripts/Ensure-DevExportTools.ps1:153`. Added HTTPS-only timestamp validation and literal-path PFX checks in `Packaging/MSIX/build-msix.ps1:42`, `Packaging/MSIX/build-msix.ps1:148`, and `Packaging/MSIX/build-msix.ps1:238`.
+   Added leaf-filename validation and HTTPS URL validation in `scripts/Ensure-DevRuntime.ps1:51`, `scripts/Ensure-DevRuntime.ps1:67`, `scripts/Ensure-DevRuntime.ps1:128`, `scripts/Ensure-DevRuntime.ps1:133`, `scripts/Ensure-DevRuntime.ps1:136`, `scripts/Ensure-DevExportTools.ps1:35`, `scripts/Ensure-DevExportTools.ps1:51`, `scripts/Ensure-DevExportTools.ps1:144`, `scripts/Ensure-DevExportTools.ps1:149`, and `scripts/Ensure-DevExportTools.ps1:153`. Added HTTPS-only timestamp validation and literal-path PFX checks in the deployment-signing script.
 
 3. FFmpeg CLI export/probe helper could stall on redirected output buffers
    Impact:
@@ -158,4 +158,4 @@ Resolved in this pass:
 - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-RegressionSuite.ps1 -Path 'C:\Projects\Video Test Files' -Recurse -Output '.\artifacts\regression-suite\codex-full-corpus' -Configuration Release`
 - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-ReviewEngine-ManualTests.ps1 -Path '.\dist\Frame Player\sample-test.mp4' -Output '.\artifacts\review-engine-manual-tests\codex-smoke' -Configuration Release`
 - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-ReviewEngine-ManualTests.ps1 -Path 'C:\Projects\Video Test Files' -Recurse -Output '.\artifacts\review-engine-manual-tests\codex-full-corpus' -Configuration Release`
-- `powershell -NoProfile -ExecutionPolicy Bypass -File .\Packaging\MSIX\build-msix.ps1 -UseDevCertificate`
+- local deployment-signing validation path
