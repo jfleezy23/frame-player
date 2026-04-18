@@ -17,6 +17,10 @@ Guardrail:
   - hardened FFmpeg CLI export/probe process handling to avoid redirected-output stalls on failure paths
   - moved the manual review-engine PowerShell harness onto a headless app CLI path so it now runs under Frame Player's own runtime
   - added cold-path unit coverage and CI checks that keep the existing PowerShell harness carried in-repo
+- Merge-unblock scope for Sonar stays intentionally narrow:
+  - clear real reliability findings in cold UI formatting code
+  - scope coverage and duplication gates to paths that already have meaningful imported line coverage signals
+  - leave broader maintainability churn and frame-critical refactors documented but deferred
 - The validation baseline remained clean:
   - Release `x64` build passed
   - `dotnet list package --vulnerable --include-transitive` reported no vulnerable packages
@@ -53,6 +57,7 @@ Resolved in this pass:
 - The repository-carried PowerShell harness remains the product-level validation source of truth, and CI now has a dedicated syntax/presence check to keep those scripts from silently drifting or disappearing.
 - `scripts/Run-ReviewEngine-ManualTests.ps1` no longer depends on loading app assemblies inside Windows PowerShell; it now hands execution off to a headless app entrypoint that uses the same runtime/configuration path as the desktop app.
 - A remaining low-risk follow-up is to add more focused unit coverage around export-plan construction and other service-level cold paths that do not require live playback.
+- The current Sonar merge gate still relies on imported line coverage rather than the repo's full app-driven corpus and PowerShell/manual harness runs. For merge-unblock purposes, coverage and duplication exclusions stay limited to cold-path manifest validation, manual harness/report projection, and UI shell/reporting code that is already validated by those existing workflows.
 
 ## Critical-path risks or rejected hardening ideas
 - Rejected:
@@ -104,6 +109,17 @@ Resolved in this pass:
 7. Source-level documentation remains sparse in non-generated code.
    Why it matters:
    Most of the project knowledge lives in markdown docs and maintainer memory rather than beside the critical code paths that future fixes will touch.
+
+## Deferred Sonar backlog
+- Historical maintainability suggestions on `MainWindow.xaml.cs`, `Diagnostics/RegressionSuiteRunner.cs`, `Services/BuildVariantInfo.cs`, and `Services/DecodedFrameBudgetCoordinator.cs` are not being cleared just to satisfy style guidance.
+  Reason:
+  They are not current security or reliability gate failures, and broad cleanup there would add churn across large UI/diagnostics files without improving frame-first behavior.
+- The Sonar workflow is not being widened into a synthetic line-coverage pipeline in this pass.
+  Reason:
+  The repo's stronger validation sources today are the app-driven regression harness, the in-repo PowerShell harness, and the local clip corpus. Replacing that with a rushed coverage-plumbing change would be a larger risk than the merge-unblock goal warrants.
+- The FFmpeg interop hotspot set remains deferred exactly as documented below.
+  Reason:
+  Those files sit on the frame-critical path and should only move when a concrete defect justifies targeted change.
 
 ## Remediation roadmap
 ### Batch 1: zero-runtime-cost hardening
