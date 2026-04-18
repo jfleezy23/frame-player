@@ -1,6 +1,6 @@
 # Platform Core And Cross-Platform Plan
 
-This is a historical planning checkpoint. The current WPF app remains the working reference implementation for the `v1.8.0` release, but current shipped behavior is documented in `docs\release-v1.8.0-side-by-side-compare.md`. This note exists to preserve the earlier extraction plan, not to define the active release surface.
+This is a historical planning checkpoint. The current WPF app remains the working reference implementation for the `v1.8.1` release, but current shipped behavior is documented in `docs\release-v1.8.1-maintenance.md`. This note exists to preserve the earlier extraction plan, not to define the active release surface.
 
 ## What Already Looks Core-Oriented
 

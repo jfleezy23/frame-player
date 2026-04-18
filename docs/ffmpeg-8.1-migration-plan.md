@@ -1,6 +1,6 @@
 # FFmpeg 8.1 Source-Build Migration Plan
 
-This is a historical migration checkpoint. The FFmpeg 8.1 runtime is now the active runtime in the repo. Keep `docs\ffmpeg-8.1-build-notes.md` as the current runtime provenance note and `docs\release-v1.8.0-side-by-side-compare.md` as the current branch product/release note.
+This is a historical migration checkpoint. The FFmpeg 8.1 runtime is now the active runtime in the repo. Keep `docs\ffmpeg-8.1-build-notes.md` as the current runtime provenance note and `docs\release-v1.8.1-maintenance.md` as the current branch product/release note.
 
 ## Current Runtime Integration
 

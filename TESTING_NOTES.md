@@ -1,13 +1,13 @@
 # Frame Player Release Verification Notes
 
-Release: `1.8.0`
+Release: `1.8.1`
 
 ## Current release focus
 
 - The app is now custom FFmpeg only; FFME has been removed from the active path and older FFME-era releases are legacy/deprecated.
 - Video playback, audio playback, basic A/V sync, seek-to-time, seek-to-frame, exact frame stepping, and opportunistic Vulkan decode with strict CPU fallback are implemented in the custom engine.
 - The current WPF shell includes the combined Play/Pause control, cache-status visibility, immediate post-frame-entry arrow-key stepping, a visible GPU toggle, pane-aware decoded-frame budgeting, shared Vulkan warmup, and backend-aware compare behavior without changing the frames-first review contract.
-- The current `v1.8.0` release adds live timeline scrubbing, A/B loop playback on the main transport, pane-local compare loop boxes, pane-local compare navigation, Inspector V2 with pane context-menu access, pending frame-number honesty while background indexing is still resolving absolute frame identity, reviewed-loop MP4 clip export through a separate FFmpeg CLI bundle, and side-by-side compare export with loop and whole-video modes.
+- The current `v1.8.1` release keeps the `v1.8.0` feature set, including live timeline scrubbing, A/B loop playback on the main transport, pane-local compare loop boxes, pane-local compare navigation, Inspector V2 with pane context-menu access, pending frame-number honesty while background indexing is still resolving absolute frame identity, reviewed-loop MP4 clip export through a separate FFmpeg CLI bundle, and side-by-side compare export with loop and whole-video modes.
 - The current MVP-finish pass adds single-pane `Audio Insertion > Replace Audio Track...` for H.264 `.mp4` sources, pane-local paused zoom/pan in both review layouts, zoom-aware pixel readout, `Playback > Reset Zoom`, pane context-menu zoom reset, and crop-aware clip/compare export rendering.
 
 ## Manual test checklist
