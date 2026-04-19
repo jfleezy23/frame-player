@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using FFmpeg.AutoGen;
 using FramePlayer.Diagnostics;
@@ -12,6 +13,8 @@ namespace FramePlayer
     {
         public static string RuntimeDirectory { get; private set; }
         public static string RuntimeValidationMessage { get; private set; }
+        public static string ExportRuntimeDirectory { get; private set; }
+        public static string ExportRuntimeValidationMessage { get; private set; }
         public static string StartupOpenFilePath { get; private set; }
 
         public static bool HasBundledFfmpegRuntime
@@ -84,6 +87,42 @@ namespace FramePlayer
                 return;
             }
 
+            string exportRequestPath;
+            if (ExportHostCli.TryGetRequestPath(e.Args, out exportRequestPath))
+            {
+                var startupLogPath = Path.Combine(Path.GetTempPath(), "frameplayer-export-host-startup.log");
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                AppendCliStartupLog(startupLogPath, "Export host startup requested.");
+                AppendCliStartupLog(startupLogPath, "Request path: " + exportRequestPath);
+                ConfigureBundledExportRuntime();
+                AppendCliStartupLog(startupLogPath, "Export runtime configured. Root=" + (ExportRuntimeDirectory ?? string.Empty));
+
+                try
+                {
+                    if (string.IsNullOrWhiteSpace(ExportRuntimeDirectory))
+                    {
+                        throw new InvalidOperationException(
+                            string.IsNullOrWhiteSpace(ExportRuntimeValidationMessage)
+                                ? "The bundled FFmpeg export runtime could not be validated."
+                                : ExportRuntimeValidationMessage);
+                    }
+
+                    AppendCliStartupLog(startupLogPath, "ExportHostCli.RunAsync starting.");
+                    var exitCode = await ExportHostCli.RunAsync(exportRequestPath, default(System.Threading.CancellationToken));
+                    AppendCliStartupLog(startupLogPath, "ExportHostCli.RunAsync completed with exit code " + exitCode.ToString());
+                    Shutdown(exitCode);
+                }
+                catch (Exception ex)
+                {
+                    AppendCliStartupLog(startupLogPath, "ExportHostCli.RunAsync failed: " + ex);
+                    ExportHostCli.TryWriteFailure(exportRequestPath, ex);
+                    System.Diagnostics.Trace.TraceError("Export host execution failed: " + ex);
+                    Shutdown(1);
+                }
+
+                return;
+            }
+
             base.OnStartup(e);
             ConfigureBundledRuntime();
             StartupOpenFilePath = ResolveStartupOpenFilePath(e.Args);
@@ -106,6 +145,31 @@ namespace FramePlayer
             RuntimeValidationMessage = string.Empty;
             ffmpeg.RootPath = baseDirectory;
             StartGpuWarmupIfEnabled();
+        }
+
+        private static void ConfigureBundledExportRuntime()
+        {
+            var exportRuntimeDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ExportHostClient.ExportRuntimeFolderName);
+            string validationMessage;
+            if (!ExportRuntimeManifestService.TryValidateRuntimeDirectory(exportRuntimeDirectory, out validationMessage))
+            {
+                ExportRuntimeDirectory = string.Empty;
+                ExportRuntimeValidationMessage = string.IsNullOrWhiteSpace(validationMessage)
+                    ? "The bundled FFmpeg export runtime could not be validated."
+                    : validationMessage;
+                return;
+            }
+
+            ExportRuntimeDirectory = exportRuntimeDirectory;
+            ExportRuntimeValidationMessage = string.Empty;
+            if (!SetDllDirectory(exportRuntimeDirectory))
+            {
+                ExportRuntimeDirectory = string.Empty;
+                ExportRuntimeValidationMessage = "The bundled FFmpeg export runtime directory could not be activated for native DLL loading. Win32 error: " + Marshal.GetLastWin32Error().ToString();
+                return;
+            }
+
+            ffmpeg.RootPath = exportRuntimeDirectory;
         }
 
         private static void StartGpuWarmupIfEnabled()
@@ -164,5 +228,9 @@ namespace FramePlayer
 
             return string.Empty;
         }
+
+        [DllImport("kernel32", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SetDllDirectory(string lpPathName);
     }
 }

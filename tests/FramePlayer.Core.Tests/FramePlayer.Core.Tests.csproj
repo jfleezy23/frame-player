@@ -24,4 +24,11 @@
   <ItemGroup>
     <ProjectReference Include="..\..\FramePlayer.csproj" />
   </ItemGroup>
+
+  <Target Name="RemoveStaleExportToolsOutput"
+          AfterTargets="Build">
+    <RemoveDir Directories="$(OutDir)ffmpeg-tools"
+               Condition="Exists('$(OutDir)ffmpeg-tools')" />
+    <Delete Files="$(OutDir)ffmpeg.exe;$(OutDir)ffprobe.exe" />
+  </Target>
 </Project>

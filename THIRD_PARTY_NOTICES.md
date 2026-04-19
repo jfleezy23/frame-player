@@ -27,23 +27,24 @@ Important note:
 - FFmpeg's official legal page states that FFmpeg is generally available under the LGPL v2.1 or later, but GPL obligations apply if GPL-enabled parts were compiled in.
 - If you replace the runtime bundle, you are responsible for verifying the exact redistribution obligations of the replacement build.
 
-### FFmpeg Export Tools
+### FFmpeg Export Runtime
 
 - Project: <https://ffmpeg.org/>
-- Tool bundle version currently used by the app: `n8.1-frameplayer-export-tools`
-- Tool provenance: built from the official FFmpeg source tag `n8.1` for `ffmpeg.exe` / `ffprobe.exe`, restored locally through `scripts/ffmpeg/Build-FFmpeg-Tools-8.1.ps1` and `scripts/Ensure-DevExportTools.ps1`
-- The export-tools bundle is intentionally separated from the in-process playback runtime and lives under `ffmpeg-tools`
+- Export runtime version currently used by the app: `n8.1-frameplayer-export-tools`
+- Export runtime provenance: built from the official FFmpeg source tag `n8.1`, restored locally into `ffmpeg-export` through `scripts/Ensure-DevExportRuntime.ps1`
+- The export runtime is intentionally separated from the in-process playback runtime and lives under `ffmpeg-export`
 
 Important note:
 
-- The export-tools build enables `libx264`, which makes that tool bundle GPL-governed.
-- The export-tools bundle also stages required MinGW-w64/MSYS2 dependency DLLs that the CLI resolves at runtime, including the x264 runtime and related support libraries.
-- If you redistribute the export-tools bundle, review FFmpeg and x264 upstream licensing terms and make sure your redistribution flow satisfies the resulting GPL obligations.
+- The export runtime enables `libx264`, which makes that bundle GPL-governed.
+- The export runtime also stages the MinGW-w64/MSYS2 dependency DLLs that the headless export host resolves at runtime, including the x264 runtime and related support libraries.
+- Local/dev harness flows may still stage `ffmpeg-tools`, but the shipped app output is expected to rely on the DLL-only export runtime instead of those executables.
+- If you redistribute the export runtime bundle, review FFmpeg and x264 upstream licensing terms and make sure your redistribution flow satisfies the resulting GPL obligations.
 
 ### x264
 
 - Project: <https://code.videolan.org/videolan/x264>
-- Role in this repo: enabled only in the separate FFmpeg export-tools bundle to provide H.264 MP4 clip export
+- Role in this repo: enabled only in the separate FFmpeg export runtime path to provide H.264 MP4 export
 - License note: x264 is GPL-licensed; review the upstream project before redistributing builds that include it
 
 ## Attribution

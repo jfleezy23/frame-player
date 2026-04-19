@@ -9,28 +9,26 @@ namespace FramePlayer.Services
 {
     internal sealed class ClipExportService
     {
-        private readonly FfmpegCliTooling _tooling;
+        private readonly ExportHostClient _hostClient;
 
         public ClipExportService()
         {
-            _tooling = new FfmpegCliTooling();
+            _hostClient = new ExportHostClient();
         }
 
-        public bool IsBundledToolingAvailable
+        public bool IsBundledRuntimeAvailable
         {
-            get { return _tooling.IsBundledToolingAvailable; }
+            get { return _hostClient.IsBundledRuntimeAvailable; }
         }
 
-        public string GetToolAvailabilityMessage()
+        public string GetRuntimeAvailabilityMessage()
         {
-            return _tooling.GetToolAvailabilityMessage();
+            return _hostClient.GetRuntimeAvailabilityMessage();
         }
 
         public ClipExportPlan CreatePlan(ClipExportRequest request)
         {
             ArgumentNullException.ThrowIfNull(request);
-
-            var toolPaths = _tooling.GetRequiredToolPaths();
             string sourceFullPath;
             string outputFullPath;
             string outputDirectory;
@@ -67,8 +65,8 @@ namespace FramePlayer.Services
                 endBoundaryStrategy,
                 viewportSnapshot,
                 ffmpegArguments,
-                toolPaths.FfmpegPath,
-                toolPaths.FfprobePath);
+                string.Empty,
+                string.Empty);
         }
 
         private static void ResolvePlanPaths(
@@ -190,57 +188,13 @@ namespace FramePlayer.Services
         public async Task<ClipExportResult> ExportAsync(ClipExportRequest request, CancellationToken cancellationToken = default(CancellationToken))
         {
             var plan = CreatePlan(request);
-            return await ExportPlanAsync(plan, cancellationToken).ConfigureAwait(false);
+            return await _hostClient.ExportClipAsync(plan, cancellationToken).ConfigureAwait(false);
         }
 
         public static async Task<ClipExportResult> ExportPlanAsync(ClipExportPlan plan, CancellationToken cancellationToken = default(CancellationToken))
         {
             ArgumentNullException.ThrowIfNull(plan);
-
-            return await Task.Run(
-                () =>
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-                    var processResult = FfmpegCliTooling.RunProcess(
-                        plan.FfmpegPath,
-                        plan.FfmpegArguments,
-                        Path.GetDirectoryName(plan.OutputFilePath));
-                    stopwatch.Stop();
-
-                    if (processResult.ExitCode != 0)
-                    {
-                        return new ClipExportResult(
-                            false,
-                            plan,
-                            FfmpegCliTooling.BuildFailureMessage(processResult, "FFmpeg clip export failed."),
-                            processResult.ExitCode,
-                            stopwatch.Elapsed,
-                            null,
-                            processResult.StandardOutput,
-                            processResult.StandardError);
-                    }
-
-                    TimeSpan? probedDuration = null;
-                    FfmpegMediaProbe probe;
-                    if (FfmpegCliTooling.TryProbeMediaFile(plan.FfprobePath, plan.OutputFilePath, out probe) &&
-                        probe != null &&
-                        probe.Duration.HasValue)
-                    {
-                        probedDuration = probe.Duration;
-                    }
-
-                    return new ClipExportResult(
-                        true,
-                        plan,
-                        "Clip export completed.",
-                        0,
-                        stopwatch.Elapsed,
-                        probedDuration,
-                        processResult.StandardOutput,
-                        processResult.StandardError);
-                },
-                cancellationToken).ConfigureAwait(false);
+            return await new ExportHostClient().ExportClipAsync(plan, cancellationToken).ConfigureAwait(false);
         }
 
         private static string BuildFfmpegArguments(

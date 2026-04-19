@@ -106,6 +106,44 @@ function Test-OutputRuntimeIntegrity {
     }
 }
 
+function Stop-OutputProcesses {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$OutputDirectory
+    )
+
+    if (-not (Test-Path -LiteralPath $OutputDirectory)) {
+        return
+    }
+
+    $normalizedOutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
+    if (-not $normalizedOutputDirectory.EndsWith([System.IO.Path]::DirectorySeparatorChar.ToString(), [System.StringComparison]::Ordinal)) {
+        $normalizedOutputDirectory += [System.IO.Path]::DirectorySeparatorChar
+    }
+
+    $processes = @(
+        Get-CimInstance Win32_Process -Filter "Name = 'FramePlayer.exe'" |
+            Where-Object {
+                if ([string]::IsNullOrWhiteSpace($_.ExecutablePath)) {
+                    return $false
+                }
+
+                $executablePath = [System.IO.Path]::GetFullPath($_.ExecutablePath)
+                return $executablePath.StartsWith($normalizedOutputDirectory, [System.StringComparison]::OrdinalIgnoreCase)
+            }
+    )
+
+    foreach ($process in $processes) {
+        try {
+            Stop-Process -Id $process.ProcessId -Force -ErrorAction Stop | Out-Null
+            Wait-Process -Id $process.ProcessId -Timeout 5 -ErrorAction SilentlyContinue
+        }
+        catch {
+            throw "Could not stop stale test-drop process $($process.ProcessId) from '$($process.ExecutablePath)': $($_.Exception.Message)"
+        }
+    }
+}
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $resolvedOutputDirectory = if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     Join-Path $repoRoot "bin\TestDrop"
@@ -124,11 +162,25 @@ $resolvedOutputDirectory = Assert-PathWithin -Path $resolvedOutputDirectory -Roo
 $resolvedIntermediateDirectory = Assert-PathWithin -Path $resolvedIntermediateDirectory -Root (Join-Path $repoRoot "obj")
 
 $ensureRuntimeScript = Join-Path $PSScriptRoot "Ensure-DevRuntime.ps1"
+$ensureExportRuntimeScript = Join-Path $PSScriptRoot "Ensure-DevExportRuntime.ps1"
 $ensureExportToolsScript = Join-Path $PSScriptRoot "Ensure-DevExportTools.ps1"
 $projectPath = Join-Path $repoRoot "FramePlayer.csproj"
 $manifestPath = Join-Path $repoRoot "Runtime\runtime-manifest.json"
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 $expectedRuntimeFiles = Get-ManifestFileHashes -Manifest $manifest
+$exportRuntimeManifestPath = Join-Path $repoRoot "Runtime\export-runtime-manifest.json"
+$exportRuntimeManifest = if (Test-Path -LiteralPath $exportRuntimeManifestPath) {
+    Get-Content -LiteralPath $exportRuntimeManifestPath -Raw | ConvertFrom-Json
+}
+else {
+    $null
+}
+$expectedExportRuntimeFiles = if ($null -ne $exportRuntimeManifest) {
+    Get-ManifestFileHashes -Manifest $exportRuntimeManifest
+}
+else {
+    @{}
+}
 $exportToolsManifestPath = Join-Path $repoRoot "Runtime\export-tools-manifest.json"
 $exportToolsManifest = if (Test-Path -LiteralPath $exportToolsManifestPath) {
     Get-Content -LiteralPath $exportToolsManifestPath -Raw | ConvertFrom-Json
@@ -152,13 +204,32 @@ if ($expectedExportToolsFiles.Count -gt 0 -and (Test-Path -LiteralPath $ensureEx
         & $ensureExportToolsScript
     }
 }
-
-if (Test-Path -LiteralPath $resolvedOutputDirectory) {
-    Remove-Item -LiteralPath $resolvedOutputDirectory -Recurse -Force
+if ($expectedExportRuntimeFiles.Count -gt 0 -and (Test-Path -LiteralPath $ensureExportRuntimeScript)) {
+    & $ensureExportRuntimeScript
 }
 
-if (Test-Path -LiteralPath $resolvedIntermediateDirectory) {
-    Remove-Item -LiteralPath $resolvedIntermediateDirectory -Recurse -Force
+try {
+    if (Test-Path -LiteralPath $resolvedOutputDirectory) {
+        Stop-OutputProcesses -OutputDirectory $resolvedOutputDirectory
+        Remove-Item -LiteralPath $resolvedOutputDirectory -Recurse -Force
+    }
+
+    if (Test-Path -LiteralPath $resolvedIntermediateDirectory) {
+        Remove-Item -LiteralPath $resolvedIntermediateDirectory -Recurse -Force
+    }
+}
+catch {
+    if (-not [string]::IsNullOrWhiteSpace($OutputDirectory) -or
+        -not [string]::IsNullOrWhiteSpace($IntermediateDirectory)) {
+        throw
+    }
+
+    $fallbackSuffix = [Guid]::NewGuid().ToString("N").Substring(0, 8)
+    $fallbackOutputDirectory = Join-Path (Join-Path $repoRoot "bin") ("TestDrop-" + $fallbackSuffix)
+    $fallbackIntermediateDirectory = Join-Path (Join-Path $repoRoot "obj") ("TestDrop-" + $fallbackSuffix)
+    $resolvedOutputDirectory = Assert-PathWithin -Path $fallbackOutputDirectory -Root (Join-Path $repoRoot "bin")
+    $resolvedIntermediateDirectory = Assert-PathWithin -Path $fallbackIntermediateDirectory -Root (Join-Path $repoRoot "obj")
+    Write-Warning ("Could not clean the default test-drop directories. Building into fallback output '{0}' instead." -f $resolvedOutputDirectory)
 }
 
 New-Item -ItemType Directory -Force -Path $resolvedOutputDirectory | Out-Null
@@ -200,9 +271,18 @@ if ($staleRuntimeFiles.Count -gt 0) {
 
 Test-OutputRuntimeIntegrity -DirectoryPath $resolvedOutputDirectory -ExpectedHashes $expectedRuntimeFiles
 
-if ($expectedExportToolsFiles.Count -gt 0 -and (Test-Path -LiteralPath (Join-Path $resolvedOutputDirectory "ffmpeg-tools"))) {
-    $exportToolsOutputDirectory = Join-Path $resolvedOutputDirectory "ffmpeg-tools"
-    Test-OutputRuntimeIntegrity -DirectoryPath $exportToolsOutputDirectory -ExpectedHashes $expectedExportToolsFiles
+if ($expectedExportRuntimeFiles.Count -gt 0) {
+    $exportRuntimeOutputDirectory = Join-Path $resolvedOutputDirectory "ffmpeg-export"
+    if (-not (Test-Path -LiteralPath $exportRuntimeOutputDirectory)) {
+        throw "Packaged output is missing the ffmpeg-export runtime directory."
+    }
+
+    Test-OutputRuntimeIntegrity -DirectoryPath $exportRuntimeOutputDirectory -ExpectedHashes $expectedExportRuntimeFiles
+}
+
+$ffmpegToolsOutputDirectory = Join-Path $resolvedOutputDirectory "ffmpeg-tools"
+if (Test-Path -LiteralPath $ffmpegToolsOutputDirectory) {
+    throw "Packaged output still contains the ffmpeg-tools directory."
 }
 
 $testingNotesPath = Join-Path $repoRoot "TESTING_NOTES.md"
@@ -235,6 +315,7 @@ Compress-Archive -Path (Join-Path $resolvedOutputDirectory "*") -DestinationPath
     ExecutablePath = $exePath
     ArtifactPath = $resolvedArtifactPath
     RuntimeFiles = @($expectedRuntimeFiles.Keys | Sort-Object)
+    ExportRuntimeFiles = @($expectedExportRuntimeFiles.Keys | Sort-Object)
     ExportToolsFiles = @($expectedExportToolsFiles.Keys | Sort-Object)
     ProductVersion = $artifactVersion
 }

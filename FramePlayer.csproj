@@ -84,9 +84,10 @@
     <None Remove="LICENSE" />
     <None Remove="THIRD_PARTY_NOTICES.md" />
     <None Remove="Runtime\runtime-manifest.json" />
+    <None Remove="Runtime\export-runtime-manifest.json" />
     <None Remove="Runtime\export-tools-manifest.json" />
     <None Remove="Runtime\ffmpeg\*.dll" />
-    <None Remove="Runtime\ffmpeg-tools\*.*" />
+    <None Remove="Runtime\ffmpeg-export\*.dll" />
     <None Include="LICENSE">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
@@ -97,11 +98,12 @@
       <Link>%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="Runtime\ffmpeg-tools\*.*">
-      <Link>ffmpeg-tools\%(Filename)%(Extension)</Link>
+    <Content Include="Runtime\ffmpeg-export\*.dll">
+      <Link>ffmpeg-export\%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <EmbeddedResource Include="Runtime\runtime-manifest.json" LogicalName="FramePlayer.Runtime.runtime-manifest.json" />
+    <EmbeddedResource Include="Runtime\export-runtime-manifest.json" LogicalName="FramePlayer.Runtime.export-runtime-manifest.json" />
     <EmbeddedResource Include="Runtime\export-tools-manifest.json" LogicalName="FramePlayer.Runtime.export-tools-manifest.json" />
   </ItemGroup>
 
@@ -114,10 +116,33 @@
           WorkingDirectory="$(MSBuildProjectDirectory)" />
   </Target>
 
+  <Target Name="EnsureBundledExportRuntime"
+          BeforeTargets="PrepareForBuild"
+          Condition="'$(OS)' == 'Windows_NT' and '$(SkipRuntimeBootstrap)' != 'true' and !Exists('Runtime\\ffmpeg-export\\avfilter-11.dll')">
+    <Message Importance="high"
+             Text="FFmpeg export runtime DLLs are missing. Restoring the pinned export runtime for this build..." />
+    <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\scripts\Ensure-DevExportRuntime.ps1&quot; -Required"
+          WorkingDirectory="$(MSBuildProjectDirectory)" />
+  </Target>
+
   <Target Name="WarnIfBundledRuntimeMissing"
           BeforeTargets="Build"
           Condition="'$(SkipRuntimeBootstrap)' != 'true' and !Exists('Runtime\\ffmpeg\\avcodec-62.dll')">
     <Message Importance="high"
              Text="FFmpeg runtime DLLs are not present in Runtime\\ffmpeg. Frame Player attempted to bootstrap them automatically. If the download failed, run .\\scripts\\Ensure-DevRuntime.ps1 manually and rebuild." />
+  </Target>
+
+  <Target Name="WarnIfBundledExportRuntimeMissing"
+          BeforeTargets="Build"
+          Condition="'$(SkipRuntimeBootstrap)' != 'true' and !Exists('Runtime\\ffmpeg-export\\avfilter-11.dll')">
+    <Message Importance="high"
+             Text="FFmpeg export runtime DLLs are not present in Runtime\\ffmpeg-export. Frame Player attempted to restore them automatically. If that restore failed, run .\\scripts\\Ensure-DevExportRuntime.ps1 manually and rebuild." />
+  </Target>
+
+  <Target Name="RemoveStaleExportToolsOutput"
+          AfterTargets="Build">
+    <RemoveDir Directories="$(OutDir)ffmpeg-tools"
+               Condition="Exists('$(OutDir)ffmpeg-tools')" />
+    <Delete Files="$(OutDir)ffmpeg.exe;$(OutDir)ffprobe.exe" />
   </Target>
 </Project>

@@ -5162,9 +5162,9 @@ namespace FramePlayer
             audioInsertionTarget = null;
             failureMessage = string.Empty;
 
-            if (!_audioInsertionService.IsBundledToolingAvailable)
+            if (!_audioInsertionService.IsBundledRuntimeAvailable)
             {
-                failureMessage = _audioInsertionService.GetToolAvailabilityMessage();
+                failureMessage = _audioInsertionService.GetRuntimeAvailabilityMessage();
                 return false;
             }
 
@@ -5331,9 +5331,9 @@ namespace FramePlayer
             exportContext = null;
             failureMessage = string.Empty;
 
-            if (!_compareSideBySideExportService.IsBundledToolingAvailable)
+            if (!_compareSideBySideExportService.IsBundledRuntimeAvailable)
             {
-                failureMessage = _compareSideBySideExportService.GetToolAvailabilityMessage();
+                failureMessage = _compareSideBySideExportService.GetRuntimeAvailabilityMessage();
                 return false;
             }
 
@@ -6231,9 +6231,9 @@ namespace FramePlayer
             exportTarget = null;
             failureMessage = string.Empty;
 
-            if (!_clipExportService.IsBundledToolingAvailable)
+            if (!_clipExportService.IsBundledRuntimeAvailable)
             {
-                failureMessage = _clipExportService.GetToolAvailabilityMessage();
+                failureMessage = _clipExportService.GetRuntimeAvailabilityMessage();
                 return false;
             }
 
@@ -8089,8 +8089,8 @@ namespace FramePlayer
                     ".NET: " + Environment.Version,
                     "Runtime available: " + (App.HasBundledFfmpegRuntime ? "Yes" : "No"),
                     "Runtime status: " + GetRuntimeStatusMessage(),
-                    "Export tools available: " + (_clipExportService.IsBundledToolingAvailable ? "Yes" : "No"),
-                    "Export tools status: " + _clipExportService.GetToolAvailabilityMessage(),
+                "Export runtime available: " + (_clipExportService.IsBundledRuntimeAvailable ? "Yes" : "No"),
+                "Export runtime status: " + _clipExportService.GetRuntimeAvailabilityMessage(),
                     "Latest session log: " + GetSafeFileDisplay(_diagnosticLogService.LatestLogPath),
                     "Current file: " + GetSafeFileDisplay(_currentFilePath),
                     "Media loaded: " + (_isMediaLoaded ? "Yes" : "No"),

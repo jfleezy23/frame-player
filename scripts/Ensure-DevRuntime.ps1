@@ -45,7 +45,21 @@ function Get-Sha256 {
         [string]$FilePath
     )
 
-    return (Get-FileHash -Path $FilePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $stream = [System.IO.File]::OpenRead($FilePath)
+    try {
+        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $hashBytes = $sha256.ComputeHash($stream)
+        }
+        finally {
+            $sha256.Dispose()
+        }
+    }
+    finally {
+        $stream.Dispose()
+    }
+
+    return [System.BitConverter]::ToString($hashBytes).Replace("-", "").ToLowerInvariant()
 }
 
 function Test-ManifestLeafName {

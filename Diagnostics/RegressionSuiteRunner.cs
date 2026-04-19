@@ -2223,7 +2223,6 @@ namespace FramePlayer.Diagnostics
                     if (audioInsertionEligible)
                     {
                         var tooling = new FfmpegCliTooling();
-                        var toolPaths = tooling.GetRequiredToolPaths();
                         var syntheticAudioDirectory = Path.Combine(
                             Path.GetTempPath(),
                             "frameplayer-audio-insertion-" + Guid.NewGuid().ToString("N"));
@@ -2238,7 +2237,7 @@ namespace FramePlayer.Diagnostics
 
                             var wavReplacementPath = Path.Combine(syntheticAudioDirectory, "replacement-short.wav");
                             var wavOutputPath = Path.Combine(syntheticAudioDirectory, "inserted-short.wav-test.mp4");
-                            CreateSyntheticAudioTrack(toolPaths.FfmpegPath, wavReplacementPath, shortAudioDuration, false);
+                            CreateSyntheticAudioTrack(null, wavReplacementPath, shortAudioDuration, false);
                             var wavInsertionResult = await controller.ReplaceAudioTrackAsync(wavReplacementPath, wavOutputPath).ConfigureAwait(true);
                             if (wavInsertionResult == null)
                             {
@@ -2290,54 +2289,69 @@ namespace FramePlayer.Diagnostics
 
                             var mp3ReplacementPath = Path.Combine(syntheticAudioDirectory, "replacement-long.mp3");
                             var mp3OutputPath = Path.Combine(syntheticAudioDirectory, "inserted-long.mp3-test.mp4");
-                            CreateSyntheticAudioTrack(toolPaths.FfmpegPath, mp3ReplacementPath, longAudioDuration, true);
-                            var mp3InsertionResult = await controller.ReplaceAudioTrackAsync(mp3ReplacementPath, mp3OutputPath).ConfigureAwait(true);
-                            if (mp3InsertionResult == null)
+                            if (!tooling.IsBundledToolingAvailable)
                             {
-                                checks.Add(Fail(
+                                Trace("UI harness skipping MP3 audio insertion coverage because packaged CLI tools were not available: " + tooling.GetToolAvailabilityMessage());
+                                checks.Add(Warning(
                                     filePath,
                                     "ui",
-                                    LifecycleCategory,
+                                    CoverageCategory,
                                     UiAudioInsertionMp3CheckName,
-                                    "MP3 audio insertion returned no result."));
-                            }
-                            else if (!mp3InsertionResult.Succeeded)
-                            {
-                                checks.Add(Fail(
-                                    filePath,
-                                    "ui",
-                                    LifecycleCategory,
-                                    UiAudioInsertionMp3CheckName,
-                                    "MP3 audio insertion failed: " + mp3InsertionResult.Message));
+                                    "MP3 audio insertion coverage was skipped because the packaged regression output does not include the development FFmpeg CLI tools required to synthesize an MP3 fixture. " +
+                                    tooling.GetToolAvailabilityMessage()));
                             }
                             else
                             {
-                                var actualDuration = mp3InsertionResult.ProbedDuration ?? mp3InsertionResult.Plan.VideoDuration;
-                                var durationDelta = Math.Abs((actualDuration - mp3InsertionResult.Plan.VideoDuration).TotalMilliseconds);
-                                var mp3Succeeded = File.Exists(mp3OutputPath) &&
-                                                   mp3InsertionResult.ProbedHasAudioStream.GetValueOrDefault(false) &&
-                                                   durationDelta <= 250d;
-                                checks.Add(mp3Succeeded
-                                    ? Pass(
+                                var toolPaths = tooling.GetRequiredToolPaths();
+                                CreateSyntheticAudioTrack(toolPaths.FfmpegPath, mp3ReplacementPath, longAudioDuration, true);
+                                var mp3InsertionResult = await controller.ReplaceAudioTrackAsync(mp3ReplacementPath, mp3OutputPath).ConfigureAwait(true);
+                                if (mp3InsertionResult == null)
+                                {
+                                    checks.Add(Fail(
                                         filePath,
                                         "ui",
-                                        CorrectnessCategory,
+                                        LifecycleCategory,
                                         UiAudioInsertionMp3CheckName,
-                                        string.Format(
-                                            CultureInfo.InvariantCulture,
-                                            "MP3 audio insertion produced an MP4 with audio and preserved video duration within tolerance ({0:0.0} ms delta).",
-                                            durationDelta))
-                                    : Fail(
+                                        "MP3 audio insertion returned no result."));
+                                }
+                                else if (!mp3InsertionResult.Succeeded)
+                                {
+                                    checks.Add(Fail(
                                         filePath,
                                         "ui",
-                                        CorrectnessCategory,
+                                        LifecycleCategory,
                                         UiAudioInsertionMp3CheckName,
-                                        string.Format(
-                                            CultureInfo.InvariantCulture,
-                                            "MP3 audio insertion output did not meet expectations. Exists={0}; probed-audio={1}; duration-delta-ms={2:0.0}.",
-                                            File.Exists(mp3OutputPath),
-                                            mp3InsertionResult.ProbedHasAudioStream,
-                                            durationDelta)));
+                                        "MP3 audio insertion failed: " + mp3InsertionResult.Message));
+                                }
+                                else
+                                {
+                                    var actualDuration = mp3InsertionResult.ProbedDuration ?? mp3InsertionResult.Plan.VideoDuration;
+                                    var durationDelta = Math.Abs((actualDuration - mp3InsertionResult.Plan.VideoDuration).TotalMilliseconds);
+                                    var mp3Succeeded = File.Exists(mp3OutputPath) &&
+                                                       mp3InsertionResult.ProbedHasAudioStream.GetValueOrDefault(false) &&
+                                                       durationDelta <= 250d;
+                                    checks.Add(mp3Succeeded
+                                        ? Pass(
+                                            filePath,
+                                            "ui",
+                                            CorrectnessCategory,
+                                            UiAudioInsertionMp3CheckName,
+                                            string.Format(
+                                                CultureInfo.InvariantCulture,
+                                                "MP3 audio insertion produced an MP4 with audio and preserved video duration within tolerance ({0:0.0} ms delta).",
+                                                durationDelta))
+                                        : Fail(
+                                            filePath,
+                                            "ui",
+                                            CorrectnessCategory,
+                                            UiAudioInsertionMp3CheckName,
+                                            string.Format(
+                                                CultureInfo.InvariantCulture,
+                                                "MP3 audio insertion output did not meet expectations. Exists={0}; probed-audio={1}; duration-delta-ms={2:0.0}.",
+                                                File.Exists(mp3OutputPath),
+                                                mp3InsertionResult.ProbedHasAudioStream,
+                                                durationDelta)));
+                                }
                             }
                         }
                         finally
@@ -2688,13 +2702,15 @@ namespace FramePlayer.Diagnostics
                                             FormatFrameIndex(loopEntrySeek.EngineFrameIndex)),
                                         actualFrameIndex: loopEntrySeek.EngineFrameIndex));
                                 Trace("UI harness loop playback smoke: " + filePath);
+                                Trace("UI harness loop playback start request: " + filePath);
                                 await controller.StartPlaybackAsync().ConfigureAwait(true);
-                                var loopPlaybackObservations = new List<UiSnapshot>();
-                                for (var observationIndex = 0; observationIndex < 8; observationIndex++)
-                                {
-                                    await Task.Delay(250, cancellationToken).ConfigureAwait(true);
-                                    loopPlaybackObservations.Add(controller.CaptureSnapshot());
-                                }
+                                Trace("UI harness loop playback start complete: " + filePath);
+                                var loopPlaybackObservations = (await controller.CapturePlaybackObservationsAsync(
+                                        8,
+                                        TimeSpan.FromMilliseconds(250d),
+                                        cancellationToken)
+                                    .ConfigureAwait(true)).ToList();
+                                Trace("UI harness loop playback observation window complete: " + filePath);
 
                                 var observedFrameIndices = loopPlaybackObservations
                                     .Where(snapshot => snapshot.EngineFrameIndex.HasValue)
@@ -2724,8 +2740,11 @@ namespace FramePlayer.Diagnostics
                                         break;
                                     }
 
-                                    await Task.Delay(LoopPlaybackRecoveryDelay, cancellationToken).ConfigureAwait(true);
-                                    loopPlaybackObservations.Add(controller.CaptureSnapshot());
+                                    loopPlaybackObservations.Add(
+                                        await controller.CaptureSnapshotAfterDelayAsync(
+                                                LoopPlaybackRecoveryDelay,
+                                                cancellationToken)
+                                            .ConfigureAwait(true));
                                     observedFrameIndices = loopPlaybackObservations
                                         .Where(snapshot => snapshot.EngineFrameIndex.HasValue)
                                         .Select(snapshot => snapshot.EngineFrameIndex.Value)
@@ -2733,7 +2752,9 @@ namespace FramePlayer.Diagnostics
                                     observedWrapCount = CountObservedFrameWraps(observedFrameIndices);
                                 }
 
+                                Trace("UI harness loop playback pause request: " + filePath);
                                 await controller.PausePlaybackAsync().ConfigureAwait(true);
+                                Trace("UI harness loop playback pause complete: " + filePath);
                                 var loopPlaybackSnapshot = controller.CaptureSnapshot();
                                 var loopStayedWithinRange = loopStartSnapshot.EngineFrameIndex.HasValue &&
                                                             loopEndSnapshot.EngineFrameIndex.HasValue &&
@@ -2846,7 +2867,7 @@ namespace FramePlayer.Diagnostics
                                         "ui",
                                         CoverageCategory,
                                         "ui-loop-export-main-skipped",
-                                        "Main-loop clip export was skipped because the export tools were unavailable or the loop state changed before export."));
+                                        "Main-loop clip export was skipped because the export runtime was unavailable or the loop state changed before export."));
                                 }
                                 else if (!mainExportResult.Succeeded)
                                 {
@@ -2937,12 +2958,11 @@ namespace FramePlayer.Diagnostics
                                     false,
                                     fullMediaEntrySeek.ElapsedMilliseconds));
                                 await controller.StartPlaybackAsync().ConfigureAwait(true);
-                                var fullMediaLoopObservations = new List<UiSnapshot>();
-                                for (var observationIndex = 0; observationIndex < 6; observationIndex++)
-                                {
-                                    await Task.Delay(250, cancellationToken).ConfigureAwait(true);
-                                    fullMediaLoopObservations.Add(controller.CaptureSnapshot());
-                                }
+                                var fullMediaLoopObservations = (await controller.CapturePlaybackObservationsAsync(
+                                        6,
+                                        TimeSpan.FromMilliseconds(250d),
+                                        cancellationToken)
+                                    .ConfigureAwait(true)).ToList();
                                 await controller.PausePlaybackAsync().ConfigureAwait(true);
                                 var fullMediaObservedPositions = fullMediaLoopObservations
                                     .Select(snapshot => snapshot.EnginePresentationTime.TotalSeconds)
@@ -3296,7 +3316,7 @@ namespace FramePlayer.Diagnostics
                                     "ui",
                                     CoverageCategory,
                                     "ui-loop-export-pane-primary-skipped",
-                                    "Primary pane clip export was skipped because the export tools were unavailable or the pane loop state changed before export."));
+                                    "Primary pane clip export was skipped because the export runtime was unavailable or the pane loop state changed before export."));
                             }
                             else if (!primaryPaneExport.Succeeded)
                             {
@@ -3367,7 +3387,7 @@ namespace FramePlayer.Diagnostics
                                     "ui",
                                     CoverageCategory,
                                     "ui-loop-export-pane-compare-skipped",
-                                    "Compare pane clip export was skipped because the export tools were unavailable or the pane loop state changed before export."));
+                                    "Compare pane clip export was skipped because the export runtime was unavailable or the pane loop state changed before export."));
                             }
                             else if (!comparePaneExport.Succeeded)
                             {
@@ -4003,7 +4023,8 @@ namespace FramePlayer.Diagnostics
                 TimeSpan duration,
                 bool encodeMp3)
             {
-                if (string.IsNullOrWhiteSpace(ffmpegPath) || !File.Exists(ffmpegPath))
+                if (encodeMp3 &&
+                    (string.IsNullOrWhiteSpace(ffmpegPath) || !File.Exists(ffmpegPath)))
                 {
                     throw new FileNotFoundException("FFmpeg tooling was not available for synthetic audio generation.", ffmpegPath);
                 }
@@ -4304,9 +4325,25 @@ namespace FramePlayer.Diagnostics
 
             private static async Task WaitForUiIdleAsync(Dispatcher dispatcher)
             {
+                var contextIdleTask = dispatcher.InvokeAsync(
+                    () => { },
+                    DispatcherPriority.ContextIdle).Task;
+                var completedTask = await Task.WhenAny(
+                        contextIdleTask,
+                        Task.Delay(250))
+                    .ConfigureAwait(true);
+                if (completedTask == contextIdleTask)
+                {
+                    await contextIdleTask.ConfigureAwait(true);
+                    return;
+                }
+
+                // Loop playback keeps transport timers and restart work active,
+                // so the hidden harness cannot require full application idleness
+                // before continuing with the next assertion.
                 await dispatcher.InvokeAsync(
                     () => { },
-                    DispatcherPriority.ApplicationIdle).Task;
+                    DispatcherPriority.Background).Task;
             }
 
             private sealed class MainWindowController
@@ -4466,14 +4503,34 @@ namespace FramePlayer.Diagnostics
 
                 public async Task StartPlaybackAsync(SynchronizedOperationScope? operationScope, string paneId)
                 {
-                    await InvokeTaskAsync(_startPlaybackAsyncMethod, operationScope, paneId).ConfigureAwait(true);
-                    await WaitForUiIdleAsync(_window.Dispatcher).ConfigureAwait(true);
+                    var result = _startPlaybackAsyncMethod.Invoke(_window, new object[] { operationScope, paneId });
+                    var task = result as Task;
+                    if (task == null)
+                    {
+                        return;
+                    }
+
+                    var completedTask = await Task.WhenAny(
+                            task,
+                            Task.Delay(TimeSpan.FromSeconds(2d)))
+                        .ConfigureAwait(true);
+                    if (completedTask == task)
+                    {
+                        await task.ConfigureAwait(true);
+                        return;
+                    }
+
+                    Trace("UI harness start playback task timed out while waiting for completion. Continuing with observed transport state.");
                 }
 
                 public async Task PausePlaybackAsync()
                 {
-                    await InvokeTaskAsync(_pausePlaybackAsyncMethod, true).ConfigureAwait(true);
-                    await WaitForUiIdleAsync(_window.Dispatcher).ConfigureAwait(true);
+                    await InvokeTaskWithTimeoutAsync(
+                            _pausePlaybackAsyncMethod,
+                            TimeSpan.FromSeconds(2d),
+                            "pause playback",
+                            true)
+                        .ConfigureAwait(true);
                 }
 
                 public async Task SetLoopPlaybackEnabledAsync(bool isEnabled)
@@ -4547,6 +4604,32 @@ namespace FramePlayer.Diagnostics
                             mode,
                             audioSource)
                         .ConfigureAwait(true);
+                }
+
+                public async Task<IReadOnlyList<UiSnapshot>> CapturePlaybackObservationsAsync(
+                    int observationCount,
+                    TimeSpan interval,
+                    CancellationToken cancellationToken)
+                {
+                    var observations = new List<UiSnapshot>();
+                    var sampleCount = Math.Max(0, observationCount);
+                    for (var observationIndex = 0; observationIndex < sampleCount; observationIndex++)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        await Task.Delay(interval, cancellationToken).ConfigureAwait(false);
+                        observations.Add(await InvokeOnUiThreadAsync(CaptureSnapshot).ConfigureAwait(false));
+                    }
+
+                    return observations;
+                }
+
+                public async Task<UiSnapshot> CaptureSnapshotAfterDelayAsync(
+                    TimeSpan delay,
+                    CancellationToken cancellationToken)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                    return await InvokeOnUiThreadAsync(CaptureSnapshot).ConfigureAwait(false);
                 }
 
                 public async Task SetCompareModeAsync(bool isEnabled)
@@ -4987,6 +5070,29 @@ namespace FramePlayer.Diagnostics
                     await WaitForUiIdleAsync(_window.Dispatcher).ConfigureAwait(true);
                 }
 
+                private async Task InvokeTaskWithTimeoutAsync(
+                    MethodInfo method,
+                    TimeSpan timeout,
+                    string operationName,
+                    params object[] arguments)
+                {
+                    var result = method.Invoke(_window, arguments);
+                    var task = result as Task;
+                    if (task == null)
+                    {
+                        return;
+                    }
+
+                    var completedTask = await Task.WhenAny(task, Task.Delay(timeout)).ConfigureAwait(true);
+                    if (completedTask == task)
+                    {
+                        await task.ConfigureAwait(true);
+                        return;
+                    }
+
+                    Trace("UI harness " + operationName + " task timed out while waiting for completion. Continuing with observed transport state.");
+                }
+
                 private async Task<T> InvokeTaskWithResultAsync<T>(MethodInfo method, params object[] arguments)
                 {
                     var result = method.Invoke(_window, arguments);
@@ -5011,6 +5117,11 @@ namespace FramePlayer.Diagnostics
                     }
 
                     return (T)result;
+                }
+
+                private Task<T> InvokeOnUiThreadAsync<T>(Func<T> callback)
+                {
+                    return _window.Dispatcher.InvokeAsync(callback).Task;
                 }
 
                 private static MethodInfo RequireMethod(Type type, string name, params Type[] parameterTypes)
