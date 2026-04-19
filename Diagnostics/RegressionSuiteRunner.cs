@@ -45,7 +45,6 @@ namespace FramePlayer.Diagnostics
             ".avi",
             ".m4v",
             ".mkv",
-            ".mov",
             ".mp4",
             ".wmv"
         };

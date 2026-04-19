@@ -61,7 +61,6 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-ReviewEngi
 When a folder is supplied, the script collects these extensions by default:
 
 - `.mp4`
-- `.mov`
 - `.mkv`
 - `.avi`
 - `.wmv`

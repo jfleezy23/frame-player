@@ -4,7 +4,7 @@ Frame Player is a frames-first WPF review tool built on a custom FFmpeg engine w
 
 ## What It Does
 
-- Opens `.avi`, `.mov`, `.m4v`, `.mp4`, `.mkv`, and `.wmv`
+- Opens `.avi`, `.m4v`, `.mp4`, `.mkv`, and `.wmv`
 - Uses a standard desktop UI with `Open Video`, `Open Recent`, and `Close Video`
 - Supports drag and drop for supported files
 - Supports play, pause, rewind 5 seconds, fast forward 5 seconds, previous frame, and next frame

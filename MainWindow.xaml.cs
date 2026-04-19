@@ -41,8 +41,8 @@ namespace FramePlayer
         private const string UnknownDisplayLabel = "Unknown";
         private const string AbsoluteFrameIdentityLabel = "absolute";
         private const string SegmentLocalFrameIdentityLabel = "segment-local";
-        private const string SupportedVideoExtensionsDescription = "AVI, MOV, M4V, MP4, MKV, WMV";
-        private const string OpenVideoFileFilter = "Supported Video Files|*.avi;*.mov;*.m4v;*.mp4;*.mkv;*.wmv|AVI Files|*.avi|MOV Files|*.mov|M4V Files|*.m4v|MP4 Files|*.mp4|MKV Files|*.mkv|WMV Files|*.wmv|All Files|*.*";
+        private const string SupportedVideoExtensionsDescription = "AVI, M4V, MP4, MKV, WMV";
+        private const string OpenVideoFileFilter = "Supported Video Files|*.avi;*.m4v;*.mp4;*.mkv;*.wmv|AVI Files|*.avi|M4V Files|*.m4v|MP4 Files|*.mp4|MKV Files|*.mkv|WMV Files|*.wmv|All Files|*.*";
         private const string LoopOffStatusLabel = "Loop: off";
         private const string DefaultCompareAlignmentStatus = "Last align: none";
         private const double CompareModePreferredMinWindowWidth = 1180d;
@@ -3043,7 +3043,18 @@ namespace FramePlayer
         {
             RecentFilesMenuItem.Items.Clear();
 
-            var recentFiles = _recentFilesService.Load();
+            var recentFiles = _recentFilesService.Load().ToList();
+            for (var i = recentFiles.Count - 1; i >= 0; i--)
+            {
+                if (IsSupportedVideoFile(recentFiles[i]))
+                {
+                    continue;
+                }
+
+                _recentFilesService.Remove(recentFiles[i]);
+                recentFiles.RemoveAt(i);
+            }
+
             if (recentFiles.Count == 0)
             {
                 RecentFilesMenuItem.Items.Add(new MenuItem
@@ -3562,7 +3573,6 @@ namespace FramePlayer
             }
 
             return extension.Equals(".avi", StringComparison.OrdinalIgnoreCase)
-                || extension.Equals(".mov", StringComparison.OrdinalIgnoreCase)
                 || extension.Equals(".m4v", StringComparison.OrdinalIgnoreCase)
                 || extension.Equals(".mp4", StringComparison.OrdinalIgnoreCase)
                 || extension.Equals(".mkv", StringComparison.OrdinalIgnoreCase)

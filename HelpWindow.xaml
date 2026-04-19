@@ -130,7 +130,7 @@
                      FontSize="13"
                      LineHeight="20"
                      TextWrapping="Wrap"
-                     Text="Supported formats include AVI, MOV, M4V, MP4, MKV, and WMV." />
+                     Text="Supported formats include AVI, M4V, MP4, MKV, and WMV." />
         </StackPanel>
       </ScrollViewer>
     </Border>
