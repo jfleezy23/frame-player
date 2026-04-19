@@ -1,13 +1,14 @@
 # Frame Player v1.8.1 Release Note
 
-This note documents the `v1.8.1` release. It is a maintenance release on top of `v1.8.0` that keeps the existing frame-first review behavior and export feature set while tightening release validation, hardening the shipped runtime surface, and removing shipped FFmpeg executables from the app output.
+This note documents the `v1.8.1` release. It is a maintenance release on top of `v1.8.0` that keeps the existing frame-first review behavior and export feature set while tightening release validation, aligning the active supported review surface, and hardening the shipped runtime surface.
 
 ## What Changed In v1.8.1
 
 - No new playback, seek, frame-step, or export semantics were introduced for this release.
 - Release validation was rerun on the full supported local corpus before cutting the release.
 - The repository-carried packaged regression harness now honors `-Recurse` when `-CorpusPath` is used, so the default full-corpus path no longer silently truncates nested media coverage.
-- The shipped app output now carries the DLL-only `ffmpeg-export` runtime for probe/export work and no longer ships `ffmpeg.exe`, `ffprobe.exe`, or an `ffmpeg-tools` directory.
+- `.mov` is no longer part of the active supported review surface or the default repo-carried validation corpus.
+- The shipped app output now carries the DLL-only `ffmpeg-export` runtime for probe/export work.
 
 ## What Stays The Same
 
@@ -35,21 +36,22 @@ Green validation captured for this release:
   - command: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Test-RepoHarnessScripts.ps1`
   - result: `Repository harness scripts are present and syntactically valid.`
 - Full review-engine manual sweep:
-  - command: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Run-ReviewEngine-ManualTests.ps1 -Path "C:\Projects\Video Test Files" -Recurse -Configuration Release -Output ".\artifacts\review-engine-manual-tests-full"`
-  - files tested: `17`
-  - result rows emitted: `136`
-  - pass / warning / fail / advisory: `93 / 9 / 0 / 34`
+  - command: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Run-ReviewEngine-ManualTests.ps1 -Path "C:\Projects\Video Test Files" -Recurse -Configuration Release -Output ".\artifacts\review-engine-manual-tests-full-no-mov-20260418"`
+  - files tested: `9`
+  - result rows emitted: `72`
+  - pass / warning / fail / advisory: `52 / 2 / 0 / 18`
 - Full packaged regression corpus:
-  - command: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Run-RegressionSuite.ps1 -CorpusPath "C:\Projects\Video Test Files" -Recurse -MaxCorpusFiles 0 -Configuration Release -Output ".\artifacts\regression-suite-full"`
-  - files tested: `18`
-  - note: the run includes the repo-carried `dist\Frame Player\sample-test.mp4` plus the `17` supported files from the external local corpus
-  - checks run: `1358`
-  - pass / warning / fail: `1329 / 29 / 0`
+  - command: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Run-RegressionSuite.ps1 -CorpusPath "C:\Projects\Video Test Files" -Recurse -MaxCorpusFiles 0 -Configuration Release -Output ".\artifacts\regression-suite-no-mov-20260418"`
+  - files tested: `10`
+  - note: the run includes the repo-carried `dist\Frame Player\sample-test.mp4` plus the `9` supported files from the external local corpus
+  - checks run: `750`
+  - pass / warning / fail: `732 / 18 / 0`
 
-Known non-blocking warnings remain the intentional frames-first pending-index and tiny-clip coverage skips:
+Known non-blocking warnings remain limited to the intentional frames-first pending-index cases and expected packaged-coverage skips:
 
 - `seek-to-time-before-index-ready`
 - `ui-pre-index-click-seek`
+- `ui-audio-insertion-mp3` packaged-coverage skips because the shipped app output does not carry local/dev CLI tooling
 - short-clip loop coverage skips where the corpus sample does not have enough indexed frames to make the scenario meaningful
 
 ## Release Guidance
