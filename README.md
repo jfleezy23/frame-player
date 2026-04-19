@@ -65,12 +65,13 @@ The shipped app is packaged with the FFmpeg runtime DLLs next to `FramePlayer.ex
 - Runtime provenance: built from the official FFmpeg source tag `n8.1` at commit `9047fa1b084f76b1b4d065af2d743df1b40dfb56`
 - Runtime hashes and source-build metadata are recorded in `Runtime\\runtime-manifest.json` and `docs\\ffmpeg-8.1-build-notes.md`
 - Export-runtime hashes and source-build metadata are recorded in `Runtime\\export-runtime-manifest.json`
-- Export-tools hashes and source-build metadata are recorded in `Runtime\\export-tools-manifest.json`
+- Export-tools hashes and source-build metadata are recorded in `Runtime\\export-tools-manifest.json` for local/dev harness flows only
 - The current source-build path enables FFmpeg's Vulkan hardware-device support, but actual GPU acceleration still depends on a system Vulkan loader/driver at runtime
 - There is no FFmpeg folder picker in the UI
 - Playback and frame stepping do not call `ffmpeg.exe` or `ffprobe.exe`; reviewed clip export, compare export, audio insertion, and probe work run through a separate headless export host backed by the bundled `ffmpeg-export` DLL set
 - Playback and frame stepping run through the custom FFmpeg engine and the bundled FFmpeg DLLs loaded in-process
 - Export work runs through a separate pinned FFmpeg runtime stored under `ffmpeg-export` beside the app output
+- Shipped app output no longer includes `ffmpeg.exe`, `ffprobe.exe`, or an `ffmpeg-tools` directory
 - Playback uses a simple audio-master clock when audio output is active, while exact frame stepping remains decode/index based
 - Session diagnostics are mirrored to `%LocalAppData%\\FramePlayer\\Logs\\latest-session.log` and protected at rest with Windows DPAPI
 - `File > Export Diagnostics...` saves a shareable text report with runtime and playback state
@@ -91,13 +92,15 @@ If you just want a working local build without thinking about dependencies:
 That script:
 
 1. Restores the pinned FFmpeg runtime from the local source-built candidate or local runtime archive when available
-2. Attempts to restore the pinned FFmpeg export tools when local harness/tooling support needs them
+2. Attempts to restore the pinned FFmpeg export tools only when local harness/tooling support needs them
 3. Restores the pinned FFmpeg export runtime into `Runtime\ffmpeg-export`
 4. Verifies the runtime archive SHA256 and the extracted DLL hashes
 5. Restores NuGet packages
 6. Builds the app in `Release|x64`
 
 If the self-built runtime has not been staged yet, run `.\scripts\ffmpeg\Build-FFmpeg-8.1.ps1` first if you want a local candidate/runtime archive. If you also want the export host available in the local build, run `.\scripts\ffmpeg\Build-FFmpeg-Tools-8.1.ps1`, then `.\scripts\Ensure-DevExportTools.ps1`, and then `.\scripts\Ensure-DevExportRuntime.ps1`. `.\scripts\ffmpeg\Build-FFmpeg-ExportRuntime-8.1.ps1` is also available when you want to stage the lean DLL-only candidate runtime locally. Regular Visual Studio and `dotnet` CLI builds still bootstrap `Runtime\ffmpeg` automatically when it is missing, and clean bootstrap environments fall back to the verified runtime-only `v1.5.0` release asset.
+
+The local `ffmpeg-tools` bundle is still used by some harness and validation flows, but it is not part of the shipped app output for the current release line.
 
 For phase-1 GPU validation, keep the default `Playback > Use GPU Acceleration` setting enabled and test on a machine with a working Vulkan loader/driver. Unsupported systems and unsupported codec/device combinations stay on CPU decode automatically.
 
