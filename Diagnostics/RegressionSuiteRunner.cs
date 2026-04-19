@@ -45,7 +45,6 @@ namespace FramePlayer.Diagnostics
             ".avi",
             ".m4v",
             ".mkv",
-            ".mov",
             ".mp4",
             ".wmv"
         };
@@ -2018,11 +2017,13 @@ namespace FramePlayer.Diagnostics
                     window = new MainWindow
                     {
                         ShowInTaskbar = false,
+                        ShowActivated = false,
                         WindowStartupLocation = WindowStartupLocation.Manual,
                         Left = -20000,
                         Top = -20000,
                         Width = 1280,
-                        Height = 800
+                        Height = 800,
+                        Opacity = 0d
                     };
                     window.Show();
                     await WaitForUiIdleAsync(window.Dispatcher).ConfigureAwait(true);

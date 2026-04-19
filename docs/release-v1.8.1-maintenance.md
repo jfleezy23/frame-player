@@ -1,12 +1,13 @@
 # Frame Player v1.8.1 Release Note
 
-This note documents the `v1.8.1` release. It is a maintenance release on top of `v1.8.0` that keeps the existing frame-first review behavior and export feature set while tightening release validation and repo-carried harness correctness.
+This note documents the `v1.8.1` release. It is a maintenance release on top of `v1.8.0` that keeps the existing frame-first review behavior and export feature set while tightening release validation, hardening the shipped runtime surface, and removing shipped FFmpeg executables from the app output.
 
 ## What Changed In v1.8.1
 
 - No new playback, seek, frame-step, or export semantics were introduced for this release.
 - Release validation was rerun on the full supported local corpus before cutting the release.
 - The repository-carried packaged regression harness now honors `-Recurse` when `-CorpusPath` is used, so the default full-corpus path no longer silently truncates nested media coverage.
+- The shipped app output now carries the DLL-only `ffmpeg-export` runtime for probe/export work and no longer ships `ffmpeg.exe`, `ffprobe.exe`, or an `ffmpeg-tools` directory.
 
 ## What Stays The Same
 
@@ -18,7 +19,9 @@ This note documents the `v1.8.1` release. It is a maintenance release on top of 
 
 - Product version: `v1.8.1`
 - Current pinned clean-runner runtime bootstrap asset: `v1.5.0`
-- `Runtime\runtime-manifest.json` and `Runtime\export-tools-manifest.json` remain the runtime and tooling integrity sources of truth.
+- `Runtime\runtime-manifest.json` remains the playback-runtime integrity source of truth.
+- `Runtime\export-runtime-manifest.json` remains the shipped export-runtime integrity source of truth.
+- `Runtime\export-tools-manifest.json` remains the local/dev harness-tooling integrity source of truth and is not part of the shipped app output.
 
 ## Validation Evidence
 
@@ -52,6 +55,7 @@ Known non-blocking warnings remain the intentional frames-first pending-index an
 ## Release Guidance
 
 - Treat `v1.8.1` as a maintenance release that preserves the current user-facing behavior while making release validation more trustworthy.
+- Treat the DLL-only export host/runtime cut as a packaging and hardening change, not a new user-facing feature line.
 - Keep `Properties\AssemblyInfo.cs` as the canonical product-version source.
 - Keep the app-driven regression suite as the source of truth for release-style playback/export validation.
 - Release outputs for this cut should reflect product version `1.8.1` and match the validated verification output.

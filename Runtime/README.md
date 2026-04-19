@@ -17,10 +17,10 @@ The active runtime is the self-built FFmpeg 8.1 line staged locally by `scripts\
 `scripts\Ensure-DevRuntime.ps1` restores `Runtime\ffmpeg\` from the local candidate folder or local runtime archive before attempting any download fallback.
 Packaged builds must include `libwinpthread-1.dll` beside the FFmpeg DLLs and `FramePlayer.exe`.
 The separate export runtime is pinned through `Runtime\export-runtime-manifest.json` and restored to `Runtime\ffmpeg-export\`.
-The local/dev-only CLI tool bundle remains pinned through `Runtime\export-tools-manifest.json` and restored to `Runtime\ffmpeg-tools\`.
+The local/dev-only CLI tool bundle remains pinned through `Runtime\export-tools-manifest.json` and restored to `Runtime\ffmpeg-tools\`, but it is not expected in shipped app output.
 
 Current pinned FFmpeg runtime version: `n8.1-frameplayer-source`.
-Current pinned FFmpeg export runtime version: `n8.1-frameplayer-export-tools`.
+Current pinned FFmpeg export runtime version: `n8.1-frameplayer-export-runtime`.
 Current pinned FFmpeg export-tools version: `n8.1-frameplayer-export-tools`.
 
 Source provenance note: the pinned runtime was built from the official FFmpeg source tag `n8.1` at commit `9047fa1b084f76b1b4d065af2d743df1b40dfb56`.

@@ -21,7 +21,7 @@ This is a historical migration checkpoint. The FFmpeg 8.1 runtime is now the act
 ## Recommended Source-Build Strategy
 
 - Use a Windows x64 MSYS2 MinGW-w64 environment, following FFmpeg's documented Windows shared-library build path.
-- Start with a conservative shared-library build rather than a heavily minimized `--disable-everything` build. The app opens user-provided `.avi`, `.mov`, `.m4v`, `.mp4`, `.mkv`, and `.wmv` files, so over-pruning demuxers/decoders is a higher release risk than shipping a moderately broader native runtime.
+- Start with a conservative shared-library build rather than a heavily minimized `--disable-everything` build. The app opens user-provided `.avi`, `.m4v`, `.mp4`, `.mkv`, and `.wmv` files, so over-pruning demuxers/decoders is a higher release risk than shipping a moderately broader native runtime.
 - Recommended initial configure direction:
   - `--enable-shared`
   - `--disable-static`

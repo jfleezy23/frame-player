@@ -12,7 +12,7 @@ param(
     [string]$Configuration = "Debug",
 
     [Parameter(Mandatory = $false)]
-    [string[]]$IncludeExtensions = @(".mp4", ".mov", ".mkv", ".avi", ".wmv", ".m4v")
+    [string[]]$IncludeExtensions = @(".mp4", ".mkv", ".avi", ".wmv", ".m4v")
 )
 
 $ErrorActionPreference = "Stop"
@@ -85,6 +85,13 @@ function Resolve-ManualTestInputFiles
             }
             else
             {
+                $extension = $item.Extension.ToLowerInvariant()
+                if ($Extensions -notcontains $extension)
+                {
+                    Write-Warning ("Skipping unsupported manual-test input: {0}" -f $item.FullName)
+                    continue
+                }
+
                 if (-not $seen.ContainsKey($item.FullName))
                 {
                     $seen[$item.FullName] = $true

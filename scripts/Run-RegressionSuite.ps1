@@ -18,7 +18,7 @@ param(
     [string]$Configuration = "Release",
 
     [Parameter(Mandatory = $false)]
-    [string[]]$IncludeExtensions = @(".mp4", ".mov", ".mkv", ".avi", ".wmv", ".m4v")
+    [string[]]$IncludeExtensions = @(".mp4", ".mkv", ".avi", ".wmv", ".m4v")
 )
 
 $ErrorActionPreference = "Stop"
@@ -86,7 +86,14 @@ function Resolve-RegressionInputFiles
             }
             else
             {
-                Add-ResolvedFile $item.FullName
+                if ($Extensions -contains $item.Extension.ToLowerInvariant())
+                {
+                    Add-ResolvedFile $item.FullName
+                }
+                else
+                {
+                    Write-Warning ("Skipping unsupported regression input: {0}" -f $item.FullName)
+                }
             }
         }
     }

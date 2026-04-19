@@ -30,6 +30,7 @@ Do not run these until the repo state and validation evidence above are accepted
 
 - Build the release verification output:
   - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Build-TestDrop.ps1 -Configuration Release -Platform x64 -RequireExportTools`
+- Confirm the packaged output carries the `ffmpeg-export` DLL runtime and does not contain `ffmpeg.exe`, `ffprobe.exe`, or an `ffmpeg-tools` directory.
 - Build the signed install artifact using the maintained signing flow and organization-approved signing inputs.
 - Verify the produced artifact names match the intended product version.
 - Prefer the signed install artifact for real deployment; treat loose-file test outputs as validation artifacts only when necessary.

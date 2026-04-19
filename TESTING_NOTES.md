@@ -9,6 +9,7 @@ Release: `1.8.1`
 - The current WPF shell includes the combined Play/Pause control, cache-status visibility, immediate post-frame-entry arrow-key stepping, a visible GPU toggle, pane-aware decoded-frame budgeting, shared Vulkan warmup, and backend-aware compare behavior without changing the frames-first review contract.
 - The current `v1.8.1` release keeps the `v1.8.0` feature set, including live timeline scrubbing, A/B loop playback on the main transport, pane-local compare loop boxes, pane-local compare navigation, Inspector V2 with pane context-menu access, pending frame-number honesty while background indexing is still resolving absolute frame identity, reviewed-loop MP4 clip export through a separate FFmpeg export host/runtime path, and side-by-side compare export with loop and whole-video modes.
 - The current MVP-finish pass adds single-pane `Audio Insertion > Replace Audio Track...` for H.264 `.mp4` sources, pane-local paused zoom/pan in both review layouts, zoom-aware pixel readout, `Playback > Reset Zoom`, pane context-menu zoom reset, and crop-aware clip/compare export rendering.
+- The shipped app output for this release line no longer includes `ffmpeg.exe`, `ffprobe.exe`, or an `ffmpeg-tools` directory; probe/export work runs through the DLL-only `ffmpeg-export` runtime in the headless export host.
 
 ## Manual test checklist
 
@@ -59,7 +60,7 @@ Release: `1.8.1`
 - The supported full-corpus regression path now runs hidden-window timed playback, loop playback, clip export, and side-by-side compare export coverage for both audio-bearing and video-only files.
 - The packaged regression suite also includes the repo-carried `dist\Frame Player\sample-test.mp4` when present, so the final file count can be one higher than the external corpus count alone.
 - Audio insertion and crop-aware zoom/export remain manual-regression coverage for this MVP slice; there is still no committed automated UI test source under `tests\`.
-- Full-corpus trim/export coverage is expected on the active supported container set: `.avi`, `.mov`, `.m4v`, `.mp4`, `.mkv`, and `.wmv`.
+- Full-corpus trim/export coverage is expected on the active supported container set: `.avi`, `.m4v`, `.mp4`, `.mkv`, and `.wmv`.
 - `.ts` remains intentionally outside the active supported surface and is skipped by the full-corpus regression suite instead of counted as a product failure.
 
 ## Known limitations
@@ -73,6 +74,7 @@ Release: `1.8.1`
 - The runtime was built from the official FFmpeg source tag `n8.1` and is restored locally from the self-built candidate/archive produced by `scripts\ffmpeg\Build-FFmpeg-8.1.ps1`.
 - The bundled runtime also requires `libwinpthread-1.dll`; it must ship beside `FramePlayer.exe` with the FFmpeg DLL set.
 - Export work uses a separate `ffmpeg-export` folder beside the app output and depends on the hashes recorded in `Runtime\export-runtime-manifest.json`.
+- The `ffmpeg-tools` bundle remains a local/dev harness asset only and is not expected in the shipped app output.
 - Clean-runner bootstrap restores from the verified runtime-only `v1.5.0` release asset recorded in `Runtime\runtime-manifest.json`.
 
 ## Build and shortcut
