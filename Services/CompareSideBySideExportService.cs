@@ -402,7 +402,11 @@ namespace FramePlayer.Services
 
         private static string BuildFfmpegArguments(CompareFilterComplexRequest request)
         {
-            var includeTrim = request.Mode == CompareSideBySideExportMode.Loop;
+            // Even whole-video compare exports have known start/duration bounds.
+            // Keeping explicit trim/atrim in both modes normalizes timestamps before
+            // leading/trailing pad is applied, which avoids mux-time packet errors
+            // on aligned whole-video exports.
+            var includeTrim = true;
             var filterBuilder = new StringBuilder();
             AppendVideoFilter(filterBuilder, request.PrimaryVideo, includeTrim);
             filterBuilder.Append(';');

@@ -108,6 +108,8 @@ namespace FramePlayer.Services
                             throw new InvalidOperationException("Could not allocate the FFmpeg packet used for source video copy.");
                         }
 
+                        long? lastAudioFramePts = null;
+
                         var hasVideoPacket = NativeExportSupport.TryReadNextPacketForStream(
                             inputFormatContext,
                             videoStreamIndex,
@@ -143,7 +145,8 @@ namespace FramePlayer.Services
                                     outputAudioStream,
                                     audioEncoderContext,
                                     nextAudioFrame,
-                                    audioSinkTimeBase);
+                                    audioSinkTimeBase,
+                                    ref lastAudioFramePts);
                                 NativeExportSupport.FreeFrame(ref nextAudioFrame);
                                 nextAudioFrame = NativeExportSupport.ReadNextFilterFrame(audioSinkContext);
                             }

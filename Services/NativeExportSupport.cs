@@ -92,6 +92,8 @@ namespace FramePlayer.Services
                 var videoSinkTimeBase = ffmpeg.av_buffersink_get_time_base(videoSinkContext);
                 var videoSinkFrameRate = ffmpeg.av_buffersink_get_frame_rate(videoSinkContext);
                 nextAudioFrame = ReadNextFilterFrame(audioSinkContext);
+                long? lastVideoFramePts = null;
+                long? lastAudioFramePts = null;
 
                 outputFormatContext = CreateMp4OutputContext(outputFilePath);
                 var outputVideoStream = AddVideoEncoderStream(
@@ -134,7 +136,8 @@ namespace FramePlayer.Services
                             outputVideoStream,
                             videoEncoderContext,
                             nextVideoFrame,
-                            videoSinkTimeBase);
+                            videoSinkTimeBase,
+                            ref lastVideoFramePts);
                         FreeFrame(ref nextVideoFrame);
                         nextVideoFrame = ReadNextFilterFrame(videoSinkContext);
                         continue;
@@ -147,7 +150,8 @@ namespace FramePlayer.Services
                             outputAudioStream,
                             audioEncoderContext,
                             nextAudioFrame,
-                            audioSinkTimeBase);
+                            audioSinkTimeBase,
+                            ref lastAudioFramePts);
                         FreeFrame(ref nextAudioFrame);
                         nextAudioFrame = ReadNextFilterFrame(audioSinkContext);
                         continue;
@@ -439,16 +443,19 @@ namespace FramePlayer.Services
             AVStream* outputStream,
             AVCodecContext* encoderContext,
             AVFrame* frame,
-            AVRational sinkTimeBase)
+            AVRational sinkTimeBase,
+            ref long? lastFramePts)
         {
             if (frame == null)
             {
                 return;
             }
 
-            frame->pts = frame->pts == ffmpeg.AV_NOPTS_VALUE
-                ? ffmpeg.AV_NOPTS_VALUE
-                : ffmpeg.av_rescale_q(frame->pts, sinkTimeBase, encoderContext->time_base);
+            frame->pts = NormalizeFramePresentationTimestamp(
+                frame->pts,
+                sinkTimeBase,
+                encoderContext->time_base,
+                ref lastFramePts);
             SendFrameAndWritePackets(outputFormatContext, outputStream, encoderContext, frame, "Encode export video frame");
         }
 
@@ -457,16 +464,19 @@ namespace FramePlayer.Services
             AVStream* outputStream,
             AVCodecContext* encoderContext,
             AVFrame* frame,
-            AVRational sinkTimeBase)
+            AVRational sinkTimeBase,
+            ref long? lastFramePts)
         {
             if (frame == null)
             {
                 return;
             }
 
-            frame->pts = frame->pts == ffmpeg.AV_NOPTS_VALUE
-                ? ffmpeg.AV_NOPTS_VALUE
-                : ffmpeg.av_rescale_q(frame->pts, sinkTimeBase, encoderContext->time_base);
+            frame->pts = NormalizeFramePresentationTimestamp(
+                frame->pts,
+                sinkTimeBase,
+                encoderContext->time_base,
+                ref lastFramePts);
             SendFrameAndWritePackets(outputFormatContext, outputStream, encoderContext, frame, "Encode export audio frame");
         }
 
@@ -776,6 +786,30 @@ namespace FramePlayer.Services
             }
 
             DrainEncoderPackets(outputFormatContext, outputStream, encoderContext, operation);
+        }
+
+        private static long NormalizeFramePresentationTimestamp(
+            long sourcePts,
+            AVRational sourceTimeBase,
+            AVRational encoderTimeBase,
+            ref long? lastFramePts)
+        {
+            long normalizedPts;
+            if (sourcePts == ffmpeg.AV_NOPTS_VALUE)
+            {
+                normalizedPts = lastFramePts.HasValue ? lastFramePts.Value + 1L : 0L;
+            }
+            else
+            {
+                normalizedPts = ffmpeg.av_rescale_q(sourcePts, sourceTimeBase, encoderTimeBase);
+                if (lastFramePts.HasValue && normalizedPts <= lastFramePts.Value)
+                {
+                    normalizedPts = lastFramePts.Value + 1L;
+                }
+            }
+
+            lastFramePts = normalizedPts;
+            return normalizedPts;
         }
 
         private static void DrainEncoderPackets(

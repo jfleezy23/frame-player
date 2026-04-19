@@ -52,7 +52,10 @@ namespace FramePlayer.Services
 
         private static string BuildFilterGraph(CompareSideBySideExportPlan plan)
         {
-            var includeTrim = plan.Mode == CompareSideBySideExportMode.Loop;
+            // Whole-video compare exports still know the source start/duration bounds.
+            // Trimming from the known range before padding keeps filter timestamps
+            // stable for the aligned whole-video export path.
+            var includeTrim = true;
             var filterBuilder = new StringBuilder();
 
             AppendVideoChain(

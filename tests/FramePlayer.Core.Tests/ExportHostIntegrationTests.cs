@@ -230,6 +230,75 @@ namespace FramePlayer.Core.Tests
                 compareDuration.TotalMilliseconds + 120d);
         }
 
+        [Fact]
+        public async Task ExportHost_WholeCompareExport_WithLeadingPad_ProducesSideBySideMp4()
+        {
+            var ffmpegToolPath = TryGetLocalFfmpegToolPath();
+            if (string.IsNullOrWhiteSpace(ffmpegToolPath))
+            {
+                return;
+            }
+
+            using var workspace = new TemporaryWorkspace();
+            var sourceFilePath = Path.Combine(workspace.DirectoryPath, "source.mp4");
+            var outputFilePath = Path.Combine(workspace.DirectoryPath, "compare-whole.mp4");
+
+            await GenerateSyntheticSourceClipAsync(ffmpegToolPath, sourceFilePath);
+
+            var sourceProbe = await ProbeAsync(sourceFilePath);
+            var leadingPad = TimeSpan.FromMilliseconds(500d);
+            var expectedDuration = sourceProbe.Duration + leadingPad;
+
+            var compareResult = await RunHostRequestAsync(
+                new ExportHostRequest
+                {
+                    Operation = ExportHostClient.CompareExportOperation,
+                    CompareSideBySideExportPlan = new CompareSideBySideExportPlan
+                    {
+                        OutputFilePath = outputFilePath,
+                        Mode = CompareSideBySideExportMode.WholeVideo,
+                        AudioSource = CompareSideBySideExportAudioSource.Compare,
+                        PrimarySourceFilePath = sourceFilePath,
+                        CompareSourceFilePath = sourceFilePath,
+                        PrimaryStartTime = TimeSpan.Zero,
+                        PrimaryContentDuration = sourceProbe.Duration,
+                        PrimaryLeadingPad = leadingPad,
+                        PrimaryTrailingPad = TimeSpan.Zero,
+                        CompareStartTime = TimeSpan.Zero,
+                        CompareContentDuration = sourceProbe.Duration,
+                        CompareLeadingPad = TimeSpan.Zero,
+                        CompareTrailingPad = leadingPad,
+                        PrimaryEndBoundaryStrategy = "integration-whole-primary",
+                        CompareEndBoundaryStrategy = "integration-whole-compare",
+                        OutputDuration = expectedDuration,
+                        PrimaryRenderWidth = sourceProbe.PixelWidth,
+                        PrimaryRenderHeight = sourceProbe.PixelHeight,
+                        CompareRenderWidth = sourceProbe.PixelWidth,
+                        CompareRenderHeight = sourceProbe.PixelHeight,
+                        OutputWidth = sourceProbe.PixelWidth * 2,
+                        OutputHeight = sourceProbe.PixelHeight,
+                        PrimaryViewportSnapshot = PaneViewportSnapshot.CreateFullFrame(sourceProbe.PixelWidth, sourceProbe.PixelHeight),
+                        CompareViewportSnapshot = PaneViewportSnapshot.CreateFullFrame(sourceProbe.PixelWidth, sourceProbe.PixelHeight),
+                        SelectedAudioHasStream = false,
+                        FfmpegArguments = string.Empty,
+                        FfmpegPath = string.Empty,
+                        FfprobePath = string.Empty
+                    }
+                });
+
+            AssertHostSucceeded(compareResult);
+            Assert.True(File.Exists(outputFilePath), "Whole-video compare export did not produce an output file.");
+
+            var outputProbe = await ProbeAsync(outputFilePath);
+            Assert.Equal(sourceProbe.PixelWidth * 2, outputProbe.PixelWidth);
+            Assert.Equal(sourceProbe.PixelHeight, outputProbe.PixelHeight);
+            Assert.False(outputProbe.HasAudioStream, "Whole-video compare export unexpectedly produced an audio stream.");
+            Assert.InRange(
+                outputProbe.Duration.TotalMilliseconds,
+                Math.Max(1d, expectedDuration.TotalMilliseconds - 150d),
+                expectedDuration.TotalMilliseconds + 150d);
+        }
+
         private static async Task<VideoMediaInfo> ProbeAsync(string filePath)
         {
             var result = await RunHostRequestAsync(
