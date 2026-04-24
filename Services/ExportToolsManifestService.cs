@@ -9,6 +9,13 @@ using System.Security.Cryptography;
 
 namespace FramePlayer.Services
 {
+    /// <summary>
+    /// Validates developer/test FFmpeg CLI tools before scripts or harness flows use them.
+    /// </summary>
+    /// <remarks>
+    /// The CLI tools are intentionally excluded from shipped app output; this validator exists for
+    /// local harness and packaging support paths that need those tools during development.
+    /// </remarks>
     internal static class ExportToolsManifestService
     {
         private const string ResourceName = "FramePlayer.Runtime.export-tools-manifest.json";

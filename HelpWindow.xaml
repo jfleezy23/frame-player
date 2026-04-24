@@ -84,7 +84,7 @@
                      FontSize="13"
                      LineHeight="20"
                      TextWrapping="Wrap"
-                     Text="Pause playback, then use Left and Right to move one frame at a time. Hold either key to enter delayed auto-step mode. Use Ctrl+Left / Ctrl+Right for 10-frame moves and Shift+Left / Shift+Right for 100-frame moves. The frame field shows the current and total frame counts, and you can type a frame number before pressing Enter or Go. After Enter or Go, focus returns to the video surface so arrow-key stepping works immediately." />
+                     Text="Pause playback, then use Left and Right to move one frame at a time. Hold either key to enter delayed auto-step mode. Use Ctrl+Left / Ctrl+Right for 10-frame moves and Shift+Left / Shift+Right for 100-frame moves. When exact frame identity is available, the frame field shows the current and total frame counts. You can type a frame number before pressing Enter or Go. After Enter or Go, focus returns to the video surface so arrow-key stepping works immediately." />
 
           <TextBlock Margin="0,18,0,0"
                      FontSize="15"

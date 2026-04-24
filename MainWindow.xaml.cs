@@ -27,6 +27,13 @@ using Microsoft.Win32;
 
 namespace FramePlayer
 {
+    /// <summary>
+    /// WPF shell for local video review, compare mode, export commands, and diagnostics.
+    /// </summary>
+    /// <remarks>
+    /// The shell coordinates user interaction but does not define frame truth. Exact frame identity
+    /// stays in the review engine/coordinator layer and is surfaced here only after it is proven.
+    /// </remarks>
     public partial class MainWindow : Window
     {
         private const double DefaultFramesPerSecond = 30.0;

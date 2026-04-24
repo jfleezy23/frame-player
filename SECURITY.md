@@ -36,6 +36,12 @@ This repository currently uses a mix of GitHub-native security tooling and workf
 
 These checks improve detection and consistency, but they are not a guarantee that a release is free of vulnerabilities. Human review and release validation still matter.
 
+## Runtime Network Posture
+
+Frame Player is designed as a local desktop review tool. The shipped WPF app does not include telemetry, analytics, auto-update, HTTP client, socket, or background network-service code. It uses local media files, bundled FFmpeg runtime DLLs, DPAPI-protected local state, and a hidden local child process for export and export-side probe work.
+
+Repository build and developer workflows can perform outbound network access for NuGet restore, HTTPS downloads of pinned FFmpeg runtime artifacts, optional official FFmpeg source clones, and optional signing timestamp requests. Those are build-time supply-chain paths, not runtime telemetry paths. Network-restricted review builds should restore NuGet packages from an approved local cache/feed, stage the required runtime folders locally, and build with `-p:SkipRuntimeBootstrap=true`.
+
 ## Scope and Background
 
 This repository includes an internal security review note in [SECURITY_REVIEW.md](SECURITY_REVIEW.md). That document is supplemental background, not the intake path for new sensitive disclosures.
