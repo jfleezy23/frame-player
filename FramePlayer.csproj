@@ -107,6 +107,13 @@
     <EmbeddedResource Include="Runtime\export-tools-manifest.json" LogicalName="FramePlayer.Runtime.export-tools-manifest.json" />
   </ItemGroup>
 
+  <!--
+    Build-time runtime bootstrap:
+    these targets restore pinned FFmpeg artifacts only when local runtime folders are missing.
+    The app itself does not perform automatic runtime downloads during normal playback/review.
+    Set SkipRuntimeBootstrap=true for an offline build after staging Runtime\ffmpeg and
+    Runtime\ffmpeg-export locally.
+  -->
   <Target Name="EnsureBundledRuntime"
           BeforeTargets="PrepareForBuild"
           Condition="'$(OS)' == 'Windows_NT' and '$(SkipRuntimeBootstrap)' != 'true' and !Exists('Runtime\\ffmpeg\\avcodec-62.dll')">

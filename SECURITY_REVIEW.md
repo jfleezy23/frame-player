@@ -1,6 +1,7 @@
 # Frame Player Security Review
 
 Latest follow-up:
+- See [docs/source-cleanup-review-2026-04-24.md](docs/source-cleanup-review-2026-04-24.md) for the 2026-04-24 source documentation and runtime network/telemetry posture review.
 - See [docs/deep-review-hardening-report.md](docs/deep-review-hardening-report.md) for the 2026-04-18 combined security, hygiene, and maintainability review with frame-first guardrails.
 
 Date: 2026-04-05

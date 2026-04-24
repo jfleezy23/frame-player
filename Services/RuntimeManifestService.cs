@@ -9,6 +9,13 @@ using System.Security.Cryptography;
 
 namespace FramePlayer.Services
 {
+    /// <summary>
+    /// Validates the in-process FFmpeg playback runtime against the embedded manifest.
+    /// </summary>
+    /// <remarks>
+    /// This is a startup/runtime trust boundary: the app only enables the bundled native
+    /// playback DLLs when every manifest-listed leaf file exists and matches its SHA256.
+    /// </remarks>
     internal static class RuntimeManifestService
     {
         private const string ResourceName = "FramePlayer.Runtime.runtime-manifest.json";

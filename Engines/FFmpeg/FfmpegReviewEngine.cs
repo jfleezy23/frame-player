@@ -13,6 +13,14 @@ using FramePlayer.Services;
 
 namespace FramePlayer.Engines.FFmpeg
 {
+    /// <summary>
+    /// Custom FFmpeg-backed implementation of the frame-first review engine contract.
+    /// </summary>
+    /// <remarks>
+    /// This class owns the native decode state for playback and exact frame review. Changes in this
+    /// file should be validated against open, seek, step, cache, playback, and audio synchronization
+    /// behavior before being treated as safe.
+    /// </remarks>
     public unsafe sealed class FfmpegReviewEngine : IVideoReviewEngine
     {
         private const int DefaultCachedPreviousFrameCount = 10;

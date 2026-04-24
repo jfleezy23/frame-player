@@ -9,6 +9,13 @@ using FramePlayer.Core.Models;
 
 namespace FramePlayer.Services
 {
+    /// <summary>
+    /// Runs export, audio insertion, and export-side probe work in a hidden child Frame Player process.
+    /// </summary>
+    /// <remarks>
+    /// This keeps heavy FFmpeg export work outside the interactive WPF process while avoiding any
+    /// network IPC surface. Requests and responses move through per-operation temporary JSON files.
+    /// </remarks>
     internal sealed class ExportHostClient
     {
         internal const string ProbeOperation = "probe";
@@ -156,6 +163,8 @@ namespace FramePlayer.Services
                 var requestJson = JsonSerializer.Serialize(request, JsonOptions);
                 File.WriteAllText(requestPath, requestJson, new UTF8Encoding(false));
 
+                // The export host is the current executable in a headless mode, not a daemon.
+                // UseShellExecute stays false so arguments and redirected output remain local to this process tree.
                 var startInfo = new ProcessStartInfo
                 {
                     FileName = executablePath,

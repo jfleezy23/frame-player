@@ -1,6 +1,6 @@
 # Frame Player
 
-Frame Player is a frames-first WPF review tool built on a custom FFmpeg engine with a bundled in-process FFmpeg runtime. It treats decoded display-order frame identity as the source of truth for exact frame stepping, frame seeks, and review state, prioritizing deterministic review behavior over generic consumer media-player parity.
+Frame Player is a frame-first WPF review tool built on a custom FFmpeg engine with a bundled in-process FFmpeg runtime. It treats decoded display-order frame identity as the source of truth for exact frame stepping, frame seeks, and review state, prioritizing deterministic review behavior over generic consumer media-player parity.
 
 ## What It Does
 
@@ -20,7 +20,7 @@ Frame Player is a frames-first WPF review tool built on a custom FFmpeg engine w
 - Supports live timeline scrubbing that lands paused on release
 - Supports whole-media loop playback and exact A/B loop playback on the main transport using `[` and `]`
 - In compare mode, the pane-local sliders can carry independent pane-local loop boxes for focused review
-- Saves reviewed shared-loop and pane-local loop ranges as MP4 clip exports through a separate bundled FFmpeg export runtime host
+- Saves reviewed shared-loop and pane-local loop ranges as MP4 clip exports through a hidden export host backed by the bundled FFmpeg export runtime
 - Exports two-pane compare sessions as full-resolution side-by-side MP4 output in loop or whole-video mode, with audio selectable from either pane
 - Shows a labeled pixel coordinate readout for the hovered pane
 - Includes a structured `Video Info` inspector for FFmpeg-reported pane media metadata, including right-click access on video panes and compare-friendly modeless windows
@@ -68,7 +68,7 @@ The shipped app is packaged with the FFmpeg runtime DLLs next to `FramePlayer.ex
 - Export-tools hashes and source-build metadata are recorded in `Runtime\\export-tools-manifest.json` for local/dev harness flows only
 - The current source-build path enables FFmpeg's Vulkan hardware-device support, but actual GPU acceleration still depends on a system Vulkan loader/driver at runtime
 - There is no FFmpeg folder picker in the UI
-- Playback and frame stepping do not call `ffmpeg.exe` or `ffprobe.exe`; reviewed clip export, compare export, audio insertion, and probe work run through a separate headless export host backed by the bundled `ffmpeg-export` DLL set
+- Playback and frame stepping do not call `ffmpeg.exe` or `ffprobe.exe`; reviewed clip export, compare export, audio insertion, and export-side metadata probes run through a hidden export host backed by the bundled `ffmpeg-export` DLL set
 - Playback and frame stepping run through the custom FFmpeg engine and the bundled FFmpeg DLLs loaded in-process
 - Export work runs through a separate pinned FFmpeg runtime stored under `ffmpeg-export` beside the app output
 - Shipped app output no longer includes `ffmpeg.exe`, `ffprobe.exe`, or an `ffmpeg-tools` directory
@@ -80,6 +80,14 @@ The shipped app is packaged with the FFmpeg runtime DLLs next to `FramePlayer.ex
 - The FFmpeg development runtime is not stored in git; local restore comes from the self-built candidate folder or local runtime archive staged by `scripts\ffmpeg\Build-FFmpeg-8.1.ps1`
 - The runtime manifest records the expected archive filename, archive SHA256, human-readable FFmpeg version, DLL hashes, and source-build metadata
 - The current runtime manifest still points at the verified `v1.5.0` runtime-only GitHub release asset used for clean-runner bootstrap
+
+## Network and Telemetry Posture
+
+- The desktop app does not include telemetry, analytics, auto-update, HTTP client, socket, or background network-service code.
+- Normal playback, frame stepping, metadata inspection, clip export, compare export, audio insertion, recent-file storage, and diagnostic logging operate on local files, bundled FFmpeg runtime DLLs, and local child processes.
+- The export host is a hidden child `FramePlayer.exe` process using temporary JSON request/response files; it is not a daemon or network IPC endpoint.
+- Expected outbound network activity is limited to build/developer tooling: NuGet restore from `NuGet.config`, pinned FFmpeg artifact restore from HTTPS release assets, optional FFmpeg source clones for local runtime builds, and optional package timestamping during signing.
+- Offline or network-restricted builds should restore NuGet packages from an approved local cache/feed, stage `Runtime\ffmpeg` and `Runtime\ffmpeg-export` locally, then build with `-p:SkipRuntimeBootstrap=true`.
 
 ## Quick Start
 

@@ -9,6 +9,13 @@ using System.Security.Cryptography;
 
 namespace FramePlayer.Services
 {
+    /// <summary>
+    /// Validates the bundled FFmpeg export runtime used by the hidden export-host process.
+    /// </summary>
+    /// <remarks>
+    /// Export DLL validation is separate from playback DLL validation so the review engine and
+    /// export host keep distinct native-runtime trust boundaries.
+    /// </remarks>
     internal static class ExportRuntimeManifestService
     {
         private const string ResourceName = "FramePlayer.Runtime.export-runtime-manifest.json";
