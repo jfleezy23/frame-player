@@ -266,6 +266,35 @@ namespace FramePlayer.Engines.FFmpeg
             return false;
         }
 
+        internal bool TryResolveIndexedFrameAtOrAfterPresentationTime(TimeSpan position, out long absoluteFrameIndex)
+        {
+            absoluteFrameIndex = 0L;
+            if (!IsGlobalFrameIndexAvailable)
+            {
+                return false;
+            }
+
+            var clampedTarget = ClampSeekTarget(position);
+            var targetTimestamp = FfmpegNativeHelpers.ToStreamTimestamp(clampedTarget, _videoStreamTimeBase);
+            FfmpegGlobalFrameIndexEntry entry;
+            if (_globalFrameIndex.TryGetFirstAtOrAfterTimestamp(targetTimestamp, out entry) && entry != null)
+            {
+                absoluteFrameIndex = entry.AbsoluteFrameIndex;
+                return true;
+            }
+
+            FfmpegGlobalFrameIndexEntry lastEntry;
+            if (_globalFrameIndex.TryGetLastEntry(out lastEntry) &&
+                lastEntry != null &&
+                clampedTarget >= lastEntry.PresentationTime)
+            {
+                absoluteFrameIndex = lastEntry.AbsoluteFrameIndex;
+                return true;
+            }
+
+            return false;
+        }
+
         internal bool TryResolveIndexedFrameIdentity(
             long? presentationTimestamp,
             long? decodeTimestamp,

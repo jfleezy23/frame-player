@@ -66,6 +66,7 @@ namespace FramePlayer.Diagnostics
                     request.PackagedOutputDirectory,
                     request.PackagedArtifactPath,
                     request.RuntimeManifestPath,
+                    request.AudioInsertionMp3FixturePath,
                     cancellationToken)
                 .ConfigureAwait(true);
 
@@ -157,6 +158,9 @@ namespace FramePlayer.Diagnostics
 
             [DataMember(Name = "runtimeManifestPath")]
             public string RuntimeManifestPath { get; set; }
+
+            [DataMember(Name = "audioInsertionMp3FixturePath")]
+            public string AudioInsertionMp3FixturePath { get; set; }
 
             [DataMember(Name = "reportJsonPath")]
             public string ReportJsonPath { get; set; }

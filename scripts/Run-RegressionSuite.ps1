@@ -151,6 +151,45 @@ function Format-NullableNumber
     return ("{0:$Format}" -f $Value)
 }
 
+function New-RegressionMp3Fixture
+{
+    param(
+        [string]$ProjectRoot,
+        [string]$OutputDirectory
+    )
+
+    $ffmpegPath = Join-Path $ProjectRoot "Runtime\ffmpeg-tools\ffmpeg.exe"
+    if (-not (Test-Path -LiteralPath $ffmpegPath))
+    {
+        Write-Warning ("Skipping MP3 audio insertion fixture generation because ffmpeg.exe was not found at {0}" -f $ffmpegPath)
+        return ""
+    }
+
+    $fixtureDirectory = Join-Path $OutputDirectory "regression-fixtures"
+    $fixturePath = Join-Path $fixtureDirectory "replacement-long.mp3"
+    New-Item -ItemType Directory -Force -Path $fixtureDirectory | Out-Null
+
+    $arguments = @(
+        "-v", "error",
+        "-y",
+        "-filter_complex", "sine=frequency=660:sample_rate=48000,atrim=duration=30[a]",
+        "-map", "[a]",
+        "-c:a", "mp3_mf",
+        "-ar", "48000",
+        "-ac", "2",
+        $fixturePath
+    )
+
+    & $ffmpegPath @arguments
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $fixturePath))
+    {
+        Write-Warning ("Skipping MP3 audio insertion fixture because FFmpeg failed to generate {0}" -f $fixturePath)
+        return ""
+    }
+
+    return (Resolve-Path -LiteralPath $fixturePath).Path
+}
+
 function Convert-ToCheckRows
 {
     param(
@@ -691,6 +730,11 @@ $markdownPath = Join-Path $outputDirectory "regression-suite-summary.md"
 $fileReports = New-Object System.Collections.Generic.List[object]
 $packagingReport = $null
 $processExitCodes = New-Object System.Collections.Generic.List[int]
+$audioInsertionMp3FixturePath = New-RegressionMp3Fixture -ProjectRoot $projectRoot -OutputDirectory $outputDirectory
+if (-not [string]::IsNullOrWhiteSpace($audioInsertionMp3FixturePath))
+{
+    Write-Host ("Generated MP3 audio insertion fixture: {0}" -f $audioInsertionMp3FixturePath)
+}
 
 for ($index = 0; $index -lt $resolvedFiles.Count; $index++)
 {
@@ -724,6 +768,7 @@ for ($index = 0; $index -lt $resolvedFiles.Count; $index++)
         packagedOutputDirectory = [string]$buildResult.OutputDirectory
         packagedArtifactPath = [string]$buildResult.ArtifactPath
         runtimeManifestPath = [string]$manifestPath
+        audioInsertionMp3FixturePath = [string]$audioInsertionMp3FixturePath
         reportJsonPath = [string]$jsonPath
         errorPath = [string]$errorPath
         tracePath = [string]$tracePath

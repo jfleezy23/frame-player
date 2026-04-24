@@ -75,6 +75,24 @@ namespace FramePlayer.Diagnostics
             string runtimeManifestPath,
             CancellationToken cancellationToken = default(CancellationToken))
         {
+            return await RunAsync(
+                    filePaths,
+                    packagedOutputDirectory,
+                    packagedArtifactPath,
+                    runtimeManifestPath,
+                    string.Empty,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        public static async Task<RegressionSuiteReport> RunAsync(
+            IEnumerable<string> filePaths,
+            string packagedOutputDirectory,
+            string packagedArtifactPath,
+            string runtimeManifestPath,
+            string audioInsertionMp3FixturePath,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
             ArgumentNullException.ThrowIfNull(filePaths);
 
             var normalizedFilePaths = NormalizeFilePaths(filePaths).ToArray();
@@ -99,6 +117,7 @@ namespace FramePlayer.Diagnostics
             }
 
             ffmpeg.RootPath = packagedOutputDirectory;
+            var resolvedAudioInsertionMp3FixturePath = ResolveExistingFilePathOrEmpty(audioInsertionMp3FixturePath);
             Trace("RegressionSuiteRunner.RunAsync starting.");
 
             var packaging = PackagingRegressionValidator.Validate(
@@ -112,7 +131,7 @@ namespace FramePlayer.Diagnostics
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 Trace("Running file: " + filePath);
-                fileReports.Add(await RunFileAsync(filePath, cancellationToken).ConfigureAwait(false));
+                fileReports.Add(await RunFileAsync(filePath, resolvedAudioInsertionMp3FixturePath, cancellationToken).ConfigureAwait(false));
                 Trace("Completed file: " + filePath);
             }
 
@@ -124,6 +143,24 @@ namespace FramePlayer.Diagnostics
                 packaging,
                 fileReports.ToArray(),
                 BuildSummary(packaging, fileReports));
+        }
+
+        private static string ResolveExistingFilePathOrEmpty(string filePath)
+        {
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                var resolvedPath = Path.GetFullPath(filePath);
+                return File.Exists(resolvedPath) ? resolvedPath : string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
         }
 
         private static IEnumerable<string> NormalizeFilePaths(IEnumerable<string> filePaths)
@@ -166,7 +203,10 @@ namespace FramePlayer.Diagnostics
             return SupportedRegressionExtensions.Contains(extension);
         }
 
-        private static async Task<RegressionFileReport> RunFileAsync(string filePath, CancellationToken cancellationToken)
+        private static async Task<RegressionFileReport> RunFileAsync(
+            string filePath,
+            string audioInsertionMp3FixturePath,
+            CancellationToken cancellationToken)
         {
             Trace("Engine checks starting: " + filePath);
             var engineResult = await RunEngineChecksAsync(filePath, cancellationToken).ConfigureAwait(false);
@@ -175,6 +215,7 @@ namespace FramePlayer.Diagnostics
             var uiResult = await MainWindowRegressionHarness.RunInMainWindowAsync(
                     filePath,
                     true,
+                    audioInsertionMp3FixturePath,
                     cancellationToken)
                 .ConfigureAwait(false);
             Trace("UI checks complete: " + filePath);
@@ -1879,6 +1920,7 @@ namespace FramePlayer.Diagnostics
             internal static Task<UiRegressionResult> RunInMainWindowAsync(
                 string filePath,
                 bool runPlaybackLifecycleChecks,
+                string audioInsertionMp3FixturePath,
                 CancellationToken cancellationToken)
             {
                 var currentApplication = Application.Current;
@@ -1887,11 +1929,11 @@ namespace FramePlayer.Diagnostics
                     var dispatcher = currentApplication.Dispatcher;
                     if (dispatcher.CheckAccess())
                     {
-                        return RunOnUiThreadAsync(filePath, runPlaybackLifecycleChecks, cancellationToken);
+                        return RunOnUiThreadAsync(filePath, runPlaybackLifecycleChecks, audioInsertionMp3FixturePath, cancellationToken);
                     }
 
                     return dispatcher.InvokeAsync(
-                        () => RunOnUiThreadAsync(filePath, runPlaybackLifecycleChecks, cancellationToken),
+                        () => RunOnUiThreadAsync(filePath, runPlaybackLifecycleChecks, audioInsertionMp3FixturePath, cancellationToken),
                         DispatcherPriority.Normal).Task.Unwrap();
                 }
 
@@ -1907,7 +1949,7 @@ namespace FramePlayer.Diagnostics
                             application.ShutdownMode = ShutdownMode.OnExplicitShutdown;
                         }
 
-                        RunOnUiThreadAsync(filePath, runPlaybackLifecycleChecks, cancellationToken).ContinueWith(
+                        RunOnUiThreadAsync(filePath, runPlaybackLifecycleChecks, audioInsertionMp3FixturePath, cancellationToken).ContinueWith(
                             task =>
                             {
                                 if (task.IsFaulted)
@@ -2002,6 +2044,7 @@ namespace FramePlayer.Diagnostics
             private static async Task<UiRegressionResult> RunOnUiThreadAsync(
                 string filePath,
                 bool runPlaybackLifecycleChecks,
+                string audioInsertionMp3FixturePath,
                 CancellationToken cancellationToken)
             {
                 var checks = new List<RegressionCheckResult>();
@@ -2288,23 +2331,35 @@ namespace FramePlayer.Diagnostics
                                             durationDelta)));
                             }
 
-                            var mp3ReplacementPath = Path.Combine(syntheticAudioDirectory, "replacement-long.mp3");
+                            var generatedMp3ReplacementPath = Path.Combine(syntheticAudioDirectory, "replacement-long.mp3");
+                            var mp3ReplacementPath = !string.IsNullOrWhiteSpace(audioInsertionMp3FixturePath) &&
+                                                     File.Exists(audioInsertionMp3FixturePath)
+                                ? audioInsertionMp3FixturePath
+                                : generatedMp3ReplacementPath;
                             var mp3OutputPath = Path.Combine(syntheticAudioDirectory, "inserted-long.mp3-test.mp4");
-                            if (!tooling.IsBundledToolingAvailable)
+                            if (!File.Exists(mp3ReplacementPath))
                             {
-                                Trace("UI harness skipping MP3 audio insertion coverage because packaged CLI tools were not available: " + tooling.GetToolAvailabilityMessage());
-                                checks.Add(Warning(
-                                    filePath,
-                                    "ui",
-                                    CoverageCategory,
-                                    UiAudioInsertionMp3CheckName,
-                                    "MP3 audio insertion coverage was skipped because the packaged regression output does not include the development FFmpeg CLI tools required to synthesize an MP3 fixture. " +
-                                    tooling.GetToolAvailabilityMessage()));
+                                if (!tooling.IsBundledToolingAvailable)
+                                {
+                                    Trace("UI harness skipping MP3 audio insertion coverage because no external fixture was available and packaged CLI tools were not available: " + tooling.GetToolAvailabilityMessage());
+                                    checks.Add(Warning(
+                                        filePath,
+                                        "ui",
+                                        CoverageCategory,
+                                        UiAudioInsertionMp3CheckName,
+                                        "MP3 audio insertion coverage was skipped because no usable external MP3 fixture was provided to the packaged regression run, and the packaged output does not include the development FFmpeg CLI tools required for fallback synthesis. " +
+                                        tooling.GetToolAvailabilityMessage()));
+                                }
+                                else
+                                {
+                                    var toolPaths = tooling.GetRequiredToolPaths();
+                                    CreateSyntheticAudioTrack(toolPaths.FfmpegPath, mp3ReplacementPath, longAudioDuration, true);
+                                }
                             }
-                            else
+
+                            if (File.Exists(mp3ReplacementPath))
                             {
-                                var toolPaths = tooling.GetRequiredToolPaths();
-                                CreateSyntheticAudioTrack(toolPaths.FfmpegPath, mp3ReplacementPath, longAudioDuration, true);
+                                Trace("UI harness running MP3 audio insertion coverage with fixture: " + mp3ReplacementPath);
                                 var mp3InsertionResult = await controller.ReplaceAudioTrackAsync(mp3ReplacementPath, mp3OutputPath).ConfigureAwait(true);
                                 if (mp3InsertionResult == null)
                                 {
@@ -3070,31 +3125,49 @@ namespace FramePlayer.Diagnostics
                             await controller.OpenAsync(compareCompanionPath, ComparePaneId).ConfigureAwait(true);
                             var primaryCompareFullViewport = controller.CapturePaneViewportSnapshot(PrimaryPaneId);
                             var compareFullViewport = controller.CapturePaneViewportSnapshot(ComparePaneId);
-                            await controller.ZoomInFocusedPaneAsync(PrimaryPaneId).ConfigureAwait(true);
-                            var primaryShortcutCompareZoomViewport = controller.CapturePaneViewportSnapshot(PrimaryPaneId);
-                            var compareViewportAfterPrimaryShortcut = controller.CapturePaneViewportSnapshot(ComparePaneId);
-                            var primaryShortcutStayedLocal = primaryShortcutCompareZoomViewport != null &&
-                                                            primaryShortcutCompareZoomViewport.IsZoomed &&
-                                                            (primaryShortcutCompareZoomViewport.SourceCropWidth < primaryCompareFullViewport.SourceCropWidth ||
-                                                             primaryShortcutCompareZoomViewport.SourceCropHeight < primaryCompareFullViewport.SourceCropHeight ||
-                                                             primaryShortcutCompareZoomViewport.SourceCropX != primaryCompareFullViewport.SourceCropX ||
-                                                             primaryShortcutCompareZoomViewport.SourceCropY != primaryCompareFullViewport.SourceCropY) &&
-                                                            ViewportSnapshotsMatch(compareFullViewport, compareViewportAfterPrimaryShortcut);
-                            checks.Add(primaryShortcutStayedLocal
+                            var linkedZoomDefaultState = controller.CaptureLinkPaneZoomCommandState();
+                            checks.Add(linkedZoomDefaultState.IsEnabled && linkedZoomDefaultState.IsChecked
                                 ? Pass(
                                     filePath,
                                     "ui",
                                     CoverageCategory,
-                                    "ui-zoom-shortcut-compare-primary-local",
-                                    "Focused-pane zoom shortcut only changed the primary pane in compare mode.")
+                                    "ui-zoom-compare-link-default-on",
+                                    "Compare pane Link Zoom was enabled by default.")
                                 : Fail(
                                     filePath,
                                     "ui",
                                     CoverageCategory,
-                                    "ui-zoom-shortcut-compare-primary-local",
+                                    "ui-zoom-compare-link-default-on",
                                     string.Format(
                                         CultureInfo.InvariantCulture,
-                                        "Primary focused zoom shortcut was not pane-local. Primary full={0}; primary zoomed={1}; compare expected full={2}; compare actual={3}.",
+                                        "Compare pane Link Zoom should be enabled by default. Enabled={0}; checked={1}; tooltip='{2}'.",
+                                        linkedZoomDefaultState.IsEnabled,
+                                        linkedZoomDefaultState.IsChecked,
+                                        linkedZoomDefaultState.ToolTip)));
+                            await controller.ZoomInFocusedPaneAsync(PrimaryPaneId).ConfigureAwait(true);
+                            var primaryShortcutCompareZoomViewport = controller.CapturePaneViewportSnapshot(PrimaryPaneId);
+                            var compareViewportAfterPrimaryShortcut = controller.CapturePaneViewportSnapshot(ComparePaneId);
+                            var primaryShortcutLinked = primaryShortcutCompareZoomViewport != null &&
+                                                        compareViewportAfterPrimaryShortcut != null &&
+                                                        primaryShortcutCompareZoomViewport.IsZoomed &&
+                                                        compareViewportAfterPrimaryShortcut.IsZoomed &&
+                                                        !ViewportSnapshotsMatch(compareFullViewport, compareViewportAfterPrimaryShortcut) &&
+                                                        ViewportZoomAndCenterMatch(primaryShortcutCompareZoomViewport, compareViewportAfterPrimaryShortcut);
+                            checks.Add(primaryShortcutLinked
+                                ? Pass(
+                                    filePath,
+                                    "ui",
+                                    CoverageCategory,
+                                    "ui-zoom-shortcut-compare-primary-linked",
+                                    "Focused-pane zoom shortcut mirrored the primary pane viewport to the compare pane while Link Zoom was enabled.")
+                                : Fail(
+                                    filePath,
+                                    "ui",
+                                    CoverageCategory,
+                                    "ui-zoom-shortcut-compare-primary-linked",
+                                    string.Format(
+                                        CultureInfo.InvariantCulture,
+                                        "Primary focused zoom shortcut should have linked both compare panes. Primary full={0}; primary zoomed={1}; compare full={2}; compare actual={3}.",
                                         FormatViewportSnapshot(primaryCompareFullViewport),
                                         FormatViewportSnapshot(primaryShortcutCompareZoomViewport),
                                         FormatViewportSnapshot(compareFullViewport),
@@ -3102,32 +3175,51 @@ namespace FramePlayer.Diagnostics
                             await controller.ZoomInFocusedPaneAsync(ComparePaneId).ConfigureAwait(true);
                             var compareShortcutZoomViewport = controller.CapturePaneViewportSnapshot(ComparePaneId);
                             var primaryViewportAfterCompareShortcut = controller.CapturePaneViewportSnapshot(PrimaryPaneId);
-                            var compareShortcutStayedLocal = compareShortcutZoomViewport != null &&
-                                                            compareShortcutZoomViewport.IsZoomed &&
-                                                            (compareShortcutZoomViewport.SourceCropWidth < compareFullViewport.SourceCropWidth ||
-                                                             compareShortcutZoomViewport.SourceCropHeight < compareFullViewport.SourceCropHeight ||
-                                                             compareShortcutZoomViewport.SourceCropX != compareFullViewport.SourceCropX ||
-                                                             compareShortcutZoomViewport.SourceCropY != compareFullViewport.SourceCropY) &&
-                                                            ViewportSnapshotsMatch(primaryShortcutCompareZoomViewport, primaryViewportAfterCompareShortcut);
-                            checks.Add(compareShortcutStayedLocal
+                            var compareShortcutLinked = compareShortcutZoomViewport != null &&
+                                                        primaryViewportAfterCompareShortcut != null &&
+                                                        compareShortcutZoomViewport.IsZoomed &&
+                                                        primaryViewportAfterCompareShortcut.IsZoomed &&
+                                                        !ViewportSnapshotsMatch(primaryShortcutCompareZoomViewport, primaryViewportAfterCompareShortcut) &&
+                                                        ViewportZoomAndCenterMatch(compareShortcutZoomViewport, primaryViewportAfterCompareShortcut);
+                            checks.Add(compareShortcutLinked
                                 ? Pass(
                                     filePath,
                                     "ui",
                                     CoverageCategory,
-                                    "ui-zoom-shortcut-compare-compare-local",
-                                    "Focused-pane zoom shortcut only changed the compare pane in compare mode.")
+                                    "ui-zoom-shortcut-compare-compare-linked",
+                                    "Focused-pane zoom shortcut mirrored the compare pane viewport to the primary pane while Link Zoom was enabled.")
                                 : Fail(
                                     filePath,
                                     "ui",
                                     CoverageCategory,
-                                    "ui-zoom-shortcut-compare-compare-local",
+                                    "ui-zoom-shortcut-compare-compare-linked",
                                     string.Format(
                                         CultureInfo.InvariantCulture,
-                                        "Compare focused zoom shortcut was not pane-local. Compare full={0}; compare zoomed={1}; primary expected={2}; primary actual={3}.",
+                                        "Compare focused zoom shortcut should have linked both compare panes. Compare full={0}; compare zoomed={1}; primary before={2}; primary actual={3}.",
                                         FormatViewportSnapshot(compareFullViewport),
                                         FormatViewportSnapshot(compareShortcutZoomViewport),
                                         FormatViewportSnapshot(primaryShortcutCompareZoomViewport),
                                         FormatViewportSnapshot(primaryViewportAfterCompareShortcut))));
+                            await controller.SetLinkedPaneZoomAsync(false).ConfigureAwait(true);
+                            var linkedZoomDisabledState = controller.CaptureLinkPaneZoomCommandState();
+                            checks.Add(linkedZoomDisabledState.IsEnabled && !linkedZoomDisabledState.IsChecked
+                                ? Pass(
+                                    filePath,
+                                    "ui",
+                                    CoverageCategory,
+                                    "ui-zoom-compare-link-can-disable",
+                                    "Compare pane Link Zoom could be disabled for independent viewport review.")
+                                : Fail(
+                                    filePath,
+                                    "ui",
+                                    CoverageCategory,
+                                    "ui-zoom-compare-link-can-disable",
+                                    string.Format(
+                                        CultureInfo.InvariantCulture,
+                                        "Compare pane Link Zoom should have been disabled. Enabled={0}; checked={1}; tooltip='{2}'.",
+                                        linkedZoomDisabledState.IsEnabled,
+                                        linkedZoomDisabledState.IsChecked,
+                                        linkedZoomDisabledState.ToolTip)));
                             await controller.SetPaneViewportAsync(PrimaryPaneId, 2.2d, 0.34d, 0.46d).ConfigureAwait(true);
                             await controller.SetPaneViewportAsync(ComparePaneId, 2.8d, 0.72d, 0.58d).ConfigureAwait(true);
                             var primaryPaneZoomViewport = controller.CapturePaneViewportSnapshot(PrimaryPaneId);
@@ -3997,6 +4089,18 @@ namespace FramePlayer.Diagnostics
                        Math.Abs(expected.SourceCropHeight - actual.SourceCropHeight) <= CropPixelTolerance;
             }
 
+            private static bool ViewportZoomAndCenterMatch(PaneViewportSnapshot expected, PaneViewportSnapshot actual)
+            {
+                if (expected == null || actual == null)
+                {
+                    return false;
+                }
+
+                return Math.Abs(expected.ZoomFactor - actual.ZoomFactor) <= 0.001d &&
+                       Math.Abs(expected.NormalizedCenterX - actual.NormalizedCenterX) <= 0.001d &&
+                       Math.Abs(expected.NormalizedCenterY - actual.NormalizedCenterY) <= 0.001d;
+            }
+
             private static string FormatViewportSnapshot(PaneViewportSnapshot snapshot)
             {
                 if (snapshot == null)
@@ -4491,6 +4595,19 @@ namespace FramePlayer.Diagnostics
                     };
                 }
 
+                public CommandStateSnapshot CaptureLinkPaneZoomCommandState()
+                {
+                    var checkBox = (CheckBox)_window.FindName("LinkPaneZoomCheckBox");
+                    return new CommandStateSnapshot
+                    {
+                        IsEnabled = checkBox != null && checkBox.IsEnabled,
+                        IsChecked = checkBox != null && checkBox.IsChecked == true,
+                        ToolTip = checkBox != null && checkBox.ToolTip != null
+                            ? checkBox.ToolTip.ToString() ?? string.Empty
+                            : string.Empty
+                    };
+                }
+
                 public async Task CloseAsync()
                 {
                     await InvokeTaskAsync(_closeMediaAsyncMethod).ConfigureAwait(true);
@@ -4644,6 +4761,18 @@ namespace FramePlayer.Diagnostics
                     compareModeCheckBox.IsChecked = isEnabled;
                     await WaitForUiIdleAsync(_window.Dispatcher).ConfigureAwait(true);
                     await Task.Delay(50).ConfigureAwait(true);
+                    await WaitForUiIdleAsync(_window.Dispatcher).ConfigureAwait(true);
+                }
+
+                public async Task SetLinkedPaneZoomAsync(bool isEnabled)
+                {
+                    var linkPaneZoomCheckBox = (CheckBox)_window.FindName("LinkPaneZoomCheckBox");
+                    if (linkPaneZoomCheckBox == null)
+                    {
+                        throw new InvalidOperationException("Link pane zoom checkbox was not found.");
+                    }
+
+                    linkPaneZoomCheckBox.IsChecked = isEnabled;
                     await WaitForUiIdleAsync(_window.Dispatcher).ConfigureAwait(true);
                 }
 
@@ -5156,6 +5285,8 @@ namespace FramePlayer.Diagnostics
             private sealed class CommandStateSnapshot
             {
                 public bool IsEnabled { get; init; }
+
+                public bool IsChecked { get; init; }
 
                 public string ToolTip { get; init; } = string.Empty;
             }
