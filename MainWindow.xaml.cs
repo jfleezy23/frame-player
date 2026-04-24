@@ -810,7 +810,9 @@ namespace FramePlayer
             }
 
             var targetPaneId = GetPeerComparePaneId(sourcePaneId);
-            if (string.IsNullOrWhiteSpace(targetPaneId) || !CanAdjustPaneViewport(targetPaneId))
+            if (!CanAdjustPaneViewport(sourcePaneId) ||
+                string.IsNullOrWhiteSpace(targetPaneId) ||
+                !CanAdjustPaneViewport(targetPaneId))
             {
                 return;
             }
