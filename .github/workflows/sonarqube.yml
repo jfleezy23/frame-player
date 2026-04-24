@@ -119,6 +119,7 @@ jobs:
             "Diagnostics/ExportHostCli.cs"
             "Diagnostics/ReviewEngineComparisonRunner.cs"
             "Diagnostics/ReviewEngineManualTest*.cs"
+            "Diagnostics/RegressionSuiteCli.cs"
             "Diagnostics/WorkspaceCoordinatorProbe.cs"
             "Services/AudioInsertionService.cs"
             "Services/ClipExportService.cs"
