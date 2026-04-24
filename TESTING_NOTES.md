@@ -1,14 +1,14 @@
 # Frame Player Release Verification Notes
 
-Release: `1.8.1`
+Release: `1.8.2`
 
 ## Current release focus
 
 - The app is now custom FFmpeg only; FFME has been removed from the active path and older FFME-era releases are legacy/deprecated.
 - Video playback, audio playback, basic A/V sync, seek-to-time, seek-to-frame, exact frame stepping, and opportunistic Vulkan decode with strict CPU fallback are implemented in the custom engine.
 - The current WPF shell includes the combined Play/Pause control, cache-status visibility, immediate post-frame-entry arrow-key stepping, a visible GPU toggle, pane-aware decoded-frame budgeting, shared Vulkan warmup, and backend-aware compare behavior without changing the frames-first review contract.
-- The current `v1.8.1` release keeps the `v1.8.0` feature set, including live timeline scrubbing, A/B loop playback on the main transport, pane-local compare loop boxes, pane-local compare navigation, Inspector V2 with pane context-menu access, pending frame-number honesty while background indexing is still resolving absolute frame identity, reviewed-loop MP4 clip export through a separate FFmpeg export host/runtime path, and side-by-side compare export with loop and whole-video modes.
-- The current MVP-finish pass adds single-pane `Audio Insertion > Replace Audio Track...` for H.264 `.mp4` sources, pane-local paused zoom/pan in both review layouts, zoom-aware pixel readout, `Playback > Reset Zoom`, pane context-menu zoom reset, and crop-aware clip/compare export rendering.
+- The current `v1.8.2` release keeps the `v1.8.1` release surface and adds a focused feedback pass for compare-frame synchronization, linked compare zoom, and stronger audio-insertion regression coverage.
+- The current review surface includes single-pane `Audio Insertion > Replace Audio Track...` for H.264 `.mp4` sources, pane-local paused zoom/pan in both review layouts, zoom-aware pixel readout, `Playback > Reset Zoom`, pane context-menu zoom reset, and crop-aware clip/compare export rendering.
 - The shipped app output for this release line no longer includes `ffmpeg.exe`, `ffprobe.exe`, or an `ffmpeg-tools` directory; probe/export work runs through the DLL-only `ffmpeg-export` runtime in the headless export host.
 
 ## Manual test checklist
@@ -39,6 +39,8 @@ Release: `1.8.1`
 - In two-pane mode, set different pane-local loop boxes on Primary and Compare and confirm each pane slider shows its own boxed range instead of sharing one loop box.
 - In two-pane mode, confirm only the Primary and Compare pane timelines expose pane-local `Set Position A Here`, `Set Position B Here`, `Loop Playback`, and `Save Loop As Clip...` actions.
 - In two-pane mode while paused, zoom and pan each pane independently, then confirm playback keeps each pane in its own zoomed state and `Reset Zoom` from the pane context menu only resets the targeted pane.
+- In two-pane mode, confirm `Link Zoom` is enabled by default, mirrors zoom/pan changes between panes, and can be disabled when independent pane review is needed.
+- In two-pane mode with the main transport applying to all panes, seek by time and confirm exact frame sync is used when indexed frame identity is available; if it is not available, confirm the notification area reports that presentation-time sync is being used.
 - In two-pane mode, right-click each pane and use `Save Loop As Clip...` to confirm Primary and Compare can each export their own pane-local loop as separate MP4 clips.
 - In single-pane mode with a zoomed viewport, export a reviewed loop clip and confirm the rendered MP4 reflects the zoomed crop while keeping the existing loop timing and audio behavior.
 - In two-pane mode, use `Playback > Export Side-by-Side Compare...`, choose `Loop`, select audio from both panes on separate runs, and confirm the merged MP4 keeps both panes at full reviewed raster size without downscaling.

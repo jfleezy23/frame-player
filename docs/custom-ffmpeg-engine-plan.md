@@ -1,6 +1,6 @@
 # Historical Custom FFmpeg Engine Plan
 
-This is a historical planning checkpoint kept for project history. It predates the current `v1.8.1` release. For current shipped behavior and release prep, see `docs\release-v1.8.1-maintenance.md` and `docs\ffmpeg-8.1-build-notes.md`.
+This is a historical planning checkpoint kept for project history. It predates the current `v1.8.2` release. For current shipped behavior and release prep, see `docs\release-v1.8.2-feedback.md` and `docs\ffmpeg-8.1-build-notes.md`.
 
 ## What Changed
 
