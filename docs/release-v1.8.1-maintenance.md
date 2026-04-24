@@ -19,6 +19,7 @@ This note documents the `v1.8.1` release. It is a maintenance release on top of 
 ## Runtime And CI Truth
 
 - Product version: `v1.8.1`
+- Framework-dependent app prerequisite: `.NET 10 Desktop Runtime for Windows`, linked from the repository README and available from Microsoft at `https://dotnet.microsoft.com/en-us/download/dotnet/10.0`.
 - Current pinned clean-runner runtime bootstrap asset: `v1.5.0`
 - `Runtime\runtime-manifest.json` remains the playback-runtime integrity source of truth.
 - `Runtime\export-runtime-manifest.json` remains the shipped export-runtime integrity source of truth.

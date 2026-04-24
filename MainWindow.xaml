@@ -679,6 +679,7 @@
               <ColumnDefinition Width="Auto" />
               <ColumnDefinition Width="Auto" />
               <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
               <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
             <CheckBox x:Name="AllPanesCheckBox"
@@ -700,8 +701,17 @@
                     Content="Align Left to Right"
                     ToolTip="Frame first: uses the right pane's exact frame when available and falls back to time only when needed."
                     Click="AlignLeftToRightButton_Click" />
+            <CheckBox x:Name="LinkPaneZoomCheckBox"
+                      Grid.Column="3"
+                      Margin="12,0,0,0"
+                      VerticalAlignment="Center"
+                      Content="Link Zoom"
+                      IsChecked="True"
+                      ToolTip="Use the same zoom and pan viewport for both compare panes."
+                      Checked="LinkPaneZoomCheckBox_Checked"
+                      Unchecked="LinkPaneZoomCheckBox_Unchecked" />
             <TextBlock x:Name="CompareStatusTextBlock"
-                       Grid.Column="3"
+                       Grid.Column="4"
                        Margin="12,0,0,0"
                        VerticalAlignment="Center"
                        Foreground="{StaticResource MutedBrush}"

@@ -558,6 +558,16 @@ namespace FramePlayer
             }
         }
 
+        private bool IsLinkedPaneZoomEnabled
+        {
+            get
+            {
+                return IsCompareModeEnabled &&
+                       LinkPaneZoomCheckBox != null &&
+                       LinkPaneZoomCheckBox.IsChecked == true;
+            }
+        }
+
         private bool IsLoopPlaybackEnabled
         {
             get { return LoopPlaybackMenuItem != null && LoopPlaybackMenuItem.IsChecked; }
@@ -690,6 +700,7 @@ namespace FramePlayer
             }
 
             UpdatePaneViewportLayout(resolvedPaneId);
+            SynchronizeLinkedPaneViewport(resolvedPaneId);
             UpdateViewportCommandState(_workspaceCoordinator.GetWorkspaceSnapshot());
             FocusPreferredVideoSurface();
         }
@@ -709,6 +720,7 @@ namespace FramePlayer
 
             viewportState.Reset();
             UpdatePaneViewportLayout(paneId);
+            SynchronizeLinkedPaneViewport(paneId);
             UpdateViewportCommandState(_workspaceCoordinator.GetWorkspaceSnapshot());
             if (string.Equals(GetFocusedPaneId(), paneId, StringComparison.Ordinal))
             {
@@ -788,6 +800,48 @@ namespace FramePlayer
         {
             GetPaneViewportState(paneId).Reset();
             UpdatePaneViewportLayout(paneId);
+        }
+
+        private void SynchronizeLinkedPaneViewport(string sourcePaneId)
+        {
+            if (!IsLinkedPaneZoomEnabled)
+            {
+                return;
+            }
+
+            var targetPaneId = GetPeerComparePaneId(sourcePaneId);
+            if (!CanAdjustPaneViewport(sourcePaneId) ||
+                string.IsNullOrWhiteSpace(targetPaneId) ||
+                !CanAdjustPaneViewport(targetPaneId))
+            {
+                return;
+            }
+
+            CopyPaneViewportState(sourcePaneId, targetPaneId);
+            UpdatePaneViewportLayout(targetPaneId);
+        }
+
+        private void CopyPaneViewportState(string sourcePaneId, string targetPaneId)
+        {
+            var sourceViewportState = GetPaneViewportState(sourcePaneId);
+            var targetViewportState = GetPaneViewportState(targetPaneId);
+            targetViewportState.ZoomFactor = sourceViewportState.ZoomFactor;
+            targetViewportState.NormalizedCenter = sourceViewportState.NormalizedCenter;
+            targetViewportState.IsPanActive = false;
+            targetViewportState.PanAnchorHostPoint = default(Point);
+            targetViewportState.PanAnchorNormalizedCenter = sourceViewportState.NormalizedCenter;
+        }
+
+        private static string GetPeerComparePaneId(string paneId)
+        {
+            if (string.Equals(paneId, PrimaryPaneId, StringComparison.Ordinal))
+            {
+                return ComparePaneId;
+            }
+
+            return string.Equals(paneId, ComparePaneId, StringComparison.Ordinal)
+                ? PrimaryPaneId
+                : string.Empty;
         }
 
         private void ResetPaneViewportIfSessionChanged(
@@ -1005,6 +1059,10 @@ namespace FramePlayer
             AlignLeftToRightButton.ToolTip = canAlign
                 ? "Frame first: aligns the left pane to the right pane with exact frame identity when available."
                 : "Load videos in both panes before aligning them.";
+            LinkPaneZoomCheckBox.IsEnabled = IsCompareModeEnabled;
+            LinkPaneZoomCheckBox.ToolTip = IsLinkedPaneZoomEnabled
+                ? "Zoom and pan changes are mirrored between compare panes."
+                : "Zoom and pan changes stay on the pane you are adjusting.";
 
             AllPanesCheckBox.IsEnabled = false;
             AllPanesCheckBox.ToolTip = canRunCompareActions
@@ -1553,6 +1611,35 @@ namespace FramePlayer
             if (AllPanesCheckBox != null && AllPanesCheckBox.Visibility == Visibility.Visible && _isMediaLoaded)
             {
                 UpdateTransportState();
+            }
+        }
+
+        private void LinkPaneZoomCheckBox_Checked(object sender, RoutedEventArgs e)
+        {
+            if (_workspaceCoordinator == null || !IsCompareModeEnabled)
+            {
+                return;
+            }
+
+            SynchronizeLinkedPaneViewport(GetFocusedPaneId());
+            UpdateViewportCommandState(_workspaceCoordinator.GetWorkspaceSnapshot());
+            if (_isMediaLoaded)
+            {
+                SetPlaybackMessage("Compare pane zoom is linked.");
+            }
+        }
+
+        private void LinkPaneZoomCheckBox_Unchecked(object sender, RoutedEventArgs e)
+        {
+            if (_workspaceCoordinator == null || !IsCompareModeEnabled)
+            {
+                return;
+            }
+
+            UpdateViewportCommandState(_workspaceCoordinator.GetWorkspaceSnapshot());
+            if (_isMediaLoaded)
+            {
+                SetPlaybackMessage("Compare pane zoom is independent.");
             }
         }
 
@@ -2658,10 +2745,8 @@ namespace FramePlayer
 
             _suppressLoopRestart = true;
             var target = ClampPosition(GetDisplayPosition() + offset);
-            await RunWithCacheStatusAsync(
-                "Cache: seeking and warming...",
-                () => _workspaceCoordinator.SeekToTimeAsync(target, operationScope ?? GetRequestedOperationScope()));
-            UpdatePositionDisplay(GetDisplayPosition());
+            var activeScope = operationScope ?? GetRequestedOperationScope();
+            await SeekToAsync(target, "relative seek", activeScope);
             LogInfo(string.Format(
                 CultureInfo.InvariantCulture,
                 "Seeked {0}{1} to {2}; landed at {3}.",
@@ -2755,15 +2840,109 @@ namespace FramePlayer
 
             _suppressLoopRestart = true;
             var clampedTarget = ClampPosition(target);
+            var activeScope = operationScope ?? GetRequestedOperationScope();
+            IReadOnlyDictionary<string, long> sharedCompareFrameTargets;
+            long sharedCompareFrameIndex;
+            if (activeScope == SynchronizedOperationScope.AllPanes &&
+                TryResolveSharedCompareFrameSeekTargets(
+                    clampedTarget,
+                    out sharedCompareFrameTargets,
+                    out sharedCompareFrameIndex))
+            {
+                await RunWithCacheStatusAsync(
+                    "Cache: seeking exact compare frame...",
+                    () => _workspaceCoordinator.SeekToPaneFramesAsync(sharedCompareFrameTargets));
+                UpdatePositionDisplay(GetDisplayPosition());
+
+                if (!string.IsNullOrWhiteSpace(diagnosticSource))
+                {
+                    LogInfo(string.Format(
+                        CultureInfo.InvariantCulture,
+                        "{0}: requested {1}; committed shared compare frame {2}; landed at {3}.",
+                        diagnosticSource,
+                        FormatTime(ClampPosition(target)),
+                        GetDisplayedFrameNumber(sharedCompareFrameIndex),
+                        FormatTime(GetDisplayPosition())));
+                }
+
+                return;
+            }
+
+            if (activeScope == SynchronizedOperationScope.AllPanes && !string.IsNullOrWhiteSpace(diagnosticSource))
+            {
+                NotifyCompareTimingFallbackIfNeeded(diagnosticSource);
+            }
+
             await RunWithCacheStatusAsync(
                 "Cache: seeking...",
-                () => _workspaceCoordinator.SeekToTimeAsync(clampedTarget, operationScope ?? GetRequestedOperationScope()));
+                () => _workspaceCoordinator.SeekToTimeAsync(clampedTarget, activeScope));
             UpdatePositionDisplay(GetDisplayPosition());
 
             if (!string.IsNullOrWhiteSpace(diagnosticSource))
             {
                 LogSeekResult(diagnosticSource, target, clampedTarget);
             }
+        }
+
+        private bool TryResolveSharedCompareFrameSeekTargets(
+            TimeSpan target,
+            out IReadOnlyDictionary<string, long> paneFrameIndices,
+            out long referenceFrameIndex)
+        {
+            paneFrameIndices = null;
+            referenceFrameIndex = 0L;
+
+            if (!IsAllPaneTransportEnabled)
+            {
+                return false;
+            }
+
+            var referencePaneId = GetFocusedPaneId();
+            if (!TryResolveIndexedFrameAtOrAfterForPane(referencePaneId, target, out referenceFrameIndex) &&
+                !TryResolveIndexedFrameAtOrAfterForPane(PrimaryPaneId, target, out referenceFrameIndex) &&
+                !TryResolveIndexedFrameAtOrAfterForPane(ComparePaneId, target, out referenceFrameIndex))
+            {
+                return false;
+            }
+
+            var targets = new Dictionary<string, long>(StringComparer.Ordinal);
+            if (!TryAddSharedCompareFrameTarget(targets, PrimaryPaneId, referenceFrameIndex) ||
+                !TryAddSharedCompareFrameTarget(targets, ComparePaneId, referenceFrameIndex))
+            {
+                return false;
+            }
+
+            paneFrameIndices = targets;
+            return true;
+        }
+
+        private bool TryResolveIndexedFrameAtOrAfterForPane(
+            string paneId,
+            TimeSpan target,
+            out long frameIndex)
+        {
+            frameIndex = 0L;
+            var engine = GetEngineForPane(paneId) as FfmpegReviewEngine;
+            return engine != null &&
+                   engine.IsMediaOpen &&
+                   engine.TryResolveIndexedFrameAtOrAfterPresentationTime(target, out frameIndex);
+        }
+
+        private bool TryAddSharedCompareFrameTarget(
+            Dictionary<string, long> targets,
+            string paneId,
+            long referenceFrameIndex)
+        {
+            var engine = GetEngineForPane(paneId) as FfmpegReviewEngine;
+            if (engine == null || !engine.IsMediaOpen || !engine.IsGlobalFrameIndexAvailable || engine.IndexedFrameCount <= 0L)
+            {
+                return false;
+            }
+
+            targets[paneId] = Math.Min(
+                Math.Max(0L, referenceFrameIndex),
+                engine.IndexedFrameCount - 1L);
+            return true;
         }
 
         private async Task SeekPaneToAsync(string paneId, TimeSpan target, string diagnosticSource = null)
@@ -2878,6 +3057,7 @@ namespace FramePlayer
             }
 
             var targetTime = sourcePaneSnapshot.PresentationTime;
+            NotifyCompareTimingFallbackIfNeeded("pane alignment");
             await SeekToAsync(
                 targetTime,
                 string.Format(
@@ -3825,6 +4005,7 @@ namespace FramePlayer
             }
 
             UpdatePaneViewportLayout(paneId);
+            SynchronizeLinkedPaneViewport(paneId);
             UpdateViewportCommandState(_workspaceCoordinator.GetWorkspaceSnapshot());
             e.Handled = true;
         }
@@ -3891,6 +4072,7 @@ namespace FramePlayer
                                 viewportState.PanAnchorNormalizedCenter.Y - (delta.Y / geometryBeforePan.RenderedRect.Height));
                             viewportState.NormalizedCenter = updatedCenter;
                             UpdatePaneViewportLayout(paneId);
+                            SynchronizeLinkedPaneViewport(paneId);
                         }
                     }
                 }
@@ -4109,6 +4291,16 @@ namespace FramePlayer
         {
             PlaybackStateTextBlock.Text = message;
             PlaybackStateTextBlock.ToolTip = message;
+        }
+
+        private void NotifyCompareTimingFallbackIfNeeded(string operationLabel)
+        {
+            var message = "Exact compare frame timing is unavailable; using presentation-time sync.";
+            SetPlaybackMessage(message);
+            LogWarning(string.Format(
+                CultureInfo.InvariantCulture,
+                "Compare {0} fell back to presentation-time synchronization because exact frame identity was unavailable for both panes.",
+                string.IsNullOrWhiteSpace(operationLabel) ? "operation" : operationLabel));
         }
 
         private void SetMediaSummary(string message)
@@ -4490,6 +4682,8 @@ namespace FramePlayer
                     viewportState.ZoomFactor = MinimumPaneZoomFactor;
                 }
             }
+
+            SynchronizeLinkedPaneViewport(paneId);
         }
 
         private void UpdateAllPaneViewportLayouts()

@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using FramePlayer.Core.Models;
+using FramePlayer.Engines.FFmpeg;
 using FramePlayer.Services;
 using Xunit;
 
@@ -45,7 +46,7 @@ namespace FramePlayer.Core.Tests
         }
 
         [Fact]
-        public async Task ExportHost_AudioInsertion_ProducesAudioBearingMp4()
+        public async Task ExportHost_AudioInsertion_ProducesAudioBearingH264Mp4()
         {
             var ffmpegToolPath = TryGetLocalFfmpegToolPath();
             if (string.IsNullOrWhiteSpace(ffmpegToolPath))
@@ -62,6 +63,7 @@ namespace FramePlayer.Core.Tests
             WriteSineWaveFile(audioFilePath, TimeSpan.FromMilliseconds(420));
 
             var sourceProbe = await ProbeAsync(sourceFilePath);
+            Assert.Equal("h264", NormalizeCodecName(sourceProbe.VideoCodecName));
             var insertionResult = await RunHostRequestAsync(
                 new ExportHostRequest
                 {
@@ -89,6 +91,36 @@ namespace FramePlayer.Core.Tests
                 Math.Abs((outputProbe.Duration - sourceProbe.Duration).TotalMilliseconds),
                 0,
                 120);
+        }
+
+        [Theory]
+        [InlineData("h264-mp4", ".mp4", "h264")]
+        [InlineData("mjpeg-avi", ".avi", "mjpeg")]
+        public async Task ReviewEngine_OpenAudioBearingClip_ReportsPlayableAudio(
+            string sampleName,
+            string fileExtension,
+            string expectedVideoCodec)
+        {
+            var ffmpegToolPath = TryGetLocalFfmpegToolPath();
+            if (string.IsNullOrWhiteSpace(ffmpegToolPath))
+            {
+                return;
+            }
+
+            using var workspace = new TemporaryWorkspace();
+            var sourceFilePath = Path.Combine(workspace.DirectoryPath, sampleName + fileExtension);
+            await GenerateSyntheticAudioBearingSourceClipAsync(ffmpegToolPath, sourceFilePath, expectedVideoCodec);
+
+            using var engine = new FfmpegReviewEngine();
+            await engine.OpenAsync(sourceFilePath);
+
+            var mediaInfo = engine.MediaInfo;
+            Assert.Equal(expectedVideoCodec, NormalizeCodecName(mediaInfo.VideoCodecName));
+            Assert.True(mediaInfo.HasAudioStream, sampleName + " did not report an audio stream.");
+            Assert.True(mediaInfo.IsAudioPlaybackAvailable, sampleName + " did not expose a decodable audio stream.");
+            Assert.True(mediaInfo.AudioStreamIndex >= 0, sampleName + " did not expose an audio stream index.");
+            Assert.True(mediaInfo.AudioSampleRate > 0, sampleName + " did not report a valid audio sample rate.");
+            Assert.True(mediaInfo.AudioChannelCount > 0, sampleName + " did not report a valid audio channel count.");
         }
 
         [Fact]
@@ -474,6 +506,50 @@ namespace FramePlayer.Core.Tests
                 result.ExitCode == 0,
                 "Synthetic source clip generation failed. Stdout: " + result.StandardOutput + " Stderr: " + result.StandardError);
             Assert.True(File.Exists(outputFilePath), "Synthetic source clip generation did not produce the expected output file.");
+        }
+
+        private static async Task GenerateSyntheticAudioBearingSourceClipAsync(
+            string ffmpegToolPath,
+            string outputFilePath,
+            string videoCodec)
+        {
+            var normalizedCodec = NormalizeCodecName(videoCodec);
+            string arguments;
+            if (string.Equals(normalizedCodec, "mjpeg", StringComparison.OrdinalIgnoreCase))
+            {
+                arguments = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "-y -filter_complex \"testsrc=size=128x72:rate=30,format=yuvj420p[v];sine=frequency=660:sample_rate=48000,atrim=duration=1.2[a]\" -map \"[v]\" -map \"[a]\" -t 1.2 -c:v mjpeg -q:v 3 -c:a pcm_s16le \"{0}\"",
+                    outputFilePath);
+            }
+            else if (string.Equals(normalizedCodec, "h264", StringComparison.OrdinalIgnoreCase))
+            {
+                arguments = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "-y -filter_complex \"testsrc=size=128x72:rate=30,format=yuv420p[v];sine=frequency=440:sample_rate=48000,atrim=duration=1.2[a]\" -map \"[v]\" -map \"[a]\" -t 1.2 -c:v libx264 -c:a aac -b:a 128k -movflags +faststart \"{0}\"",
+                    outputFilePath);
+            }
+            else
+            {
+                throw new ArgumentOutOfRangeException(nameof(videoCodec), "Unsupported synthetic test video codec: " + videoCodec);
+            }
+
+            var result = await RunProcessAsync(
+                ffmpegToolPath,
+                arguments,
+                Path.GetDirectoryName(outputFilePath) ?? AppContext.BaseDirectory);
+
+            Assert.True(
+                result.ExitCode == 0,
+                "Synthetic audio-bearing clip generation failed. Stdout: " + result.StandardOutput + " Stderr: " + result.StandardError);
+            Assert.True(File.Exists(outputFilePath), "Synthetic audio-bearing clip generation did not produce the expected output file.");
+        }
+
+        private static string NormalizeCodecName(string codecName)
+        {
+            return string.IsNullOrWhiteSpace(codecName)
+                ? string.Empty
+                : codecName.Replace(".", string.Empty).Trim().ToLowerInvariant();
         }
 
         private static async Task<ProcessInvocationResult> RunProcessAsync(string fileName, string arguments, string workingDirectory)
