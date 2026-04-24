@@ -2927,7 +2927,7 @@ namespace FramePlayer
         }
 
         private bool TryAddSharedCompareFrameTarget(
-            IDictionary<string, long> targets,
+            Dictionary<string, long> targets,
             string paneId,
             long referenceFrameIndex)
         {
