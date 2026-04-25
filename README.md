@@ -2,6 +2,21 @@
 
 Frame Player is a frame-first WPF review tool built on a custom FFmpeg engine with a bundled in-process FFmpeg runtime. It treats decoded display-order frame identity as the source of truth for exact frame stepping, frame seeks, and review state, prioritizing deterministic review behavior over generic consumer media-player parity.
 
+## Who this is for
+
+FramePlayer is intended for people who need exact video frame review rather than ordinary playback:
+
+- computer vision dataset inspection
+- annotation QA
+- original vs processed video comparison
+- surveillance/CCTV pre-review
+- sports or form-analysis clips
+- animation or VFX frame review
+- codec/transcode/debug review
+- short defect/event isolation
+
+If your workflow depends on knowing that you are actually looking at frame N, FramePlayer is built for that use case.
+
 ## What It Does
 
 - Opens `.avi`, `.m4v`, `.mp4`, `.mkv`, and `.wmv`
