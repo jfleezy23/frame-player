@@ -11,6 +11,7 @@ Use it after feature work is done and before building or publishing release arti
 - Confirm `Properties\AssemblyInfo.cs` and `src\FramePlayer.Controls\Properties\AssemblyInfo.cs` carry the intended product version.
 - Confirm the current release note and README point at the same release document.
 - Confirm `TESTING_NOTES.md` reflects the active release line and current validation expectations.
+- If AI review is desired for the release, request Codex review manually on the release-prep PR and record the result before tagging.
 
 ## Validation Gate
 
@@ -41,6 +42,7 @@ Do not run these until the repo state and validation evidence above are accepted
 - Publish the release with the current release note content or a summary derived from it.
 - Attach the intended artifacts only after version names, signatures, and hashes are verified.
 - If runtime/tooling manifests changed, confirm the recorded hashes and provenance notes were updated in the same release.
+- Confirm any manually requested Codex review findings for the release-prep PR were accepted, resolved, or explicitly deferred.
 
 ## Post-Ship Smoke
 
