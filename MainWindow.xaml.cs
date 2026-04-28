@@ -4558,28 +4558,13 @@ namespace FramePlayer
                 : "frame number pending index";
             var cacheModeLabel = ffmpegEngine.IsGpuActive ? "GPU" : "CPU";
             var completeCacheFrameCount = Math.Max(0, ffmpegEngine.CompleteDecodedCacheFrameCount);
-            var completeCacheStatus = ffmpegEngine.IsCompleteDecodedCacheLoaded
-                ? string.Format(
-                    CultureInfo.InvariantCulture,
-                    "complete decoded cache loaded for {0} frames",
-                    completeCacheFrameCount)
-                : ffmpegEngine.IsCompleteDecodedCacheEligible
-                    ? "complete decoded cache eligible; loads on the next indexed seek"
-                    : "complete decoded cache not eligible";
-            var message = ffmpegEngine.IsCompleteDecodedCacheLoaded
-                ? string.Format(
-                    CultureInfo.InvariantCulture,
-                    "Cache: complete ({0} frames, {1})",
-                    completeCacheFrameCount,
-                    cacheModeLabel)
-                : string.Format(
-                    CultureInfo.InvariantCulture,
-                    ffmpegEngine.IsGlobalFrameIndexBuildInProgress
-                        ? "Cache: indexing ({0} back / {1} ahead, {2})"
-                        : "Cache: ready ({0} back / {1} ahead, {2})",
-                    previousCount,
-                    forwardCount,
-                    cacheModeLabel);
+            var completeCacheStatus = FormatCompleteDecodedCacheStatus(ffmpegEngine, completeCacheFrameCount);
+            var message = FormatCacheStatusMessage(
+                ffmpegEngine,
+                previousCount,
+                forwardCount,
+                completeCacheFrameCount,
+                cacheModeLabel);
             var tooltip = string.Format(
                 CultureInfo.InvariantCulture,
                 "Backend: {0}. GPU status: {1}. Fallback: {2}. Queue depth: {3}. Index: {4}. Frame identity: {5}. Complete cache: {6}. Review cache budget is {7:0.0} MiB and currently uses about {8:0.0} MiB with {9} prior and {10} forward decoded frames at the current position, up to {11} prior and {12} forward. Last refill: {13} ({14:0.0} ms, {15}). Timeline seeks show the landed frame first.",
@@ -4600,6 +4585,53 @@ namespace FramePlayer
                 ffmpegEngine.LastCacheRefillMilliseconds,
                 string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillMode) ? "none" : ffmpegEngine.LastCacheRefillMode);
             SetCacheStatus(message, tooltip, false);
+        }
+
+        private static string FormatCompleteDecodedCacheStatus(
+            FfmpegReviewEngine ffmpegEngine,
+            int completeCacheFrameCount)
+        {
+            if (ffmpegEngine.IsCompleteDecodedCacheLoaded)
+            {
+                return string.Format(
+                    CultureInfo.InvariantCulture,
+                    "complete decoded cache loaded for {0} frames",
+                    completeCacheFrameCount);
+            }
+
+            if (ffmpegEngine.IsCompleteDecodedCacheEligible)
+            {
+                return "complete decoded cache eligible; loads on the next indexed seek";
+            }
+
+            return "complete decoded cache not eligible";
+        }
+
+        private static string FormatCacheStatusMessage(
+            FfmpegReviewEngine ffmpegEngine,
+            int previousCount,
+            int forwardCount,
+            int completeCacheFrameCount,
+            string cacheModeLabel)
+        {
+            if (ffmpegEngine.IsCompleteDecodedCacheLoaded)
+            {
+                return string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Cache: complete ({0} frames, {1})",
+                    completeCacheFrameCount,
+                    cacheModeLabel);
+            }
+
+            var statusFormat = ffmpegEngine.IsGlobalFrameIndexBuildInProgress
+                ? "Cache: indexing ({0} back / {1} ahead, {2})"
+                : "Cache: ready ({0} back / {1} ahead, {2})";
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                statusFormat,
+                previousCount,
+                forwardCount,
+                cacheModeLabel);
         }
 
         private void SetCacheStatus(string message, string tooltip, bool isActive)
