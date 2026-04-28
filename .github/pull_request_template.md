@@ -8,11 +8,18 @@
 - [ ] built locally
 - [ ] relevant automated checks ran
 - [ ] relevant manual checks ran
+- [ ] Codex review intentionally requested for this PR, if desired
 
 Validation details:
 
 ```text
 paste command lines and pass/warn/fail summaries here
+```
+
+Codex review notes:
+
+```text
+leave blank unless a manual Codex review was intentionally requested
 ```
 
 ## Security And Risk
