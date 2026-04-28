@@ -1,13 +1,13 @@
 # Frame Player Release Verification Notes
 
-Release: `1.8.2`
+Release: `1.8.3`
 
 ## Current release focus
 
 - The app is now custom FFmpeg only; FFME has been removed from the active path and older FFME-era releases are legacy/deprecated.
 - Video playback, audio playback, basic A/V sync, seek-to-time, seek-to-frame, exact frame stepping, and opportunistic Vulkan decode with strict CPU fallback are implemented in the custom engine.
 - The current WPF shell includes the combined Play/Pause control, cache-status visibility, immediate post-frame-entry arrow-key stepping, a visible GPU toggle, pane-aware decoded-frame budgeting, shared Vulkan warmup, and backend-aware compare behavior without changing the frames-first review contract.
-- The current `v1.8.2` release keeps the `v1.8.1` release surface and adds a focused feedback pass for compare-frame synchronization, linked compare zoom, and stronger audio-insertion regression coverage.
+- The current `v1.8.3` release keeps the `v1.8.2` release surface and adds a focused feedback pass for `Ctrl+N` new-window workflow, compare timeline seeks during indexing, and complete decoded-cache coverage for clips that safely fit the pane budget.
 - The current review surface includes single-pane `Audio Insertion > Replace Audio Track...` for H.264 `.mp4` sources, pane-local paused zoom/pan in both review layouts, zoom-aware pixel readout, `Playback > Reset Zoom`, pane context-menu zoom reset, and crop-aware clip/compare export rendering.
 - The shipped app output for this release line no longer includes `ffmpeg.exe`, `ffprobe.exe`, or an `ffmpeg-tools` directory; probe/export work runs through the DLL-only `ffmpeg-export` runtime in the headless export host.
 
@@ -15,6 +15,7 @@ Release: `1.8.2`
 
 - Launch the app from `bin\TestDrop\FramePlayer.exe`.
 - Open a normal video file and verify the first displayed frame is frame `1`.
+- Press `Ctrl+N` and confirm a second blank Frame Player window opens without cloning the current media or compare session.
 - Watch the status bar after open: it should distinguish index building/ready from the decoded review-cache window.
 - Open a representative HEVC file with `Playback > Use GPU Acceleration` enabled and confirm diagnostics/log output report `ffmpeg-vulkan` when the local machine supports the Vulkan path.
 - Disable `Playback > Use GPU Acceleration`, reopen the same file, and confirm the app stays correct on the CPU path.
