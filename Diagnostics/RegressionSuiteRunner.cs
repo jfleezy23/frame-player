@@ -828,8 +828,9 @@ namespace FramePlayer.Diagnostics
             var expectedFrameCount = ResolveExpectedCompleteDecodedCacheFrameCount(engine.IndexedFrameCount);
             var loadedCompleteCache = engine.IsCompleteDecodedCacheLoaded &&
                                       engine.CompleteDecodedCacheFrameCount == expectedFrameCount;
-            checks.Add(loadedCompleteCache
-                ? Pass(
+            if (loadedCompleteCache)
+            {
+                checks.Add(Pass(
                     filePath,
                     EngineScope,
                     CorrectnessCategory,
@@ -838,19 +839,22 @@ namespace FramePlayer.Diagnostics
                         CultureInfo.InvariantCulture,
                         "Eligible clip loaded a complete decoded cache with {0} frames.",
                         engine.CompleteDecodedCacheFrameCount),
-                    indexReady: true)
-                : Fail(
-                    filePath,
-                    EngineScope,
-                    CorrectnessCategory,
-                    CompleteDecodedCachePolicyCheckName,
-                    string.Format(
-                        CultureInfo.InvariantCulture,
-                        "Clip was eligible for complete decoded cache but loaded={0}, cached frames={1}, indexed frames={2}.",
-                        engine.IsCompleteDecodedCacheLoaded ? "yes" : "no",
-                        engine.CompleteDecodedCacheFrameCount,
-                        engine.IndexedFrameCount),
                     indexReady: true));
+                return;
+            }
+
+            checks.Add(Fail(
+                filePath,
+                EngineScope,
+                CorrectnessCategory,
+                CompleteDecodedCachePolicyCheckName,
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Clip was eligible for complete decoded cache but loaded={0}, cached frames={1}, indexed frames={2}.",
+                    engine.IsCompleteDecodedCacheLoaded ? "yes" : "no",
+                    engine.CompleteDecodedCacheFrameCount,
+                    engine.IndexedFrameCount),
+                indexReady: true));
         }
 
         private static int ResolveExpectedCompleteDecodedCacheFrameCount(long indexedFrameCount)
