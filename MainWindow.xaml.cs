@@ -4556,25 +4556,44 @@ namespace FramePlayer
                                    focusedEngine.Position.IsFrameIndexAbsolute
                 ? "absolute frame ready"
                 : "frame number pending index";
-            var message = string.Format(
-                CultureInfo.InvariantCulture,
-                ffmpegEngine.IsGlobalFrameIndexBuildInProgress
-                    ? "Cache: indexing ({0} back / {1} ahead, {2})"
-                    : "Cache: ready ({0} back / {1} ahead, {2})",
-                previousCount,
-                forwardCount,
-                ffmpegEngine.IsGpuActive ? "GPU" : "CPU");
+            var cacheModeLabel = ffmpegEngine.IsGpuActive ? "GPU" : "CPU";
+            var completeCacheFrameCount = Math.Max(0, ffmpegEngine.CompleteDecodedCacheFrameCount);
+            var completeCacheStatus = ffmpegEngine.IsCompleteDecodedCacheLoaded
+                ? string.Format(
+                    CultureInfo.InvariantCulture,
+                    "complete decoded cache loaded for {0} frames",
+                    completeCacheFrameCount)
+                : ffmpegEngine.IsCompleteDecodedCacheEligible
+                    ? "complete decoded cache eligible; loads on the next indexed seek"
+                    : "complete decoded cache not eligible";
+            var message = ffmpegEngine.IsCompleteDecodedCacheLoaded
+                ? string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Cache: complete ({0} frames, {1})",
+                    completeCacheFrameCount,
+                    cacheModeLabel)
+                : string.Format(
+                    CultureInfo.InvariantCulture,
+                    ffmpegEngine.IsGlobalFrameIndexBuildInProgress
+                        ? "Cache: indexing ({0} back / {1} ahead, {2})"
+                        : "Cache: ready ({0} back / {1} ahead, {2})",
+                    previousCount,
+                    forwardCount,
+                    cacheModeLabel);
             var tooltip = string.Format(
                 CultureInfo.InvariantCulture,
-                "Backend: {0}. GPU status: {1}. Fallback: {2}. Queue depth: {3}. Index: {4}. Frame identity: {5}. Review cache budget is {6:0.0} MiB and currently uses about {7:0.0} MiB with up to {8} prior and {9} forward decoded frames. Last refill: {10} ({11:0.0} ms, {12}). Timeline seeks show the landed frame first.",
+                "Backend: {0}. GPU status: {1}. Fallback: {2}. Queue depth: {3}. Index: {4}. Frame identity: {5}. Complete cache: {6}. Review cache budget is {7:0.0} MiB and currently uses about {8:0.0} MiB with {9} prior and {10} forward decoded frames at the current position, up to {11} prior and {12} forward. Last refill: {13} ({14:0.0} ms, {15}). Timeline seeks show the landed frame first.",
                 string.IsNullOrWhiteSpace(ffmpegEngine.ActiveDecodeBackend) ? "(unknown)" : ffmpegEngine.ActiveDecodeBackend,
                 string.IsNullOrWhiteSpace(ffmpegEngine.GpuCapabilityStatus) ? NoneDisplayLabel : ffmpegEngine.GpuCapabilityStatus,
                 string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? NoneDisplayLabel : ffmpegEngine.GpuFallbackReason,
                 ffmpegEngine.OperationalQueueDepth,
                 ffmpegEngine.GlobalFrameIndexStatus,
                 positionIdentity,
+                completeCacheStatus,
                 cacheBudgetMegabytes,
                 approximateCacheMegabytes,
+                previousCount,
+                forwardCount,
                 ffmpegEngine.MaxPreviousCachedFrameCount,
                 ffmpegEngine.MaxForwardCachedFrameCount,
                 string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason) ? NoneDisplayLabel : ffmpegEngine.LastCacheRefillReason,
