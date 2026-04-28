@@ -2862,62 +2862,10 @@ namespace FramePlayer
             _suppressLoopRestart = true;
             var clampedTarget = ClampPosition(target);
             var activeScope = operationScope ?? GetRequestedOperationScope();
-            IReadOnlyDictionary<string, long> sharedCompareFrameTargets;
-            long sharedCompareFrameIndex;
             if (activeScope == SynchronizedOperationScope.AllPanes &&
-                TryResolveSharedCompareFrameSeekTargets(
-                    clampedTarget,
-                    out sharedCompareFrameTargets,
-                    out sharedCompareFrameIndex))
+                await TrySeekSharedCompareFrameAsync(clampedTarget, target, diagnosticSource))
             {
-                await RunWithCacheStatusAsync(
-                    "Cache: seeking exact compare frame...",
-                    () => _workspaceCoordinator.SeekToPaneFramesAsync(sharedCompareFrameTargets));
-                UpdatePositionDisplay(GetDisplayPosition());
-
-                if (!string.IsNullOrWhiteSpace(diagnosticSource))
-                {
-                    LogInfo(string.Format(
-                        CultureInfo.InvariantCulture,
-                        "{0}: requested {1}; committed shared compare frame {2}; landed at {3}.",
-                        diagnosticSource,
-                        FormatTime(ClampPosition(target)),
-                        GetDisplayedFrameNumber(sharedCompareFrameIndex),
-                        FormatTime(GetDisplayPosition())));
-                }
-
                 return;
-            }
-
-            if (activeScope == SynchronizedOperationScope.AllPanes && IsSharedCompareFrameIndexBuildInProgress())
-            {
-                var indexesReady = await RunWithCacheStatusAsync(
-                    "Cache: waiting for exact compare frame index...",
-                    () => WaitForSharedCompareFrameIndexesReadyAsync(CompareIndexSeekWaitTimeout));
-                if (indexesReady &&
-                    TryResolveSharedCompareFrameSeekTargets(
-                        clampedTarget,
-                        out sharedCompareFrameTargets,
-                        out sharedCompareFrameIndex))
-                {
-                    await RunWithCacheStatusAsync(
-                        "Cache: seeking exact compare frame...",
-                        () => _workspaceCoordinator.SeekToPaneFramesAsync(sharedCompareFrameTargets));
-                    UpdatePositionDisplay(GetDisplayPosition());
-
-                    if (!string.IsNullOrWhiteSpace(diagnosticSource))
-                    {
-                        LogInfo(string.Format(
-                            CultureInfo.InvariantCulture,
-                            "{0}: waited for compare index; requested {1}; committed shared compare frame {2}; landed at {3}.",
-                            diagnosticSource,
-                            FormatTime(ClampPosition(target)),
-                            GetDisplayedFrameNumber(sharedCompareFrameIndex),
-                            FormatTime(GetDisplayPosition())));
-                    }
-
-                    return;
-                }
             }
 
             if (activeScope == SynchronizedOperationScope.AllPanes && !string.IsNullOrWhiteSpace(diagnosticSource))
@@ -2934,6 +2882,81 @@ namespace FramePlayer
             {
                 LogSeekResult(diagnosticSource, target, clampedTarget);
             }
+        }
+
+        private async Task<bool> TrySeekSharedCompareFrameAsync(
+            TimeSpan clampedTarget,
+            TimeSpan requestedTarget,
+            string diagnosticSource)
+        {
+            IReadOnlyDictionary<string, long> sharedCompareFrameTargets;
+            long sharedCompareFrameIndex;
+            if (TryResolveSharedCompareFrameSeekTargets(
+                clampedTarget,
+                out sharedCompareFrameTargets,
+                out sharedCompareFrameIndex))
+            {
+                await SeekResolvedSharedCompareFrameAsync(
+                    sharedCompareFrameTargets,
+                    sharedCompareFrameIndex,
+                    requestedTarget,
+                    diagnosticSource,
+                    waitedForIndex: false);
+                return true;
+            }
+
+            if (!IsSharedCompareFrameIndexBuildInProgress())
+            {
+                return false;
+            }
+
+            var indexesReady = await RunWithCacheStatusAsync(
+                "Cache: waiting for exact compare frame index...",
+                () => WaitForSharedCompareFrameIndexesReadyAsync(CompareIndexSeekWaitTimeout));
+            if (!indexesReady ||
+                !TryResolveSharedCompareFrameSeekTargets(
+                    clampedTarget,
+                    out sharedCompareFrameTargets,
+                    out sharedCompareFrameIndex))
+            {
+                return false;
+            }
+
+            await SeekResolvedSharedCompareFrameAsync(
+                sharedCompareFrameTargets,
+                sharedCompareFrameIndex,
+                requestedTarget,
+                diagnosticSource,
+                waitedForIndex: true);
+            return true;
+        }
+
+        private async Task SeekResolvedSharedCompareFrameAsync(
+            IReadOnlyDictionary<string, long> sharedCompareFrameTargets,
+            long sharedCompareFrameIndex,
+            TimeSpan requestedTarget,
+            string diagnosticSource,
+            bool waitedForIndex)
+        {
+            await RunWithCacheStatusAsync(
+                "Cache: seeking exact compare frame...",
+                () => _workspaceCoordinator.SeekToPaneFramesAsync(sharedCompareFrameTargets));
+            UpdatePositionDisplay(GetDisplayPosition());
+
+            if (string.IsNullOrWhiteSpace(diagnosticSource))
+            {
+                return;
+            }
+
+            var waitPrefix = waitedForIndex ? "waited for compare index; " : string.Empty;
+            LogInfo(string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}: {1}requested {2}; committed shared compare frame {3}; landed at {4}.",
+                diagnosticSource,
+                waitPrefix,
+                FormatTime(ClampPosition(requestedTarget)),
+                GetDisplayedFrameNumber(sharedCompareFrameIndex),
+                FormatTime(GetDisplayPosition())));
         }
 
         private bool TryResolveSharedCompareFrameSeekTargets(

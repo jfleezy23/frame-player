@@ -33,7 +33,7 @@ Validated on 2026-04-28 with:
   - command: `powershell -NoProfile -ExecutionPolicy Bypass -Command "& { & '.\scripts\Run-RegressionSuite.ps1' -Path @('C:\Projects\Video Test Files\test_pattern_boundary.mp4','C:\Users\jflow\Downloads\RECORD_1.MP4') -Configuration Release -Output '.\artifacts\regression-suite-v1.8.3-feedback' }"`
   - result: passed, 145 checks, 140 pass, 5 coverage/correctness warnings, 0 failures
   - output: `artifacts\regression-suite-v1.8.3-feedback\regression-suite-summary.md`
-  - packaged artifact: `artifacts\regression-builds\FramePlayer-RegressionBuild-3fb8a6ffe3bf4b1fb41a631949871a3b.zip`
+  - packaged artifact: `artifacts\regression-builds\FramePlayer-RegressionBuild-45177e377d1e40f583e800f3c23c1697.zip`
 - Manual smoke:
   - launch the packaged app, press `Ctrl+N`, and confirm a second blank Frame Player window opens.
   - result: not run in this validation pass; covered by launcher unit tests and menu/shortcut wiring review

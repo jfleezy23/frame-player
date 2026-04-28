@@ -38,11 +38,10 @@ namespace FramePlayer.Services
 
         public static void LaunchNewInstance()
         {
-            using (Process.Start(BuildNewInstanceStartInfo(
+            var process = Process.Start(BuildNewInstanceStartInfo(
                 Environment.ProcessPath,
-                AppContext.BaseDirectory)))
-            {
-            }
+                AppContext.BaseDirectory));
+            process?.Dispose();
         }
     }
 }

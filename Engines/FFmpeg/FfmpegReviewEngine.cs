@@ -983,11 +983,12 @@ namespace FramePlayer.Engines.FFmpeg
                 SetCurrentFrame(cachedFrame);
                 _playbackStartNeedsDecoderRealignment = !_completeDecodedCacheLoaded;
                 RecordNoCacheRefill("seek-frame-cache-hit", afterLanding: true);
+                var cacheSeekMode = ResolveCacheSeekInstrumentationMode(
+                    _completeDecodedCacheLoaded,
+                    wasClampedToLastIndexedFrame);
                 SetOperationInstrumentation(
                     IsGlobalFrameIndexAvailable,
-                    _completeDecodedCacheLoaded
-                        ? (wasClampedToLastIndexedFrame ? "complete-decoded-cache-clamped" : "complete-decoded-cache")
-                        : (wasClampedToLastIndexedFrame ? "cache-absolute-frame-clamped" : "cache-absolute-frame"),
+                    cacheSeekMode,
                     cachedFrame.Descriptor.FrameIndex);
                 OnStateChanged();
                 OnFramePresented(_currentFrame);
@@ -1027,6 +1028,22 @@ namespace FramePlayer.Engines.FFmpeg
             OnStateChanged();
             OnFramePresented(_currentFrame);
             return Task.CompletedTask;
+        }
+
+        private static string ResolveCacheSeekInstrumentationMode(
+            bool completeDecodedCacheLoaded,
+            bool wasClampedToLastIndexedFrame)
+        {
+            if (completeDecodedCacheLoaded)
+            {
+                return wasClampedToLastIndexedFrame
+                    ? "complete-decoded-cache-clamped"
+                    : "complete-decoded-cache";
+            }
+
+            return wasClampedToLastIndexedFrame
+                ? "cache-absolute-frame-clamped"
+                : "cache-absolute-frame";
         }
 
         public void Dispose()

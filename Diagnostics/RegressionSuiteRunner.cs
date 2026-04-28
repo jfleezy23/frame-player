@@ -38,6 +38,7 @@ namespace FramePlayer.Diagnostics
         private const string UiAudioInsertionWavCheckName = "ui-audio-insertion-wav";
         private const string UiAudioInsertionMp3CheckName = "ui-audio-insertion-mp3";
         private const string ForwardOnlyStepProofCheckName = "forward-only-step-proof";
+        private const string CompleteDecodedCachePolicyCheckName = "complete-decoded-cache-policy";
         private const string NoneText = "(none)";
         private static readonly StringComparer FilePathComparer = StringComparer.OrdinalIgnoreCase;
         private static readonly HashSet<string> SupportedRegressionExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -804,7 +805,7 @@ namespace FramePlayer.Diagnostics
                     filePath,
                     EngineScope,
                     CoverageCategory,
-                    "complete-decoded-cache-policy",
+                    CompleteDecodedCachePolicyCheckName,
                     "Global frame index was unavailable, so complete decoded-cache policy coverage was skipped."));
                 return;
             }
@@ -815,7 +816,7 @@ namespace FramePlayer.Diagnostics
                     filePath,
                     EngineScope,
                     CorrectnessCategory,
-                    "complete-decoded-cache-policy",
+                    CompleteDecodedCachePolicyCheckName,
                     string.Format(
                         CultureInfo.InvariantCulture,
                         "Clip was not eligible for complete decoded cache with {0} indexed frames and used bounded local cache.",
@@ -824,9 +825,7 @@ namespace FramePlayer.Diagnostics
                 return;
             }
 
-            var expectedFrameCount = engine.IndexedFrameCount > int.MaxValue
-                ? int.MaxValue
-                : (int)engine.IndexedFrameCount;
+            var expectedFrameCount = ResolveExpectedCompleteDecodedCacheFrameCount(engine.IndexedFrameCount);
             var loadedCompleteCache = engine.IsCompleteDecodedCacheLoaded &&
                                       engine.CompleteDecodedCacheFrameCount == expectedFrameCount;
             checks.Add(loadedCompleteCache
@@ -834,7 +833,7 @@ namespace FramePlayer.Diagnostics
                     filePath,
                     EngineScope,
                     CorrectnessCategory,
-                    "complete-decoded-cache-policy",
+                    CompleteDecodedCachePolicyCheckName,
                     string.Format(
                         CultureInfo.InvariantCulture,
                         "Eligible clip loaded a complete decoded cache with {0} frames.",
@@ -844,7 +843,7 @@ namespace FramePlayer.Diagnostics
                     filePath,
                     EngineScope,
                     CorrectnessCategory,
-                    "complete-decoded-cache-policy",
+                    CompleteDecodedCachePolicyCheckName,
                     string.Format(
                         CultureInfo.InvariantCulture,
                         "Clip was eligible for complete decoded cache but loaded={0}, cached frames={1}, indexed frames={2}.",
@@ -852,6 +851,16 @@ namespace FramePlayer.Diagnostics
                         engine.CompleteDecodedCacheFrameCount,
                         engine.IndexedFrameCount),
                     indexReady: true));
+        }
+
+        private static int ResolveExpectedCompleteDecodedCacheFrameCount(long indexedFrameCount)
+        {
+            if (indexedFrameCount > int.MaxValue)
+            {
+                return int.MaxValue;
+            }
+
+            return (int)Math.Max(0L, indexedFrameCount);
         }
 
         private static async Task RunExactFrameSeekChecksAsync(
