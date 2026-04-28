@@ -1170,16 +1170,14 @@ namespace FramePlayer
                 paneId,
                 paneHasLoadedMedia,
                 hasFrameIdentity,
-                isAbsoluteFrameIndex,
-                currentFrameIndex);
+                isAbsoluteFrameIndex);
         }
 
         private string BuildPaneFrameNumberInputToolTip(
             string paneId,
             bool paneHasLoadedMedia,
             bool hasFrameIdentity,
-            bool isAbsoluteFrameIndex,
-            long currentFrameIndex)
+            bool isAbsoluteFrameIndex)
         {
             if (!paneHasLoadedMedia)
             {
@@ -1428,7 +1426,7 @@ namespace FramePlayer
             return PrimaryPaneShortLabel;
         }
 
-        private string BuildPaneStateText(ReviewWorkspacePaneSnapshot paneSnapshot)
+        private static string BuildPaneStateText(ReviewWorkspacePaneSnapshot paneSnapshot)
         {
             if (!PaneHasLoadedMedia(paneSnapshot))
             {
@@ -2233,7 +2231,7 @@ namespace FramePlayer
         private static void UpdateDropEffects(DragEventArgs e)
         {
             var files = GetDroppedFiles(e);
-            var hasSupportedFile = files != null && files.Any(IsSupportedVideoFile);
+            var hasSupportedFile = files.Any(IsSupportedVideoFile);
             e.Effects = hasSupportedFile
                 ? DragDropEffects.Copy
                 : DragDropEffects.None;
@@ -2244,8 +2242,8 @@ namespace FramePlayer
         private static string[] GetDroppedFiles(DragEventArgs e)
         {
             return e != null
-                ? e.Data.GetData(DataFormats.FileDrop) as string[]
-                : null;
+                ? (e.Data.GetData(DataFormats.FileDrop) as string[]) ?? Array.Empty<string>()
+                : Array.Empty<string>();
         }
 
         private string ResolveDropTargetPaneId(string preferredPaneId, DependencyObject originalSource)
@@ -2654,7 +2652,7 @@ namespace FramePlayer
 
             if (_isPlaying)
             {
-                await PausePlaybackAsync(operationScope: operationScope);
+                await PausePlaybackAsync(logAction: true, operationScope: operationScope);
                 return;
             }
 
@@ -2685,8 +2683,8 @@ namespace FramePlayer
         }
 
         private async Task PausePlaybackAsync(
-            bool logAction = true,
-            SynchronizedOperationScope? operationScope = null)
+            bool logAction,
+            SynchronizedOperationScope? operationScope)
         {
             if (!_isMediaLoaded)
             {
@@ -2842,15 +2840,15 @@ namespace FramePlayer
             FocusPreferredVideoSurface();
         }
 
-        private Task SeekToAsync(TimeSpan target, string diagnosticSource = null)
+        private Task SeekToAsync(TimeSpan target, string diagnosticSource)
         {
             return SeekToAsync(target, diagnosticSource, (SynchronizedOperationScope?)null);
         }
 
         private async Task SeekToAsync(
             TimeSpan target,
-            string diagnosticSource = null,
-            SynchronizedOperationScope? operationScope = null)
+            string diagnosticSource,
+            SynchronizedOperationScope? operationScope)
         {
             EndHeldFrameStep();
 
@@ -3718,7 +3716,7 @@ namespace FramePlayer
                 _framesPerSecond);
         }
 
-        private long GetCurrentFrameIndex(TimeSpan currentPosition)
+        private long GetCurrentFrameIndex()
         {
             long frameIndex;
             bool isAbsoluteFrameIndex;
@@ -3746,7 +3744,7 @@ namespace FramePlayer
             return true;
         }
 
-        private long GetDisplayedFrameNumber(long frameIndex)
+        private static long GetDisplayedFrameNumber(long frameIndex)
         {
             var clampedFrameIndex = Math.Max(0L, frameIndex);
             return BuildVariantInfo.UsesZeroIndexedFrameDisplay
@@ -3754,14 +3752,14 @@ namespace FramePlayer
                 : clampedFrameIndex + 1L;
         }
 
-        private long GetFrameIndexFromDisplayedFrameNumber(long displayedFrameNumber)
+        private static long GetFrameIndexFromDisplayedFrameNumber(long displayedFrameNumber)
         {
             return BuildVariantInfo.UsesZeroIndexedFrameDisplay
                 ? Math.Max(0L, displayedFrameNumber)
                 : Math.Max(1L, displayedFrameNumber) - 1L;
         }
 
-        private long GetDisplayedTotalFrameValue(long totalFrameCount)
+        private static long GetDisplayedTotalFrameValue(long totalFrameCount)
         {
             if (totalFrameCount <= 0L)
             {
@@ -3773,7 +3771,7 @@ namespace FramePlayer
                 : totalFrameCount;
         }
 
-        private string GetFrameNumberInputToolTip()
+        private static string GetFrameNumberInputToolTip()
         {
             return BuildVariantInfo.UsesZeroIndexedFrameDisplay
                 ? "Type a zero-indexed frame number and press Enter."
@@ -4516,9 +4514,6 @@ namespace FramePlayer
                 case ReviewWorkspacePreparationPhase.PreparingFirstFrame:
                     BeginCacheStatus("Cache: warming first frame...");
                     return;
-                case ReviewWorkspacePreparationPhase.Idle:
-                case ReviewWorkspacePreparationPhase.Ready:
-                case ReviewWorkspacePreparationPhase.Failed:
                 default:
                     _isCacheStatusActive = false;
                     UpdateCacheStatusFromEngine();
@@ -5593,9 +5588,9 @@ namespace FramePlayer
             audioInsertionTarget = null;
             failureMessage = string.Empty;
 
-            if (!_audioInsertionService.IsBundledRuntimeAvailable)
+            if (!AudioInsertionService.IsBundledRuntimeAvailable)
             {
-                failureMessage = _audioInsertionService.GetRuntimeAvailabilityMessage();
+                failureMessage = AudioInsertionService.GetRuntimeAvailabilityMessage();
                 return false;
             }
 
@@ -5762,9 +5757,9 @@ namespace FramePlayer
             exportContext = null;
             failureMessage = string.Empty;
 
-            if (!_compareSideBySideExportService.IsBundledRuntimeAvailable)
+            if (!CompareSideBySideExportService.IsBundledRuntimeAvailable)
             {
-                failureMessage = _compareSideBySideExportService.GetRuntimeAvailabilityMessage();
+                failureMessage = CompareSideBySideExportService.GetRuntimeAvailabilityMessage();
                 return false;
             }
 
@@ -6662,9 +6657,9 @@ namespace FramePlayer
             exportTarget = null;
             failureMessage = string.Empty;
 
-            if (!_clipExportService.IsBundledRuntimeAvailable)
+            if (!ClipExportService.IsBundledRuntimeAvailable)
             {
-                failureMessage = _clipExportService.GetRuntimeAvailabilityMessage();
+                failureMessage = ClipExportService.GetRuntimeAvailabilityMessage();
                 return false;
             }
 
@@ -8495,7 +8490,7 @@ namespace FramePlayer
             try
             {
                 var currentPosition = GetDisplayPosition();
-                var currentFrameIndex = _isMediaLoaded ? GetCurrentFrameIndex(currentPosition) : -1L;
+                var currentFrameIndex = _isMediaLoaded ? GetCurrentFrameIndex() : -1L;
                 var totalFrames = _isMediaLoaded ? GetTotalFrameCount() : -1L;
                 var displayedCurrentFrame = _isMediaLoaded
                     ? GetDisplayedFrameNumber(currentFrameIndex).ToString(CultureInfo.InvariantCulture)
@@ -8520,8 +8515,8 @@ namespace FramePlayer
                     ".NET: " + Environment.Version,
                     "Runtime available: " + (App.HasBundledFfmpegRuntime ? "Yes" : "No"),
                     "Runtime status: " + GetRuntimeStatusMessage(),
-                "Export runtime available: " + (_clipExportService.IsBundledRuntimeAvailable ? "Yes" : "No"),
-                "Export runtime status: " + _clipExportService.GetRuntimeAvailabilityMessage(),
+                    "Export runtime available: " + (ClipExportService.IsBundledRuntimeAvailable ? "Yes" : "No"),
+                    "Export runtime status: " + ClipExportService.GetRuntimeAvailabilityMessage(),
                     "Latest session log: " + GetSafeFileDisplay(_diagnosticLogService.LatestLogPath),
                     "Current file: " + GetSafeFileDisplay(_currentFilePath),
                     "Media loaded: " + (_isMediaLoaded ? "Yes" : "No"),

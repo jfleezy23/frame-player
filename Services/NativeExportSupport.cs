@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -11,7 +12,6 @@ namespace FramePlayer.Services
     internal static unsafe class NativeExportSupport
     {
         private const int AacBitRate = 192000;
-        private const int AudioFrameSize = 1024;
         private const string VideoSinkName = "outv";
         private const string AudioSinkName = "outa";
 
@@ -280,16 +280,21 @@ namespace FramePlayer.Services
                 throw new InvalidOperationException("Could not allocate the FFmpeg video encoder context.");
             }
 
-            var resolvedTimeBase = FfmpegNativeHelpers.IsValid(sinkTimeBase)
-                ? sinkTimeBase
-                : FfmpegNativeHelpers.IsValid(sinkFrameRate)
+            var resolvedTimeBase = sinkTimeBase;
+            if (!FfmpegNativeHelpers.IsValid(resolvedTimeBase))
+            {
+                resolvedTimeBase = FfmpegNativeHelpers.IsValid(sinkFrameRate)
                     ? ffmpeg.av_inv_q(sinkFrameRate)
                     : new AVRational { num = 1, den = 30 };
-            var resolvedFrameRate = FfmpegNativeHelpers.IsValid(sinkFrameRate)
-                ? sinkFrameRate
-                : FfmpegNativeHelpers.IsValid(resolvedTimeBase)
+            }
+
+            var resolvedFrameRate = sinkFrameRate;
+            if (!FfmpegNativeHelpers.IsValid(resolvedFrameRate))
+            {
+                resolvedFrameRate = FfmpegNativeHelpers.IsValid(resolvedTimeBase)
                     ? ffmpeg.av_inv_q(resolvedTimeBase)
                     : new AVRational { num = 30, den = 1 };
+            }
 
             encoderContext->codec_id = encoder->id;
             encoderContext->codec_type = AVMediaType.AVMEDIA_TYPE_VIDEO;
@@ -657,11 +662,16 @@ namespace FramePlayer.Services
                 return true;
             }
 
-            var videoTimestamp = videoPacket->dts != ffmpeg.AV_NOPTS_VALUE
-                ? videoPacket->dts
-                : videoPacket->pts != ffmpeg.AV_NOPTS_VALUE
-                    ? videoPacket->pts
-                    : 0L;
+            var videoTimestamp = 0L;
+            if (videoPacket->pts != ffmpeg.AV_NOPTS_VALUE)
+            {
+                videoTimestamp = videoPacket->pts;
+            }
+
+            if (videoPacket->dts != ffmpeg.AV_NOPTS_VALUE)
+            {
+                videoTimestamp = videoPacket->dts;
+            }
             var audioTimestamp = audioFrame->pts == ffmpeg.AV_NOPTS_VALUE ? 0L : audioFrame->pts;
             return ffmpeg.av_compare_ts(videoTimestamp, videoTimeBase, audioTimestamp, audioTimeBase) <= 0;
         }
@@ -748,7 +758,7 @@ namespace FramePlayer.Services
         {
             if (outputFormatContext == null || inputStream == null || outputStream == null || packet == null)
             {
-                throw new ArgumentNullException("Copied stream writing requires valid FFmpeg stream state.");
+                throw new InvalidOperationException("Copied stream writing requires valid FFmpeg stream state.");
             }
 
             ffmpeg.av_packet_rescale_ts(packet, inputStream->time_base, outputStream->time_base);
@@ -892,6 +902,10 @@ namespace FramePlayer.Services
 
         internal readonly struct GraphExportOutcome
         {
+            [SuppressMessage(
+                "Major Code Smell",
+                "S107:Methods should not have too many parameters",
+                Justification = "Graph export outcomes are immutable native-export diagnostics records with explicit scalar fields.")]
             public GraphExportOutcome(
                 bool succeeded,
                 string message,

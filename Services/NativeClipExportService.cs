@@ -25,26 +25,37 @@ namespace FramePlayer.Services
                         includeAudio = mediaInfo.HasAudioStream;
                     }
 
+                    var viewport = plan.ViewportSnapshot;
+                    var sourcePixelWidth = viewport != null ? viewport.SourcePixelWidth : 1;
+                    var sourcePixelHeight = viewport != null ? viewport.SourcePixelHeight : 1;
+                    var outputWidth = viewport != null && viewport.IsZoomed
+                        ? viewport.SourcePixelWidth
+                        : Math.Max(1, sourcePixelWidth);
+                    var outputHeight = viewport != null && viewport.IsZoomed
+                        ? viewport.SourcePixelHeight
+                        : Math.Max(1, sourcePixelHeight);
                     var outcome = NativeExportSupport.RunGraphExport(
                         plan.OutputFilePath,
                         BuildFilterGraph(plan, includeAudio),
-                        plan.ViewportSnapshot != null && plan.ViewportSnapshot.IsZoomed
-                            ? plan.ViewportSnapshot.SourcePixelWidth
-                            : Math.Max(1, plan.ViewportSnapshot != null ? plan.ViewportSnapshot.SourcePixelWidth : 1),
-                        plan.ViewportSnapshot != null && plan.ViewportSnapshot.IsZoomed
-                            ? plan.ViewportSnapshot.SourcePixelHeight
-                            : Math.Max(1, plan.ViewportSnapshot != null ? plan.ViewportSnapshot.SourcePixelHeight : 1),
+                        outputWidth,
+                        outputHeight,
                         includeAudio,
                         cancellationToken);
+
+                    var message = outcome.Message;
+                    if (outcome.Succeeded)
+                    {
+                        message = "Clip export completed.";
+                    }
+                    else if (string.IsNullOrWhiteSpace(message))
+                    {
+                        message = "FFmpeg clip export failed.";
+                    }
 
                     return new ClipExportResult(
                         outcome.Succeeded,
                         plan,
-                        outcome.Succeeded
-                            ? "Clip export completed."
-                            : string.IsNullOrWhiteSpace(outcome.Message)
-                                ? "FFmpeg clip export failed."
-                                : outcome.Message,
+                        message,
                         outcome.ExitCode,
                         outcome.Elapsed,
                         outcome.ProbedDuration,

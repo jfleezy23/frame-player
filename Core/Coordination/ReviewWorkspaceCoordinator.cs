@@ -183,29 +183,23 @@ namespace FramePlayer.Core.Coordination
                 return false;
             }
 
-            var changed = false;
-            switch (selectionMode)
+            bool changed;
+            if (selectionMode == WorkspacePaneSelectionMode.Active)
             {
-                case WorkspacePaneSelectionMode.Active:
-                    changed = !string.Equals(_activePaneId, normalizedPaneId, StringComparison.Ordinal);
-                    _activePaneId = normalizedPaneId;
-                    break;
-                case WorkspacePaneSelectionMode.Focused:
-                    changed = !string.Equals(_focusedPaneId, normalizedPaneId, StringComparison.Ordinal);
-                    _focusedPaneId = normalizedPaneId;
-                    break;
-                case WorkspacePaneSelectionMode.ActiveAndFocused:
-                    changed = !string.Equals(_activePaneId, normalizedPaneId, StringComparison.Ordinal) ||
-                              !string.Equals(_focusedPaneId, normalizedPaneId, StringComparison.Ordinal);
-                    _activePaneId = normalizedPaneId;
-                    _focusedPaneId = normalizedPaneId;
-                    break;
-                default:
-                    changed = !string.Equals(_activePaneId, normalizedPaneId, StringComparison.Ordinal) ||
-                              !string.Equals(_focusedPaneId, normalizedPaneId, StringComparison.Ordinal);
-                    _activePaneId = normalizedPaneId;
-                    _focusedPaneId = normalizedPaneId;
-                    break;
+                changed = !string.Equals(_activePaneId, normalizedPaneId, StringComparison.Ordinal);
+                _activePaneId = normalizedPaneId;
+            }
+            else if (selectionMode == WorkspacePaneSelectionMode.Focused)
+            {
+                changed = !string.Equals(_focusedPaneId, normalizedPaneId, StringComparison.Ordinal);
+                _focusedPaneId = normalizedPaneId;
+            }
+            else
+            {
+                changed = !string.Equals(_activePaneId, normalizedPaneId, StringComparison.Ordinal) ||
+                          !string.Equals(_focusedPaneId, normalizedPaneId, StringComparison.Ordinal);
+                _activePaneId = normalizedPaneId;
+                _focusedPaneId = normalizedPaneId;
             }
 
             NormalizePaneSelection();
@@ -1411,8 +1405,8 @@ namespace FramePlayer.Core.Coordination
                 var binding = bindings[index];
                 paneResults[index] = await ExecutePaneOperationAsync(
                         binding,
-                        cancellationToken,
-                        operation)
+                        operation,
+                        cancellationToken)
                     .ConfigureAwait(false);
             }
 
@@ -1450,10 +1444,10 @@ namespace FramePlayer.Core.Coordination
                 "The workspace did not produce a frame-step result for the focused pane.");
         }
 
-        private async Task<ReviewWorkspacePaneOperationResult> ExecutePaneOperationAsync(
+        private static async Task<ReviewWorkspacePaneOperationResult> ExecutePaneOperationAsync(
             WorkspacePaneBinding binding,
-            CancellationToken cancellationToken,
-            Func<WorkspacePaneBinding, CancellationToken, Task<FrameStepResult>> operation)
+            Func<WorkspacePaneBinding, CancellationToken, Task<FrameStepResult>> operation,
+            CancellationToken cancellationToken)
         {
             if (binding == null)
             {

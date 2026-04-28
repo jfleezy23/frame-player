@@ -32,7 +32,7 @@ namespace FramePlayer.Services
             WriteIndented = true
         };
 
-        public bool IsBundledRuntimeAvailable
+        public static bool IsBundledRuntimeAvailable
         {
             get
             {
@@ -40,7 +40,7 @@ namespace FramePlayer.Services
             }
         }
 
-        public string GetRuntimeAvailabilityMessage()
+        public static string GetRuntimeAvailabilityMessage()
         {
             return CachedRuntimeAvailability.Value.Message;
         }
@@ -161,7 +161,7 @@ namespace FramePlayer.Services
             try
             {
                 var requestJson = JsonSerializer.Serialize(request, JsonOptions);
-                File.WriteAllText(requestPath, requestJson, new UTF8Encoding(false));
+                await File.WriteAllTextAsync(requestPath, requestJson, new UTF8Encoding(false), cancellationToken).ConfigureAwait(false);
 
                 // The export host is the current executable in a headless mode, not a daemon.
                 // UseShellExecute stays false so arguments and redirected output remain local to this process tree.

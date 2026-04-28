@@ -16,17 +16,17 @@ namespace FramePlayer.Services
             _hostClient = new ExportHostClient();
         }
 
-        public bool IsBundledRuntimeAvailable
+        public static bool IsBundledRuntimeAvailable
         {
-            get { return _hostClient.IsBundledRuntimeAvailable; }
+            get { return ExportHostClient.IsBundledRuntimeAvailable; }
         }
 
-        public string GetRuntimeAvailabilityMessage()
+        public static string GetRuntimeAvailabilityMessage()
         {
-            return _hostClient.GetRuntimeAvailabilityMessage();
+            return ExportHostClient.GetRuntimeAvailabilityMessage();
         }
 
-        public ClipExportPlan CreatePlan(ClipExportRequest request)
+        public static ClipExportPlan CreatePlan(ClipExportRequest request)
         {
             ArgumentNullException.ThrowIfNull(request);
             string sourceFullPath;

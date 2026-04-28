@@ -93,6 +93,7 @@ namespace FramePlayer.Diagnostics
             }
             catch
             {
+                // Best-effort diagnostic persistence must not mask the original export-host failure.
             }
         }
 

@@ -28,15 +28,21 @@ namespace FramePlayer.Services
                         plan.SelectedAudioHasStream,
                         cancellationToken);
 
+                    var message = outcome.Message;
+                    if (outcome.Succeeded)
+                    {
+                        message = "Compare export completed.";
+                    }
+                    else if (string.IsNullOrWhiteSpace(message))
+                    {
+                        message = "FFmpeg compare export failed.";
+                    }
+
                     return new CompareSideBySideExportResult
                     {
                         Succeeded = outcome.Succeeded,
                         Plan = plan,
-                        Message = outcome.Succeeded
-                            ? "Compare export completed."
-                            : string.IsNullOrWhiteSpace(outcome.Message)
-                                ? "FFmpeg compare export failed."
-                                : outcome.Message,
+                        Message = message,
                         ExitCode = outcome.ExitCode,
                         Elapsed = outcome.Elapsed,
                         ProbedDuration = outcome.ProbedDuration,
