@@ -16,17 +16,17 @@ namespace FramePlayer.Services
             _hostClient = new ExportHostClient();
         }
 
-        public bool IsBundledRuntimeAvailable
+        public static bool IsBundledRuntimeAvailable
         {
-            get { return _hostClient.IsBundledRuntimeAvailable; }
+            get { return ExportHostClient.IsBundledRuntimeAvailable; }
         }
 
-        public string GetRuntimeAvailabilityMessage()
+        public static string GetRuntimeAvailabilityMessage()
         {
-            return _hostClient.GetRuntimeAvailabilityMessage();
+            return ExportHostClient.GetRuntimeAvailabilityMessage();
         }
 
-        public AudioInsertionPlan CreatePlan(AudioInsertionRequest request)
+        public static AudioInsertionPlan CreatePlan(AudioInsertionRequest request)
         {
             ArgumentNullException.ThrowIfNull(request);
 

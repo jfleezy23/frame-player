@@ -89,7 +89,7 @@ namespace FramePlayer.Diagnostics
                 plan,
                 comparisonReport,
                 backendResults,
-                BuildComparisonHighlights(comparisonReport, backendResults));
+                BuildComparisonHighlights(comparisonReport));
         }
 
         private static async Task<ReviewEngineManualTestPlan> BuildTestPlanAsync(
@@ -303,12 +303,10 @@ namespace FramePlayer.Diagnostics
 
             AddPlanCoverageWarnings(plan, scenario, warnings);
 
-            if (string.Equals(scenario.BackendName, "custom-ffmpeg", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(scenario.BackendName, "custom-ffmpeg", StringComparison.OrdinalIgnoreCase) &&
+                ShouldWarnOnMissingUsableGlobalIndex(scenario))
             {
-                if (ShouldWarnOnMissingUsableGlobalIndex(scenario))
-                {
-                    warnings.Add("Custom FFmpeg did not report a usable global frame index during the test run.");
-                }
+                warnings.Add("Custom FFmpeg did not report a usable global frame index during the test run.");
             }
 
             if (scenario.SeekToFrameResult != null &&
@@ -323,11 +321,15 @@ namespace FramePlayer.Diagnostics
                 warnings.Add("Seek-to-time did not report absolute frame identity.");
             }
 
-            var classification = failures.Count > 0
-                ? "fail"
-                : warnings.Count > 0
-                    ? "warning"
-                    : "pass";
+            var classification = "pass";
+            if (failures.Count > 0)
+            {
+                classification = "fail";
+            }
+            else if (warnings.Count > 0)
+            {
+                classification = "warning";
+            }
 
             return new ReviewEngineManualBackendResult(
                 scenario.BackendName,
@@ -528,9 +530,7 @@ namespace FramePlayer.Diagnostics
             failures.Add(operationName + " failed: " + detail);
         }
 
-        private static string[] BuildComparisonHighlights(
-            ReviewEngineComparisonReport comparisonReport,
-            IReadOnlyList<ReviewEngineManualBackendResult> backendResults)
+        private static string[] BuildComparisonHighlights(ReviewEngineComparisonReport comparisonReport)
         {
             var highlights = new List<string>();
             if (comparisonReport == null)

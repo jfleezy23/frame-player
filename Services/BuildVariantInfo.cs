@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Windows.Media;
 
 namespace FramePlayer.Services
@@ -12,6 +13,10 @@ namespace FramePlayer.Services
     {
         public static BuildVariantInfo Current { get; } = CreateCurrent();
 
+        [SuppressMessage(
+            "Major Code Smell",
+            "S107:Methods should not have too many parameters",
+            Justification = "Build variant metadata is an immutable value object with explicit scalar fields for predictable branding and diagnostics.")]
         private BuildVariantInfo(
             bool isComparisonBuild,
             string buildDisplayName,
