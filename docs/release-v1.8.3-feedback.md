@@ -8,6 +8,7 @@ This note documents the `v1.8.3` feedback release after `v1.8.2`. It keeps the c
 - Compare-mode shared timeline seeks now wait briefly for exact frame indexes when either pane is still indexing, then seek both panes by the resolved absolute frame number.
 - Live shared timeline dragging in compare mode avoids timestamp fallback while exact frame indexes are still building; releasing the slider commits the latest target.
 - Truly small clips can promote to a complete decoded-frame cache when their decoded frame set fits safely inside the pane budget.
+- The cache status text now reports when a complete decoded cache is loaded, so tiny clips no longer look partially cached just because the back/ahead counts are relative to the current frame.
 - Larger clips continue to use the global frame index plus bounded local decoded-frame windows instead of attempting to retain the whole decoded video.
 
 ## Runtime And CI Truth
@@ -34,6 +35,11 @@ Validated on 2026-04-28 with:
   - result: passed, 145 checks, 140 pass, 5 coverage/correctness warnings, 0 failures
   - output: `artifacts\regression-suite-v1.8.3-feedback\regression-suite-summary.md`
   - packaged artifact: `artifacts\regression-builds\FramePlayer-RegressionBuild-76350748affd44b1be08b92670edc45b.zip`
+- Candidate review build:
+  - command: `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Build-TestDrop.ps1 -Configuration Release -Platform x64 -OutputDirectory .\bin\Candidate-v1.8.3-feedback -IntermediateDirectory .\obj\Candidate-v1.8.3-feedback -ArtifactPath .\artifacts\candidates\FramePlayer-v1.8.3-feedback-candidate.zip`
+  - result: passed, 0 warnings, 0 errors
+  - output: `bin\Candidate-v1.8.3-feedback\FramePlayer.exe`
+  - artifact: `artifacts\candidates\FramePlayer-v1.8.3-feedback-candidate.zip`
 - Manual smoke:
   - launch the packaged app, press `Ctrl+N`, and confirm a second blank Frame Player window opens.
   - result: not run in this validation pass; covered by launcher unit tests and menu/shortcut wiring review

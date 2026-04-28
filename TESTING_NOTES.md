@@ -16,7 +16,7 @@ Release: `1.8.3`
 - Launch the app from `bin\TestDrop\FramePlayer.exe`.
 - Open a normal video file and verify the first displayed frame is frame `1`.
 - Press `Ctrl+N` and confirm a second blank Frame Player window opens without cloning the current media or compare session.
-- Watch the status bar after open: it should distinguish index building/ready from the decoded review-cache window.
+- Watch the status bar after open: it should distinguish index building/ready from the decoded review-cache window, and eligible tiny clips should report `Cache: complete` after the complete decoded cache is loaded.
 - Open a representative HEVC file with `Playback > Use GPU Acceleration` enabled and confirm diagnostics/log output report `ffmpeg-vulkan` when the local machine supports the Vulkan path.
 - Disable `Playback > Use GPU Acceleration`, reopen the same file, and confirm the app stays correct on the CPU path.
 - Press Play, confirm visible playback advances, then press Pause.
@@ -72,7 +72,7 @@ Release: `1.8.3`
 - GPU decode is opportunistic, not guaranteed: unsupported runtime, codec, driver, or device combinations must stay on CPU decode.
 - The current GPU path still performs hardware decode plus CPU readback and BGRA conversion for the existing WPF presentation path.
 - Playback is still an MVP path: no audio device selection, volume controls, advanced drift correction, or frame dropping/catch-up behavior.
-- Cache/index status is intentionally coarse (`building` / `ready`) and may change quickly on short clips.
+- Cache/index status may change quickly on short clips; complete decoded-cache state is shown after the cache has actually loaded.
 - Large files still require a full-file frame index scan, but that work now happens in the background after the first frame is visible.
 - The pinned FFmpeg runtime is `n8.1-frameplayer-source`, recorded in `Runtime\runtime-manifest.json`.
 - The runtime was built from the official FFmpeg source tag `n8.1` and is restored locally from the self-built candidate/archive produced by `scripts\ffmpeg\Build-FFmpeg-8.1.ps1`.
