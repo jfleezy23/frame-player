@@ -2,7 +2,7 @@
 
 This file records the isolated source-build workflow for the FFmpeg 8.1 runtime that is now active in the app. The build output is staged separately first, then restored into `Runtime\ffmpeg\` through `scripts\Ensure-DevRuntime.ps1`.
 
-For the current `v1.8.2` release, use `docs\release-v1.8.2-feedback.md` as the maintainer-facing product summary and keep this file as the runtime/build provenance source of truth.
+For the current `v1.8.3` release, use `docs\release-v1.8.3-feedback.md` as the maintainer-facing product summary and keep this file as the runtime/build provenance source of truth.
 
 ## Build Command
 

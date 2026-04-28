@@ -27,6 +27,8 @@ namespace FramePlayer.Engines.FFmpeg
         private const int DefaultCachedForwardFrameCount = 1;
         private const int CpuOperationalQueueDepth = 1;
         private const int GpuOperationalQueueDepth = 2;
+        private const long CompleteDecodedCacheBudgetNumerator = 3L;
+        private const long CompleteDecodedCacheBudgetDenominator = 4L;
         private const int AvCodecHwConfigMethodHwDeviceContext = 0x01;
         private const int AvCodecHwConfigMethodHwFramesContext = 0x02;
         private static readonly TimeSpan MinimumPlaybackDelay = TimeSpan.FromMilliseconds(1d);
@@ -94,6 +96,12 @@ namespace FramePlayer.Engines.FFmpeg
         private int _maxForwardCachedFrameCount;
         private long _configuredCacheBudgetBytes;
         private long _sessionDecodedFrameCacheBudgetBytes;
+        private int _allocatedPreviousCachedFrameCount;
+        private int _allocatedForwardCachedFrameCount;
+        private long _approximateDecodedFrameBytes;
+        private bool _completeDecodedCacheEligible;
+        private bool _completeDecodedCacheLoaded;
+        private int _completeDecodedCacheFrameCount;
         private DecodedFrameBudgetBand _budgetBand;
         private HostResourceClass _hostResourceClass;
 
@@ -135,6 +143,12 @@ namespace FramePlayer.Engines.FFmpeg
             _maxForwardCachedFrameCount = DefaultCachedForwardFrameCount;
             _configuredCacheBudgetBytes = 0L;
             _sessionDecodedFrameCacheBudgetBytes = 0L;
+            _allocatedPreviousCachedFrameCount = DefaultCachedPreviousFrameCount;
+            _allocatedForwardCachedFrameCount = DefaultCachedForwardFrameCount;
+            _approximateDecodedFrameBytes = 0L;
+            _completeDecodedCacheEligible = false;
+            _completeDecodedCacheLoaded = false;
+            _completeDecodedCacheFrameCount = 0;
             _budgetBand = DecodedFrameBudgetBand.SinglePaneCpu;
             _hostResourceClass = _budgetCoordinator.HostResourceClass;
             ActiveDecodeBackend = "ffmpeg-cpu";
@@ -406,6 +420,21 @@ namespace FramePlayer.Engines.FFmpeg
             get { return _frameCache.ApproximatePixelBufferBytes; }
         }
 
+        internal bool IsCompleteDecodedCacheEligible
+        {
+            get { return _completeDecodedCacheEligible; }
+        }
+
+        internal bool IsCompleteDecodedCacheLoaded
+        {
+            get { return _completeDecodedCacheLoaded; }
+        }
+
+        internal int CompleteDecodedCacheFrameCount
+        {
+            get { return _completeDecodedCacheFrameCount; }
+        }
+
         public string CurrentFilePath
         {
             get { return _currentFilePath; }
@@ -498,6 +527,8 @@ namespace FramePlayer.Engines.FFmpeg
                     approximateFrameBytes: firstFrame.ApproximateByteCount,
                     gpuActive: IsGpuActive);
                 _frameCache.Reset(firstFrame);
+                _completeDecodedCacheLoaded = false;
+                _completeDecodedCacheFrameCount = 0;
                 SetCurrentFrame(firstFrame);
                 RecordNoCacheRefill("open-landed-no-warm", afterLanding: false);
                 LastOpenInitialCacheWarmMilliseconds = 0d;
@@ -814,11 +845,18 @@ namespace FramePlayer.Engines.FFmpeg
             bool landedAtOrAfterTarget;
             if (TryResolveIndexedSeekTarget(targetTimestamp, out indexedTargetEntry, out landedAtOrAfterTarget))
             {
+                stepStopwatch.Restart();
+                var loadedCompleteCache = TryEnsureCompleteDecodedCacheLoaded(indexedTargetEntry, cancellationToken);
+                if (loadedCompleteCache)
+                {
+                    LastSeekMaterializeMilliseconds = stepStopwatch.Elapsed.TotalMilliseconds;
+                }
+
                 DecodedFrameBuffer cachedSeekFrame;
                 if (_frameCache.TryMoveToAbsoluteFrameIndex(indexedTargetEntry.AbsoluteFrameIndex, out cachedSeekFrame))
                 {
                     SetCurrentFrame(cachedSeekFrame);
-                    _playbackStartNeedsDecoderRealignment = true;
+                    _playbackStartNeedsDecoderRealignment = !_completeDecodedCacheLoaded;
                     LastSeekLandedAtOrAfterTarget = landedAtOrAfterTarget;
                     LastFrameAdvanceWasCacheHit = false;
                     LastFrameSeekWasCacheHit = false;
@@ -826,7 +864,9 @@ namespace FramePlayer.Engines.FFmpeg
                     RecordNoCacheRefill("seek-time-cache-hit", afterLanding: true);
                     SetOperationInstrumentation(true, "cache-absolute-frame", indexedTargetEntry.AbsoluteFrameIndex);
                     seekStopwatch.Stop();
-                    LastSeekMode = "cache-absolute-frame";
+                    LastSeekMode = loadedCompleteCache
+                        ? "complete-decoded-cache"
+                        : "cache-absolute-frame";
                     LastSeekTotalMilliseconds = seekStopwatch.Elapsed.TotalMilliseconds;
                     OnStateChanged();
                     OnFramePresented(_currentFrame);
@@ -872,6 +912,8 @@ namespace FramePlayer.Engines.FFmpeg
             }
 
             _frameCache.Reset(landedFrame);
+            _completeDecodedCacheLoaded = false;
+            _completeDecodedCacheFrameCount = 0;
             SetCurrentFrame(landedFrame);
             _playbackStartNeedsDecoderRealignment = false;
             LastSeekForwardCacheWarmMilliseconds = 0d;
@@ -927,6 +969,11 @@ namespace FramePlayer.Engines.FFmpeg
                 }
             }
 
+            if (indexedTargetEntry != null)
+            {
+                TryEnsureCompleteDecodedCacheLoaded(indexedTargetEntry, cancellationToken);
+            }
+
             DecodedFrameBuffer cachedFrame;
             if (_frameCache.TryMoveToAbsoluteFrameIndex(targetFrameIndex, out cachedFrame))
             {
@@ -934,11 +981,14 @@ namespace FramePlayer.Engines.FFmpeg
                 LastFrameAdvanceWasCacheHit = false;
                 IsPlaying = false;
                 SetCurrentFrame(cachedFrame);
-                _playbackStartNeedsDecoderRealignment = true;
+                _playbackStartNeedsDecoderRealignment = !_completeDecodedCacheLoaded;
                 RecordNoCacheRefill("seek-frame-cache-hit", afterLanding: true);
+                var cacheSeekMode = ResolveCacheSeekInstrumentationMode(
+                    _completeDecodedCacheLoaded,
+                    wasClampedToLastIndexedFrame);
                 SetOperationInstrumentation(
                     IsGlobalFrameIndexAvailable,
-                    wasClampedToLastIndexedFrame ? "cache-absolute-frame-clamped" : "cache-absolute-frame",
+                    cacheSeekMode,
                     cachedFrame.Descriptor.FrameIndex);
                 OnStateChanged();
                 OnFramePresented(_currentFrame);
@@ -978,6 +1028,22 @@ namespace FramePlayer.Engines.FFmpeg
             OnStateChanged();
             OnFramePresented(_currentFrame);
             return Task.CompletedTask;
+        }
+
+        private static string ResolveCacheSeekInstrumentationMode(
+            bool completeDecodedCacheLoaded,
+            bool wasClampedToLastIndexedFrame)
+        {
+            if (completeDecodedCacheLoaded)
+            {
+                return wasClampedToLastIndexedFrame
+                    ? "complete-decoded-cache-clamped"
+                    : "complete-decoded-cache";
+            }
+
+            return wasClampedToLastIndexedFrame
+                ? "cache-absolute-frame-clamped"
+                : "cache-absolute-frame";
         }
 
         public void Dispose()
@@ -1073,6 +1139,8 @@ namespace FramePlayer.Engines.FFmpeg
                             ? "ready"
                             : "empty";
                     }
+
+                    ApplyEffectiveDecodedFrameCacheLimits();
 
                     raiseStateChanged = IsMediaOpen &&
                         string.Equals(filePath, _currentFilePath, StringComparison.OrdinalIgnoreCase);
@@ -1485,6 +1553,8 @@ namespace FramePlayer.Engines.FFmpeg
             }
 
             _frameCache.Reset(landedFrame);
+            _completeDecodedCacheLoaded = false;
+            _completeDecodedCacheFrameCount = 0;
             SetCurrentFrame(landedFrame);
             PrimeForwardCache(cancellationToken, "playback-start-realign", afterLanding: true);
             _playbackStartNeedsDecoderRealignment = false;
@@ -1931,6 +2001,7 @@ namespace FramePlayer.Engines.FFmpeg
 
         private void RefreshDecodedFrameBudgetState(bool isOpen, int approximateFrameBytes, bool gpuActive)
         {
+            _approximateDecodedFrameBytes = Math.Max(0, approximateFrameBytes);
             var allocation = _budgetCoordinator.UpdatePaneState(
                 _paneId,
                 isOpen,
@@ -1953,15 +2024,84 @@ namespace FramePlayer.Engines.FFmpeg
             _hostResourceClass = allocation.HostResourceClass;
             _sessionDecodedFrameCacheBudgetBytes = allocation.SessionBudgetBytes;
             _configuredCacheBudgetBytes = allocation.PaneBudgetBytes;
-            _maxPreviousCachedFrameCount = allocation.PreviousFrameTarget;
-            _maxForwardCachedFrameCount = allocation.ForwardFrameTarget;
+            _allocatedPreviousCachedFrameCount = allocation.PreviousFrameTarget;
+            _allocatedForwardCachedFrameCount = allocation.ForwardFrameTarget;
             OperationalQueueDepth = allocation.QueueDepth;
             if (!string.IsNullOrWhiteSpace(allocation.ActualDecodeBackend))
             {
                 ActiveDecodeBackend = allocation.ActualDecodeBackend;
             }
 
+            ApplyEffectiveDecodedFrameCacheLimits();
+        }
+
+        private void ApplyEffectiveDecodedFrameCacheLimits()
+        {
+            _completeDecodedCacheEligible = IsCompleteDecodedCachePolicyEligible(
+                IndexedFrameCount,
+                _approximateDecodedFrameBytes,
+                _configuredCacheBudgetBytes);
+
+            if (_completeDecodedCacheEligible)
+            {
+                var fullClipLimit = ResolveCompleteDecodedCacheLimit(IndexedFrameCount);
+                _maxPreviousCachedFrameCount = fullClipLimit;
+                _maxForwardCachedFrameCount = fullClipLimit;
+            }
+            else
+            {
+                if (_completeDecodedCacheLoaded)
+                {
+                    _playbackStartNeedsDecoderRealignment = true;
+                }
+
+                _maxPreviousCachedFrameCount = _allocatedPreviousCachedFrameCount;
+                _maxForwardCachedFrameCount = _allocatedForwardCachedFrameCount;
+                _completeDecodedCacheLoaded = false;
+                _completeDecodedCacheFrameCount = 0;
+            }
+
             _frameCache.UpdateLimits(_maxPreviousCachedFrameCount, _maxForwardCachedFrameCount);
+        }
+
+        internal static bool IsCompleteDecodedCachePolicyEligible(
+            long indexedFrameCount,
+            long approximateFrameBytes,
+            long paneBudgetBytes)
+        {
+            if (indexedFrameCount <= 0L ||
+                indexedFrameCount > int.MaxValue ||
+                approximateFrameBytes <= 0L ||
+                paneBudgetBytes <= 0L)
+            {
+                return false;
+            }
+
+            var allowedBytes = ComputeCompleteDecodedCacheBudgetThresholdBytes(paneBudgetBytes);
+            return indexedFrameCount <= allowedBytes / approximateFrameBytes;
+        }
+
+        internal static int ResolveCompleteDecodedCacheLimit(long indexedFrameCount)
+        {
+            if (indexedFrameCount <= 1L)
+            {
+                return 0;
+            }
+
+            return (int)Math.Min(int.MaxValue, indexedFrameCount - 1L);
+        }
+
+        private static long ComputeCompleteDecodedCacheBudgetThresholdBytes(long paneBudgetBytes)
+        {
+            if (paneBudgetBytes <= 0L)
+            {
+                return 0L;
+            }
+
+            var quotient = paneBudgetBytes / CompleteDecodedCacheBudgetDenominator;
+            var remainder = paneBudgetBytes % CompleteDecodedCacheBudgetDenominator;
+            return quotient * CompleteDecodedCacheBudgetNumerator +
+                (remainder * CompleteDecodedCacheBudgetNumerator) / CompleteDecodedCacheBudgetDenominator;
         }
 
         private void BudgetCoordinator_AllocationChanged(object sender, PaneBudgetAllocationChangedEventArgs e)
@@ -1991,6 +2131,8 @@ namespace FramePlayer.Engines.FFmpeg
             _segmentFrameIndexAbsolute = frameIndexAbsolute;
             _decodedSegmentFrameCount = 0L;
             _frameCache.Clear();
+            _completeDecodedCacheLoaded = false;
+            _completeDecodedCacheFrameCount = 0;
             _currentFrame = null;
             ResetDecodeReadState();
         }
@@ -2202,6 +2344,73 @@ namespace FramePlayer.Engines.FFmpeg
 
                 nextAbsoluteFrameIndex++;
             }
+        }
+
+        private bool TryEnsureCompleteDecodedCacheLoaded(
+            FfmpegGlobalFrameIndexEntry targetEntry,
+            CancellationToken cancellationToken)
+        {
+            if (!_completeDecodedCacheEligible ||
+                _completeDecodedCacheLoaded ||
+                targetEntry == null ||
+                !IsGlobalFrameIndexAvailable)
+            {
+                return false;
+            }
+
+            var indexedFrameCount = IndexedFrameCount;
+            if (indexedFrameCount <= 0L ||
+                indexedFrameCount > int.MaxValue ||
+                targetEntry.AbsoluteFrameIndex < 0L ||
+                targetEntry.AbsoluteFrameIndex >= indexedFrameCount)
+            {
+                return false;
+            }
+
+            var startingForwardCount = _frameCache.ForwardCount;
+            var stopwatch = Stopwatch.StartNew();
+            SeekToStreamTimestamp(0L, frameIndexAbsolute: true);
+
+            var completeFrames = new List<DecodedFrameBuffer>((int)indexedFrameCount);
+            for (var absoluteFrameIndex = 0L; absoluteFrameIndex < indexedFrameCount; absoluteFrameIndex++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var decodedFrame = ReadNextDisplayableFrame(cancellationToken);
+                if (decodedFrame == null)
+                {
+                    stopwatch.Stop();
+                    _completeDecodedCacheLoaded = false;
+                    _completeDecodedCacheFrameCount = 0;
+                    return false;
+                }
+
+                FfmpegGlobalFrameIndexEntry currentEntry;
+                if (!_globalFrameIndex.TryGetByAbsoluteFrameIndex(absoluteFrameIndex, out currentEntry))
+                {
+                    stopwatch.Stop();
+                    _completeDecodedCacheLoaded = false;
+                    _completeDecodedCacheFrameCount = 0;
+                    return false;
+                }
+
+                completeFrames.Add(NormalizeFrameToIndexedEntry(decodedFrame, currentEntry));
+            }
+
+            _frameCache.LoadWindow(completeFrames, (int)targetEntry.AbsoluteFrameIndex);
+            _completeDecodedCacheLoaded = true;
+            _completeDecodedCacheFrameCount = completeFrames.Count;
+
+            stopwatch.Stop();
+            LastCacheRefillMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
+            LastCacheRefillReason = "complete-decoded-cache";
+            LastCacheRefillMode = LastCacheRefillMilliseconds > 0d ? "sync" : "none";
+            LastCacheRefillWasSynchronous = LastCacheRefillMilliseconds > 0d;
+            LastCacheRefillAfterLanding = true;
+            LastCacheRefillStartingForwardCount = startingForwardCount;
+            LastCacheRefillCompletedForwardCount = _frameCache.ForwardCount;
+            LastCacheRefillCompletedPreviousCount = _frameCache.PreviousCount;
+            return true;
         }
 
         private BackwardReconstructionResult ReconstructPreviousFrameWindow(
@@ -2895,6 +3104,12 @@ namespace FramePlayer.Engines.FFmpeg
             _sessionDecodedFrameCacheBudgetBytes = 0L;
             _maxPreviousCachedFrameCount = DefaultCachedPreviousFrameCount;
             _maxForwardCachedFrameCount = DefaultCachedForwardFrameCount;
+            _allocatedPreviousCachedFrameCount = DefaultCachedPreviousFrameCount;
+            _allocatedForwardCachedFrameCount = DefaultCachedForwardFrameCount;
+            _approximateDecodedFrameBytes = 0L;
+            _completeDecodedCacheEligible = false;
+            _completeDecodedCacheLoaded = false;
+            _completeDecodedCacheFrameCount = 0;
             ResetDecodeReadState();
             ResetHardwareDecodeDiagnostics();
             ResetFrameTransferInstrumentation();

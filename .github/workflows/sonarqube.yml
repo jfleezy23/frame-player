@@ -138,6 +138,7 @@ jobs:
             "Services/NativeCompareSideBySideExportService.cs"
             "Services/NativeExportSupport.cs"
             "Services/RuntimeManifestService.cs"
+            "Services/AppInstanceLauncher.cs"
             "Engines/FFmpeg/FfmpegReviewEngine.cs"
             "MainWindow.xaml.cs"
             "Diagnostics/RegressionSuiteRunner.cs"

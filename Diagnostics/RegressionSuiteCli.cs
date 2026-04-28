@@ -382,6 +382,15 @@ namespace FramePlayer.Diagnostics
             [DataMember(Name = "observedApproximateCacheBytes")]
             public long ObservedApproximateCacheBytes { get; set; }
 
+            [DataMember(Name = "completeDecodedCacheEligible")]
+            public bool CompleteDecodedCacheEligible { get; set; }
+
+            [DataMember(Name = "completeDecodedCacheLoaded")]
+            public bool CompleteDecodedCacheLoaded { get; set; }
+
+            [DataMember(Name = "completeDecodedCacheFrameCount")]
+            public int CompleteDecodedCacheFrameCount { get; set; }
+
             [DataMember(Name = "backwardStepCacheHits")]
             public int BackwardStepCacheHits { get; set; }
 
@@ -438,6 +447,9 @@ namespace FramePlayer.Diagnostics
                     ObservedPreviousCachedFrames = report.ObservedPreviousCachedFrames,
                     ObservedForwardCachedFrames = report.ObservedForwardCachedFrames,
                     ObservedApproximateCacheBytes = report.ObservedApproximateCacheBytes,
+                    CompleteDecodedCacheEligible = report.CompleteDecodedCacheEligible,
+                    CompleteDecodedCacheLoaded = report.CompleteDecodedCacheLoaded,
+                    CompleteDecodedCacheFrameCount = report.CompleteDecodedCacheFrameCount,
                     BackwardStepCacheHits = report.BackwardStepCacheHits,
                     BackwardStepReconstructionCount = report.BackwardStepReconstructionCount,
                     ForwardStepCacheHits = report.ForwardStepCacheHits,
