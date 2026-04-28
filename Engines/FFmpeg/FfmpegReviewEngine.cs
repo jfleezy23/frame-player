@@ -2050,6 +2050,11 @@ namespace FramePlayer.Engines.FFmpeg
             }
             else
             {
+                if (_completeDecodedCacheLoaded)
+                {
+                    _playbackStartNeedsDecoderRealignment = true;
+                }
+
                 _maxPreviousCachedFrameCount = _allocatedPreviousCachedFrameCount;
                 _maxForwardCachedFrameCount = _allocatedForwardCachedFrameCount;
                 _completeDecodedCacheLoaded = false;
