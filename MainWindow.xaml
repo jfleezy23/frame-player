@@ -509,6 +509,10 @@
               VerticalAlignment="Center"
               Background="Transparent">
           <MenuItem Style="{StaticResource TitleBarTopLevelMenuItemStyle}" Header="_File">
+            <MenuItem Header="_New Window"
+                      InputGestureText="Ctrl+N"
+                      Click="NewWindowMenuItem_Click" />
+            <Separator Style="{StaticResource TitleBarMenuSeparatorStyle}" />
             <MenuItem Header="_Open Video..."
                       InputGestureText="Ctrl+O"
                       Click="OpenFileButton_Click" />

@@ -235,6 +235,9 @@ function Convert-ToCheckRows
             ConfiguredCacheAhead = ""
             ObservedCacheBack = ""
             ObservedCacheAhead = ""
+            CompleteCacheEligible = ""
+            CompleteCacheLoaded = ""
+            CompleteCacheFrames = ""
             ForwardCacheHits = ""
             ForwardReconstructions = ""
             ForwardCacheHitRate = ""
@@ -299,6 +302,9 @@ function Convert-ToCheckRows
                 ConfiguredCacheAhead = $fileResult.DecodeProfile.ConfiguredForwardCachedFrames
                 ObservedCacheBack = $fileResult.DecodeProfile.ObservedPreviousCachedFrames
                 ObservedCacheAhead = $fileResult.DecodeProfile.ObservedForwardCachedFrames
+                CompleteCacheEligible = $fileResult.DecodeProfile.CompleteDecodedCacheEligible
+                CompleteCacheLoaded = $fileResult.DecodeProfile.CompleteDecodedCacheLoaded
+                CompleteCacheFrames = $fileResult.DecodeProfile.CompleteDecodedCacheFrameCount
                 ForwardCacheHits = $fileResult.DecodeProfile.ForwardStepCacheHits
                 ForwardReconstructions = $fileResult.DecodeProfile.ForwardStepReconstructionCount
                 ForwardCacheHitRate = if ($fileResult.DecodeProfile)
@@ -381,8 +387,8 @@ function New-MarkdownSummary
     [void]$lines.Add("")
     [void]$lines.Add("## Decode Proof")
     [void]$lines.Add("")
-    [void]$lines.Add("| File | Backend | Band | Host | GPU | Queue | Session / Pane Budget | Configured Cache | Forward Hits / Recon / Rate | Backward Hits / Recon | Copy / Convert ms |")
-    [void]$lines.Add("| --- | --- | --- | --- | --- | ---: | --- | --- | --- | --- | --- |")
+    [void]$lines.Add("| File | Backend | Band | Host | GPU | Queue | Session / Pane Budget | Configured Cache | Complete Cache | Forward Hits / Recon / Rate | Backward Hits / Recon | Copy / Convert ms |")
+    [void]$lines.Add("| --- | --- | --- | --- | --- | ---: | --- | --- | --- | --- | --- | --- |")
     foreach ($fileResult in $Report.FileResults)
     {
         $decodeProfile = $fileResult.DecodeProfile
@@ -443,6 +449,16 @@ function New-MarkdownSummary
         {
             "0 back / 0 ahead"
         }
+        $completeCache = if ($decodeProfile)
+        {
+            $eligibleText = if ($decodeProfile.CompleteDecodedCacheEligible) { "eligible" } else { "not eligible" }
+            $loadedText = if ($decodeProfile.CompleteDecodedCacheLoaded) { "loaded" } else { "not loaded" }
+            "$eligibleText / $loadedText / $($decodeProfile.CompleteDecodedCacheFrameCount) frames"
+        }
+        else
+        {
+            "not eligible / not loaded / 0 frames"
+        }
         $forwardStats = if ($decodeProfile)
         {
             "$($decodeProfile.ForwardStepCacheHits) / $($decodeProfile.ForwardStepReconstructionCount) / $(Format-NullableNumber -Value $decodeProfile.ForwardStepCacheHitRate -Format '0.###' -Fallback '0')"
@@ -468,7 +484,7 @@ function New-MarkdownSummary
             "0.000 / 0.000"
         }
 
-        [void]$lines.Add("| $($fileResult.FileName) | $backendText | $budgetBand | $hostClass | $gpuText | $queueDepth | $budgetText | $configuredCache | $forwardStats | $backwardStats | $copyStats |")
+        [void]$lines.Add("| $($fileResult.FileName) | $backendText | $budgetBand | $hostClass | $gpuText | $queueDepth | $budgetText | $configuredCache | $completeCache | $forwardStats | $backwardStats | $copyStats |")
     }
 
     $issues = New-Object System.Collections.Generic.List[object]

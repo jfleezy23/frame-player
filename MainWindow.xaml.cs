@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -60,6 +61,7 @@ namespace FramePlayer
         private static readonly TimeSpan FrameStepInitialDelay = TimeSpan.FromMilliseconds(550);
         private static readonly TimeSpan FrameStepRepeatInterval = TimeSpan.FromMilliseconds(60);
         private static readonly TimeSpan SliderScrubThrottleInterval = TimeSpan.FromMilliseconds(75);
+        private static readonly TimeSpan CompareIndexSeekWaitTimeout = TimeSpan.FromSeconds(5);
         private static readonly TimeSpan LoopPlaybackMinimumEndTolerance = TimeSpan.FromMilliseconds(100);
         private const double MinimumPaneZoomFactor = 1d;
         private const double MaximumPaneZoomFactor = 12d;
@@ -1550,6 +1552,11 @@ namespace FramePlayer
             await OpenPaneWithDialogAsync(GetFocusedPaneId());
         }
 
+        private void NewWindowMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            LaunchNewWindow();
+        }
+
         private async void OpenPaneButton_Click(object sender, RoutedEventArgs e)
         {
             var paneId = (sender as FrameworkElement)?.Tag as string;
@@ -2278,6 +2285,13 @@ namespace FramePlayer
 
         private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
         {
+            if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.N)
+            {
+                LaunchNewWindow();
+                e.Handled = true;
+                return;
+            }
+
             if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.O)
             {
                 OpenFileButton_Click(sender, e);
@@ -2875,6 +2889,37 @@ namespace FramePlayer
                 return;
             }
 
+            if (activeScope == SynchronizedOperationScope.AllPanes && IsSharedCompareFrameIndexBuildInProgress())
+            {
+                var indexesReady = await RunWithCacheStatusAsync(
+                    "Cache: waiting for exact compare frame index...",
+                    () => WaitForSharedCompareFrameIndexesReadyAsync(CompareIndexSeekWaitTimeout));
+                if (indexesReady &&
+                    TryResolveSharedCompareFrameSeekTargets(
+                        clampedTarget,
+                        out sharedCompareFrameTargets,
+                        out sharedCompareFrameIndex))
+                {
+                    await RunWithCacheStatusAsync(
+                        "Cache: seeking exact compare frame...",
+                        () => _workspaceCoordinator.SeekToPaneFramesAsync(sharedCompareFrameTargets));
+                    UpdatePositionDisplay(GetDisplayPosition());
+
+                    if (!string.IsNullOrWhiteSpace(diagnosticSource))
+                    {
+                        LogInfo(string.Format(
+                            CultureInfo.InvariantCulture,
+                            "{0}: waited for compare index; requested {1}; committed shared compare frame {2}; landed at {3}.",
+                            diagnosticSource,
+                            FormatTime(ClampPosition(target)),
+                            GetDisplayedFrameNumber(sharedCompareFrameIndex),
+                            FormatTime(GetDisplayPosition())));
+                    }
+
+                    return;
+                }
+            }
+
             if (activeScope == SynchronizedOperationScope.AllPanes && !string.IsNullOrWhiteSpace(diagnosticSource))
             {
                 NotifyCompareTimingFallbackIfNeeded(diagnosticSource);
@@ -2921,6 +2966,62 @@ namespace FramePlayer
 
             paneFrameIndices = targets;
             return true;
+        }
+
+        private bool IsSharedCompareFrameIndexBuildInProgress()
+        {
+            FfmpegReviewEngine primaryEngine;
+            FfmpegReviewEngine compareEngine;
+            return TryGetSharedCompareFfmpegEngines(out primaryEngine, out compareEngine) &&
+                   (primaryEngine.IsGlobalFrameIndexBuildInProgress ||
+                    compareEngine.IsGlobalFrameIndexBuildInProgress);
+        }
+
+        private bool AreSharedCompareFrameIndexesReady()
+        {
+            FfmpegReviewEngine primaryEngine;
+            FfmpegReviewEngine compareEngine;
+            return TryGetSharedCompareFfmpegEngines(out primaryEngine, out compareEngine) &&
+                   primaryEngine.IsGlobalFrameIndexAvailable &&
+                   compareEngine.IsGlobalFrameIndexAvailable;
+        }
+
+        private bool TryGetSharedCompareFfmpegEngines(
+            out FfmpegReviewEngine primaryEngine,
+            out FfmpegReviewEngine compareEngine)
+        {
+            primaryEngine = GetEngineForPane(PrimaryPaneId) as FfmpegReviewEngine;
+            compareEngine = GetEngineForPane(ComparePaneId) as FfmpegReviewEngine;
+            return IsAllPaneTransportEnabled &&
+                   primaryEngine != null &&
+                   compareEngine != null &&
+                   primaryEngine.IsMediaOpen &&
+                   compareEngine.IsMediaOpen;
+        }
+
+        private async Task<bool> WaitForSharedCompareFrameIndexesReadyAsync(TimeSpan timeout)
+        {
+            if (AreSharedCompareFrameIndexesReady())
+            {
+                return true;
+            }
+
+            var stopwatch = Stopwatch.StartNew();
+            while (stopwatch.Elapsed < timeout)
+            {
+                if (!IsSharedCompareFrameIndexBuildInProgress())
+                {
+                    return AreSharedCompareFrameIndexesReady();
+                }
+
+                await Task.Delay(50).ConfigureAwait(true);
+                if (AreSharedCompareFrameIndexesReady())
+                {
+                    return true;
+                }
+            }
+
+            return AreSharedCompareFrameIndexesReady();
         }
 
         private bool TryResolveIndexedFrameAtOrAfterForPane(
@@ -4310,6 +4411,28 @@ namespace FramePlayer
                 string.IsNullOrWhiteSpace(operationLabel) ? "operation" : operationLabel));
         }
 
+        private void LaunchNewWindow()
+        {
+            try
+            {
+                AppInstanceLauncher.LaunchNewInstance();
+                SetPlaybackMessage("Opened a new Frame Player window.");
+                LogInfo("Started a new blank Frame Player instance.");
+            }
+            catch (Exception ex)
+            {
+                var sanitizedMessage = SanitizeSensitiveText(ex.Message);
+                SetPlaybackMessage("Could not open a new Frame Player window.");
+                LogError("New window launch failed: " + sanitizedMessage);
+                MessageBox.Show(
+                    this,
+                    "Frame Player could not open a new window.\r\n\r\n" + sanitizedMessage,
+                    "New Window Failed",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
         private void SetMediaSummary(string message)
         {
             MediaSummaryTextBlock.Text = message;
@@ -4325,6 +4448,23 @@ namespace FramePlayer
             try
             {
                 await operation();
+            }
+            finally
+            {
+                _isCacheStatusActive = false;
+                UpdateCacheStatusFromEngine();
+            }
+        }
+
+        private async Task<T> RunWithCacheStatusAsync<T>(string activeMessage, Func<Task<T>> operation)
+        {
+            ArgumentNullException.ThrowIfNull(operation);
+
+            BeginCacheStatus(activeMessage);
+            await Dispatcher.Yield(DispatcherPriority.Render);
+            try
+            {
+                return await operation();
             }
             finally
             {
@@ -4507,6 +4647,12 @@ namespace FramePlayer
         {
             try
             {
+                if (IsSharedCompareFrameIndexBuildInProgress())
+                {
+                    SetPlaybackMessage("Waiting for exact compare frame index; release the timeline to seek.");
+                    return;
+                }
+
                 await SeekToAsync(target, diagnosticSource: null, operationScope: null);
             }
             catch (Exception ex)

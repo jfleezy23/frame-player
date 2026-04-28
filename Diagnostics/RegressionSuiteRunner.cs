@@ -734,6 +734,11 @@ namespace FramePlayer.Diagnostics
                         "The global index was unavailable, so exact last-frame regression checks were skipped."));
                 }
 
+                AddCompleteDecodedCacheCheck(filePath, engine, checks);
+
+                var steadyStateMediaProfile = BuildMediaProfile(engine.MediaInfo);
+                var steadyStateDecodeProfile = BuildDecodeProfile(engine, metrics);
+
                 try
                 {
                     var reopen = await MeasureAsync(
@@ -768,8 +773,8 @@ namespace FramePlayer.Diagnostics
                 }
 
                 return new EngineRegressionResult(
-                    BuildMediaProfile(engine.MediaInfo),
-                    BuildDecodeProfile(engine, metrics),
+                    steadyStateMediaProfile,
+                    steadyStateDecodeProfile,
                     checks,
                     notes,
                     metrics);
@@ -781,6 +786,72 @@ namespace FramePlayer.Diagnostics
             return new FfmpegReviewEngine(
                 new FfmpegReviewEngineOptionsProvider(
                     new AppPreferencesService()));
+        }
+
+        private static void AddCompleteDecodedCacheCheck(
+            string filePath,
+            FfmpegReviewEngine engine,
+            List<RegressionCheckResult> checks)
+        {
+            if (engine == null)
+            {
+                return;
+            }
+
+            if (!engine.IsGlobalFrameIndexAvailable)
+            {
+                checks.Add(Warning(
+                    filePath,
+                    EngineScope,
+                    CoverageCategory,
+                    "complete-decoded-cache-policy",
+                    "Global frame index was unavailable, so complete decoded-cache policy coverage was skipped."));
+                return;
+            }
+
+            if (!engine.IsCompleteDecodedCacheEligible)
+            {
+                checks.Add(Pass(
+                    filePath,
+                    EngineScope,
+                    CorrectnessCategory,
+                    "complete-decoded-cache-policy",
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Clip was not eligible for complete decoded cache with {0} indexed frames and used bounded local cache.",
+                        engine.IndexedFrameCount),
+                    indexReady: true));
+                return;
+            }
+
+            var expectedFrameCount = engine.IndexedFrameCount > int.MaxValue
+                ? int.MaxValue
+                : (int)engine.IndexedFrameCount;
+            var loadedCompleteCache = engine.IsCompleteDecodedCacheLoaded &&
+                                      engine.CompleteDecodedCacheFrameCount == expectedFrameCount;
+            checks.Add(loadedCompleteCache
+                ? Pass(
+                    filePath,
+                    EngineScope,
+                    CorrectnessCategory,
+                    "complete-decoded-cache-policy",
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Eligible clip loaded a complete decoded cache with {0} frames.",
+                        engine.CompleteDecodedCacheFrameCount),
+                    indexReady: true)
+                : Fail(
+                    filePath,
+                    EngineScope,
+                    CorrectnessCategory,
+                    "complete-decoded-cache-policy",
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Clip was eligible for complete decoded cache but loaded={0}, cached frames={1}, indexed frames={2}.",
+                        engine.IsCompleteDecodedCacheLoaded ? "yes" : "no",
+                        engine.CompleteDecodedCacheFrameCount,
+                        engine.IndexedFrameCount),
+                    indexReady: true));
         }
 
         private static async Task RunExactFrameSeekChecksAsync(
@@ -1190,6 +1261,9 @@ namespace FramePlayer.Diagnostics
                 metrics.MaxObservedPreviousCachedFrames,
                 metrics.MaxObservedForwardCachedFrames,
                 metrics.MaxObservedApproximateCacheBytes,
+                engine.IsCompleteDecodedCacheEligible,
+                engine.IsCompleteDecodedCacheLoaded,
+                engine.CompleteDecodedCacheFrameCount,
                 metrics.BackwardStepCacheHits,
                 metrics.BackwardStepReconstructionCount,
                 metrics.ForwardStepCacheHits,
@@ -2707,7 +2781,7 @@ namespace FramePlayer.Diagnostics
                                 checks.AddRange(await controller.RunUiStepRoundTripAsync(filePath, "ui-post-playback-slider-seek", cancellationToken).ConfigureAwait(true));
 
                                 var primaryViewportAfterPlayback = controller.CapturePaneViewportSnapshot(PrimaryPaneId);
-                                checks.Add(ViewportSnapshotsMatch(primaryZoomViewport, primaryViewportAfterPlayback)
+                                checks.Add(ViewportZoomStateMatches(primaryZoomViewport, primaryViewportAfterPlayback)
                                     ? Pass(
                                         filePath,
                                         "ui",
@@ -3265,8 +3339,8 @@ namespace FramePlayer.Diagnostics
                                 await controller.PausePlaybackAsync().ConfigureAwait(true);
                                 var primaryViewportAfterComparePlayback = controller.CapturePaneViewportSnapshot(PrimaryPaneId);
                                 var compareViewportAfterComparePlayback = controller.CapturePaneViewportSnapshot(ComparePaneId);
-                                checks.Add(ViewportSnapshotsMatch(primaryPaneZoomViewport, primaryViewportAfterComparePlayback) &&
-                                           ViewportSnapshotsMatch(comparePaneZoomViewport, compareViewportAfterComparePlayback)
+                                checks.Add(ViewportZoomStateMatches(primaryPaneZoomViewport, primaryViewportAfterComparePlayback) &&
+                                           ViewportZoomStateMatches(comparePaneZoomViewport, compareViewportAfterComparePlayback)
                                     ? Pass(
                                         filePath,
                                         "ui",
@@ -4099,6 +4173,13 @@ namespace FramePlayer.Diagnostics
                 return Math.Abs(expected.ZoomFactor - actual.ZoomFactor) <= 0.001d &&
                        Math.Abs(expected.NormalizedCenterX - actual.NormalizedCenterX) <= 0.001d &&
                        Math.Abs(expected.NormalizedCenterY - actual.NormalizedCenterY) <= 0.001d;
+            }
+
+            private static bool ViewportZoomStateMatches(PaneViewportSnapshot expected, PaneViewportSnapshot actual)
+            {
+                return ViewportZoomAndCenterMatch(expected, actual) &&
+                       expected.SourcePixelWidth == actual.SourcePixelWidth &&
+                       expected.SourcePixelHeight == actual.SourcePixelHeight;
             }
 
             private static string FormatViewportSnapshot(PaneViewportSnapshot snapshot)
@@ -5552,6 +5633,9 @@ namespace FramePlayer.Diagnostics
                 0,
                 0,
                 0L,
+                false,
+                false,
+                0,
                 0,
                 0,
                 0,
@@ -5585,6 +5669,9 @@ namespace FramePlayer.Diagnostics
             int observedPreviousCachedFrames,
             int observedForwardCachedFrames,
             long observedApproximateCacheBytes,
+            bool completeDecodedCacheEligible,
+            bool completeDecodedCacheLoaded,
+            int completeDecodedCacheFrameCount,
             int backwardStepCacheHits,
             int backwardStepReconstructionCount,
             int forwardStepCacheHits,
@@ -5613,6 +5700,9 @@ namespace FramePlayer.Diagnostics
             ObservedPreviousCachedFrames = observedPreviousCachedFrames;
             ObservedForwardCachedFrames = observedForwardCachedFrames;
             ObservedApproximateCacheBytes = observedApproximateCacheBytes;
+            CompleteDecodedCacheEligible = completeDecodedCacheEligible;
+            CompleteDecodedCacheLoaded = completeDecodedCacheLoaded;
+            CompleteDecodedCacheFrameCount = Math.Max(0, completeDecodedCacheFrameCount);
             BackwardStepCacheHits = backwardStepCacheHits;
             BackwardStepReconstructionCount = backwardStepReconstructionCount;
             ForwardStepCacheHits = forwardStepCacheHits;
@@ -5656,6 +5746,12 @@ namespace FramePlayer.Diagnostics
         public int ObservedForwardCachedFrames { get; }
 
         public long ObservedApproximateCacheBytes { get; }
+
+        public bool CompleteDecodedCacheEligible { get; }
+
+        public bool CompleteDecodedCacheLoaded { get; }
+
+        public int CompleteDecodedCacheFrameCount { get; }
 
         public int BackwardStepCacheHits { get; }
 

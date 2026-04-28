@@ -116,6 +116,10 @@
                      Foreground="{StaticResource MutedBrush}"
                      FontFamily="Consolas"
                      FontSize="12"
+                     Text="Ctrl+N  Open a blank new Frame Player window" />
+          <TextBlock Foreground="{StaticResource MutedBrush}"
+                     FontFamily="Consolas"
+                     FontSize="12"
                      Text="Ctrl+O  Open a supported video" />
           <TextBlock Foreground="{StaticResource MutedBrush}"
                      FontFamily="Consolas"
