@@ -52,7 +52,7 @@ namespace FramePlayer
         private const string SupportedVideoExtensionsDescription = "AVI, M4V, MP4, MKV, WMV";
         private const string OpenVideoFileFilter = "Supported Video Files|*.avi;*.m4v;*.mp4;*.mkv;*.wmv|AVI Files|*.avi|M4V Files|*.m4v|MP4 Files|*.mp4|MKV Files|*.mkv|WMV Files|*.wmv|All Files|*.*";
         private const string LoopOffStatusLabel = "Loop: off";
-        private const string DefaultCompareAlignmentStatus = "Last align: none";
+        private const string DefaultCompareAlignmentStatus = "Last sync: none";
         private const double CompareModePreferredMinWindowWidth = 1180d;
         private const int ControlModifiedFrameStep = 10;
         private const int ShiftModifiedFrameStep = 100;
@@ -1063,11 +1063,11 @@ namespace FramePlayer
             AlignRightToLeftButton.IsEnabled = canAlign;
             AlignLeftToRightButton.IsEnabled = canAlign;
             AlignRightToLeftButton.ToolTip = canAlign
-                ? "Frame first: aligns the right pane to the left pane with exact frame identity when available."
-                : "Load videos in both panes before aligning them.";
+                ? "Frame first: syncs the right pane to the left pane with exact frame identity when available."
+                : "Load videos in both panes before syncing them.";
             AlignLeftToRightButton.ToolTip = canAlign
-                ? "Frame first: aligns the left pane to the right pane with exact frame identity when available."
-                : "Load videos in both panes before aligning them.";
+                ? "Frame first: syncs the left pane to the right pane with exact frame identity when available."
+                : "Load videos in both panes before syncing them.";
             LinkPaneZoomCheckBox.IsEnabled = IsCompareModeEnabled;
             LinkPaneZoomCheckBox.ToolTip = IsLinkedPaneZoomEnabled
                 ? "Zoom and pan changes are mirrored between compare panes."
@@ -1079,15 +1079,19 @@ namespace FramePlayer
                 : "Load videos in both panes to use shared transport controls.";
 
             UpdatePaneControlState(
-                PrimaryPanePlayButton,
-                PrimaryPanePauseButton,
+                PrimaryPanePlayPauseButton,
+                PrimaryPanePlayPauseIcon,
                 PrimaryPaneStepBackButton,
+                PrimaryPaneSkipBackHundredFramesButton,
+                PrimaryPaneSkipForwardHundredFramesButton,
                 PrimaryPaneStepForwardButton,
                 hasPrimaryPane ? primaryPaneSnapshot : null);
             UpdatePaneControlState(
-                ComparePanePlayButton,
-                ComparePanePauseButton,
+                ComparePanePlayPauseButton,
+                ComparePanePlayPauseIcon,
                 ComparePaneStepBackButton,
+                ComparePaneSkipBackHundredFramesButton,
+                ComparePaneSkipForwardHundredFramesButton,
                 ComparePaneStepForwardButton,
                 hasComparePane ? comparePaneSnapshot : null);
 
@@ -1104,18 +1108,30 @@ namespace FramePlayer
         }
 
         private void UpdatePaneControlState(
-            Button playButton,
-            Button pauseButton,
+            Button playPauseButton,
+            Image playPauseIcon,
             Button stepBackButton,
+            Button skipBackHundredFramesButton,
+            Button skipForwardHundredFramesButton,
             Button stepForwardButton,
             ReviewWorkspacePaneSnapshot paneSnapshot)
         {
             var canControl = PaneHasLoadedMedia(paneSnapshot);
             var canPlay = canControl && _buildVariant.SupportsTimedPlayback;
-            playButton.IsEnabled = canPlay;
-            pauseButton.IsEnabled = canPlay;
+            playPauseButton.IsEnabled = canPlay;
             stepBackButton.IsEnabled = canControl;
+            skipBackHundredFramesButton.IsEnabled = canControl;
+            skipForwardHundredFramesButton.IsEnabled = canControl;
             stepForwardButton.IsEnabled = canControl;
+
+            var isPlaying = paneSnapshot != null && paneSnapshot.PlaybackState == ReviewPlaybackState.Playing;
+            var icon = FindResource(isPlaying ? "PauseIcon" : "PlayIcon") as ImageSource;
+            if (icon != null)
+            {
+                playPauseIcon.Source = icon;
+            }
+
+            playPauseButton.ToolTip = isPlaying ? "Pause" : "Play";
         }
 
         private void UpdatePaneNavigationSurface(string paneId, ReviewWorkspacePaneSnapshot paneSnapshot)
@@ -1492,7 +1508,7 @@ namespace FramePlayer
                     Math.Abs(frameDelta) == 1 ? "frame" : "frames");
             }
 
-            return "Compare: Time-based alignment";
+            return "Compare: Time-based sync";
         }
 
         private static string GetComparePaneSideLabel(string paneId)
@@ -1655,19 +1671,12 @@ namespace FramePlayer
             }
         }
 
-        private async void PanePlayButton_Click(object sender, RoutedEventArgs e)
+        private async void PanePlayPauseButton_Click(object sender, RoutedEventArgs e)
         {
             var paneId = GetPaneIdFromSender(sender);
             await RunFocusedPaneActionAsync(
                 paneId,
-                () => StartPlaybackAsync(SynchronizedOperationScope.FocusedPane, paneId));
-        }
-
-        private async void PanePauseButton_Click(object sender, RoutedEventArgs e)
-        {
-            await RunFocusedPaneActionAsync(
-                GetPaneIdFromSender(sender),
-                () => PausePlaybackAsync(logAction: true, operationScope: SynchronizedOperationScope.FocusedPane));
+                () => TogglePanePlaybackAsync(paneId));
         }
 
         private async void PaneStepBackButton_Click(object sender, RoutedEventArgs e)
@@ -1675,6 +1684,20 @@ namespace FramePlayer
             await RunFocusedPaneActionAsync(
                 GetPaneIdFromSender(sender),
                 () => StepFrameAsync(-1, SynchronizedOperationScope.FocusedPane));
+        }
+
+        private async void PaneSkipBackHundredFramesButton_Click(object sender, RoutedEventArgs e)
+        {
+            await RunFocusedPaneActionAsync(
+                GetPaneIdFromSender(sender),
+                () => StepFrameAsync(-ShiftModifiedFrameStep, SynchronizedOperationScope.FocusedPane));
+        }
+
+        private async void PaneSkipForwardHundredFramesButton_Click(object sender, RoutedEventArgs e)
+        {
+            await RunFocusedPaneActionAsync(
+                GetPaneIdFromSender(sender),
+                () => StepFrameAsync(ShiftModifiedFrameStep, SynchronizedOperationScope.FocusedPane));
         }
 
         private async void PaneStepForwardButton_Click(object sender, RoutedEventArgs e)
@@ -2659,6 +2682,31 @@ namespace FramePlayer
             await StartPlaybackAsync(operationScope, null);
         }
 
+        private async Task TogglePanePlaybackAsync(string paneId)
+        {
+            if (string.IsNullOrWhiteSpace(paneId))
+            {
+                return;
+            }
+
+            var workspaceSnapshot = _workspaceCoordinator.GetWorkspaceSnapshot();
+            ReviewWorkspacePaneSnapshot paneSnapshot;
+            if (workspaceSnapshot == null ||
+                !workspaceSnapshot.TryGetPane(paneId, out paneSnapshot) ||
+                !PaneHasLoadedMedia(paneSnapshot))
+            {
+                return;
+            }
+
+            if (paneSnapshot.PlaybackState == ReviewPlaybackState.Playing)
+            {
+                await PausePlaybackAsync(logAction: true, operationScope: SynchronizedOperationScope.FocusedPane);
+                return;
+            }
+
+            await StartPlaybackAsync(SynchronizedOperationScope.FocusedPane, paneId);
+        }
+
         private async Task CloseMediaAsync()
         {
             EndHeldFrameStep();
@@ -3124,7 +3172,7 @@ namespace FramePlayer
                 !PaneHasLoadedMedia(sourcePaneSnapshot) ||
                 !PaneHasLoadedMedia(targetPaneSnapshot))
             {
-                SetPlaybackMessage("Load media into both compare panes before aligning them.");
+                SetPlaybackMessage("Load media into both compare panes before syncing them.");
                 return;
             }
 
@@ -3151,19 +3199,19 @@ namespace FramePlayer
                 try
                 {
                     await RunWithCacheStatusAsync(
-                        "Cache: aligning exact frame...",
+                        "Cache: syncing exact frame...",
                         () => _workspaceCoordinator.SeekToFrameAsync(sourceFrameIndex));
                     UpdatePositionDisplay(GetDisplayPosition());
-                    _lastCompareAlignmentStatus = "Last align: exact frame";
+                    _lastCompareAlignmentStatus = "Last sync: exact frame";
                     SetPlaybackMessage(string.Format(
                         CultureInfo.InvariantCulture,
-                        "Aligned the {0} pane to the {1} pane using exact frame {2}.",
+                        "Synced the {0} pane to the {1} pane using exact frame {2}.",
                         targetSide.ToLowerInvariant(),
                         sourceSide.ToLowerInvariant(),
                         sourceFrameNumber));
                     LogInfo(string.Format(
                         CultureInfo.InvariantCulture,
-                        "Aligned compare pane {0} to {1} using exact frame {2}.",
+                        "Synced compare pane {0} to {1} using exact frame {2}.",
                         targetPaneId,
                         sourcePaneId,
                         sourceFrameNumber));
@@ -3176,7 +3224,7 @@ namespace FramePlayer
                     var failureDetail = SanitizeSensitiveText(ex.Message);
                     LogWarning(string.Format(
                         CultureInfo.InvariantCulture,
-                        "Exact-frame align for {0} <- {1} failed. Falling back to presentation time.{2}",
+                        "Exact-frame sync for {0} <- {1} failed. Falling back to presentation time.{2}",
                         targetSide,
                         sourceSide,
                         string.IsNullOrWhiteSpace(failureDetail)
@@ -3186,29 +3234,29 @@ namespace FramePlayer
             }
 
             var targetTime = sourcePaneSnapshot.PresentationTime;
-            NotifyCompareTimingFallbackIfNeeded("pane alignment");
+            NotifyCompareTimingFallbackIfNeeded("pane sync");
             await SeekToAsync(
                 targetTime,
                 string.Format(
                     CultureInfo.InvariantCulture,
-                    "align {0} -> {1}",
+                    "sync {0} -> {1}",
                     sourcePaneId,
                     targetPaneId),
                 SynchronizedOperationScope.FocusedPane);
             var fallbackReason = sourcePaneSnapshot.HasAbsoluteFrameIdentity && sourcePaneSnapshot.FrameIndex.HasValue
                 ? "exact frame seek unavailable"
                 : "frame identity unavailable";
-            _lastCompareAlignmentStatus = "Last align: time fallback";
+            _lastCompareAlignmentStatus = "Last sync: time fallback";
             SetPlaybackMessage(string.Format(
                 CultureInfo.InvariantCulture,
-                "Aligned the {0} pane to the {1} pane using presentation time {2} ({3}).",
+                "Synced the {0} pane to the {1} pane using presentation time {2} ({3}).",
                 targetSide.ToLowerInvariant(),
                 sourceSide.ToLowerInvariant(),
                 FormatTime(targetTime),
                 fallbackReason));
             LogInfo(string.Format(
                 CultureInfo.InvariantCulture,
-                "Aligned compare pane {0} to {1} using presentation time {2} ({3}).",
+                "Synced compare pane {0} to {1} using presentation time {2} ({3}).",
                 targetPaneId,
                 sourcePaneId,
                 FormatTime(targetTime),
