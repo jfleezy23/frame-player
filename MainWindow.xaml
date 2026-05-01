@@ -959,6 +959,13 @@
                             Click="PaneStepBackButton_Click">
                       <Image Width="16" Height="16" Source="{StaticResource StepBackIcon}" />
                     </Button>
+                    <Button x:Name="PrimaryPaneSkipBackHundredFramesButton"
+                            Style="{StaticResource TransportButtonStyle}"
+                            ToolTip="Rewind 100 Frames"
+                            Tag="pane-primary"
+                            Click="PaneSkipBackHundredFramesButton_Click">
+                      <Image Width="16" Height="16" Source="{StaticResource RewindIcon}" />
+                    </Button>
                     <Button x:Name="PrimaryPanePlayPauseButton"
                             Style="{StaticResource TransportButtonStyle}"
                             ToolTip="Play"
@@ -968,6 +975,13 @@
                              Width="16"
                              Height="16"
                              Source="{StaticResource PlayIcon}" />
+                    </Button>
+                    <Button x:Name="PrimaryPaneSkipForwardHundredFramesButton"
+                            Style="{StaticResource TransportButtonStyle}"
+                            ToolTip="Fast Forward 100 Frames"
+                            Tag="pane-primary"
+                            Click="PaneSkipForwardHundredFramesButton_Click">
+                      <Image Width="16" Height="16" Source="{StaticResource FastForwardIcon}" />
                     </Button>
                     <Button x:Name="PrimaryPaneStepForwardButton"
                             Style="{StaticResource TransportButtonStyle}"
@@ -1220,6 +1234,13 @@
                             Click="PaneStepBackButton_Click">
                       <Image Width="16" Height="16" Source="{StaticResource StepBackIcon}" />
                     </Button>
+                    <Button x:Name="ComparePaneSkipBackHundredFramesButton"
+                            Style="{StaticResource TransportButtonStyle}"
+                            ToolTip="Rewind 100 Frames"
+                            Tag="pane-compare-a"
+                            Click="PaneSkipBackHundredFramesButton_Click">
+                      <Image Width="16" Height="16" Source="{StaticResource RewindIcon}" />
+                    </Button>
                     <Button x:Name="ComparePanePlayPauseButton"
                             Style="{StaticResource TransportButtonStyle}"
                             ToolTip="Play"
@@ -1229,6 +1250,13 @@
                              Width="16"
                              Height="16"
                              Source="{StaticResource PlayIcon}" />
+                    </Button>
+                    <Button x:Name="ComparePaneSkipForwardHundredFramesButton"
+                            Style="{StaticResource TransportButtonStyle}"
+                            ToolTip="Fast Forward 100 Frames"
+                            Tag="pane-compare-a"
+                            Click="PaneSkipForwardHundredFramesButton_Click">
+                      <Image Width="16" Height="16" Source="{StaticResource FastForwardIcon}" />
                     </Button>
                     <Button x:Name="ComparePaneStepForwardButton"
                             Style="{StaticResource TransportButtonStyle}"

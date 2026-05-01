@@ -1082,12 +1082,16 @@ namespace FramePlayer
                 PrimaryPanePlayPauseButton,
                 PrimaryPanePlayPauseIcon,
                 PrimaryPaneStepBackButton,
+                PrimaryPaneSkipBackHundredFramesButton,
+                PrimaryPaneSkipForwardHundredFramesButton,
                 PrimaryPaneStepForwardButton,
                 hasPrimaryPane ? primaryPaneSnapshot : null);
             UpdatePaneControlState(
                 ComparePanePlayPauseButton,
                 ComparePanePlayPauseIcon,
                 ComparePaneStepBackButton,
+                ComparePaneSkipBackHundredFramesButton,
+                ComparePaneSkipForwardHundredFramesButton,
                 ComparePaneStepForwardButton,
                 hasComparePane ? comparePaneSnapshot : null);
 
@@ -1107,6 +1111,8 @@ namespace FramePlayer
             Button playPauseButton,
             Image playPauseIcon,
             Button stepBackButton,
+            Button skipBackHundredFramesButton,
+            Button skipForwardHundredFramesButton,
             Button stepForwardButton,
             ReviewWorkspacePaneSnapshot paneSnapshot)
         {
@@ -1114,6 +1120,8 @@ namespace FramePlayer
             var canPlay = canControl && _buildVariant.SupportsTimedPlayback;
             playPauseButton.IsEnabled = canPlay;
             stepBackButton.IsEnabled = canControl;
+            skipBackHundredFramesButton.IsEnabled = canControl;
+            skipForwardHundredFramesButton.IsEnabled = canControl;
             stepForwardButton.IsEnabled = canControl;
 
             var isPlaying = paneSnapshot != null && paneSnapshot.PlaybackState == ReviewPlaybackState.Playing;
@@ -1676,6 +1684,20 @@ namespace FramePlayer
             await RunFocusedPaneActionAsync(
                 GetPaneIdFromSender(sender),
                 () => StepFrameAsync(-1, SynchronizedOperationScope.FocusedPane));
+        }
+
+        private async void PaneSkipBackHundredFramesButton_Click(object sender, RoutedEventArgs e)
+        {
+            await RunFocusedPaneActionAsync(
+                GetPaneIdFromSender(sender),
+                () => StepFrameAsync(-ShiftModifiedFrameStep, SynchronizedOperationScope.FocusedPane));
+        }
+
+        private async void PaneSkipForwardHundredFramesButton_Click(object sender, RoutedEventArgs e)
+        {
+            await RunFocusedPaneActionAsync(
+                GetPaneIdFromSender(sender),
+                () => StepFrameAsync(ShiftModifiedFrameStep, SynchronizedOperationScope.FocusedPane));
         }
 
         private async void PaneStepForwardButton_Click(object sender, RoutedEventArgs e)
