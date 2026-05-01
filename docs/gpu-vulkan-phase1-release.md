@@ -1,6 +1,6 @@
 # GPU Vulkan Phase 1 Release Note (Historical v1.4.4)
 
-This note documents the historical `v1.4.4` GPU Vulkan phase 1 release. The current release is documented in `docs\release-v1.8.3-feedback.md`.
+This note documents the historical `v1.4.4` GPU Vulkan phase 1 release. The current release is documented in `docs\release-v1.8.4-feedback.md`.
 
 ## What Shipped
 
