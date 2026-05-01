@@ -695,15 +695,15 @@
             <Button x:Name="AlignRightToLeftButton"
                     Grid.Column="1"
                     Style="{StaticResource PaneControlButtonStyle}"
-                    Content="Align Right to Left"
-                    ToolTip="Frame first: uses the left pane's exact frame when available and falls back to time only when needed."
+                    Content="Sync Right to Left"
+                    ToolTip="Frame first: syncs the right pane to the left pane with exact frame identity when available."
                     Click="AlignRightToLeftButton_Click" />
             <Button x:Name="AlignLeftToRightButton"
                     Grid.Column="2"
                     Style="{StaticResource PaneControlButtonStyle}"
                     Margin="0,0,0,0"
-                    Content="Align Left to Right"
-                    ToolTip="Frame first: uses the right pane's exact frame when available and falls back to time only when needed."
+                    Content="Sync Left to Right"
+                    ToolTip="Frame first: syncs the left pane to the right pane with exact frame identity when available."
                     Click="AlignLeftToRightButton_Click" />
             <CheckBox x:Name="LinkPaneZoomCheckBox"
                       Grid.Column="3"
@@ -721,7 +721,7 @@
                        Foreground="{StaticResource MutedBrush}"
                        FontSize="11"
                        TextTrimming="CharacterEllipsis"
-                       Text="Compare: Load two videos to begin | Last alignment: none" />
+                       Text="Compare: Load two videos to begin | Last sync: none" />
           </Grid>
         </Border>
       </Grid>
@@ -959,19 +959,15 @@
                             Click="PaneStepBackButton_Click">
                       <Image Width="16" Height="16" Source="{StaticResource StepBackIcon}" />
                     </Button>
-                    <Button x:Name="PrimaryPanePlayButton"
+                    <Button x:Name="PrimaryPanePlayPauseButton"
                             Style="{StaticResource TransportButtonStyle}"
                             ToolTip="Play"
                             Tag="pane-primary"
-                            Click="PanePlayButton_Click">
-                      <Image Width="16" Height="16" Source="{StaticResource PlayIcon}" />
-                    </Button>
-                    <Button x:Name="PrimaryPanePauseButton"
-                            Style="{StaticResource TransportButtonStyle}"
-                            ToolTip="Pause"
-                            Tag="pane-primary"
-                            Click="PanePauseButton_Click">
-                      <Image Width="16" Height="16" Source="{StaticResource PauseIcon}" />
+                            Click="PanePlayPauseButton_Click">
+                      <Image x:Name="PrimaryPanePlayPauseIcon"
+                             Width="16"
+                             Height="16"
+                             Source="{StaticResource PlayIcon}" />
                     </Button>
                     <Button x:Name="PrimaryPaneStepForwardButton"
                             Style="{StaticResource TransportButtonStyle}"
@@ -1224,19 +1220,15 @@
                             Click="PaneStepBackButton_Click">
                       <Image Width="16" Height="16" Source="{StaticResource StepBackIcon}" />
                     </Button>
-                    <Button x:Name="ComparePanePlayButton"
+                    <Button x:Name="ComparePanePlayPauseButton"
                             Style="{StaticResource TransportButtonStyle}"
                             ToolTip="Play"
                             Tag="pane-compare-a"
-                            Click="PanePlayButton_Click">
-                      <Image Width="16" Height="16" Source="{StaticResource PlayIcon}" />
-                    </Button>
-                    <Button x:Name="ComparePanePauseButton"
-                            Style="{StaticResource TransportButtonStyle}"
-                            ToolTip="Pause"
-                            Tag="pane-compare-a"
-                            Click="PanePauseButton_Click">
-                      <Image Width="16" Height="16" Source="{StaticResource PauseIcon}" />
+                            Click="PanePlayPauseButton_Click">
+                      <Image x:Name="ComparePanePlayPauseIcon"
+                             Width="16"
+                             Height="16"
+                             Source="{StaticResource PlayIcon}" />
                     </Button>
                     <Button x:Name="ComparePaneStepForwardButton"
                             Style="{StaticResource TransportButtonStyle}"
