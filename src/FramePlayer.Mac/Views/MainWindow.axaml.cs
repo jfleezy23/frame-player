@@ -37,6 +37,9 @@ namespace FramePlayer.Mac.Views
         private const double MinimumPaneZoomFactor = 1d;
         private const double MaximumPaneZoomFactor = 12d;
         private const double PaneZoomStep = 1.1d;
+        private const double PaneWheelZoomStep = 1.08d;
+        private const double PaneWheelZoomDeltaLimit = 4d;
+        private const double PaneWheelZoomDeltaThreshold = 0.01d;
         private const string PanePrimaryId = "pane-primary";
         private const string PaneCompareId = "pane-compare";
         private const string PanePrimaryKey = "primary";
@@ -275,6 +278,12 @@ namespace FramePlayer.Mac.Views
         {
             CustomVideoSurface.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
             CompareVideoSurface.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+            CustomVideoSurfaceHost.PointerWheelChanged += VideoSurfaceHost_PointerWheelChanged;
+            CompareVideoSurfaceHost.PointerWheelChanged += VideoSurfaceHost_PointerWheelChanged;
+            CustomVideoSurfaceHost.PointerTouchPadGestureMagnify += VideoSurfaceHost_PointerTouchPadGestureMagnify;
+            CompareVideoSurfaceHost.PointerTouchPadGestureMagnify += VideoSurfaceHost_PointerTouchPadGestureMagnify;
+            CustomVideoSurfaceHost.Pinch += VideoSurfaceHost_Pinch;
+            CompareVideoSurfaceHost.Pinch += VideoSurfaceHost_Pinch;
         }
 
         private void ZoomInFocusedPane()
@@ -327,6 +336,48 @@ namespace FramePlayer.Mac.Views
                 "{0} zoom: {1}.",
                 ResolvePaneLabel(pane),
                 FormatZoomFactor(targetZoom));
+        }
+
+        private void ApplyPaneWheelZoom(Pane pane, double deltaY)
+        {
+            if (Math.Abs(deltaY) < PaneWheelZoomDeltaThreshold)
+            {
+                return;
+            }
+
+            var limitedDelta = Math.Max(-PaneWheelZoomDeltaLimit, Math.Min(PaneWheelZoomDeltaLimit, deltaY));
+            AdjustPaneZoom(pane, Math.Pow(PaneWheelZoomStep, limitedDelta));
+        }
+
+        private void ApplyPaneMagnifyZoom(Pane pane, double magnificationDelta)
+        {
+            if (Math.Abs(magnificationDelta) < PaneWheelZoomDeltaThreshold)
+            {
+                return;
+            }
+
+            AdjustPaneZoom(pane, Math.Max(0.25d, 1d + magnificationDelta));
+        }
+
+        private void VideoSurfaceHost_PointerWheelChanged(object? sender, PointerWheelEventArgs e)
+        {
+            var pane = ResolvePaneFromSender(sender);
+            ApplyPaneWheelZoom(pane, e.Delta.Y);
+            e.Handled = true;
+        }
+
+        private void VideoSurfaceHost_PointerTouchPadGestureMagnify(object? sender, PointerDeltaEventArgs e)
+        {
+            var pane = ResolvePaneFromSender(sender);
+            ApplyPaneMagnifyZoom(pane, Math.Abs(e.Delta.X) >= Math.Abs(e.Delta.Y) ? e.Delta.X : e.Delta.Y);
+            e.Handled = true;
+        }
+
+        private void VideoSurfaceHost_Pinch(object? sender, PinchEventArgs e)
+        {
+            var pane = ResolvePaneFromSender(sender);
+            ApplyPaneMagnifyZoom(pane, e.Scale - 1d);
+            e.Handled = true;
         }
 
         private void SetPaneZoomFactor(Pane pane, double zoomFactor, bool synchronizeLinkedPane)

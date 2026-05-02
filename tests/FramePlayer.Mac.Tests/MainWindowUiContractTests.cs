@@ -512,6 +512,7 @@ namespace FramePlayer.Mac.Tests
                 {
                     var primarySurface = RequireControl<Image>(window, "CustomVideoSurface");
                     var compareSurface = RequireControl<Image>(window, "CompareVideoSurface");
+                    var primarySurfaceHost = RequireControl<Border>(window, "CustomVideoSurfaceHost");
                     var compareMode = RequireControl<CheckBox>(window, "CompareModeCheckBox");
                     var linkZoom = RequireControl<CheckBox>(window, "LinkPaneZoomCheckBox");
                     var nativeMenu = NativeMenu.GetMenu(window)
@@ -531,6 +532,18 @@ namespace FramePlayer.Mac.Tests
                     resetZoom.Command!.Execute(null);
                     Assert.Equal(new PixelSize(8, 4), RequireBitmap(primarySurface).PixelSize);
 
+                    primarySurfaceHost.RaiseEvent(CreatePointerWheelChangedEvent(primarySurfaceHost, 1d));
+                    Assert.True(RequireBitmap(primarySurface).PixelSize.Width < 8);
+
+                    primarySurfaceHost.RaiseEvent(CreatePointerWheelChangedEvent(primarySurfaceHost, -1d));
+                    Assert.Equal(new PixelSize(8, 4), RequireBitmap(primarySurface).PixelSize);
+
+                    primarySurfaceHost.RaiseEvent(CreateTouchPadMagnifyEvent(primarySurfaceHost, 0.25d));
+                    Assert.True(RequireBitmap(primarySurface).PixelSize.Width < 8);
+
+                    resetZoom.Command!.Execute(null);
+                    Assert.Equal(new PixelSize(8, 4), RequireBitmap(primarySurface).PixelSize);
+
                     compareMode.IsChecked = true;
                     linkZoom.IsChecked = true;
                     InvokePrivate(window, "SetPaneBitmap", ParsePane("Compare"), CreateFrameBuffer(8, 4));
@@ -545,6 +558,33 @@ namespace FramePlayer.Mac.Tests
                     window.Close();
                 }
             });
+        }
+
+        private static PointerWheelEventArgs CreatePointerWheelChangedEvent(Control source, double deltaY)
+        {
+            return new PointerWheelEventArgs(
+                source,
+                null!,
+                source,
+                new Point(),
+                0,
+                new PointerPointProperties(),
+                KeyModifiers.None,
+                new Vector(0d, deltaY));
+        }
+
+        private static PointerDeltaEventArgs CreateTouchPadMagnifyEvent(Control source, double delta)
+        {
+            return new PointerDeltaEventArgs(
+                InputElement.PointerTouchPadGestureMagnifyEvent,
+                source,
+                null!,
+                source,
+                new Point(),
+                0,
+                new PointerPointProperties(),
+                KeyModifiers.None,
+                new Vector(delta, 0d));
         }
 
         private static WriteableBitmap RequireBitmap(Image image)
