@@ -20,3 +20,6 @@ Runtime/ffmpeg-tools/
 Runtime/ffmpeg-tools-8.1-candidate/
 Runtime/ffmpeg-export/
 Runtime/ffmpeg-export-8.1-candidate/
+Runtime/macos/**/*.dylib
+Runtime/macos/**/*.dSYM/
+Video Test Files/

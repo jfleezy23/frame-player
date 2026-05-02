@@ -4,6 +4,8 @@ This checklist is the maintainer-facing ship gate for the current release line.
 
 Use it after feature work is done and before building or publishing release artifacts.
 
+The Windows checklist below remains the ship gate for the WPF `v1.8.x` release line. The macOS preview checklist later in this file is additive and must not replace or modify the Windows release process.
+
 ## Pre-Ship Repo Hygiene
 
 - Ensure the intended release commit is on `main` and pushed to `origin/main`.
@@ -50,3 +52,49 @@ Do not run these until the repo state and validation evidence above are accepted
 - Confirm the release assets download and unpack/install cleanly.
 - Confirm the shipped app starts and opens a representative clip on a clean-ish machine.
 - Confirm the release note linked from `README.md` is the note you intended to ship.
+
+## macOS Preview Checklist
+
+Use this section only for the macOS Avalonia preview release line. Do not use it to publish or modify Windows WPF artifacts.
+
+### Pre-Ship Repo Hygiene
+
+- Confirm the release branch was created from the current `origin/main`.
+- Confirm `git diff --name-status origin/main...HEAD` contains no changes to `FramePlayer.csproj`, `MainWindow.xaml`, root `Engines/FFmpeg/**`, root `Services/**`, `tests/FramePlayer.Core.Tests/**`, or Windows packaging/release scripts.
+- Confirm `Video Test Files/`, `dist/`, `artifacts/`, `bin/`, `obj/`, and macOS `.dylib` files are not staged.
+- Confirm any temporary duplicated Mac-owned engine/export code is documented as preview isolation rather than a Windows-path refactor.
+
+### Validation Gate
+
+- Build the macOS app:
+  - `dotnet build src/FramePlayer.Mac/FramePlayer.Mac.csproj -c Release`
+- Run ordinary Mac CI tests:
+  - `dotnet test tests/FramePlayer.Mac.Tests/FramePlayer.Mac.Tests.csproj -c Release --filter "Category!=ReleaseCandidate"`
+- Run full release-candidate corpus validation with the real local corpus:
+  - `FRAMEPLAYER_MAC_CORPUS="Video Test Files" script/validate_macos_release_candidate.sh --corpus "Video Test Files"`
+- Confirm the validation output lists the expected corpus file count and writes a passing TRX under `artifacts/macos-release-candidate/results/`.
+
+### Review And CI Gate
+
+- Confirm Windows CI remains green.
+- Confirm Dependency Review is green.
+- Confirm SonarQube is green, or explicitly skipped because `SONAR_TOKEN` is absent.
+- Confirm macOS Avalonia CI is green.
+- Address every review, CI, and Sonar comment before merge.
+
+### Distribution Gate
+
+- Build a signed RC ZIP for tester distribution:
+  - `script/package_macos_release.sh --sign`
+- Verify the app signature:
+  - `codesign --verify --deep --verbose=2 "dist/Frame Player.app"`
+- Verify entitlements:
+  - `codesign -dvvv --entitlements :- "dist/Frame Player.app"`
+- Treat Apple Development signatures as local/test signatures only. Developer ID Application signing and notarization are required before public distribution.
+
+### Publish Gate
+
+- Tag the validated merge commit with a macOS-only preview tag such as `macos-preview-0.1.0`.
+- Create a GitHub prerelease titled `Frame Player macOS Preview 0.1.0`.
+- Attach only the signed macOS RC ZIP and its SHA256 file.
+- Do not attach, rename, or modify Windows release artifacts.

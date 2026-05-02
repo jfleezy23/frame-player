@@ -1,0 +1,4 @@
+using System.Runtime.CompilerServices;
+
+[assembly: InternalsVisibleTo("FramePlayer.Mac")]
+[assembly: InternalsVisibleTo("FramePlayer.Mac.Tests")]
