@@ -205,7 +205,24 @@ namespace FramePlayer.Mac.Tests
 
         private static void ConfigureRuntime()
         {
-            FfmpegRuntimeBootstrap.ConfigureForCurrentPlatform(FindRepositoryRoot());
+            FfmpegRuntimeBootstrap.ConfigureForCurrentPlatform(ResolveRuntimeBaseDirectory());
+        }
+
+        private static string ResolveRuntimeBaseDirectory()
+        {
+            var appBundle = Environment.GetEnvironmentVariable("FRAMEPLAYER_MAC_APP_BUNDLE");
+            if (!string.IsNullOrWhiteSpace(appBundle))
+            {
+                return Path.Combine(appBundle, "Contents", "MacOS");
+            }
+
+            var runtimeBase = Environment.GetEnvironmentVariable("FRAMEPLAYER_MAC_RUNTIME_BASE");
+            if (!string.IsNullOrWhiteSpace(runtimeBase))
+            {
+                return runtimeBase;
+            }
+
+            return FindRepositoryRoot();
         }
 
         private static string FindRepositoryRoot()

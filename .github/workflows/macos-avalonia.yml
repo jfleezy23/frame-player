@@ -36,3 +36,10 @@ jobs:
 
       - name: Test
         run: dotnet test tests/FramePlayer.Mac.Tests/FramePlayer.Mac.Tests.csproj -c Release --no-restore --filter "Category!=ReleaseCandidate"
+
+      - name: Bundle smoke test
+        run: |
+          CONFIGURATION=Release script/build_and_run.sh --build-only
+          test -x "dist/Frame Player.app/Contents/MacOS/FramePlayer.Mac"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "dist/Frame Player.app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "dist/Frame Player.app/Contents/Info.plist"

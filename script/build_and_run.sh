@@ -7,6 +7,8 @@ APP_NAME="FramePlayer.Mac"
 BUNDLE_NAME="Frame Player"
 BUNDLE_ID="com.frameplayer.app"
 MIN_SYSTEM_VERSION="13.0"
+APP_VERSION="${APP_VERSION:-0.1.0}"
+APP_BUILD="${APP_BUILD:-}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT="$ROOT_DIR/src/FramePlayer.Mac/FramePlayer.Mac.csproj"
@@ -45,6 +47,10 @@ DOTNET_BIN="$(resolve_dotnet)" || {
   exit 1
 }
 
+if [[ -z "$APP_BUILD" ]]; then
+  APP_BUILD="$(git -C "$ROOT_DIR" rev-list --count HEAD 2>/dev/null || printf '1')"
+fi
+
 DOTNET_BIN_DIR="$(cd "$(dirname "$DOTNET_BIN")" && pwd)"
 if [[ -n "${DOTNET_ROOT:-}" ]]; then
   export DOTNET_ROOT
@@ -79,6 +85,10 @@ build_app() {
   <string>$BUNDLE_NAME</string>
   <key>CFBundleDisplayName</key>
   <string>$BUNDLE_NAME</string>
+  <key>CFBundleShortVersionString</key>
+  <string>$APP_VERSION</string>
+  <key>CFBundleVersion</key>
+  <string>$APP_BUILD</string>
   <key>CFBundleIconFile</key>
   <string>$APP_ICON_NAME</string>
   <key>CFBundlePackageType</key>

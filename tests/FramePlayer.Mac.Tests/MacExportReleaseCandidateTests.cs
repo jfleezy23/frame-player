@@ -37,12 +37,26 @@ namespace FramePlayer.Mac.Tests
                 ?? primaryFile;
 
             using var temp = new TemporaryDirectory();
-            await ExportSideBySideCompareDirectAsync(primaryFile, compareFile, temp.Path);
             MainWindow? window = null;
             try
             {
                 window = CreateWindow();
+                SetCompareMode(window!, true);
                 await InvokeWindowTaskAsync(window!, "OpenMediaAsync", primaryFile, "pane-primary");
+                await InvokeWindowTaskAsync(window!, "OpenMediaAsync", compareFile, "pane-compare");
+
+                var compareOutput = Path.Combine(temp.Path, "mac-compare-export.mp4");
+                var compareResult = await InvokeWindowTaskAsync<CompareSideBySideExportResult?>(
+                    window!,
+                    "ExportSideBySideCompareAsync",
+                    compareOutput,
+                    CompareSideBySideExportMode.WholeVideo,
+                    CompareSideBySideExportAudioSource.Primary);
+                Assert.NotNull(compareResult);
+                Assert.True(compareResult!.Succeeded, compareResult.Message);
+                Assert.True(File.Exists(compareOutput), "Compare export did not create an output file.");
+                AssertProbeSucceeds(compareOutput, expectAudio: null);
+
                 await SetLoopRangeAsync(window!, "pane-primary");
 
                 var clipOutput = Path.Combine(temp.Path, "mac-loop-export.mp4");
@@ -55,10 +69,6 @@ namespace FramePlayer.Mac.Tests
                 Assert.True(clipResult!.Succeeded, clipResult.Message);
                 Assert.True(File.Exists(clipOutput), "Loop export did not create an output file.");
                 AssertProbeSucceeds(clipOutput, expectAudio: null);
-
-                var compareOutput = Path.Combine(temp.Path, "mac-compare-export.mp4");
-                Assert.True(File.Exists(compareOutput), "Compare export did not create an output file.");
-                AssertProbeSucceeds(compareOutput, expectAudio: null);
 
                 var diagnosticsOutput = Path.Combine(temp.Path, "diagnostics.txt");
                 var diagnosticsPath = await InvokeWindowTaskAsync<string?>(
@@ -93,7 +103,24 @@ namespace FramePlayer.Mac.Tests
 
         private static void ConfigureRuntime()
         {
-            FfmpegRuntimeBootstrap.ConfigureForCurrentPlatform(FindRepositoryRoot());
+            FfmpegRuntimeBootstrap.ConfigureForCurrentPlatform(ResolveRuntimeBaseDirectory());
+        }
+
+        private static string ResolveRuntimeBaseDirectory()
+        {
+            var appBundle = Environment.GetEnvironmentVariable("FRAMEPLAYER_MAC_APP_BUNDLE");
+            if (!string.IsNullOrWhiteSpace(appBundle))
+            {
+                return Path.Combine(appBundle, "Contents", "MacOS");
+            }
+
+            var runtimeBase = Environment.GetEnvironmentVariable("FRAMEPLAYER_MAC_RUNTIME_BASE");
+            if (!string.IsNullOrWhiteSpace(runtimeBase))
+            {
+                return runtimeBase;
+            }
+
+            return FindRepositoryRoot();
         }
 
         private static string FindRepositoryRoot()
@@ -169,46 +196,6 @@ namespace FramePlayer.Mac.Tests
 
             Assert.True(await InvokeWindowTaskAsync<bool>(window, "SetTimelineLoopMarkerAtAsync", paneId, LoopPlaybackMarkerEndpoint.In, start));
             Assert.True(await InvokeWindowTaskAsync<bool>(window, "SetTimelineLoopMarkerAtAsync", paneId, LoopPlaybackMarkerEndpoint.Out, end));
-        }
-
-        private static async Task ExportSideBySideCompareDirectAsync(string primaryFile, string compareFile, string outputDirectory)
-        {
-            var factory = new VideoReviewEngineFactory(new FfmpegReviewEngineOptionsProvider(new AppPreferencesService()));
-            using var primaryEngine = (FfmpegReviewEngine)factory.Create("primary-export");
-            using var compareEngine = (FfmpegReviewEngine)factory.Create("compare-export");
-            await primaryEngine.OpenAsync(primaryFile);
-            await compareEngine.OpenAsync(compareFile);
-
-            var outputPath = Path.Combine(outputDirectory, "mac-compare-export.mp4");
-            var request = new CompareSideBySideExportRequest
-            {
-                OutputFilePath = outputPath,
-                Mode = CompareSideBySideExportMode.WholeVideo,
-                AudioSource = CompareSideBySideExportAudioSource.Primary,
-                PrimarySessionSnapshot = BuildReviewSessionSnapshot("primary", "Primary", primaryEngine),
-                CompareSessionSnapshot = BuildReviewSessionSnapshot("compare", "Compare", compareEngine),
-                PrimaryViewportSnapshot = PaneViewportSnapshot.CreateFullFrame(primaryEngine.MediaInfo.PixelWidth, primaryEngine.MediaInfo.PixelHeight),
-                CompareViewportSnapshot = PaneViewportSnapshot.CreateFullFrame(compareEngine.MediaInfo.PixelWidth, compareEngine.MediaInfo.PixelHeight),
-                PrimaryEngine = primaryEngine,
-                CompareEngine = compareEngine
-            };
-            var plan = CompareSideBySideExportService.CreatePlan(request);
-            var result = await NativeCompareSideBySideExportService.ExportAsync(plan);
-            Assert.True(result.Succeeded, result.Message);
-        }
-
-        private static ReviewSessionSnapshot BuildReviewSessionSnapshot(
-            string sessionId,
-            string label,
-            FfmpegReviewEngine engine)
-        {
-            return new ReviewSessionSnapshot(
-                sessionId,
-                label,
-                ReviewSessionSnapshot.FromEngineState(engine.IsMediaOpen, engine.IsPlaying),
-                engine.CurrentFilePath,
-                engine.MediaInfo,
-                engine.Position);
         }
 
         private async Task WaitForIndexAsync(FfmpegReviewEngine engine)

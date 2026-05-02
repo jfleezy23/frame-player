@@ -27,9 +27,13 @@ namespace FramePlayer.Mac.Views
     {
         private readonly VideoReviewEngineFactory _engineFactory;
         private readonly MacRecentFilesService _recentFilesService;
+        private readonly FfmpegReviewEngineOptionsProvider _optionsProvider;
         private readonly IVideoReviewEngine _primaryEngine;
         private IVideoReviewEngine? _compareEngine;
         private const int HundredFrameStep = 100;
+        private const double MinimumPaneZoomFactor = 1d;
+        private const double MaximumPaneZoomFactor = 12d;
+        private const double PaneZoomStep = 1.1d;
         private const string PanePrimaryId = "pane-primary";
         private const string PaneCompareId = "pane-compare";
         private const string PanePrimaryKey = "primary";
@@ -52,6 +56,8 @@ namespace FramePlayer.Mac.Views
         private TimeSpan _masterTimelineContextTarget = TimeSpan.Zero;
         private TimeSpan _primaryTimelineContextTarget = TimeSpan.Zero;
         private TimeSpan _compareTimelineContextTarget = TimeSpan.Zero;
+        private double _primaryZoomFactor = MinimumPaneZoomFactor;
+        private double _compareZoomFactor = MinimumPaneZoomFactor;
         private static readonly IBrush PaneChromeBrush = Brush.Parse("#171C22");
         private static readonly IBrush PaneChromeBorderBrush = Brush.Parse("#28313B");
         private static readonly IBrush PaneSelectedBrush = Brush.Parse("#1D2934");
@@ -79,21 +85,25 @@ namespace FramePlayer.Mac.Views
             }
 
             _recentFilesService = new MacRecentFilesService();
-            var optionsProvider = new FfmpegReviewEngineOptionsProvider(new AppPreferencesService());
-            _engineFactory = new VideoReviewEngineFactory(optionsProvider);
+            _optionsProvider = new FfmpegReviewEngineOptionsProvider(new AppPreferencesService());
+            _engineFactory = new VideoReviewEngineFactory(_optionsProvider);
             _primaryEngine = _engineFactory.Create(PanePrimaryKey);
             _primaryEngine.StateChanged += PrimaryEngine_StateChanged;
             _primaryEngine.FramePresented += PrimaryEngine_FramePresented;
             _primaryLoopRange = CreateLoopRange(null, null);
             _compareLoopRange = CreateLoopRange(Pane.Compare, null, null);
 
-            NativeMenu.SetMenu(this, BuildNativeMenu(optionsProvider.UseGpuAcceleration));
+            ConfigurePaneZoomSurfaces();
+            NativeMenu.SetMenu(this, BuildNativeMenu(_optionsProvider.UseGpuAcceleration));
             UpdateRecentFilesMenu();
             UpdatePaneSelectionVisuals();
+            UpdateCompareOptionState();
             InstallContextMenus();
             AddHandler(DragDrop.DropEvent, Window_Drop);
             AddHandler(DragDrop.DragOverEvent, Window_DragOver);
             KeyDown += Window_KeyDown;
+            AllPanesCheckBox.IsCheckedChanged += AllPanesCheckBox_IsCheckedChanged;
+            LinkPaneZoomCheckBox.IsCheckedChanged += LinkPaneZoomCheckBox_IsCheckedChanged;
         }
 
         private async void OpenVideoMenuItem_Click(object? sender, RoutedEventArgs e)
@@ -186,6 +196,7 @@ namespace FramePlayer.Mac.Views
                 _recentFilesService.Add(filePath);
                 UpdateRecentFilesMenu();
                 ApplyFileLabels(pane, filePath);
+                SetPaneZoomFactor(pane, MinimumPaneZoomFactor, synchronizeLinkedPane: false);
                 if (pane == Pane.Primary)
                 {
                     _primaryLoopRange = CreateLoopRange(Pane.Primary, null, null);
@@ -196,6 +207,7 @@ namespace FramePlayer.Mac.Views
                 }
 
                 UpdateLoopUi();
+                UpdateCompareOptionState();
                 SetPaneState(pane, "Ready");
             }
             catch (Exception ex)
@@ -228,6 +240,131 @@ namespace FramePlayer.Mac.Views
             return CompareModeCheckBox.IsChecked == true && _focusedPane == Pane.Compare
                 ? Pane.Compare
                 : Pane.Primary;
+        }
+
+        private bool IsCompareModeEnabled
+        {
+            get { return CompareModeCheckBox.IsChecked == true; }
+        }
+
+        private bool IsAllPaneTransportEnabled
+        {
+            get
+            {
+                return IsCompareModeEnabled &&
+                    AllPanesCheckBox.IsChecked == true &&
+                    _primaryEngine.IsMediaOpen &&
+                    _compareEngine != null &&
+                    _compareEngine.IsMediaOpen;
+            }
+        }
+
+        private bool IsLinkedPaneZoomEnabled
+        {
+            get
+            {
+                return IsCompareModeEnabled &&
+                    LinkPaneZoomCheckBox.IsChecked == true;
+            }
+        }
+
+        private void ConfigurePaneZoomSurfaces()
+        {
+            CustomVideoSurface.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+            CompareVideoSurface.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+            ApplyZoomTransform(Pane.Primary);
+            ApplyZoomTransform(Pane.Compare);
+        }
+
+        private void ZoomInFocusedPane()
+        {
+            AdjustPaneZoom(GetFocusedPane(), PaneZoomStep);
+        }
+
+        private void ZoomOutFocusedPane()
+        {
+            AdjustPaneZoom(GetFocusedPane(), 1d / PaneZoomStep);
+        }
+
+        private void ResetZoomForFocusedPane()
+        {
+            ResetZoomForPane(GetFocusedPane());
+        }
+
+        private void ResetZoomForPane(Pane pane)
+        {
+            if (GetPaneZoomFactor(pane) <= MinimumPaneZoomFactor + 0.0001d)
+            {
+                CacheStatusTextBlock.Text = ResolvePaneLabel(pane) + " already showing full frame.";
+                return;
+            }
+
+            SetPaneZoomFactor(pane, MinimumPaneZoomFactor, synchronizeLinkedPane: true);
+            CacheStatusTextBlock.Text = ResolvePaneLabel(pane) + " zoom reset.";
+        }
+
+        private void AdjustPaneZoom(Pane pane, double scaleMultiplier)
+        {
+            var currentZoom = GetPaneZoomFactor(pane);
+            var targetZoom = Math.Max(
+                MinimumPaneZoomFactor,
+                Math.Min(MaximumPaneZoomFactor, currentZoom * scaleMultiplier));
+            if (targetZoom <= MinimumPaneZoomFactor + 0.0001d)
+            {
+                targetZoom = MinimumPaneZoomFactor;
+            }
+
+            if (Math.Abs(targetZoom - currentZoom) < 0.0001d)
+            {
+                CacheStatusTextBlock.Text = ResolvePaneLabel(pane) + " is already at " + FormatZoomFactor(targetZoom) + ".";
+                return;
+            }
+
+            SetPaneZoomFactor(pane, targetZoom, synchronizeLinkedPane: true);
+            CacheStatusTextBlock.Text = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} zoom: {1}.",
+                ResolvePaneLabel(pane),
+                FormatZoomFactor(targetZoom));
+        }
+
+        private void SetPaneZoomFactor(Pane pane, double zoomFactor, bool synchronizeLinkedPane)
+        {
+            var clampedZoomFactor = Math.Max(MinimumPaneZoomFactor, Math.Min(MaximumPaneZoomFactor, zoomFactor));
+            if (pane == Pane.Compare)
+            {
+                _compareZoomFactor = clampedZoomFactor;
+            }
+            else
+            {
+                _primaryZoomFactor = clampedZoomFactor;
+            }
+
+            ApplyZoomTransform(pane);
+            if (synchronizeLinkedPane && IsLinkedPaneZoomEnabled)
+            {
+                var peerPane = pane == Pane.Compare ? Pane.Primary : Pane.Compare;
+                SetPaneZoomFactor(peerPane, clampedZoomFactor, synchronizeLinkedPane: false);
+            }
+        }
+
+        private double GetPaneZoomFactor(Pane pane)
+        {
+            return pane == Pane.Compare ? _compareZoomFactor : _primaryZoomFactor;
+        }
+
+        private void ApplyZoomTransform(Pane pane)
+        {
+            var image = pane == Pane.Compare ? CompareVideoSurface : CustomVideoSurface;
+            var zoomFactor = GetPaneZoomFactor(pane);
+            image.RenderTransform = zoomFactor <= MinimumPaneZoomFactor + 0.0001d
+                ? null
+                : new ScaleTransform(zoomFactor, zoomFactor);
+        }
+
+        private static string FormatZoomFactor(double zoomFactor)
+        {
+            return string.Format(CultureInfo.InvariantCulture, "{0:0}%", zoomFactor * 100d);
         }
 
         private Pane GetFileOpenTargetPane()
@@ -309,23 +446,40 @@ namespace FramePlayer.Mac.Views
             ComparePaneFileTextBlock.Text = "No video loaded";
             CustomVideoSurface.Source = null;
             CompareVideoSurface.Source = null;
+            SetPaneZoomFactor(Pane.Primary, MinimumPaneZoomFactor, synchronizeLinkedPane: false);
+            SetPaneZoomFactor(Pane.Compare, MinimumPaneZoomFactor, synchronizeLinkedPane: false);
             PrimaryEmptyStateOverlay.IsVisible = true;
             CompareEmptyStateOverlay.IsVisible = true;
             PlaybackStateTextBlock.Text = "Ready";
             CurrentFrameTextBlock.Text = "Frame --";
             TimecodeTextBlock.Text = "Timecode --";
+            UpdateCompareOptionState();
         }
 
         private async void PlayPauseButton_Click(object? sender, RoutedEventArgs e)
         {
-            var engine = GetEngine(GetFocusedPane());
-            if (engine.IsPlaying)
+            if (IsAllPaneTransportEnabled)
             {
-                await engine.PauseAsync();
+                if (_primaryEngine.IsPlaying || (_compareEngine != null && _compareEngine.IsPlaying))
+                {
+                    await PauseAllPanePlaybackAsync();
+                }
+                else
+                {
+                    await StartAllPanePlaybackAsync();
+                }
             }
             else
             {
-                await engine.PlayAsync();
+                var engine = GetEngine(GetFocusedPane());
+                if (engine.IsPlaying)
+                {
+                    await engine.PauseAsync();
+                }
+                else
+                {
+                    await engine.PlayAsync();
+                }
             }
         }
 
@@ -385,20 +539,22 @@ namespace FramePlayer.Mac.Views
 
         private async void RewindButton_Click(object? sender, RoutedEventArgs e)
         {
-            var engine = GetEngine(GetFocusedPane());
-            var target = engine.Position.PresentationTime - TimeSpan.FromSeconds(5);
-            await engine.SeekToTimeAsync(target < TimeSpan.Zero ? TimeSpan.Zero : target);
+            await SeekRelativeAsync(TimeSpan.FromSeconds(-5));
         }
 
         private async void FastForwardButton_Click(object? sender, RoutedEventArgs e)
         {
-            var engine = GetEngine(GetFocusedPane());
-            await engine.SeekToTimeAsync(engine.Position.PresentationTime + TimeSpan.FromSeconds(5));
+            await SeekRelativeAsync(TimeSpan.FromSeconds(5));
         }
 
         private async Task StartPlaybackAsync(SynchronizedOperationScope? operationScope, string? paneId)
         {
-            _ = operationScope;
+            if (ShouldUseAllPaneTransport(operationScope))
+            {
+                await StartAllPanePlaybackAsync();
+                return;
+            }
+
             await GetEngine(ResolvePane(paneId)).PlayAsync();
         }
 
@@ -416,12 +572,24 @@ namespace FramePlayer.Mac.Views
         private async Task PausePlaybackAsync(bool logAction, SynchronizedOperationScope? operationScope)
         {
             _ = logAction;
-            _ = operationScope;
+            if (ShouldUseAllPaneTransport(operationScope))
+            {
+                await PauseAllPanePlaybackAsync();
+                return;
+            }
+
             await GetEngine(GetFocusedPane()).PauseAsync();
         }
 
         private async Task StepFrameAsync(int delta)
         {
+            if (IsAllPaneTransportEnabled)
+            {
+                await StepFrameAsync(delta, Pane.Primary);
+                await StepFrameAsync(delta, Pane.Compare);
+                return;
+            }
+
             await StepFrameAsync(delta, GetFocusedPane());
         }
 
@@ -445,6 +613,60 @@ namespace FramePlayer.Mac.Views
                     await engine.StepBackwardAsync();
                 }
             }
+        }
+
+        private bool ShouldUseAllPaneTransport(SynchronizedOperationScope? operationScope)
+        {
+            return operationScope == SynchronizedOperationScope.AllPanes ||
+                (operationScope == null && IsAllPaneTransportEnabled);
+        }
+
+        private async Task StartAllPanePlaybackAsync()
+        {
+            if (!_primaryEngine.IsMediaOpen || _compareEngine == null || !_compareEngine.IsMediaOpen)
+            {
+                return;
+            }
+
+            await _primaryEngine.PlayAsync();
+            await _compareEngine.PlayAsync();
+        }
+
+        private async Task PauseAllPanePlaybackAsync()
+        {
+            if (_primaryEngine.IsMediaOpen)
+            {
+                await _primaryEngine.PauseAsync();
+            }
+
+            if (_compareEngine != null && _compareEngine.IsMediaOpen)
+            {
+                await _compareEngine.PauseAsync();
+            }
+        }
+
+        private async Task SeekRelativeAsync(TimeSpan offset)
+        {
+            if (IsAllPaneTransportEnabled)
+            {
+                await SeekRelativeAsync(Pane.Primary, offset);
+                await SeekRelativeAsync(Pane.Compare, offset);
+                return;
+            }
+
+            await SeekRelativeAsync(GetFocusedPane(), offset);
+        }
+
+        private async Task SeekRelativeAsync(Pane pane, TimeSpan offset)
+        {
+            var engine = GetEngine(pane);
+            var target = engine.Position.PresentationTime + offset;
+            if (target < TimeSpan.Zero)
+            {
+                target = TimeSpan.Zero;
+            }
+
+            await engine.SeekToTimeAsync(target);
         }
 
         private Pane ResolvePaneFromSender(object? sender)
@@ -565,7 +787,7 @@ namespace FramePlayer.Mac.Views
             resetZoomItem.Click += (_, _) =>
             {
                 SelectPane(pane);
-                CacheStatusTextBlock.Text = "Zoom is already reset.";
+                ResetZoomForPane(pane);
             };
 
             var saveLoopItem = CreateFrameContextMenuItem("Save Loop As Clip...");
@@ -592,7 +814,7 @@ namespace FramePlayer.Mac.Views
                 SelectPane(pane);
                 var engine = TryGetExistingEngine(pane);
                 videoInfoItem.IsEnabled = engine != null && engine.IsMediaOpen;
-                resetZoomItem.IsEnabled = true;
+                resetZoomItem.IsEnabled = GetPaneZoomFactor(pane) > MinimumPaneZoomFactor + 0.0001d;
                 saveLoopItem.IsEnabled = CanExportLoopClip(pane);
                 compareExportItem.IsVisible = CompareModeCheckBox.IsChecked == true;
                 compareExportItem.IsEnabled = CanExportSideBySideCompare();
@@ -868,6 +1090,7 @@ namespace FramePlayer.Mac.Views
             ComparePaneFooterBorder.IsVisible = true;
             CompareToolbarBorder.IsVisible = true;
             UpdatePaneSelectionVisuals();
+            UpdateCompareOptionState();
         }
 
         private void HideCompareMode()
@@ -879,6 +1102,58 @@ namespace FramePlayer.Mac.Views
             ComparePaneFooterBorder.IsVisible = false;
             CompareToolbarBorder.IsVisible = false;
             UpdatePaneSelectionVisuals();
+            UpdateCompareOptionState();
+        }
+
+        private void UpdateCompareOptionState()
+        {
+            var compareModeEnabled = IsCompareModeEnabled;
+            var bothPanesLoaded = _primaryEngine.IsMediaOpen &&
+                _compareEngine != null &&
+                _compareEngine.IsMediaOpen;
+
+            AllPanesCheckBox.IsEnabled = compareModeEnabled && bothPanesLoaded;
+            ToolTip.SetTip(
+                AllPanesCheckBox,
+                bothPanesLoaded
+                    ? "Shared transport controls both compare panes."
+                    : "Load both compare panes before using shared transport.");
+            LinkPaneZoomCheckBox.IsEnabled = compareModeEnabled;
+            ToolTip.SetTip(
+                LinkPaneZoomCheckBox,
+                IsLinkedPaneZoomEnabled
+                    ? "Zoom changes are mirrored between compare panes."
+                    : "Zoom changes stay on the focused pane.");
+        }
+
+        private void AllPanesCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)
+        {
+            UpdateCompareOptionState();
+            if (IsCompareModeEnabled)
+            {
+                CacheStatusTextBlock.Text = AllPanesCheckBox.IsChecked == true
+                    ? "Shared transport controls both compare panes."
+                    : "Shared transport controls the focused pane.";
+            }
+        }
+
+        private void LinkPaneZoomCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)
+        {
+            UpdateCompareOptionState();
+            if (!IsCompareModeEnabled)
+            {
+                return;
+            }
+
+            if (LinkPaneZoomCheckBox.IsChecked == true)
+            {
+                SetPaneZoomFactor(GetFocusedPane(), GetPaneZoomFactor(GetFocusedPane()), synchronizeLinkedPane: true);
+                CacheStatusTextBlock.Text = "Compare pane zoom is linked.";
+            }
+            else
+            {
+                CacheStatusTextBlock.Text = "Compare pane zoom is independent.";
+            }
         }
 
         private async void AlignRightToLeftButton_Click(object? sender, RoutedEventArgs e)
@@ -974,6 +1249,8 @@ namespace FramePlayer.Mac.Views
                 {
                     CacheStatusTextBlock.Text = state.LastErrorMessage;
                 }
+
+                UpdateCompareOptionState();
             }
             finally
             {
@@ -1294,6 +1571,21 @@ namespace FramePlayer.Mac.Views
                 SetLoopMarker(LoopPlaybackMarkerEndpoint.Out);
                 e.Handled = true;
             }
+            else if (e.Key == Key.OemPlus)
+            {
+                ZoomInFocusedPane();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.OemMinus)
+            {
+                ZoomOutFocusedPane();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.D0)
+            {
+                ResetZoomForFocusedPane();
+                e.Handled = true;
+            }
         }
 
         private static void Window_DragOver(object? sender, DragEventArgs e)
@@ -1379,16 +1671,13 @@ namespace FramePlayer.Mac.Views
         {
             var engine = TryGetExistingEngine(pane);
             var info = engine?.MediaInfo;
-            CacheStatusTextBlock.Text = info == null || string.IsNullOrWhiteSpace(info.FilePath)
-                ? "Video info unavailable"
-                : string.Format(
-                    CultureInfo.InvariantCulture,
-                    "{0}: {1}x{2} {3:0.###} fps {4}",
-                    ResolvePaneLabel(pane),
-                    info.PixelWidth,
-                    info.PixelHeight,
-                    info.FramesPerSecond,
-                    info.VideoCodecName);
+            if (info == null || string.IsNullOrWhiteSpace(info.FilePath))
+            {
+                ShowTextDialog("Video Info", "Video info is unavailable until media is loaded in the selected pane.");
+                return;
+            }
+
+            ShowTextDialog("Video Info - " + ResolvePaneLabel(pane), BuildVideoInfoText(pane, info, engine!));
         }
 
         private async void ExportDiagnosticsMenuItem_Click(object? sender, RoutedEventArgs e)
@@ -1467,7 +1756,7 @@ namespace FramePlayer.Mac.Views
                     BuildReviewSessionSnapshot(pane, engine),
                     loopRange,
                     ffmpegEngine,
-                    BuildFullFrameViewport(engine.MediaInfo));
+                    BuildPaneViewport(pane, engine.MediaInfo));
                 var plan = ClipExportService.CreatePlan(request);
                 var result = await NativeClipExportService.ExportAsync(plan).ConfigureAwait(false);
                 await SetStatusMessageAsync(result.Succeeded
@@ -1539,8 +1828,8 @@ namespace FramePlayer.Mac.Views
                     AudioSource = audioSource,
                     PrimarySessionSnapshot = BuildReviewSessionSnapshot(Pane.Primary, primaryEngine),
                     CompareSessionSnapshot = BuildReviewSessionSnapshot(Pane.Compare, compareEngine),
-                    PrimaryViewportSnapshot = BuildFullFrameViewport(primaryEngine.MediaInfo),
-                    CompareViewportSnapshot = BuildFullFrameViewport(compareEngine.MediaInfo),
+                    PrimaryViewportSnapshot = BuildPaneViewport(Pane.Primary, primaryEngine.MediaInfo),
+                    CompareViewportSnapshot = BuildPaneViewport(Pane.Compare, compareEngine.MediaInfo),
                     PrimaryLoopRange = _primaryLoopRange,
                     CompareLoopRange = _compareLoopRange,
                     PrimaryEngine = primaryEngine,
@@ -1716,9 +2005,30 @@ namespace FramePlayer.Mac.Views
                 engine.Position);
         }
 
-        private static PaneViewportSnapshot BuildFullFrameViewport(VideoMediaInfo mediaInfo)
+        private PaneViewportSnapshot BuildPaneViewport(Pane pane, VideoMediaInfo mediaInfo)
         {
-            return PaneViewportSnapshot.CreateFullFrame(mediaInfo.PixelWidth, mediaInfo.PixelHeight);
+            var sourceWidth = Math.Max(1, mediaInfo.PixelWidth);
+            var sourceHeight = Math.Max(1, mediaInfo.PixelHeight);
+            var zoomFactor = GetPaneZoomFactor(pane);
+            if (zoomFactor <= MinimumPaneZoomFactor + 0.0001d)
+            {
+                return PaneViewportSnapshot.CreateFullFrame(sourceWidth, sourceHeight);
+            }
+
+            var cropWidth = Math.Max(1, (int)Math.Round(sourceWidth / zoomFactor));
+            var cropHeight = Math.Max(1, (int)Math.Round(sourceHeight / zoomFactor));
+            var cropX = Math.Max(0, (sourceWidth - cropWidth) / 2);
+            var cropY = Math.Max(0, (sourceHeight - cropHeight) / 2);
+            return new PaneViewportSnapshot(
+                zoomFactor,
+                0.5d,
+                0.5d,
+                sourceWidth,
+                sourceHeight,
+                cropX,
+                cropY,
+                cropWidth,
+                cropHeight);
         }
 
         private static string BuildSuggestedExportFileName(string sourceFilePath, string suffix)
@@ -1784,12 +2094,145 @@ namespace FramePlayer.Mac.Views
 
         private void HelpMenuItem_Click(object? sender, RoutedEventArgs e)
         {
-            CacheStatusTextBlock.Text = "Shortcuts: Space play/pause, Left/Right frame step, comma/period seek 5s, L loop, F11 full screen.";
+            ShowTextDialog("Controls and Shortcuts", BuildHelpText());
         }
 
         private void AboutMenuItem_Click(object? sender, RoutedEventArgs e)
         {
-            CacheStatusTextBlock.Text = "Frame Player macOS Avalonia port";
+            ShowTextDialog("About Frame Player", BuildAboutText());
+        }
+
+        private void SetGpuAccelerationPreference(bool useGpuAcceleration)
+        {
+            if (_nativeGpuAccelerationMenuItem != null)
+            {
+                _nativeGpuAccelerationMenuItem.IsChecked = useGpuAcceleration;
+            }
+
+            if (_optionsProvider.UseGpuAcceleration != useGpuAcceleration)
+            {
+                _optionsProvider.SetUseGpuAcceleration(useGpuAcceleration);
+            }
+
+            CacheStatusTextBlock.Text = useGpuAcceleration
+                ? "GPU acceleration enabled for newly opened media."
+                : "GPU acceleration disabled for newly opened media.";
+        }
+
+        private void ShowTextDialog(string title, string body)
+        {
+            var dialog = new Window
+            {
+                Title = title,
+                Width = 560,
+                Height = 420,
+                MinWidth = 420,
+                MinHeight = 260,
+                Background = Brush.Parse("#101418"),
+                WindowStartupLocation = WindowStartupLocation.CenterOwner
+            };
+
+            var closeButton = new Button
+            {
+                Content = "Close",
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                MinWidth = 88
+            };
+            closeButton.Click += (_, _) => dialog.Close();
+
+            dialog.Content = new Border
+            {
+                Padding = new Thickness(18),
+                Child = new Grid
+                {
+                    RowDefinitions = new RowDefinitions("*,Auto"),
+                    Children =
+                    {
+                        new ScrollViewer
+                        {
+                            Content = new TextBlock
+                            {
+                                Text = body,
+                                Foreground = Brush.Parse("#F3F4F6"),
+                                TextWrapping = TextWrapping.Wrap,
+                                FontSize = 13,
+                                LineHeight = 20
+                            }
+                        },
+                        closeButton
+                    }
+                }
+            };
+            Grid.SetRow(closeButton, 1);
+
+            dialog.Show(this);
+        }
+
+        private static string BuildVideoInfoText(Pane pane, VideoMediaInfo info, IVideoReviewEngine engine)
+        {
+            var builder = new StringBuilder();
+            builder.AppendLine(ResolvePaneLabel(pane));
+            builder.AppendLine();
+            builder.AppendLine("File: " + info.FilePath);
+            builder.AppendLine("Duration: " + FormatTime(info.Duration));
+            builder.AppendLine("Position: " + FormatTime(engine.Position.PresentationTime));
+            builder.AppendLine(string.Format(CultureInfo.InvariantCulture, "Resolution: {0} x {1}", info.PixelWidth, info.PixelHeight));
+            builder.AppendLine(string.Format(CultureInfo.InvariantCulture, "Frame rate: {0:0.###} fps", info.FramesPerSecond));
+            builder.AppendLine("Video codec: " + FormatDialogValue(info.VideoCodecName));
+            builder.AppendLine("Pixel format: " + FormatDialogValue(info.SourcePixelFormatName));
+            builder.AppendLine("Audio: " + (info.HasAudioStream ? FormatDialogValue(info.AudioCodecName) : "none"));
+            if (info.HasAudioStream)
+            {
+                builder.AppendLine(string.Format(CultureInfo.InvariantCulture, "Audio sample rate: {0} Hz", info.AudioSampleRate));
+                builder.AppendLine(string.Format(CultureInfo.InvariantCulture, "Audio channels: {0}", info.AudioChannelCount));
+                builder.AppendLine("Audio playback: " + (info.IsAudioPlaybackAvailable ? "available" : "unavailable"));
+            }
+
+            builder.AppendLine("Video stream index: " + info.VideoStreamIndex.ToString(CultureInfo.InvariantCulture));
+            builder.AppendLine(string.Format(
+                CultureInfo.InvariantCulture,
+                "Nominal frame rate: {0}/{1}",
+                info.NominalFrameRateNumerator,
+                info.NominalFrameRateDenominator));
+            builder.AppendLine(string.Format(
+                CultureInfo.InvariantCulture,
+                "Stream time base: {0}/{1}",
+                info.StreamTimeBaseNumerator,
+                info.StreamTimeBaseDenominator));
+            return builder.ToString();
+        }
+
+        private static string BuildHelpText()
+        {
+            return string.Join(
+                Environment.NewLine,
+                "Space: play or pause",
+                "Left / Right: previous or next frame",
+                "Cmd+O: open video",
+                "Cmd+N: new window",
+                "L: loop playback",
+                "[ / ]: set loop in or loop out",
+                "Playback menu: zoom in, zoom out, reset zoom",
+                "F11: full screen",
+                "Right-click video: video info, reset zoom, loop export, compare export",
+                "Right-click timeline: set loop markers and export loop");
+        }
+
+        private static string BuildAboutText()
+        {
+            var version = typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? "unknown";
+            return string.Join(
+                Environment.NewLine,
+                "Frame Player",
+                "macOS Avalonia Preview",
+                "Version: " + version,
+                "",
+                "Windows WPF remains the stable release line. This build is the macOS preview release track.");
+        }
+
+        private static string FormatDialogValue(string? value)
+        {
+            return string.IsNullOrWhiteSpace(value) ? "unknown" : value.Trim();
         }
 
         private NativeMenu BuildNativeMenu(bool useGpuAcceleration)
@@ -1816,12 +2259,7 @@ namespace FramePlayer.Mac.Views
             _nativePlayPauseMenuItem = CreateMenuItem("Play", (sender, _) => PlayPauseButton_Click(sender, new RoutedEventArgs()), new KeyGesture(Key.Space));
             _nativeGpuAccelerationMenuItem = CreateMenuItem("Use GPU Acceleration", (_, _) =>
             {
-                if (_nativeGpuAccelerationMenuItem != null)
-                {
-                    _nativeGpuAccelerationMenuItem.IsChecked = !_nativeGpuAccelerationMenuItem.IsChecked;
-                }
-
-                CacheStatusTextBlock.Text = "GPU acceleration preference will apply when the macOS FFmpeg runtime supports it.";
+                SetGpuAccelerationPreference(_nativeGpuAccelerationMenuItem?.IsChecked != true);
             });
             _nativeGpuAccelerationMenuItem.ToggleType = MenuItemToggleType.CheckBox;
             _nativeGpuAccelerationMenuItem.IsChecked = useGpuAcceleration;
@@ -1846,9 +2284,9 @@ namespace FramePlayer.Mac.Views
                 CreateMenuItem("Save Loop As Clip...", (sender, _) => SaveLoopAsClipMenuItem_Click(sender, new RoutedEventArgs())),
                 CreateMenuItem("Export Side-by-Side Compare...", (sender, _) => ExportSideBySideCompareMenuItem_Click(sender, new RoutedEventArgs())),
                 new NativeMenuItemSeparator(),
-                CreateMenuItem("Zoom In", (_, _) => CacheStatusTextBlock.Text = "Zoom in will be wired with the pane interaction pass."),
-                CreateMenuItem("Zoom Out", (_, _) => CacheStatusTextBlock.Text = "Zoom out will be wired with the pane interaction pass."),
-                CreateMenuItem("Reset Zoom", (_, _) => CacheStatusTextBlock.Text = "Zoom reset will be wired with the pane interaction pass."),
+                CreateMenuItem("Zoom In", (_, _) => ZoomInFocusedPane()),
+                CreateMenuItem("Zoom Out", (_, _) => ZoomOutFocusedPane()),
+                CreateMenuItem("Reset Zoom", (_, _) => ResetZoomForFocusedPane()),
                 new NativeMenuItemSeparator(),
                 _nativeGpuAccelerationMenuItem,
                 CreateMenuItem("Toggle Full Screen", (_, _) => ToggleFullScreen(), new KeyGesture(Key.F11)));

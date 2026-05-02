@@ -475,6 +475,9 @@ namespace FramePlayer.Mac.Tests
                 var play = RequireNativeMenuItem(nativeMenu, "Play");
                 var previousFrame = RequireNativeMenuItem(nativeMenu, "Previous Frame");
                 var nextFrame = RequireNativeMenuItem(nativeMenu, "Next Frame");
+                var zoomIn = RequireNativeMenuItem(nativeMenu, "Zoom In");
+                var zoomOut = RequireNativeMenuItem(nativeMenu, "Zoom Out");
+                var resetZoom = RequireNativeMenuItem(nativeMenu, "Reset Zoom");
                 var fullScreen = RequireNativeMenuItem(nativeMenu, "Toggle Full Screen");
                 var audioInsertion = RequireNativeMenuItem(nativeMenu, "Replace Audio Track...");
 
@@ -485,7 +488,47 @@ namespace FramePlayer.Mac.Tests
                 AssertGesture(previousFrame.Gesture, Key.Left, KeyModifiers.None);
                 AssertGesture(nextFrame.Gesture, Key.Right, KeyModifiers.None);
                 AssertGesture(fullScreen.Gesture, Key.F11, KeyModifiers.None);
+                Assert.NotNull(zoomIn);
+                Assert.NotNull(zoomOut);
+                Assert.NotNull(resetZoom);
                 Assert.NotNull(audioInsertion);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public void ZoomCommands_ApplyResetAndLinkPaneScaleTransforms()
+        {
+            _fixture.Run(() =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var primarySurface = RequireControl<Image>(window, "CustomVideoSurface");
+                    var compareSurface = RequireControl<Image>(window, "CompareVideoSurface");
+                    var compareMode = RequireControl<CheckBox>(window, "CompareModeCheckBox");
+                    var linkZoom = RequireControl<CheckBox>(window, "LinkPaneZoomCheckBox");
+
+                    InvokePrivate(window, "ZoomInFocusedPane");
+                    var primaryZoom = Assert.IsType<ScaleTransform>(primarySurface.RenderTransform);
+                    Assert.True(primaryZoom.ScaleX > 1d);
+                    Assert.Null(compareSurface.RenderTransform);
+
+                    InvokePrivate(window, "ResetZoomForFocusedPane");
+                    Assert.Null(primarySurface.RenderTransform);
+
+                    compareMode.IsChecked = true;
+                    linkZoom.IsChecked = true;
+                    InvokePrivate(window, "ZoomInFocusedPane");
+
+                    primaryZoom = Assert.IsType<ScaleTransform>(primarySurface.RenderTransform);
+                    var compareZoom = Assert.IsType<ScaleTransform>(compareSurface.RenderTransform);
+                    Assert.Equal(primaryZoom.ScaleX, compareZoom.ScaleX, precision: 6);
+                    Assert.Equal(primaryZoom.ScaleY, compareZoom.ScaleY, precision: 6);
                 }
                 finally
                 {

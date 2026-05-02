@@ -98,6 +98,8 @@ env -u VERSION CONFIGURATION=Release "$ROOT_DIR/script/build_and_run.sh" --build
 
 [[ -x "$APP_BUNDLE/Contents/MacOS/FramePlayer.Mac" ]]
 [[ -s "$APP_BUNDLE/Contents/Resources/FramePlayer.icns" ]]
+/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_BUNDLE/Contents/Info.plist" >/dev/null
+/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP_BUNDLE/Contents/Info.plist" >/dev/null
 [[ -f "$APP_BUNDLE/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/libavformat.62.dylib" ]]
 [[ -f "$APP_BUNDLE/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/libavfilter.11.dylib" ]]
 
