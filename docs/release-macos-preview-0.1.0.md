@@ -3,6 +3,7 @@
 This note documents the controlled Apple Silicon macOS Preview release. Windows remains the WPF `v1.8.4` release line and is not changed by this preview.
 
 - Release: [Frame Player macOS Preview 0.1.0](https://github.com/jfleezy23/frame-player/releases/tag/macos-preview-0.1.0)
+- Unified download page: [Frame Player v1.8.4](https://github.com/jfleezy23/frame-player/releases/tag/v1.8.4)
 - Artifact: `FramePlayer-macOS-arm64-macos-preview-0.1.0.zip`
 - SHA256: `81d3cfc15030e1040f658b9fd0e85755c35b461f4f3515f28f5a130a0bf87728`
 - Apple notarization submission: `9f727885-b388-4ac0-a988-e10378933a32`

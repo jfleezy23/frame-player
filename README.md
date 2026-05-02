@@ -1,11 +1,13 @@
 # Frame Player
 
+**Current downloads:** [Frame Player v1.8.4](https://github.com/jfleezy23/frame-player/releases/tag/v1.8.4) is now the unified download page for the Windows `v1.8.4` stable build and the notarized Apple Silicon macOS Preview `0.1.0`.
+
 Frame Player is a frame-first desktop review tool built on a custom FFmpeg engine with a bundled in-process FFmpeg runtime. The supported Windows stable release remains the WPF app, and a controlled Apple Silicon macOS Preview is now available as an Avalonia app. Frame Player treats decoded display-order frame identity as the source of truth for exact frame stepping, frame seeks, and review state, prioritizing deterministic review behavior over generic consumer media-player parity.
 
 ## Release Tracks
 
-- Windows stable: the supported Windows release line remains the WPF app at `v1.8.4`. Its source path, build path, tests, runtime bootstrap, and release process remain unchanged by the macOS preview work.
-- macOS Preview: [Frame Player macOS Preview 0.1.0](https://github.com/jfleezy23/frame-player/releases/tag/macos-preview-0.1.0) is a notarized, Developer ID-stapled Apple Silicon (`osx-arm64`) preview app built from `src/FramePlayer.Mac`. It mirrors the Windows app body, transport behavior, compare workflow, loop/export surfaces, menu commands, and keyboard shortcuts while using native macOS window/menu chrome.
+- Windows stable: the supported Windows release line remains the WPF app at `v1.8.4`. Its source path, build path, tests, runtime bootstrap, and release process remain unchanged by the macOS preview work. Download it from [Frame Player v1.8.4](https://github.com/jfleezy23/frame-player/releases/tag/v1.8.4).
+- macOS Preview: the same [Frame Player v1.8.4](https://github.com/jfleezy23/frame-player/releases/tag/v1.8.4) release page now also includes [Frame Player macOS Preview 0.1.0](https://github.com/jfleezy23/frame-player/releases/tag/macos-preview-0.1.0), a notarized, Developer ID-stapled Apple Silicon (`osx-arm64`) preview app built from `src/FramePlayer.Mac`. It mirrors the Windows app body, transport behavior, compare workflow, loop/export surfaces, menu commands, and keyboard shortcuts while using native macOS window/menu chrome.
 - The Avalonia app is not being declared the universal replacement for the Windows WPF release line in this preview.
 
 ## Who this is for
@@ -144,7 +146,7 @@ For phase-1 GPU validation, keep the default `Playback > Use GPU Acceleration` s
 
 ### macOS Preview Quick Start
 
-For the controlled Apple Silicon preview, download the notarized ZIP from [Frame Player macOS Preview 0.1.0](https://github.com/jfleezy23/frame-player/releases/tag/macos-preview-0.1.0), verify the SHA256 file attached to the release, unzip it, and install `Frame Player.app` into `/Applications`.
+For the controlled Apple Silicon preview, download the notarized ZIP from the unified [Frame Player v1.8.4](https://github.com/jfleezy23/frame-player/releases/tag/v1.8.4) release page, verify the SHA256 file attached to the release, unzip it, and install `Frame Player.app` into `/Applications`. The separate [macOS Preview 0.1.0](https://github.com/jfleezy23/frame-player/releases/tag/macos-preview-0.1.0) prerelease remains the detailed validation and provenance note for the Mac artifact.
 
 Use a Mac with the .NET SDK pinned by `global.json`, then stage the pinned macOS FFmpeg runtime under `Runtime/macos/osx-arm64/ffmpeg`.
 
@@ -203,8 +205,9 @@ GitHub Actions Windows CI is compile validation on a clean runner. The workflow 
 
 ## GitHub Resources
 
-- Releases: [github.com/jfleezy23/frame-player/releases](https://github.com/jfleezy23/frame-player/releases)
-- macOS Preview 0.1.0 release: [github.com/jfleezy23/frame-player/releases/tag/macos-preview-0.1.0](https://github.com/jfleezy23/frame-player/releases/tag/macos-preview-0.1.0)
+- Current downloads, Windows stable and macOS preview: [github.com/jfleezy23/frame-player/releases/tag/v1.8.4](https://github.com/jfleezy23/frame-player/releases/tag/v1.8.4)
+- All releases: [github.com/jfleezy23/frame-player/releases](https://github.com/jfleezy23/frame-player/releases)
+- macOS Preview 0.1.0 detailed note: [github.com/jfleezy23/frame-player/releases/tag/macos-preview-0.1.0](https://github.com/jfleezy23/frame-player/releases/tag/macos-preview-0.1.0)
 - .NET 10 Desktop Runtime: [dotnet.microsoft.com/en-us/download/dotnet/10.0](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)
 - Current Windows release note: [docs/release-v1.8.4-feedback.md](docs/release-v1.8.4-feedback.md)
 - macOS preview note: [docs/release-macos-preview-0.1.0.md](docs/release-macos-preview-0.1.0.md)
