@@ -143,6 +143,13 @@ jobs:
             "MainWindow.xaml.cs"
             "Diagnostics/RegressionSuiteRunner.cs"
             "VideoInfoWindow.xaml.cs"
+            "src/FramePlayer.Mac/Views/**"
+            "src/FramePlayer.Mac/Services/AvaloniaFrameBufferPresenter.cs"
+            "src/FramePlayer.Mac/Services/MacRecentFilesService.cs"
+            "src/FramePlayer.Mac/Services/*Export*.cs"
+            "src/FramePlayer.Mac/Services/MediaProbeService.cs"
+            "src/FramePlayer.Mac/Services/Native*.cs"
+            "src/FramePlayer.Mac/Diagnostics/ExportHostCli.cs"
             "scripts/ui_loop_visible_test.py"
           ) -join ","
 
@@ -171,6 +178,10 @@ jobs:
             "Diagnostics/ReviewEngineManualTestCli.cs"
             "Services/ExportToolsManifestService.cs"
             "Services/RuntimeManifestService.cs"
+            "src/FramePlayer.Core/Core/**"
+            "src/FramePlayer.Engine.FFmpeg/**"
+            "src/FramePlayer.Mac/Core/Models/**"
+            "src/FramePlayer.Mac/Services/*Export*.cs"
           ) -join ","
 
           .\.sonar\scanner\dotnet-sonarscanner begin `
@@ -182,6 +193,7 @@ jobs:
             /d:sonar.cpd.exclusions="$duplicationExclusions"
 
           dotnet build .\FramePlayer.csproj -c Release -p:Platform=x64
+          dotnet build .\src\FramePlayer.Mac\FramePlayer.Mac.csproj -c Release
 
           .\.sonar\scanner\dotnet-sonarscanner end `
             /d:sonar.token="$env:SONAR_TOKEN"
