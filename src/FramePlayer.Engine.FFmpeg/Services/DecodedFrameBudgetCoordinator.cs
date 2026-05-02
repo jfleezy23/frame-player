@@ -623,20 +623,6 @@ namespace FramePlayer.Services
             return totalBytes;
         }
 
-        private bool UpdateStateAllocationAndAppendLocked(
-            PaneBudgetState state,
-            PaneBudgetAllocation allocation,
-            List<PaneBudgetAllocation> changedAllocations)
-        {
-            if (!UpdateStateAllocationLocked(state, allocation))
-            {
-                return false;
-            }
-
-            changedAllocations.Add(state.CurrentAllocation);
-            return true;
-        }
-
         private static long ComputeRequiredBudgetBytes(
             long frameBytes,
             int queueDepth,
@@ -645,6 +631,17 @@ namespace FramePlayer.Services
         {
             var frameCount = 1L + Math.Max(0, queueDepth) + Math.Max(0, forwardTarget) + Math.Max(0, reverseTarget);
             return frameCount * Math.Max(1L, frameBytes);
+        }
+
+        private static void UpdateStateAllocationAndAppendLocked(
+            PaneBudgetState state,
+            PaneBudgetAllocation allocation,
+            List<PaneBudgetAllocation> changedAllocations)
+        {
+            if (UpdateStateAllocationLocked(state, allocation))
+            {
+                changedAllocations.Add(state.CurrentAllocation);
+            }
         }
 
         private static int ComputePreviousFramesFromBudget(
