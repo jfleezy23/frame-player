@@ -183,6 +183,8 @@ namespace FramePlayer.Services
             outputHeight = mediaInfo != null
                 ? Math.Max(1, mediaInfo.PixelHeight)
                 : Math.Max(1, viewportSnapshot.SourcePixelHeight);
+            outputWidth = NativeExportSupport.ResolveEvenVideoDimension(outputWidth);
+            outputHeight = NativeExportSupport.ResolveEvenVideoDimension(outputHeight);
         }
 
         public async Task<ClipExportResult> ExportAsync(ClipExportRequest request, CancellationToken cancellationToken = default(CancellationToken))
@@ -222,9 +224,24 @@ namespace FramePlayer.Services
             int outputWidth,
             int outputHeight)
         {
-            if (viewportSnapshot == null || !viewportSnapshot.IsZoomed)
+            if (viewportSnapshot == null)
             {
                 return string.Empty;
+            }
+
+            if (!viewportSnapshot.IsZoomed)
+            {
+                if (outputWidth == viewportSnapshot.SourcePixelWidth &&
+                    outputHeight == viewportSnapshot.SourcePixelHeight)
+                {
+                    return string.Empty;
+                }
+
+                return string.Format(
+                    CultureInfo.InvariantCulture,
+                    "-vf \"pad=width={0}:height={1}:x=0:y=0:color=black\" ",
+                    Math.Max(2, outputWidth),
+                    Math.Max(2, outputHeight));
             }
 
             return string.Format(

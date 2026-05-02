@@ -25,20 +25,12 @@ namespace FramePlayer.Services
                         includeAudio = mediaInfo.HasAudioStream;
                     }
 
-                    var viewport = plan.ViewportSnapshot;
-                    var sourcePixelWidth = viewport != null ? viewport.SourcePixelWidth : 1;
-                    var sourcePixelHeight = viewport != null ? viewport.SourcePixelHeight : 1;
-                    var outputWidth = viewport != null && viewport.IsZoomed
-                        ? viewport.SourcePixelWidth
-                        : Math.Max(1, sourcePixelWidth);
-                    var outputHeight = viewport != null && viewport.IsZoomed
-                        ? viewport.SourcePixelHeight
-                        : Math.Max(1, sourcePixelHeight);
+                    var outputDimensions = ResolveOutputDimensions(plan);
                     var outcome = NativeExportSupport.RunGraphExport(
                         plan.OutputFilePath,
                         BuildFilterGraph(plan, includeAudio),
-                        outputWidth,
-                        outputHeight,
+                        outputDimensions.Width,
+                        outputDimensions.Height,
                         includeAudio,
                         cancellationToken);
 
@@ -65,7 +57,7 @@ namespace FramePlayer.Services
                 cancellationToken);
         }
 
-        private static string BuildFilterGraph(ClipExportPlan plan, bool includeAudio)
+        internal static string BuildFilterGraph(ClipExportPlan plan, bool includeAudio)
         {
             var duration = plan.Duration;
             if (duration <= TimeSpan.Zero)
@@ -77,6 +69,8 @@ namespace FramePlayer.Services
             var startTime = NativeExportSupport.FormatFilterTime(plan.StartTime);
             var durationText = NativeExportSupport.FormatFilterTime(duration);
             var filterGraph = new StringBuilder();
+            var outputDimensions = ResolveOutputDimensions(plan);
+            var viewport = plan.ViewportSnapshot;
 
             filterGraph.AppendFormat(
                 System.Globalization.CultureInfo.InvariantCulture,
@@ -85,17 +79,27 @@ namespace FramePlayer.Services
                 startTime,
                 durationText);
 
-            if (plan.ViewportSnapshot != null && plan.ViewportSnapshot.IsZoomed)
+            if (viewport != null && viewport.IsZoomed)
             {
                 filterGraph.AppendFormat(
                     System.Globalization.CultureInfo.InvariantCulture,
                     "crop={0}:{1}:{2}:{3},scale={4}:{5}:flags=lanczos,",
-                    plan.ViewportSnapshot.SourceCropWidth,
-                    plan.ViewportSnapshot.SourceCropHeight,
-                    plan.ViewportSnapshot.SourceCropX,
-                    plan.ViewportSnapshot.SourceCropY,
-                    plan.ViewportSnapshot.SourcePixelWidth,
-                    plan.ViewportSnapshot.SourcePixelHeight);
+                    viewport.SourceCropWidth,
+                    viewport.SourceCropHeight,
+                    viewport.SourceCropX,
+                    viewport.SourceCropY,
+                    outputDimensions.Width,
+                    outputDimensions.Height);
+            }
+            else if (viewport != null &&
+                     (outputDimensions.Width != viewport.SourcePixelWidth ||
+                      outputDimensions.Height != viewport.SourcePixelHeight))
+            {
+                filterGraph.AppendFormat(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    "pad=width={0}:height={1}:x=0:y=0:color=black,",
+                    outputDimensions.Width,
+                    outputDimensions.Height);
             }
 
             filterGraph.Append("format=pix_fmts=yuv420p,buffersink@outv");
@@ -112,6 +116,22 @@ namespace FramePlayer.Services
             }
 
             return filterGraph.ToString();
+        }
+
+        internal static (int Width, int Height) ResolveOutputDimensions(ClipExportPlan plan)
+        {
+            ArgumentNullException.ThrowIfNull(plan);
+
+            var viewport = plan.ViewportSnapshot;
+            var sourcePixelWidth = viewport != null ? viewport.SourcePixelWidth : 1;
+            var sourcePixelHeight = viewport != null ? viewport.SourcePixelHeight : 1;
+            var outputWidth = viewport != null && viewport.IsZoomed
+                ? viewport.SourcePixelWidth
+                : Math.Max(1, sourcePixelWidth);
+            var outputHeight = viewport != null && viewport.IsZoomed
+                ? viewport.SourcePixelHeight
+                : Math.Max(1, sourcePixelHeight);
+            return NativeExportSupport.ResolveEvenVideoDimensions(outputWidth, outputHeight);
         }
     }
 }

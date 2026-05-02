@@ -298,8 +298,9 @@ namespace FramePlayer.Services
 
             encoderContext->codec_id = encoder->id;
             encoderContext->codec_type = AVMediaType.AVMEDIA_TYPE_VIDEO;
-            encoderContext->width = Math.Max(2, outputWidth);
-            encoderContext->height = Math.Max(2, outputHeight);
+            var outputDimensions = ResolveEvenVideoDimensions(outputWidth, outputHeight);
+            encoderContext->width = outputDimensions.Width;
+            encoderContext->height = outputDimensions.Height;
             encoderContext->pix_fmt = AVPixelFormat.AV_PIX_FMT_YUV420P;
             encoderContext->sample_aspect_ratio = new AVRational { num = 1, den = 1 };
             encoderContext->time_base = resolvedTimeBase;
@@ -339,6 +340,19 @@ namespace FramePlayer.Services
                 "Copy export video stream parameters");
             outputStream->codecpar->codec_tag = 0;
             return outputStream;
+        }
+
+        internal static (int Width, int Height) ResolveEvenVideoDimensions(int width, int height)
+        {
+            return (ResolveEvenVideoDimension(width), ResolveEvenVideoDimension(height));
+        }
+
+        internal static int ResolveEvenVideoDimension(int value)
+        {
+            var resolvedValue = Math.Max(2, value);
+            return (resolvedValue & 1) == 0
+                ? resolvedValue
+                : resolvedValue + 1;
         }
 
         internal static AVStream* AddAudioEncoderStream(
