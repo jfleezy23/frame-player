@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
@@ -6,6 +7,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using FramePlayer.Core.Models;
+using FramePlayer.Engines.FFmpeg;
 
 namespace FramePlayer.Services
 {
@@ -182,7 +184,16 @@ namespace FramePlayer.Services
                     process.Start();
                     var standardOutputTask = process.StandardOutput.ReadToEndAsync();
                     var standardErrorTask = process.StandardError.ReadToEndAsync();
-                    await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        await KillExportHostAsync(process).ConfigureAwait(false);
+                        throw;
+                    }
+
                     var standardOutput = await standardOutputTask.ConfigureAwait(false);
                     var standardError = await standardErrorTask.ConfigureAwait(false);
 
@@ -220,19 +231,70 @@ namespace FramePlayer.Services
 
         private static RuntimeAvailability DiscoverRuntimeAvailability()
         {
-            var runtimeDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ExportRuntimeFolderName);
-            if (!ExportRuntimeManifestService.TryValidateRuntimeDirectory(runtimeDirectory, out var message))
+            var errors = new StringBuilder();
+            foreach (var runtimeDirectory in ResolveRuntimeCandidateDirectories(AppDomain.CurrentDomain.BaseDirectory))
             {
-                return new RuntimeAvailability(
-                    false,
-                    string.IsNullOrWhiteSpace(message)
-                        ? "The bundled FFmpeg export runtime is unavailable."
-                        : message);
+                if (ExportRuntimeManifestService.TryValidateRuntimeDirectory(runtimeDirectory, out var message))
+                {
+                    return new RuntimeAvailability(
+                        true,
+                        "Bundled FFmpeg export runtime is ready: " + runtimeDirectory);
+                }
+
+                if (!string.IsNullOrWhiteSpace(message))
+                {
+                    if (errors.Length > 0)
+                    {
+                        errors.Append(' ');
+                    }
+
+                    errors.Append(message);
+                }
             }
 
             return new RuntimeAvailability(
-                true,
-                "Bundled FFmpeg export runtime is ready.");
+                false,
+                errors.Length == 0
+                    ? "The bundled FFmpeg export runtime is unavailable."
+                    : errors.ToString());
+        }
+
+        internal static IEnumerable<string> ResolveRuntimeCandidateDirectories(string baseDirectory)
+        {
+            yield return Path.Combine(baseDirectory, ExportRuntimeFolderName);
+
+            var platformRuntimeDirectory = FfmpegRuntimeBootstrap.ResolveRuntimeDirectory(baseDirectory);
+            if (!string.Equals(
+                platformRuntimeDirectory,
+                Path.Combine(baseDirectory, ExportRuntimeFolderName),
+                StringComparison.OrdinalIgnoreCase))
+            {
+                yield return platformRuntimeDirectory;
+            }
+        }
+
+        private static async Task KillExportHostAsync(Process process)
+        {
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+            }
+            catch
+            {
+                // Cancellation cleanup is best-effort; the caller's cancellation remains the primary result.
+            }
+
+            try
+            {
+                await process.WaitForExitAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+                // The process may have already exited between the kill request and the wait.
+            }
         }
 
         private static string BuildHostFailureMessage(ExportHostResponse response, string fallbackMessage)

@@ -31,5 +31,6 @@
     <None Include="..\..\Runtime\runtime-manifest.json" Link="Runtime\runtime-manifest.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\Runtime\export-runtime-manifest.json" Link="Runtime\export-runtime-manifest.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\Runtime\export-tools-manifest.json" Link="Runtime\export-tools-manifest.json" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="..\..\Runtime\export-runtime-manifest.json" LogicalName="FramePlayer.Runtime.export-runtime-manifest.json" />
   </ItemGroup>
 </Project>

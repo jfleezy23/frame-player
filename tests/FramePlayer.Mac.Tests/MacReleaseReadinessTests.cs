@@ -31,6 +31,19 @@ namespace FramePlayer.Mac.Tests
             Assert.Contains("Runtime\\runtime-manifest.json", projectText, StringComparison.Ordinal);
             Assert.Contains("Runtime\\export-runtime-manifest.json", projectText, StringComparison.Ordinal);
             Assert.Contains("Runtime\\export-tools-manifest.json", projectText, StringComparison.Ordinal);
+            Assert.Contains("EmbeddedResource", projectText, StringComparison.Ordinal);
+            Assert.Contains("FramePlayer.Runtime.export-runtime-manifest.json", projectText, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void ExportHostPath_BootstrapsRuntimeAndCleansUpCancellation()
+        {
+            var program = File.ReadAllText(RepositoryPath("src", "FramePlayer.Mac", "Program.cs"));
+            var hostClient = File.ReadAllText(RepositoryPath("src", "FramePlayer.Mac", "Services", "ExportHostClient.cs"));
+
+            Assert.Contains("FfmpegRuntimeBootstrap.ConfigureForCurrentPlatform(AppContext.BaseDirectory)", program, StringComparison.Ordinal);
+            Assert.Contains("process.Kill(entireProcessTree: true)", hostClient, StringComparison.Ordinal);
+            Assert.Contains("OperationCanceledException", hostClient, StringComparison.Ordinal);
         }
 
         [Fact]

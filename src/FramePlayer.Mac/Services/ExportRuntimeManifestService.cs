@@ -19,6 +19,18 @@ namespace FramePlayer.Services
     internal static class ExportRuntimeManifestService
     {
         private const string ResourceName = "FramePlayer.Runtime.export-runtime-manifest.json";
+        private const string CopiedManifestRelativePath = "Runtime/export-runtime-manifest.json";
+        private const string MacSha256SumsFileName = "SHA256SUMS.txt";
+        private const int Sha256HexLength = 64;
+        private static readonly string[] MacRequiredRuntimeFiles = new[]
+        {
+            "libavutil.60.dylib",
+            "libswresample.6.dylib",
+            "libswscale.9.dylib",
+            "libavfilter.11.dylib",
+            "libavcodec.62.dylib",
+            "libavformat.62.dylib"
+        };
         private static readonly Lazy<ExportRuntimeManifest?> Manifest = new Lazy<ExportRuntimeManifest?>(LoadManifest);
 
         public static bool TryValidateRuntimeDirectory(string runtimeDirectory, out string errorMessage)
@@ -29,6 +41,12 @@ namespace FramePlayer.Services
             {
                 errorMessage = "The bundled FFmpeg export runtime directory is missing.";
                 return false;
+            }
+
+            var macSha256SumsPath = Path.Combine(runtimeDirectory, MacSha256SumsFileName);
+            if (File.Exists(macSha256SumsPath))
+            {
+                return TryValidateSha256SumsRuntime(runtimeDirectory, macSha256SumsPath, out errorMessage);
             }
 
             var manifest = Manifest.Value;
@@ -64,24 +82,126 @@ namespace FramePlayer.Services
             return true;
         }
 
+        private static bool TryValidateSha256SumsRuntime(
+            string runtimeDirectory,
+            string sha256SumsPath,
+            out string errorMessage)
+        {
+            errorMessage = string.Empty;
+            var validatedFileCount = 0;
+            var validatedFileNames = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var line in File.ReadLines(sha256SumsPath))
+            {
+                if (string.IsNullOrWhiteSpace(line) || line.TrimStart().StartsWith("#", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (!TryParseSha256Line(line, out var expectedHash, out var fileName))
+                {
+                    errorMessage = "The bundled FFmpeg macOS runtime checksum file contains an invalid entry.";
+                    return false;
+                }
+
+                if (!IsSafeLeafFileName(fileName))
+                {
+                    errorMessage = "The bundled FFmpeg macOS runtime checksum file contains an unsafe file entry.";
+                    return false;
+                }
+
+                var filePath = Path.Combine(runtimeDirectory, fileName);
+                if (!File.Exists(filePath))
+                {
+                    errorMessage = "The bundled FFmpeg macOS runtime is missing " + fileName + ".";
+                    return false;
+                }
+
+                var actualHash = ComputeSha256(filePath);
+                if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    errorMessage = "The bundled FFmpeg macOS runtime failed integrity validation for " + fileName + ".";
+                    return false;
+                }
+
+                validatedFileCount++;
+                validatedFileNames.Add(fileName);
+            }
+
+            if (validatedFileCount == 0)
+            {
+                errorMessage = "The bundled FFmpeg macOS runtime checksum file is empty.";
+                return false;
+            }
+
+            foreach (var requiredFile in MacRequiredRuntimeFiles)
+            {
+                if (!validatedFileNames.Contains(requiredFile))
+                {
+                    errorMessage = "The bundled FFmpeg macOS runtime checksum file does not include " + requiredFile + ".";
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool TryParseSha256Line(string line, out string expectedHash, out string fileName)
+        {
+            expectedHash = string.Empty;
+            fileName = string.Empty;
+            var trimmed = line.Trim();
+            var separatorIndex = trimmed.IndexOfAny(new[] { ' ', '\t' });
+            if (separatorIndex <= 0)
+            {
+                return false;
+            }
+
+            expectedHash = trimmed.Substring(0, separatorIndex);
+            fileName = trimmed.Substring(separatorIndex).Trim();
+            return expectedHash.Length == Sha256HexLength &&
+                expectedHash.All(IsHexCharacter) &&
+                !string.IsNullOrWhiteSpace(fileName);
+        }
+
+        private static bool IsHexCharacter(char value)
+        {
+            return (value >= '0' && value <= '9') ||
+                (value >= 'a' && value <= 'f') ||
+                (value >= 'A' && value <= 'F');
+        }
+
         private static ExportRuntimeManifest? LoadManifest()
         {
             var assembly = Assembly.GetExecutingAssembly();
             using (var stream = assembly.GetManifestResourceStream(ResourceName))
             {
-                if (stream == null)
+                if (stream != null)
                 {
-                    return null;
+                    return ReadManifest(stream);
                 }
-
-                var serializer = new DataContractJsonSerializer(
-                    typeof(ExportRuntimeManifest),
-                    new DataContractJsonSerializerSettings
-                    {
-                        UseSimpleDictionaryFormat = true
-                    });
-                return serializer.ReadObject(stream) as ExportRuntimeManifest;
             }
+
+            var copiedManifestPath = Path.Combine(AppContext.BaseDirectory, CopiedManifestRelativePath);
+            if (!File.Exists(copiedManifestPath))
+            {
+                return null;
+            }
+
+            using (var stream = File.OpenRead(copiedManifestPath))
+            {
+                return ReadManifest(stream);
+            }
+        }
+
+        private static ExportRuntimeManifest? ReadManifest(Stream stream)
+        {
+            var serializer = new DataContractJsonSerializer(
+                typeof(ExportRuntimeManifest),
+                new DataContractJsonSerializerSettings
+                {
+                    UseSimpleDictionaryFormat = true
+                });
+            return serializer.ReadObject(stream) as ExportRuntimeManifest;
         }
 
         private static string ComputeSha256(string filePath)

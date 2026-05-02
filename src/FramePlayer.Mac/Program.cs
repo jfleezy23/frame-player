@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using FramePlayer.Diagnostics;
+using FramePlayer.Engines.FFmpeg;
 
 namespace FramePlayer.Mac
 {
@@ -15,6 +16,7 @@ namespace FramePlayer.Mac
             {
                 try
                 {
+                    FfmpegRuntimeBootstrap.ConfigureForCurrentPlatform(AppContext.BaseDirectory);
                     Environment.ExitCode = ExportHostCli.RunAsync(requestPath, default).GetAwaiter().GetResult();
                 }
                 catch (Exception ex)
