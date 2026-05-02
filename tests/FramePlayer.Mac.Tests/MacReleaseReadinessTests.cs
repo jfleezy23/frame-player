@@ -47,6 +47,19 @@ namespace FramePlayer.Mac.Tests
         }
 
         [Fact]
+        public void MainWindow_RoutesLongRunningExportsThroughExportHost()
+        {
+            var mainWindow = File.ReadAllText(RepositoryPath("src", "FramePlayer.Mac", "Views", "MainWindow.axaml.cs"));
+
+            Assert.Contains("ClipExportService.ExportPlanAsync(plan)", mainWindow, StringComparison.Ordinal);
+            Assert.Contains("CompareSideBySideExportService.ExportPlanAsync(plan)", mainWindow, StringComparison.Ordinal);
+            Assert.Contains("AudioInsertionService.InsertPlanAsync(plan)", mainWindow, StringComparison.Ordinal);
+            Assert.DoesNotContain("NativeClipExportService.ExportAsync(plan)", mainWindow, StringComparison.Ordinal);
+            Assert.DoesNotContain("NativeCompareSideBySideExportService.ExportAsync(plan)", mainWindow, StringComparison.Ordinal);
+            Assert.DoesNotContain("NativeAudioInsertionService.InsertAsync(plan)", mainWindow, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public void MacIconAsset_IsPresentAndNonEmpty()
         {
             var icon = new FileInfo(RepositoryPath("src", "FramePlayer.Mac", "Assets", "FramePlayer.icns"));

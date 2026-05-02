@@ -1851,7 +1851,7 @@ namespace FramePlayer.Mac.Views
                     ffmpegEngine,
                     BuildPaneViewport(pane, engine.MediaInfo));
                 var plan = ClipExportService.CreatePlan(request);
-                var result = await NativeClipExportService.ExportAsync(plan).ConfigureAwait(false);
+                var result = await ClipExportService.ExportPlanAsync(plan).ConfigureAwait(false);
                 await SetStatusMessageAsync(result.Succeeded
                     ? "Clip export completed: " + Path.GetFileName(result.Plan.OutputFilePath)
                     : "Clip export failed: " + result.Message).ConfigureAwait(false);
@@ -1929,7 +1929,7 @@ namespace FramePlayer.Mac.Views
                     CompareEngine = compareEngine
                 };
                 var plan = CompareSideBySideExportService.CreatePlan(request);
-                var result = await NativeCompareSideBySideExportService.ExportAsync(plan).ConfigureAwait(false);
+                var result = await CompareSideBySideExportService.ExportPlanAsync(plan).ConfigureAwait(false);
                 await SetStatusMessageAsync(result.Succeeded
                     ? "Side-by-side compare export completed: " + Path.GetFileName(result.Plan.OutputFilePath)
                     : "Side-by-side compare export failed: " + result.Message).ConfigureAwait(false);
@@ -1993,7 +1993,7 @@ namespace FramePlayer.Mac.Views
                     PanePrimaryLabel,
                     BuildReviewSessionSnapshot(Pane.Primary, _primaryEngine));
                 var plan = AudioInsertionService.CreatePlan(request);
-                var result = await NativeAudioInsertionService.InsertAsync(plan).ConfigureAwait(false);
+                var result = await AudioInsertionService.InsertPlanAsync(plan).ConfigureAwait(false);
                 await SetStatusMessageAsync(result.Succeeded
                     ? "Audio track replaced: " + Path.GetFileName(result.Plan.OutputFilePath)
                     : "Audio insertion failed: " + result.Message).ConfigureAwait(false);

@@ -52,6 +52,34 @@ namespace FramePlayer.Mac.Tests
             Assert.Contains(expectedMacRuntime, candidates);
         }
 
+        [Fact]
+        public void ExportHostClient_UsesPackagedAppBundleForHostLaunchAndRuntimeBase()
+        {
+            using var temp = new TemporaryDirectory();
+            var appBundle = Path.Combine(temp.Path, "Frame Player.app");
+            var appMacOs = Path.Combine(appBundle, "Contents", "MacOS");
+            var executablePath = Path.Combine(appMacOs, "FramePlayer.Mac");
+            Directory.CreateDirectory(appMacOs);
+            File.WriteAllText(executablePath, "#!/usr/bin/env bash\n", Encoding.UTF8);
+
+            var previousAppBundle = Environment.GetEnvironmentVariable(ExportHostClient.MacAppBundleEnvironmentVariable);
+            try
+            {
+                Environment.SetEnvironmentVariable(ExportHostClient.MacAppBundleEnvironmentVariable, appBundle);
+
+                var launchInfo = ExportHostClient.ResolveExportHostLaunchInfo();
+                var runtimeBaseDirectories = ExportHostClient.ResolveRuntimeBaseDirectories("/tmp/frameplayer-tests").ToArray();
+
+                Assert.Equal(executablePath, launchInfo.ExecutablePath);
+                Assert.Equal(appMacOs, launchInfo.WorkingDirectory);
+                Assert.Equal(appMacOs, runtimeBaseDirectories[0]);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(ExportHostClient.MacAppBundleEnvironmentVariable, previousAppBundle);
+            }
+        }
+
         private static string ComputeSha256(string filePath)
         {
             using var stream = File.OpenRead(filePath);

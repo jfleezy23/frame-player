@@ -25,6 +25,9 @@ namespace FramePlayer.Services
         internal const string ClipExportOperation = "clip-export";
         internal const string CompareExportOperation = "compare-export";
         internal const string ExportRuntimeFolderName = "ffmpeg-export";
+        internal const string MacAppBundleEnvironmentVariable = "FRAMEPLAYER_MAC_APP_BUNDLE";
+        internal const string MacExportHostExecutableEnvironmentVariable = "FRAMEPLAYER_MAC_EXPORT_HOST_EXECUTABLE";
+        private const string MacExecutableName = "FramePlayer.Mac";
         private static readonly Lazy<RuntimeAvailability> CachedRuntimeAvailability =
             new Lazy<RuntimeAvailability>(DiscoverRuntimeAvailability);
 
@@ -138,14 +141,13 @@ namespace FramePlayer.Services
                 throw new ArgumentNullException(nameof(request));
             }
 
-            var executablePath = Environment.ProcessPath;
-            if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath))
+            var launchInfo = ResolveExportHostLaunchInfo();
+            if (string.IsNullOrWhiteSpace(launchInfo.ExecutablePath) || !File.Exists(launchInfo.ExecutablePath))
             {
                 throw new InvalidOperationException("The current Frame Player executable path could not be resolved for export hosting.");
             }
 
-            var workingDirectory = AppDomain.CurrentDomain.BaseDirectory;
-            if (string.IsNullOrWhiteSpace(workingDirectory) || !Directory.Exists(workingDirectory))
+            if (string.IsNullOrWhiteSpace(launchInfo.WorkingDirectory) || !Directory.Exists(launchInfo.WorkingDirectory))
             {
                 throw new DirectoryNotFoundException("The application base directory required for export hosting could not be found.");
             }
@@ -169,9 +171,9 @@ namespace FramePlayer.Services
                 // UseShellExecute stays false so arguments and redirected output remain local to this process tree.
                 var startInfo = new ProcessStartInfo
                 {
-                    FileName = executablePath,
+                    FileName = launchInfo.ExecutablePath,
                     Arguments = "--run-export-request \"" + requestPath + "\"",
-                    WorkingDirectory = workingDirectory,
+                    WorkingDirectory = launchInfo.WorkingDirectory,
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
@@ -232,23 +234,26 @@ namespace FramePlayer.Services
         private static RuntimeAvailability DiscoverRuntimeAvailability()
         {
             var errors = new StringBuilder();
-            foreach (var runtimeDirectory in ResolveRuntimeCandidateDirectories(AppDomain.CurrentDomain.BaseDirectory))
+            foreach (var baseDirectory in ResolveRuntimeBaseDirectories(AppDomain.CurrentDomain.BaseDirectory))
             {
-                if (ExportRuntimeManifestService.TryValidateRuntimeDirectory(runtimeDirectory, out var message))
+                foreach (var runtimeDirectory in ResolveRuntimeCandidateDirectories(baseDirectory))
                 {
-                    return new RuntimeAvailability(
-                        true,
-                        "Bundled FFmpeg export runtime is ready: " + runtimeDirectory);
-                }
-
-                if (!string.IsNullOrWhiteSpace(message))
-                {
-                    if (errors.Length > 0)
+                    if (ExportRuntimeManifestService.TryValidateRuntimeDirectory(runtimeDirectory, out var message))
                     {
-                        errors.Append(' ');
+                        return new RuntimeAvailability(
+                            true,
+                            "Bundled FFmpeg export runtime is ready: " + runtimeDirectory);
                     }
 
-                    errors.Append(message);
+                    if (!string.IsNullOrWhiteSpace(message))
+                    {
+                        if (errors.Length > 0)
+                        {
+                            errors.Append(' ');
+                        }
+
+                        errors.Append(message);
+                    }
                 }
             }
 
@@ -257,6 +262,21 @@ namespace FramePlayer.Services
                 errors.Length == 0
                     ? "The bundled FFmpeg export runtime is unavailable."
                     : errors.ToString());
+        }
+
+        internal static IEnumerable<string> ResolveRuntimeBaseDirectories(string baseDirectory)
+        {
+            var yieldedDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var appBundleBaseDirectory = ResolveMacAppBundleBaseDirectory();
+            if (!string.IsNullOrWhiteSpace(appBundleBaseDirectory) && yieldedDirectories.Add(appBundleBaseDirectory))
+            {
+                yield return appBundleBaseDirectory;
+            }
+
+            if (!string.IsNullOrWhiteSpace(baseDirectory) && yieldedDirectories.Add(baseDirectory))
+            {
+                yield return baseDirectory;
+            }
         }
 
         internal static IEnumerable<string> ResolveRuntimeCandidateDirectories(string baseDirectory)
@@ -271,6 +291,37 @@ namespace FramePlayer.Services
             {
                 yield return platformRuntimeDirectory;
             }
+        }
+
+        internal static ExportHostLaunchInfo ResolveExportHostLaunchInfo()
+        {
+            var explicitExecutablePath = Environment.GetEnvironmentVariable(MacExportHostExecutableEnvironmentVariable);
+            if (!string.IsNullOrWhiteSpace(explicitExecutablePath))
+            {
+                return new ExportHostLaunchInfo(
+                    explicitExecutablePath,
+                    Path.GetDirectoryName(explicitExecutablePath) ?? AppDomain.CurrentDomain.BaseDirectory);
+            }
+
+            var appBundleBaseDirectory = ResolveMacAppBundleBaseDirectory();
+            if (!string.IsNullOrWhiteSpace(appBundleBaseDirectory))
+            {
+                return new ExportHostLaunchInfo(
+                    Path.Combine(appBundleBaseDirectory, MacExecutableName),
+                    appBundleBaseDirectory);
+            }
+
+            return new ExportHostLaunchInfo(
+                Environment.ProcessPath ?? string.Empty,
+                AppDomain.CurrentDomain.BaseDirectory);
+        }
+
+        private static string ResolveMacAppBundleBaseDirectory()
+        {
+            var appBundle = Environment.GetEnvironmentVariable(MacAppBundleEnvironmentVariable);
+            return string.IsNullOrWhiteSpace(appBundle)
+                ? string.Empty
+                : Path.Combine(appBundle, "Contents", "MacOS");
         }
 
         private static async Task KillExportHostAsync(Process process)
@@ -344,6 +395,19 @@ namespace FramePlayer.Services
             public bool IsAvailable { get; }
 
             public string Message { get; }
+        }
+
+        internal readonly struct ExportHostLaunchInfo
+        {
+            public ExportHostLaunchInfo(string executablePath, string workingDirectory)
+            {
+                ExecutablePath = executablePath ?? string.Empty;
+                WorkingDirectory = workingDirectory ?? string.Empty;
+            }
+
+            public string ExecutablePath { get; }
+
+            public string WorkingDirectory { get; }
         }
     }
 }
