@@ -1,0 +1,8 @@
+FFmpeg tag: n8.1
+FFmpeg commit: 9047fa1b084f76b1b4d065af2d743df1b40dfb56
+x264 commit: 0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee
+Toolchain: macOS clang arm64
+Clang: Apple clang version 21.0.0 (clang-2100.0.123.102)
+Make: GNU Make 3.81
+Configure flags:
+  /Users/jflow231/Developer/frame-player/artifacts/ffmpeg-macos-8.1-source-build/ffmpeg-n8.1/configure  --prefix=/Users/jflow231/Developer/frame-player/artifacts/ffmpeg-macos-8.1-source-build/install-osx-arm64-shared  --cc=clang  --pkg-config=/Users/jflow231/Developer/frame-player/artifacts/ffmpeg-macos-8.1-source-build/pkg-config-x264  --arch=arm64  --target-os=darwin  --enable-shared  --disable-static  --enable-gpl  --enable-libx264  --disable-programs  --disable-doc  --disable-debug  --disable-avdevice  --disable-network  --disable-autodetect  --disable-videotoolbox  --disable-audiotoolbox  --extra-version=frameplayer-macos-source

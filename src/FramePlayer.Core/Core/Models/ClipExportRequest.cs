@@ -1,0 +1,55 @@
+using System;
+using System.Diagnostics.CodeAnalysis;
+using FramePlayer.Engines.FFmpeg;
+
+namespace FramePlayer.Core.Models
+{
+    public sealed class ClipExportRequest
+    {
+        [SuppressMessage(
+            "Major Code Smell",
+            "S107:Methods should not have too many parameters",
+            Justification = "Clip export requests are immutable cold-path transport models; grouping these fields would add indirection without reducing behavioral risk.")]
+        public ClipExportRequest(
+            string sourceFilePath,
+            string outputFilePath,
+            string displayLabel,
+            string paneId,
+            bool isPaneLocal,
+            ReviewSessionSnapshot sessionSnapshot,
+            LoopPlaybackPaneRangeSnapshot loopRange,
+            FfmpegReviewEngine engine,
+            PaneViewportSnapshot viewportSnapshot)
+        {
+            SourceFilePath = sourceFilePath ?? string.Empty;
+            OutputFilePath = outputFilePath ?? string.Empty;
+            DisplayLabel = displayLabel ?? string.Empty;
+            PaneId = paneId ?? string.Empty;
+            IsPaneLocal = isPaneLocal;
+            SessionSnapshot = sessionSnapshot ?? ReviewSessionSnapshot.Empty;
+            LoopRange = loopRange;
+            Engine = engine;
+            ViewportSnapshot = viewportSnapshot ?? PaneViewportSnapshot.CreateFullFrame(
+                SessionSnapshot.MediaInfo.PixelWidth,
+                SessionSnapshot.MediaInfo.PixelHeight);
+        }
+
+        public string SourceFilePath { get; }
+
+        public string OutputFilePath { get; }
+
+        public string DisplayLabel { get; }
+
+        public string PaneId { get; }
+
+        public bool IsPaneLocal { get; }
+
+        public ReviewSessionSnapshot SessionSnapshot { get; }
+
+        public LoopPlaybackPaneRangeSnapshot LoopRange { get; }
+
+        public FfmpegReviewEngine Engine { get; }
+
+        public PaneViewportSnapshot ViewportSnapshot { get; }
+    }
+}

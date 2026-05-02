@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>FramePlayer.Mac</RootNamespace>
+    <AssemblyName>FramePlayer.Mac</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.0.2" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.0.2" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.2" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FramePlayer.Core\FramePlayer.Core.csproj" />
+    <ProjectReference Include="..\FramePlayer.Engine.FFmpeg\FramePlayer.Engine.FFmpeg.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Assets\FramePlayer.icns" Link="Assets\FramePlayer.icns" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\LICENSE" Link="LICENSE" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\THIRD_PARTY_NOTICES.md" Link="THIRD_PARTY_NOTICES.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\Runtime\runtime-manifest.json" Link="Runtime\runtime-manifest.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\Runtime\export-runtime-manifest.json" Link="Runtime\export-runtime-manifest.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\Runtime\export-tools-manifest.json" Link="Runtime\export-tools-manifest.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
