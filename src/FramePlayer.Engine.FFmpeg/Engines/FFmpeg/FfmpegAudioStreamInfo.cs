@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace FramePlayer.Engines.FFmpeg
 {
     internal sealed class FfmpegAudioStreamInfo
@@ -5,6 +7,7 @@ namespace FramePlayer.Engines.FFmpeg
         public static FfmpegAudioStreamInfo None { get; } =
             new FfmpegAudioStreamInfo(false, false, -1, string.Empty, 0, 0);
 
+        [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters", Justification = "This immutable DTO mirrors FFmpeg stream metadata and keeps call sites explicit.")]
         public FfmpegAudioStreamInfo(
             bool hasAudioStream,
             bool decoderAvailable,

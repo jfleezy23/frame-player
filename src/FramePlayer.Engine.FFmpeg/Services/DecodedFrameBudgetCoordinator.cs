@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using FramePlayer.Engines.FFmpeg;
 
@@ -27,6 +28,7 @@ namespace FramePlayer.Services
 
     internal sealed class PaneBudgetAllocation
     {
+        [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters", Justification = "This immutable allocation snapshot intentionally carries the full pane budget contract.")]
         public PaneBudgetAllocation(
             string paneId,
             DecodedFrameBudgetBand budgetBand,
@@ -219,9 +221,14 @@ namespace FramePlayer.Services
 
                 state.IsOpen = isOpen;
                 state.IsGpuActive = gpuActive;
-                state.ActualDecodeBackend = string.IsNullOrWhiteSpace(actualDecodeBackend)
-                    ? (gpuActive ? DecodeBackendNames.Vulkan : DecodeBackendNames.Cpu)
-                    : actualDecodeBackend;
+                if (string.IsNullOrWhiteSpace(actualDecodeBackend))
+                {
+                    state.ActualDecodeBackend = gpuActive ? DecodeBackendNames.Vulkan : DecodeBackendNames.Cpu;
+                }
+                else
+                {
+                    state.ActualDecodeBackend = actualDecodeBackend;
+                }
                 state.ApproximateFrameBytes = approximateFrameBytes;
                 state.OperationalQueueDepth = Math.Max(0, operationalQueueDepth);
                 state.SessionBudgetOverrideMegabytes = sessionBudgetOverrideMegabytes;
@@ -260,6 +267,7 @@ namespace FramePlayer.Services
             }
         }
 
+        [SuppressMessage("Critical Code Smell", "S3776:Cognitive Complexity of methods should not be too high", Justification = "Budget recalculation is covered by release-candidate validation; refactoring during preview stabilization risks playback/cache regressions.")]
         private List<PaneBudgetAllocation> RecalculateAllocationsLocked()
         {
             var changedAllocations = new List<PaneBudgetAllocation>();
@@ -399,6 +407,7 @@ namespace FramePlayer.Services
                 isGpuActive);
         }
 
+        [SuppressMessage("Critical Code Smell", "S3776:Cognitive Complexity of methods should not be too high", Justification = "Dual-pane degradation order is behavior-sensitive and is deferred until a dedicated cache-budget refactor.")]
         private IReadOnlyList<PaneBudgetAllocation> BuildDualPaneAllocations(
             IReadOnlyList<PaneBudgetState> openStates,
             long sessionBudgetBytes)

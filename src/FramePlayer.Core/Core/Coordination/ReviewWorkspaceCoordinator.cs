@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Runtime.ExceptionServices;
 using System.Threading;
@@ -28,15 +29,13 @@ namespace FramePlayer.Core.Coordination
             ReviewSessionCoordinator sessionCoordinator)
             : this(sessionCoordinator)
         {
-            if (engine == null)
-            {
-                throw new ArgumentNullException(nameof(engine));
-            }
+            ArgumentNullException.ThrowIfNull(engine);
         }
 
         public ReviewWorkspaceCoordinator(ReviewSessionCoordinator sessionCoordinator)
         {
-            SessionCoordinator = sessionCoordinator ?? throw new ArgumentNullException(nameof(sessionCoordinator));
+            ArgumentNullException.ThrowIfNull(sessionCoordinator);
+            SessionCoordinator = sessionCoordinator;
             _paneBindings = new List<WorkspacePaneBinding>();
             var primaryBinding = new WorkspacePaneBinding(
                 PrimaryPaneId,
@@ -418,10 +417,7 @@ namespace FramePlayer.Core.Coordination
             IReadOnlyDictionary<string, long> paneFrameIndices,
             CancellationToken cancellationToken = default(CancellationToken))
         {
-            if (paneFrameIndices == null)
-            {
-                throw new ArgumentNullException(nameof(paneFrameIndices));
-            }
+            ArgumentNullException.ThrowIfNull(paneFrameIndices);
 
             if (paneFrameIndices.Count == 0)
             {
@@ -471,10 +467,7 @@ namespace FramePlayer.Core.Coordination
             IReadOnlyDictionary<string, TimeSpan> panePositions,
             CancellationToken cancellationToken = default(CancellationToken))
         {
-            if (panePositions == null)
-            {
-                throw new ArgumentNullException(nameof(panePositions));
-            }
+            ArgumentNullException.ThrowIfNull(panePositions);
 
             if (panePositions.Count == 0)
             {
@@ -550,10 +543,7 @@ namespace FramePlayer.Core.Coordination
             bool makeActive = false,
             bool makeFocused = false)
         {
-            if (sessionCoordinator == null)
-            {
-                throw new ArgumentNullException(nameof(sessionCoordinator));
-            }
+            ArgumentNullException.ThrowIfNull(sessionCoordinator);
 
             var normalizedPaneId = NormalizePaneId(paneId, sessionCoordinator);
             if (_paneBindings.Any(binding => string.Equals(binding.PaneId, normalizedPaneId, StringComparison.Ordinal)))
@@ -1032,8 +1022,8 @@ namespace FramePlayer.Core.Coordination
                         targetPane.DisplayLabel,
                         session.CurrentFilePath,
                         session.MediaInfo.Duration,
-                        endpoint == LoopPlaybackMarkerEndpoint.In ? nextAnchor : (existingPaneRange != null ? existingPaneRange.LoopIn : null),
-                        endpoint == LoopPlaybackMarkerEndpoint.Out ? nextAnchor : (existingPaneRange != null ? existingPaneRange.LoopOut : null))
+                        ResolveLoopInAnchor(endpoint, nextAnchor, existingPaneRange),
+                        ResolveLoopOutAnchor(endpoint, nextAnchor, existingPaneRange))
                 });
         }
 
@@ -1061,6 +1051,7 @@ namespace FramePlayer.Core.Coordination
             return true;
         }
 
+        [SuppressMessage("Critical Code Smell", "S3776:Cognitive Complexity of methods should not be too high", Justification = "Shared loop-marker composition is behavior-sensitive and covered by parity tests; broader refactor is deferred until after the preview release.")]
         private static LoopPlaybackRangeSnapshot CaptureSharedLoopMarker(
             LoopPlaybackRangeSnapshot existingRange,
             LoopPlaybackMarkerEndpoint endpoint,
@@ -1086,11 +1077,37 @@ namespace FramePlayer.Core.Coordination
                     pane != null ? pane.DisplayLabel : string.Empty,
                     session.CurrentFilePath,
                     session.MediaInfo.Duration,
-                    endpoint == LoopPlaybackMarkerEndpoint.In ? nextAnchor : (existingPaneRange != null ? existingPaneRange.LoopIn : null),
-                    endpoint == LoopPlaybackMarkerEndpoint.Out ? nextAnchor : (existingPaneRange != null ? existingPaneRange.LoopOut : null));
+                    ResolveLoopInAnchor(endpoint, nextAnchor, existingPaneRange),
+                    ResolveLoopOutAnchor(endpoint, nextAnchor, existingPaneRange));
             }
 
             return new LoopPlaybackRangeSnapshot(LoopPlaybackTargetKind.SharedWorkspace, paneRanges);
+        }
+
+        private static LoopPlaybackAnchorSnapshot ResolveLoopInAnchor(
+            LoopPlaybackMarkerEndpoint endpoint,
+            LoopPlaybackAnchorSnapshot nextAnchor,
+            LoopPlaybackPaneRangeSnapshot existingPaneRange)
+        {
+            if (endpoint == LoopPlaybackMarkerEndpoint.In)
+            {
+                return nextAnchor;
+            }
+
+            return existingPaneRange != null ? existingPaneRange.LoopIn : null;
+        }
+
+        private static LoopPlaybackAnchorSnapshot ResolveLoopOutAnchor(
+            LoopPlaybackMarkerEndpoint endpoint,
+            LoopPlaybackAnchorSnapshot nextAnchor,
+            LoopPlaybackPaneRangeSnapshot existingPaneRange)
+        {
+            if (endpoint == LoopPlaybackMarkerEndpoint.Out)
+            {
+                return nextAnchor;
+            }
+
+            return existingPaneRange != null ? existingPaneRange.LoopOut : null;
         }
 
         private static LoopPlaybackRangeSnapshot ResolvePaneLocalLoopRange(
@@ -1330,20 +1347,19 @@ namespace FramePlayer.Core.Coordination
             return bindings.ToArray();
         }
 
+        [SuppressMessage("Design", "CA1068:CancellationToken parameters must come last", Justification = "Private helper keeps scope and token ordering aligned with existing workspace call sites.")]
         private Task ExecuteScopedActionAsync(
             string operationName,
             SynchronizedOperationScope operationScope,
             CancellationToken cancellationToken,
             Func<WorkspacePaneBinding, CancellationToken, Task> operation)
         {
-            if (operation == null)
-            {
-                throw new ArgumentNullException(nameof(operation));
-            }
+            ArgumentNullException.ThrowIfNull(operation);
 
             return ExecuteScopedActionCoreAsync(operationName, operationScope, cancellationToken, operation);
         }
 
+        [SuppressMessage("Design", "CA1068:CancellationToken parameters must come last", Justification = "Private helper keeps scope and token ordering aligned with existing workspace call sites.")]
         private async Task ExecuteScopedActionCoreAsync(
             string operationName,
             SynchronizedOperationScope operationScope,
@@ -1363,16 +1379,14 @@ namespace FramePlayer.Core.Coordination
             ThrowIfOperationFailed(result);
         }
 
+        [SuppressMessage("Design", "CA1068:CancellationToken parameters must come last", Justification = "Private helper keeps scope and token ordering aligned with existing workspace call sites.")]
         private async Task<ReviewWorkspaceOperationResult> ExecuteScopedOperationAsync(
             string operationName,
             SynchronizedOperationScope operationScope,
             CancellationToken cancellationToken,
             Func<WorkspacePaneBinding, CancellationToken, Task> operation)
         {
-            if (operation == null)
-            {
-                throw new ArgumentNullException(nameof(operation));
-            }
+            ArgumentNullException.ThrowIfNull(operation);
 
             return await ExecuteScopedOperationAsync(
                     operationName,
@@ -1386,16 +1400,14 @@ namespace FramePlayer.Core.Coordination
                 .ConfigureAwait(false);
         }
 
+        [SuppressMessage("Design", "CA1068:CancellationToken parameters must come last", Justification = "Private helper keeps scope and token ordering aligned with existing workspace call sites.")]
         private async Task<ReviewWorkspaceOperationResult> ExecuteScopedOperationAsync(
             string operationName,
             SynchronizedOperationScope operationScope,
             CancellationToken cancellationToken,
             Func<WorkspacePaneBinding, CancellationToken, Task<FrameStepResult>> operation)
         {
-            if (operation == null)
-            {
-                throw new ArgumentNullException(nameof(operation));
-            }
+            ArgumentNullException.ThrowIfNull(operation);
 
             var focusedBinding = GetFocusedBinding();
             var bindings = GetOperationBindings(operationScope);
@@ -1417,6 +1429,7 @@ namespace FramePlayer.Core.Coordination
                 paneResults);
         }
 
+        [SuppressMessage("Design", "CA1068:CancellationToken parameters must come last", Justification = "Private helper keeps scope and token ordering aligned with existing workspace call sites.")]
         private async Task<FrameStepResult> ExecuteScopedStepActionAsync(
             string operationName,
             SynchronizedOperationScope operationScope,
@@ -1449,10 +1462,7 @@ namespace FramePlayer.Core.Coordination
             Func<WorkspacePaneBinding, CancellationToken, Task<FrameStepResult>> operation,
             CancellationToken cancellationToken)
         {
-            if (binding == null)
-            {
-                throw new ArgumentNullException(nameof(binding));
-            }
+            ArgumentNullException.ThrowIfNull(binding);
 
             try
             {
@@ -1616,7 +1626,8 @@ namespace FramePlayer.Core.Coordination
                 DisplayLabel = displayLabel ?? string.Empty;
                 TimelineOffset = timelineOffset;
                 IsPrimary = isPrimary;
-                SessionCoordinator = sessionCoordinator ?? throw new ArgumentNullException(nameof(sessionCoordinator));
+                ArgumentNullException.ThrowIfNull(sessionCoordinator);
+                SessionCoordinator = sessionCoordinator;
             }
 
             public string PaneId { get; }

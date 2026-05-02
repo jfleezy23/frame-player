@@ -96,10 +96,10 @@ sign_app_bundle() {
 
 env -u VERSION CONFIGURATION=Release "$ROOT_DIR/script/build_and_run.sh" --build-only
 
-test -x "$APP_BUNDLE/Contents/MacOS/FramePlayer.Mac"
-test -s "$APP_BUNDLE/Contents/Resources/FramePlayer.icns"
-test -f "$APP_BUNDLE/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/libavformat.62.dylib"
-test -f "$APP_BUNDLE/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/libavfilter.11.dylib"
+[[ -x "$APP_BUNDLE/Contents/MacOS/FramePlayer.Mac" ]]
+[[ -s "$APP_BUNDLE/Contents/Resources/FramePlayer.icns" ]]
+[[ -f "$APP_BUNDLE/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/libavformat.62.dylib" ]]
+[[ -f "$APP_BUNDLE/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/libavfilter.11.dylib" ]]
 
 if [[ "$SIGN_MODE" != "none" ]]; then
   resolved_identity="$(resolve_signing_identity)" || {

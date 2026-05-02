@@ -17,20 +17,9 @@ namespace FramePlayer.Engines.FFmpeg
 
         public ManagedAudioClockOutput(int sampleRate, int channelCount, int bitsPerSample)
         {
-            if (sampleRate <= 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(sampleRate));
-            }
-
-            if (channelCount <= 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(channelCount));
-            }
-
-            if (bitsPerSample <= 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(bitsPerSample));
-            }
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(sampleRate);
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(channelCount);
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bitsPerSample);
 
             var blockAlign = checked(channelCount * bitsPerSample / 8);
             _bytesPerSecond = checked(sampleRate * blockAlign);
@@ -70,10 +59,7 @@ namespace FramePlayer.Engines.FFmpeg
 
         public void Write(byte[] buffer, CancellationToken cancellationToken)
         {
-            if (buffer == null)
-            {
-                throw new ArgumentNullException(nameof(buffer));
-            }
+            ArgumentNullException.ThrowIfNull(buffer);
 
             if (buffer.Length == 0)
             {
@@ -129,10 +115,7 @@ namespace FramePlayer.Engines.FFmpeg
 
         private void ThrowIfDisposed()
         {
-            if (_disposed)
-            {
-                throw new ObjectDisposedException(nameof(ManagedAudioClockOutput));
-            }
+            ObjectDisposedException.ThrowIf(_disposed, this);
         }
     }
 }

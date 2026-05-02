@@ -70,10 +70,7 @@ namespace FramePlayer.Services
 
         public void Save(AppPreferences preferences)
         {
-            if (preferences == null)
-            {
-                throw new ArgumentNullException(nameof(preferences));
-            }
+            ArgumentNullException.ThrowIfNull(preferences);
 
             var lines = new[]
             {

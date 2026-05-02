@@ -9,8 +9,6 @@ BUNDLE_ID="com.frameplayer.app"
 MIN_SYSTEM_VERSION="13.0"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DOTNET_ROOT="${DOTNET_ROOT:-$HOME/.dotnet}"
-DOTNET_BIN="$DOTNET_ROOT/dotnet"
 PROJECT="$ROOT_DIR/src/FramePlayer.Mac/FramePlayer.Mac.csproj"
 PUBLISH_ROOT="$ROOT_DIR/dist/publish"
 DIST_DIR="$ROOT_DIR/dist"
@@ -23,13 +21,37 @@ APP_ICON_SOURCE="$ROOT_DIR/src/FramePlayer.Mac/Assets/FramePlayer.icns"
 APP_ICON_NAME="FramePlayer"
 MAC_RUNTIME_SOURCE="$ROOT_DIR/Runtime/macos"
 
-if [[ ! -x "$DOTNET_BIN" ]]; then
-  echo "dotnet SDK not found at $DOTNET_BIN. Install the SDK pinned by global.json first." >&2
-  exit 1
-fi
+resolve_dotnet() {
+  if [[ -n "${DOTNET_ROOT:-}" && -x "$DOTNET_ROOT/dotnet" ]]; then
+    printf '%s\n' "$DOTNET_ROOT/dotnet"
+    return 0
+  fi
 
-export DOTNET_ROOT
-export PATH="$DOTNET_ROOT:$PATH"
+  if command -v dotnet >/dev/null 2>&1; then
+    command -v dotnet
+    return 0
+  fi
+
+  if [[ -x "$HOME/.dotnet/dotnet" ]]; then
+    printf '%s\n' "$HOME/.dotnet/dotnet"
+    return 0
+  fi
+
+  return 1
+}
+
+DOTNET_BIN="$(resolve_dotnet)" || {
+  echo "dotnet SDK not found. Install the SDK pinned by global.json first." >&2
+  exit 1
+}
+
+DOTNET_BIN_DIR="$(cd "$(dirname "$DOTNET_BIN")" && pwd)"
+if [[ -n "${DOTNET_ROOT:-}" ]]; then
+  export DOTNET_ROOT
+  export PATH="$DOTNET_ROOT:$PATH"
+else
+  export PATH="$DOTNET_BIN_DIR:$PATH"
+fi
 
 pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 

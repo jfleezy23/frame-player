@@ -118,10 +118,7 @@ namespace FramePlayer.Engines.FFmpeg
 
         public void Reset(DecodedFrameBuffer currentFrame)
         {
-            if (currentFrame == null)
-            {
-                throw new ArgumentNullException(nameof(currentFrame));
-            }
+            ArgumentNullException.ThrowIfNull(currentFrame);
 
             lock (_sync)
             {
@@ -133,10 +130,7 @@ namespace FramePlayer.Engines.FFmpeg
 
         public void LoadWindow(IList<DecodedFrameBuffer> frames, int currentIndex)
         {
-            if (frames == null)
-            {
-                throw new ArgumentNullException(nameof(frames));
-            }
+            ArgumentNullException.ThrowIfNull(frames);
 
             if (frames.Count == 0)
             {
@@ -158,10 +152,7 @@ namespace FramePlayer.Engines.FFmpeg
 
         public void AppendForward(DecodedFrameBuffer frame)
         {
-            if (frame == null)
-            {
-                throw new ArgumentNullException(nameof(frame));
-            }
+            ArgumentNullException.ThrowIfNull(frame);
 
             lock (_sync)
             {
@@ -172,10 +163,7 @@ namespace FramePlayer.Engines.FFmpeg
 
         public DecodedFrameBuffer AppendForwardAndAdvance(DecodedFrameBuffer frame)
         {
-            if (frame == null)
-            {
-                throw new ArgumentNullException(nameof(frame));
-            }
+            ArgumentNullException.ThrowIfNull(frame);
 
             lock (_sync)
             {
@@ -284,10 +272,7 @@ namespace FramePlayer.Engines.FFmpeg
 
         public bool ReplaceFrames(Func<DecodedFrameBuffer, DecodedFrameBuffer> replaceFrame)
         {
-            if (replaceFrame == null)
-            {
-                throw new ArgumentNullException(nameof(replaceFrame));
-            }
+            ArgumentNullException.ThrowIfNull(replaceFrame);
 
             lock (_sync)
             {

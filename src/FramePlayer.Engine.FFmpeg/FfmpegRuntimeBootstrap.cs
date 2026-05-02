@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using FFmpeg.AutoGen;
 
@@ -40,15 +41,7 @@ namespace FramePlayer.Engines.FFmpeg
                 baseDirectory
             };
 
-            foreach (var candidate in candidates)
-            {
-                if (Directory.Exists(candidate))
-                {
-                    return candidate;
-                }
-            }
-
-            return candidates[0];
+            return candidates.FirstOrDefault(Directory.Exists) ?? candidates[0];
         }
 
         public static string ResolvePlatformFolder()

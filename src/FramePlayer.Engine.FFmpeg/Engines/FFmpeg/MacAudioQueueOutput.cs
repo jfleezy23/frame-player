@@ -1,20 +1,23 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace FramePlayer.Engines.FFmpeg
 {
+    [SuppressMessage("Interoperability", "SYSLIB1054:Use LibraryImportAttribute instead of DllImportAttribute", Justification = "AudioQueue interop stays on DllImport for this preview to avoid changing native callback marshalling during release stabilization.")]
     internal sealed class MacAudioQueueOutput : IAudioOutput
     {
         private const uint AudioFormatLinearPcm = 0x6C70636D;
         private const uint AudioFormatFlagIsSignedInteger = 0x4;
         private const uint AudioFormatFlagIsPacked = 0x8;
-        private const uint AudioFormatFlagIsNonInterleaved = 0x20;
         private const int MaxQueuedMilliseconds = 700;
         private const int PollMilliseconds = 5;
 
         private readonly object _sync = new object();
+        [SuppressMessage("Minor Code Smell", "S1450:Private fields only used as local variables in methods should become local variables", Justification = "The callback delegate is stored to keep it alive while AudioQueue owns the native function pointer.")]
         private readonly AudioQueueOutputCallback _callback;
         private readonly GCHandle _selfHandle;
         private readonly int _bytesPerSecond;
@@ -27,20 +30,9 @@ namespace FramePlayer.Engines.FFmpeg
 
         public MacAudioQueueOutput(int sampleRate, int channelCount, int bitsPerSample)
         {
-            if (sampleRate <= 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(sampleRate));
-            }
-
-            if (channelCount <= 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(channelCount));
-            }
-
-            if (bitsPerSample <= 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(bitsPerSample));
-            }
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(sampleRate);
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(channelCount);
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bitsPerSample);
 
             var bytesPerFrame = checked(channelCount * bitsPerSample / 8);
             _bytesPerSecond = checked(sampleRate * bytesPerFrame);
@@ -92,10 +84,7 @@ namespace FramePlayer.Engines.FFmpeg
 
         public void Write(byte[] buffer, CancellationToken cancellationToken)
         {
-            if (buffer == null)
-            {
-                throw new ArgumentNullException(nameof(buffer));
-            }
+            ArgumentNullException.ThrowIfNull(buffer);
 
             if (buffer.Length == 0)
             {
@@ -130,7 +119,7 @@ namespace FramePlayer.Engines.FFmpeg
             {
                 if (audioBuffer != IntPtr.Zero)
                 {
-                    AudioQueueFreeBuffer(_queue, audioBuffer);
+                    TraceAudioQueueStatus("Free macOS audio buffer", AudioQueueFreeBuffer(_queue, audioBuffer));
                 }
             }
         }
@@ -145,8 +134,8 @@ namespace FramePlayer.Engines.FFmpeg
             _disposed = true;
             if (_queue != IntPtr.Zero)
             {
-                AudioQueueStop(_queue, true);
-                AudioQueueDispose(_queue, true);
+                TraceAudioQueueStatus("Stop macOS audio queue", AudioQueueStop(_queue, true));
+                TraceAudioQueueStatus("Dispose macOS audio queue", AudioQueueDispose(_queue, true));
                 _queue = IntPtr.Zero;
             }
 
@@ -199,7 +188,7 @@ namespace FramePlayer.Engines.FFmpeg
             {
                 if (_queue != IntPtr.Zero)
                 {
-                    AudioQueueFreeBuffer(_queue, buffer);
+                    TraceAudioQueueStatus("Free completed macOS audio buffer", AudioQueueFreeBuffer(_queue, buffer));
                 }
             }
 
@@ -228,10 +217,7 @@ namespace FramePlayer.Engines.FFmpeg
 
         private void ThrowIfDisposed()
         {
-            if (_disposed || _queue == IntPtr.Zero)
-            {
-                throw new ObjectDisposedException(nameof(MacAudioQueueOutput));
-            }
+            ObjectDisposedException.ThrowIf(_disposed || _queue == IntPtr.Zero, this);
         }
 
         private static void AudioQueueOutputCallbackTrampoline(
@@ -256,6 +242,14 @@ namespace FramePlayer.Engines.FFmpeg
             if (status != 0)
             {
                 throw new InvalidOperationException(operation + " failed with AudioQueue status " + status + ".");
+            }
+        }
+
+        private static void TraceAudioQueueStatus(string operation, int status)
+        {
+            if (status != 0)
+            {
+                Debug.WriteLine(operation + " returned AudioQueue status " + status + ".");
             }
         }
 

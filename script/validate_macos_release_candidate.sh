@@ -2,8 +2,6 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DOTNET_ROOT="${DOTNET_ROOT:-$HOME/.dotnet}"
-DOTNET_BIN="$DOTNET_ROOT/dotnet"
 APP_BUNDLE="$ROOT_DIR/dist/Frame Player.app"
 CORPUS_INPUT="${FRAMEPLAYER_MAC_CORPUS:-}"
 WORK_ROOT="$ROOT_DIR/artifacts/macos-release-candidate"
@@ -45,6 +43,25 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+resolve_dotnet() {
+  if [[ -n "${DOTNET_ROOT:-}" && -x "$DOTNET_ROOT/dotnet" ]]; then
+    printf '%s\n' "$DOTNET_ROOT/dotnet"
+    return 0
+  fi
+
+  if command -v dotnet >/dev/null 2>&1; then
+    command -v dotnet
+    return 0
+  fi
+
+  if [[ -x "$HOME/.dotnet/dotnet" ]]; then
+    printf '%s\n' "$HOME/.dotnet/dotnet"
+    return 0
+  fi
+
+  return 1
+}
+
 if [[ -z "$CORPUS_INPUT" && -d "$ROOT_DIR/Video Test Files" ]]; then
   CORPUS_INPUT="$ROOT_DIR/Video Test Files"
 fi
@@ -59,13 +76,18 @@ if [[ ! -e "$CORPUS_INPUT" ]]; then
   exit 2
 fi
 
-if [[ ! -x "$DOTNET_BIN" ]]; then
-  echo "dotnet SDK not found at $DOTNET_BIN." >&2
+DOTNET_BIN="$(resolve_dotnet)" || {
+  echo "dotnet SDK not found. Install the SDK pinned by global.json first." >&2
   exit 1
-fi
+}
 
-export DOTNET_ROOT
-export PATH="$DOTNET_ROOT:$PATH"
+DOTNET_BIN_DIR="$(cd "$(dirname "$DOTNET_BIN")" && pwd)"
+if [[ -n "${DOTNET_ROOT:-}" ]]; then
+  export DOTNET_ROOT
+  export PATH="$DOTNET_ROOT:$PATH"
+else
+  export PATH="$DOTNET_BIN_DIR:$PATH"
+fi
 
 rm -rf "$RESULTS_DIR"
 mkdir -p "$WORK_ROOT" "$RESULTS_DIR"
@@ -104,8 +126,8 @@ fi
 CONFIGURATION=Release "$ROOT_DIR/script/build_and_run.sh" --build-only
 
 /usr/libexec/PlistBuddy -c "Print :CFBundleIconFile" "$APP_BUNDLE/Contents/Info.plist" > "$RESULTS_DIR/bundle-icon.txt"
-test -s "$APP_BUNDLE/Contents/Resources/FramePlayer.icns"
-test -x "$APP_BUNDLE/Contents/MacOS/FramePlayer.Mac"
+[[ -s "$APP_BUNDLE/Contents/Resources/FramePlayer.icns" ]]
+[[ -x "$APP_BUNDLE/Contents/MacOS/FramePlayer.Mac" ]]
 
 runtime_dir="$APP_BUNDLE/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg"
 if [[ ! -d "$runtime_dir" ]]; then

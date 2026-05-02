@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -29,6 +30,15 @@ namespace FramePlayer.Mac.Views
         private readonly IVideoReviewEngine _primaryEngine;
         private IVideoReviewEngine? _compareEngine;
         private const int HundredFrameStep = 100;
+        private const string PanePrimaryId = "pane-primary";
+        private const string PaneCompareId = "pane-compare";
+        private const string PanePrimaryKey = "primary";
+        private const string PaneCompareKey = "compare";
+        private const string PanePrimaryLabel = "Primary";
+        private const string PaneCompareLabel = "Compare";
+        private const string Mp4Pattern = "*.mp4";
+        private const string Mp4Extension = ".mp4";
+        private static readonly string[] VideoFilePatterns = new[] { "*.avi", "*.m4v", Mp4Pattern, "*.mkv", "*.wmv", "*.mov" };
         private NativeMenuItem? _nativeRecentFilesMenuItem;
         private NativeMenuItem? _nativePlayPauseMenuItem;
         private NativeMenuItem? _nativeGpuAccelerationMenuItem;
@@ -71,7 +81,7 @@ namespace FramePlayer.Mac.Views
             _recentFilesService = new MacRecentFilesService();
             var optionsProvider = new FfmpegReviewEngineOptionsProvider(new AppPreferencesService());
             _engineFactory = new VideoReviewEngineFactory(optionsProvider);
-            _primaryEngine = _engineFactory.Create("primary");
+            _primaryEngine = _engineFactory.Create(PanePrimaryKey);
             _primaryEngine.StateChanged += PrimaryEngine_StateChanged;
             _primaryEngine.FramePresented += PrimaryEngine_FramePresented;
             _primaryLoopRange = CreateLoopRange(null, null);
@@ -103,23 +113,26 @@ namespace FramePlayer.Mac.Views
 
         private async void OpenRecentButton_Click(object? sender, RoutedEventArgs e)
         {
-            var firstRecent = _recentFilesService.Load().FirstOrDefault();
-            if (!string.IsNullOrWhiteSpace(firstRecent))
+            var recentFiles = _recentFilesService.Load();
+            if (recentFiles.Count > 0 && !string.IsNullOrWhiteSpace(recentFiles[0]))
             {
-                await OpenRecentPathAsync(firstRecent);
+                await OpenRecentPathAsync(recentFiles[0]);
             }
         }
 
+        [SuppressMessage("Major Code Smell", "S1144:Unused private types or members", Justification = "Invoked by the macOS parity harness through reflection.")]
         private Task OpenMediaAsync(string filePath)
         {
-            return OpenMediaAsync(filePath, "pane-primary");
+            return OpenMediaAsync(filePath, PanePrimaryId);
         }
 
+        [SuppressMessage("Major Code Smell", "S1144:Unused private types or members", Justification = "Invoked by the macOS parity harness through reflection.")]
         private Task OpenMediaAsync(string filePath, string paneId)
         {
             return OpenPathAsync(filePath, ResolvePane(paneId));
         }
 
+        [SuppressMessage("Major Code Smell", "S1144:Unused private types or members", Justification = "Invoked by the macOS parity harness through reflection.")]
         private Task CloseMediaAsync()
         {
             return CloseVideosAsync();
@@ -142,12 +155,12 @@ namespace FramePlayer.Mac.Views
                 {
                     new FilePickerFileType("Video files")
                     {
-                        Patterns = new[] { "*.avi", "*.m4v", "*.mp4", "*.mkv", "*.wmv", "*.mov" }
+                        Patterns = VideoFilePatterns
                     }
                 }
             });
 
-            var selected = files.FirstOrDefault();
+            var selected = files.Count > 0 ? files[0] : null;
             if (selected == null || string.IsNullOrWhiteSpace(selected.Path.LocalPath))
             {
                 return;
@@ -202,7 +215,7 @@ namespace FramePlayer.Mac.Views
 
             if (_compareEngine == null)
             {
-                _compareEngine = _engineFactory.Create("compare");
+                _compareEngine = _engineFactory.Create(PaneCompareKey);
                 _compareEngine.StateChanged += CompareEngine_StateChanged;
                 _compareEngine.FramePresented += CompareEngine_FramePresented;
             }
@@ -258,14 +271,24 @@ namespace FramePlayer.Mac.Views
 
         private static Pane ResolvePane(string? paneId)
         {
-            return string.Equals(paneId, "pane-compare", StringComparison.Ordinal)
+            return string.Equals(paneId, PaneCompareId, StringComparison.Ordinal)
                 ? Pane.Compare
                 : Pane.Primary;
         }
 
         private static string ResolvePaneId(Pane pane)
         {
-            return pane == Pane.Compare ? "pane-compare" : "pane-primary";
+            return pane == Pane.Compare ? PaneCompareId : PanePrimaryId;
+        }
+
+        private static string ResolvePaneKey(Pane pane)
+        {
+            return pane == Pane.Compare ? PaneCompareKey : PanePrimaryKey;
+        }
+
+        private static string ResolvePaneLabel(Pane pane)
+        {
+            return pane == Pane.Compare ? PaneCompareLabel : PanePrimaryLabel;
         }
 
         private async void CloseVideoMenuItem_Click(object? sender, RoutedEventArgs e)
@@ -375,9 +398,11 @@ namespace FramePlayer.Mac.Views
 
         private async Task StartPlaybackAsync(SynchronizedOperationScope? operationScope, string? paneId)
         {
+            _ = operationScope;
             await GetEngine(ResolvePane(paneId)).PlayAsync();
         }
 
+        [SuppressMessage("Major Code Smell", "S1144:Unused private types or members", Justification = "Preserves the Windows parity harness surface.")]
         private Task PausePlaybackAsync()
         {
             return PausePlaybackAsync(logAction: true);
@@ -390,6 +415,8 @@ namespace FramePlayer.Mac.Views
 
         private async Task PausePlaybackAsync(bool logAction, SynchronizedOperationScope? operationScope)
         {
+            _ = logAction;
+            _ = operationScope;
             await GetEngine(GetFocusedPane()).PauseAsync();
         }
 
@@ -698,8 +725,10 @@ namespace FramePlayer.Mac.Views
             return pane == Pane.Primary ? _primaryEngine : _compareEngine;
         }
 
+        [SuppressMessage("Major Code Smell", "S1144:Unused private types or members", Justification = "Invoked by the macOS parity harness through reflection.")]
         private async Task CommitSliderSeekAsync(string interactionName, TimeSpan target)
         {
+            _ = interactionName;
             await _primaryEngine.SeekToTimeAsync(target);
         }
 
@@ -934,42 +963,11 @@ namespace FramePlayer.Mac.Views
 
                 if (pane == Pane.Primary)
                 {
-                    PositionSlider.Maximum = durationSeconds;
-                    PositionSlider.Value = positionSeconds;
-                    PrimaryPanePositionSlider.Maximum = durationSeconds;
-                    PrimaryPanePositionSlider.Value = positionSeconds;
-                    CurrentPositionTextBlock.Text = positionText;
-                    PrimaryPaneCurrentPositionTextBlock.Text = positionText;
-                    DurationTextBlock.Text = durationText;
-                    PrimaryPaneDurationTextBlock.Text = durationText;
-                    CurrentFrameTextBlock.Text = frameText;
-                    TimecodeTextBlock.Text = "Timecode " + positionText;
-                    FrameNumberTextBox.Text = state.Position.FrameIndex.HasValue
-                        ? (state.Position.FrameIndex.Value + 1).ToString(CultureInfo.InvariantCulture)
-                        : string.Empty;
-                    PrimaryPaneFrameNumberTextBox.Text = FrameNumberTextBox.Text;
-                    PlayPausePlayIcon.IsVisible = !state.IsPlaying;
-                    PlayPausePauseIcon.IsVisible = state.IsPlaying;
-                    PrimaryPanePlayPausePlayIcon.IsVisible = !state.IsPlaying;
-                    PrimaryPanePlayPausePauseIcon.IsVisible = state.IsPlaying;
-                    if (_nativePlayPauseMenuItem != null)
-                    {
-                        _nativePlayPauseMenuItem.Header = state.IsPlaying ? "Pause" : "Play";
-                    }
-
-                    PlaybackStateTextBlock.Text = state.IsPlaying ? "Playing" : state.IsMediaOpen ? "Paused" : "Ready";
+                    ApplyPrimaryState(state, durationSeconds, positionSeconds, positionText, durationText, frameText);
                 }
                 else
                 {
-                    ComparePanePositionSlider.Maximum = durationSeconds;
-                    ComparePanePositionSlider.Value = positionSeconds;
-                    ComparePaneCurrentPositionTextBlock.Text = positionText;
-                    ComparePaneDurationTextBlock.Text = durationText;
-                    ComparePaneFrameNumberTextBox.Text = state.Position.FrameIndex.HasValue
-                        ? (state.Position.FrameIndex.Value + 1).ToString(CultureInfo.InvariantCulture)
-                        : string.Empty;
-                    ComparePanePlayPausePlayIcon.IsVisible = !state.IsPlaying;
-                    ComparePanePlayPausePauseIcon.IsVisible = state.IsPlaying;
+                    ApplyCompareState(state, durationSeconds, positionSeconds, positionText, durationText);
                 }
 
                 if (!string.IsNullOrWhiteSpace(state.LastErrorMessage))
@@ -981,6 +979,71 @@ namespace FramePlayer.Mac.Views
             {
                 _isUpdatingSliders = false;
             }
+        }
+
+        private void ApplyPrimaryState(
+            VideoReviewEngineStateChangedEventArgs state,
+            double durationSeconds,
+            double positionSeconds,
+            string positionText,
+            string durationText,
+            string frameText)
+        {
+            PositionSlider.Maximum = durationSeconds;
+            PositionSlider.Value = positionSeconds;
+            PrimaryPanePositionSlider.Maximum = durationSeconds;
+            PrimaryPanePositionSlider.Value = positionSeconds;
+            CurrentPositionTextBlock.Text = positionText;
+            PrimaryPaneCurrentPositionTextBlock.Text = positionText;
+            DurationTextBlock.Text = durationText;
+            PrimaryPaneDurationTextBlock.Text = durationText;
+            CurrentFrameTextBlock.Text = frameText;
+            TimecodeTextBlock.Text = "Timecode " + positionText;
+            FrameNumberTextBox.Text = FormatFrameNumberEntry(state.Position);
+            PrimaryPaneFrameNumberTextBox.Text = FrameNumberTextBox.Text;
+            PlayPausePlayIcon.IsVisible = !state.IsPlaying;
+            PlayPausePauseIcon.IsVisible = state.IsPlaying;
+            PrimaryPanePlayPausePlayIcon.IsVisible = !state.IsPlaying;
+            PrimaryPanePlayPausePauseIcon.IsVisible = state.IsPlaying;
+            if (_nativePlayPauseMenuItem != null)
+            {
+                _nativePlayPauseMenuItem.Header = state.IsPlaying ? "Pause" : "Play";
+            }
+
+            PlaybackStateTextBlock.Text = FormatPlaybackState(state);
+        }
+
+        private void ApplyCompareState(
+            VideoReviewEngineStateChangedEventArgs state,
+            double durationSeconds,
+            double positionSeconds,
+            string positionText,
+            string durationText)
+        {
+            ComparePanePositionSlider.Maximum = durationSeconds;
+            ComparePanePositionSlider.Value = positionSeconds;
+            ComparePaneCurrentPositionTextBlock.Text = positionText;
+            ComparePaneDurationTextBlock.Text = durationText;
+            ComparePaneFrameNumberTextBox.Text = FormatFrameNumberEntry(state.Position);
+            ComparePanePlayPausePlayIcon.IsVisible = !state.IsPlaying;
+            ComparePanePlayPausePauseIcon.IsVisible = state.IsPlaying;
+        }
+
+        private static string FormatFrameNumberEntry(ReviewPosition position)
+        {
+            return position.FrameIndex.HasValue
+                ? (position.FrameIndex.Value + 1).ToString(CultureInfo.InvariantCulture)
+                : string.Empty;
+        }
+
+        private static string FormatPlaybackState(VideoReviewEngineStateChangedEventArgs state)
+        {
+            if (state.IsPlaying)
+            {
+                return "Playing";
+            }
+
+            return state.IsMediaOpen ? "Paused" : "Ready";
         }
 
         private void ApplyFileLabels(Pane pane, string filePath)
@@ -1108,8 +1171,8 @@ namespace FramePlayer.Mac.Views
             var engine = GetEngine(pane);
             return new LoopPlaybackPaneRangeSnapshot(
                 ResolvePaneId(pane),
-                pane == Pane.Compare ? "compare" : "primary",
-                pane == Pane.Compare ? "Compare" : "Primary",
+                ResolvePaneKey(pane),
+                ResolvePaneLabel(pane),
                 engine.CurrentFilePath,
                 engine.MediaInfo.Duration,
                 loopIn,
@@ -1143,8 +1206,8 @@ namespace FramePlayer.Mac.Views
             var position = engine.Position ?? ReviewPosition.Empty;
             return new LoopPlaybackAnchorSnapshot(
                 ResolvePaneId(pane),
-                pane == Pane.Compare ? "compare" : "primary",
-                pane == Pane.Compare ? "Compare" : "Primary",
+                ResolvePaneKey(pane),
+                ResolvePaneLabel(pane),
                 position.PresentationTime,
                 new LoopPlaybackFrameIdentitySnapshot(
                     position.IsFrameIndexAbsolute ? position.FrameIndex : null,
@@ -1233,7 +1296,7 @@ namespace FramePlayer.Mac.Views
             }
         }
 
-        private void Window_DragOver(object? sender, DragEventArgs e)
+        private static void Window_DragOver(object? sender, DragEventArgs e)
         {
             e.DragEffects = e.DataTransfer.Contains(DataFormat.File) ? DragDropEffects.Copy : DragDropEffects.None;
         }
@@ -1321,7 +1384,7 @@ namespace FramePlayer.Mac.Views
                 : string.Format(
                     CultureInfo.InvariantCulture,
                     "{0}: {1}x{2} {3:0.###} fps {4}",
-                    pane == Pane.Compare ? "Compare" : "Primary",
+                    ResolvePaneLabel(pane),
                     info.PixelWidth,
                     info.PixelHeight,
                     info.FramesPerSecond,
@@ -1384,7 +1447,7 @@ namespace FramePlayer.Mac.Views
                     "Save Loop As Clip",
                     BuildSuggestedExportFileName(engine.CurrentFilePath, "loop"),
                     "MP4 Video",
-                    "*.mp4");
+                    Mp4Pattern);
                 if (string.IsNullOrWhiteSpace(resolvedOutputPath))
                 {
                     return null;
@@ -1398,7 +1461,7 @@ namespace FramePlayer.Mac.Views
                 var request = new ClipExportRequest(
                     engine.CurrentFilePath,
                     resolvedOutputPath,
-                    pane == Pane.Compare ? "Compare" : "Primary",
+                    ResolvePaneLabel(pane),
                     ResolvePaneId(pane),
                     true,
                     BuildReviewSessionSnapshot(pane, engine),
@@ -1455,9 +1518,9 @@ namespace FramePlayer.Mac.Views
             {
                 resolvedOutputPath = await PromptForSavePathAsync(
                     "Export Side-by-Side Compare",
-                    BuildSuggestedExportFileName(primaryEngine.CurrentFilePath, mode == CompareSideBySideExportMode.Loop ? "compare-loop" : "compare"),
+                    BuildSuggestedExportFileName(primaryEngine.CurrentFilePath, mode == CompareSideBySideExportMode.Loop ? "compare-loop" : PaneCompareKey),
                     "MP4 Video",
-                    "*.mp4");
+                    Mp4Pattern);
                 if (string.IsNullOrWhiteSpace(resolvedOutputPath))
                 {
                     return null;
@@ -1519,7 +1582,7 @@ namespace FramePlayer.Mac.Views
                 "Replace Audio Track",
                 BuildSuggestedExportFileName(_primaryEngine.CurrentFilePath, "audio-inserted"),
                 "MP4 Video",
-                "*.mp4");
+                Mp4Pattern);
             if (string.IsNullOrWhiteSpace(outputPath))
             {
                 return null;
@@ -1545,7 +1608,7 @@ namespace FramePlayer.Mac.Views
                     _primaryEngine.CurrentFilePath,
                     replacementAudioFilePath,
                     outputPath,
-                    "Primary",
+                    PanePrimaryLabel,
                     BuildReviewSessionSnapshot(Pane.Primary, _primaryEngine));
                 var plan = AudioInsertionService.CreatePlan(request);
                 var result = await NativeAudioInsertionService.InsertAsync(plan).ConfigureAwait(false);
@@ -1618,10 +1681,10 @@ namespace FramePlayer.Mac.Views
             var builder = new StringBuilder();
             builder.AppendLine("Frame Player macOS diagnostics");
             builder.AppendLine("Generated: " + DateTimeOffset.Now.ToString("O", CultureInfo.InvariantCulture));
-            AppendEngineDiagnostics(builder, "Primary", _primaryEngine);
+            AppendEngineDiagnostics(builder, PanePrimaryLabel, _primaryEngine);
             if (_compareEngine != null)
             {
-                AppendEngineDiagnostics(builder, "Compare", _compareEngine);
+                AppendEngineDiagnostics(builder, PaneCompareLabel, _compareEngine);
             }
 
             builder.AppendLine("Loop primary: " + BuildLoopStatusText(_primaryLoopRange));
@@ -1645,8 +1708,8 @@ namespace FramePlayer.Mac.Views
         private static ReviewSessionSnapshot BuildReviewSessionSnapshot(Pane pane, IVideoReviewEngine engine)
         {
             return new ReviewSessionSnapshot(
-                pane == Pane.Compare ? "compare" : "primary",
-                pane == Pane.Compare ? "Compare" : "Primary",
+                ResolvePaneKey(pane),
+                ResolvePaneLabel(pane),
                 ReviewSessionSnapshot.FromEngineState(engine.IsMediaOpen, engine.IsPlaying),
                 engine.CurrentFilePath,
                 engine.MediaInfo,
@@ -1669,8 +1732,8 @@ namespace FramePlayer.Mac.Views
             }
 
             return string.IsNullOrWhiteSpace(baseName)
-                ? "video-" + suffix + ".mp4"
-                : baseName + "-" + suffix + ".mp4";
+                ? "video-" + suffix + Mp4Extension
+                : baseName + "-" + suffix + Mp4Extension;
         }
 
         private async Task<string?> PromptForSavePathAsync(string title, string suggestedFileName, string fileTypeName, params string[] patterns)
@@ -1716,7 +1779,7 @@ namespace FramePlayer.Mac.Views
                     }
                 }
             });
-            return files.FirstOrDefault()?.Path.LocalPath;
+            return files.Count > 0 ? files[0].Path.LocalPath : null;
         }
 
         private void HelpMenuItem_Click(object? sender, RoutedEventArgs e)
@@ -1731,15 +1794,17 @@ namespace FramePlayer.Mac.Views
 
         private NativeMenu BuildNativeMenu(bool useGpuAcceleration)
         {
+            _nativeRecentFilesMenuItem = new NativeMenuItem("Open Recent")
+            {
+                Menu = new NativeMenu()
+            };
+
             var fileMenu = CreateTopLevelMenu(
                 "File",
                 CreateMenuItem("New Window", (_, _) => LaunchNewWindow(), new KeyGesture(Key.N, KeyModifiers.Meta)),
                 new NativeMenuItemSeparator(),
                 CreateMenuItem("Open Video...", async (_, _) => await OpenVideoAsync(GetFileOpenTargetPane()), new KeyGesture(Key.O, KeyModifiers.Meta)),
-                _nativeRecentFilesMenuItem = new NativeMenuItem("Open Recent")
-                {
-                    Menu = new NativeMenu()
-                },
+                _nativeRecentFilesMenuItem,
                 new NativeMenuItemSeparator(),
                 CreateMenuItem("Close Video", async (_, _) => await CloseVideosAsync(), new KeyGesture(Key.W, KeyModifiers.Meta)),
                 CreateMenuItem("Video Info...", (sender, _) => VideoInfoMenuItem_Click(sender, new RoutedEventArgs())),
