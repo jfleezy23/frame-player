@@ -1592,21 +1592,33 @@ namespace FramePlayer.Mac.Views
                 SetLoopMarker(LoopPlaybackMarkerEndpoint.Out);
                 e.Handled = true;
             }
-            else if (e.Key == Key.OemPlus || e.Key == Key.Add)
+            else if (TryHandleZoomShortcut(e.Key))
+            {
+                e.Handled = true;
+            }
+        }
+
+        private bool TryHandleZoomShortcut(Key key)
+        {
+            if (key == Key.OemPlus || key == Key.Add)
             {
                 ZoomInFocusedPane();
-                e.Handled = true;
+                return true;
             }
-            else if (e.Key == Key.OemMinus || e.Key == Key.Subtract)
+
+            if (key == Key.OemMinus || key == Key.Subtract)
             {
                 ZoomOutFocusedPane();
-                e.Handled = true;
+                return true;
             }
-            else if (e.Key == Key.D0 || e.Key == Key.NumPad0)
+
+            if (key == Key.D0 || key == Key.NumPad0)
             {
                 ResetZoomForFocusedPane();
-                e.Handled = true;
+                return true;
             }
+
+            return false;
         }
 
         private static void Window_DragOver(object? sender, DragEventArgs e)
@@ -2418,6 +2430,7 @@ namespace FramePlayer.Mac.Views
             public void Execute(object? parameter)
             {
                 _execute();
+                _canExecuteChanged?.Invoke(this, EventArgs.Empty);
             }
         }
 
