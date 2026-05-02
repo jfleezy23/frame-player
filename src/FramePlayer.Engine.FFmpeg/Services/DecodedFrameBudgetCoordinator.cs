@@ -280,10 +280,10 @@ namespace FramePlayer.Services
             {
                 foreach (var state in _paneStates.Values)
                 {
-                    if (UpdateStateAllocationLocked(state, PaneBudgetAllocation.CreateDefault(state.PaneId, _hostResourceClass)))
-                    {
-                        changedAllocations.Add(state.CurrentAllocation);
-                    }
+                    UpdateStateAllocationAndAppendLocked(
+                        state,
+                        PaneBudgetAllocation.CreateDefault(state.PaneId, _hostResourceClass),
+                        changedAllocations);
                 }
 
                 return changedAllocations;
@@ -313,10 +313,10 @@ namespace FramePlayer.Services
 
             foreach (var state in _paneStates.Values.Where(state => !state.IsOpen))
             {
-                if (UpdateStateAllocationLocked(state, PaneBudgetAllocation.CreateDefault(state.PaneId, _hostResourceClass)))
-                {
-                    changedAllocations.Add(state.CurrentAllocation);
-                }
+                UpdateStateAllocationAndAppendLocked(
+                    state,
+                    PaneBudgetAllocation.CreateDefault(state.PaneId, _hostResourceClass),
+                    changedAllocations);
             }
 
             return changedAllocations;
@@ -408,7 +408,7 @@ namespace FramePlayer.Services
         }
 
         [SuppressMessage("Critical Code Smell", "S3776:Cognitive Complexity of methods should not be too high", Justification = "Dual-pane degradation order is behavior-sensitive and is deferred until a dedicated cache-budget refactor.")]
-        private IReadOnlyList<PaneBudgetAllocation> BuildDualPaneAllocations(
+        private List<PaneBudgetAllocation> BuildDualPaneAllocations(
             IReadOnlyList<PaneBudgetState> openStates,
             long sessionBudgetBytes)
         {
@@ -605,13 +605,13 @@ namespace FramePlayer.Services
         }
 
         private static long ComputeRequiredBudgetBytes(
-            IReadOnlyList<long> frameBytes,
-            IReadOnlyList<int> queueDepths,
-            IReadOnlyList<int> forwardTargets,
-            IReadOnlyList<int> reverseTargets)
+            long[] frameBytes,
+            int[] queueDepths,
+            int[] forwardTargets,
+            int[] reverseTargets)
         {
             long totalBytes = 0L;
-            for (var index = 0; index < frameBytes.Count; index++)
+            for (var index = 0; index < frameBytes.Length; index++)
             {
                 totalBytes += ComputeRequiredBudgetBytes(
                     frameBytes[index],
@@ -621,6 +621,20 @@ namespace FramePlayer.Services
             }
 
             return totalBytes;
+        }
+
+        private bool UpdateStateAllocationAndAppendLocked(
+            PaneBudgetState state,
+            PaneBudgetAllocation allocation,
+            List<PaneBudgetAllocation> changedAllocations)
+        {
+            if (!UpdateStateAllocationLocked(state, allocation))
+            {
+                return false;
+            }
+
+            changedAllocations.Add(state.CurrentAllocation);
+            return true;
         }
 
         private static long ComputeRequiredBudgetBytes(
