@@ -96,5 +96,7 @@ Use this section only for the macOS Avalonia preview release line. Do not use it
 
 - Tag the validated merge commit with a macOS-only preview tag such as `macos-preview-0.1.0`.
 - Create a GitHub prerelease titled `Frame Player macOS Preview 0.1.0`.
-- Attach only the signed macOS RC ZIP and its SHA256 file.
+- Attach only the notarized/stapled macOS ZIP and its SHA256 file.
+- Confirm the release ZIP was produced with `ditto -c -k --keepParent` so detached .NET assembly signatures are preserved.
+- Extract the final ZIP and verify `xcrun stapler validate` and `spctl -a -vvv -t exec` both pass.
 - Do not attach, rename, or modify Windows release artifacts.

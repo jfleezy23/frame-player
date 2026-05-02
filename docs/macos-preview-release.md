@@ -49,6 +49,8 @@ xcrun stapler staple "dist/Frame Player.app"
 spctl -a -vvv -t exec "dist/Frame Player.app"
 ```
 
+Do not strip AppleDouble metadata or extended attributes from the notarization or release ZIP. Several .NET assemblies are signed as nested code with detached signatures; `ditto -c -k --keepParent` preserves those signatures for Apple notarization and Gatekeeper validation.
+
 After stapling, re-zip the stapled app and publish only after Gatekeeper accepts it on a clean machine.
 
 ## Repo Hygiene
