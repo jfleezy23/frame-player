@@ -538,6 +538,12 @@ namespace FramePlayer.Mac.Tests
                     primarySurfaceHost.RaiseEvent(CreatePointerWheelChangedEvent(primarySurfaceHost, -1d));
                     Assert.Equal(new PixelSize(8, 4), RequireBitmap(primarySurface).PixelSize);
 
+                    primarySurfaceHost.RaiseEvent(CreateScrollGestureEvent(1d));
+                    Assert.True(RequireBitmap(primarySurface).PixelSize.Width < 8);
+
+                    resetZoom.Command!.Execute(null);
+                    Assert.Equal(new PixelSize(8, 4), RequireBitmap(primarySurface).PixelSize);
+
                     primarySurfaceHost.RaiseEvent(CreateTouchPadMagnifyEvent(primarySurfaceHost, 0.25d));
                     Assert.True(RequireBitmap(primarySurface).PixelSize.Width < 8);
 
@@ -571,6 +577,11 @@ namespace FramePlayer.Mac.Tests
                 new PointerPointProperties(),
                 KeyModifiers.None,
                 new Vector(0d, deltaY));
+        }
+
+        private static ScrollGestureEventArgs CreateScrollGestureEvent(double deltaY)
+        {
+            return new ScrollGestureEventArgs(1, new Vector(0d, deltaY));
         }
 
         private static PointerDeltaEventArgs CreateTouchPadMagnifyEvent(Control source, double delta)

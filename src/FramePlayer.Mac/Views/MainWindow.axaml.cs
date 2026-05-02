@@ -280,6 +280,8 @@ namespace FramePlayer.Mac.Views
             CompareVideoSurface.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
             CustomVideoSurfaceHost.PointerWheelChanged += VideoSurfaceHost_PointerWheelChanged;
             CompareVideoSurfaceHost.PointerWheelChanged += VideoSurfaceHost_PointerWheelChanged;
+            CustomVideoSurfaceHost.ScrollGesture += VideoSurfaceHost_ScrollGesture;
+            CompareVideoSurfaceHost.ScrollGesture += VideoSurfaceHost_ScrollGesture;
             CustomVideoSurfaceHost.PointerTouchPadGestureMagnify += VideoSurfaceHost_PointerTouchPadGestureMagnify;
             CompareVideoSurfaceHost.PointerTouchPadGestureMagnify += VideoSurfaceHost_PointerTouchPadGestureMagnify;
             CustomVideoSurfaceHost.Pinch += VideoSurfaceHost_Pinch;
@@ -360,6 +362,13 @@ namespace FramePlayer.Mac.Views
         }
 
         private void VideoSurfaceHost_PointerWheelChanged(object? sender, PointerWheelEventArgs e)
+        {
+            var pane = ResolvePaneFromSender(sender);
+            ApplyPaneWheelZoom(pane, e.Delta.Y);
+            e.Handled = true;
+        }
+
+        private void VideoSurfaceHost_ScrollGesture(object? sender, ScrollGestureEventArgs e)
         {
             var pane = ResolvePaneFromSender(sender);
             ApplyPaneWheelZoom(pane, e.Delta.Y);
