@@ -143,6 +143,9 @@ jobs:
             "MainWindow.xaml.cs"
             "Diagnostics/RegressionSuiteRunner.cs"
             "VideoInfoWindow.xaml.cs"
+            "src/FramePlayer.Core/**"
+            "src/FramePlayer.Engine.FFmpeg/**"
+            "src/FramePlayer.Mac/**"
             "src/FramePlayer.Mac/Views/**"
             "src/FramePlayer.Mac/Services/AvaloniaFrameBufferPresenter.cs"
             "src/FramePlayer.Mac/Services/MacRecentFilesService.cs"
@@ -169,6 +172,13 @@ jobs:
             "Services/NativeClipExportService.cs"
             "Services/NativeCompareSideBySideExportService.cs"
             "Services/NativeExportSupport.cs"
+            "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/FfmpegAudioPlaybackSession.cs"
+            "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/FfmpegFrameConverter.cs"
+            "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/FfmpegGlobalFrameIndex.cs"
+            "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/FfmpegHardwareDeviceCache.cs"
+            "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/FfmpegNativeHelpers.cs"
+            "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/FfmpegReviewEngine.cs"
+            "src/FramePlayer.Mac/Services/AvaloniaFrameBufferPresenter.cs"
           ) -join ","
 
           # These files intentionally mirror manifest schemas or manual report

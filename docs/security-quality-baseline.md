@@ -71,6 +71,7 @@ Current role:
 - active and green
 - uses the Windows build path that matches this repository
 - also compiles the macOS preview project inside the same Sonar begin/end block without changing the Windows build command
+- excludes macOS preview native/unsafe interop hotspots from Sonar analysis and excludes the macOS preview source path from imported line-coverage gates; macOS correctness is covered by ordinary Mac tests plus the full local corpus release-candidate harness
 - not currently required for merge
 
 Required secret:
