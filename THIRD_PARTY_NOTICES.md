@@ -59,7 +59,7 @@ Important note:
 Important note:
 
 - Because the macOS FFmpeg build enables GPL components and x264, redistribution of the macOS preview runtime has GPL implications.
-- Before publishing a public macOS artifact, verify the exact source offer, license text, and redistribution obligations that apply to the staged runtime.
+- The published `macos-preview-0.1.0` Apple Silicon artifact redistributes this staged runtime, so release and distribution work must continue to preserve the applicable FFmpeg/x264 license notices, source-offer posture, provenance, and hash records.
 
 ## Attribution
 

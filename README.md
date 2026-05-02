@@ -1,11 +1,11 @@
 # Frame Player
 
-Frame Player is a frame-first WPF review tool built on a custom FFmpeg engine with a bundled in-process FFmpeg runtime. It treats decoded display-order frame identity as the source of truth for exact frame stepping, frame seeks, and review state, prioritizing deterministic review behavior over generic consumer media-player parity.
+Frame Player is a frame-first desktop review tool built on a custom FFmpeg engine with a bundled in-process FFmpeg runtime. The supported Windows stable release remains the WPF app, and a controlled Apple Silicon macOS Preview is now available as an Avalonia app. Frame Player treats decoded display-order frame identity as the source of truth for exact frame stepping, frame seeks, and review state, prioritizing deterministic review behavior over generic consumer media-player parity.
 
 ## Release Tracks
 
 - Windows stable: the supported Windows release line remains the WPF app at `v1.8.4`. Its source path, build path, tests, runtime bootstrap, and release process remain unchanged by the macOS preview work.
-- macOS Preview: `FramePlayer.Mac` is an Avalonia-based macOS-only preview app under `src/FramePlayer.Mac`. It mirrors the Windows app body, transport behavior, compare workflow, loop/export surfaces, menu commands, and keyboard shortcuts while using native macOS window/menu chrome.
+- macOS Preview: [Frame Player macOS Preview 0.1.0](https://github.com/jfleezy23/frame-player/releases/tag/macos-preview-0.1.0) is a notarized, Developer ID-stapled Apple Silicon (`osx-arm64`) preview app built from `src/FramePlayer.Mac`. It mirrors the Windows app body, transport behavior, compare workflow, loop/export surfaces, menu commands, and keyboard shortcuts while using native macOS window/menu chrome.
 - The Avalonia app is not being declared the universal replacement for the Windows WPF release line in this preview.
 
 ## Who this is for
@@ -105,6 +105,7 @@ The shipped app is packaged with the FFmpeg runtime DLLs next to `FramePlayer.ex
 
 ### macOS Preview Runtime Model
 
+- The published `macos-preview-0.1.0` artifact is Apple Silicon only (`osx-arm64`).
 - The macOS preview bundles pinned FFmpeg `.dylib` runtime files from `Runtime/macos/osx-arm64/ffmpeg` into the local `.app` bundle at packaging time.
 - macOS runtime dylibs are staged locally and ignored by git; tracked provenance and hashes live under `Runtime/macos/`.
 - CPU decode is the preview baseline. GPU acceleration should remain hidden or unavailable unless the bundled macOS FFmpeg runtime and the local machine pass explicit capability checks.
@@ -143,6 +144,8 @@ For phase-1 GPU validation, keep the default `Playback > Use GPU Acceleration` s
 
 ### macOS Preview Quick Start
 
+For the controlled Apple Silicon preview, download the notarized ZIP from [Frame Player macOS Preview 0.1.0](https://github.com/jfleezy23/frame-player/releases/tag/macos-preview-0.1.0), verify the SHA256 file attached to the release, unzip it, and install `Frame Player.app` into `/Applications`.
+
 Use a Mac with the .NET SDK pinned by `global.json`, then stage the pinned macOS FFmpeg runtime under `Runtime/macos/osx-arm64/ffmpeg`.
 
 ```bash
@@ -166,10 +169,12 @@ Windows stable release:
 
 macOS preview:
 
+- Apple Silicon Mac (`arm64`)
 - macOS 13 or later
-- .NET 10 SDK pinned by `global.json`
+- To run the published preview: no separate .NET runtime is required; the app is packaged self-contained
+- To build from source: .NET 10 SDK pinned by `global.json`
 - locally staged pinned macOS FFmpeg runtime under `Runtime/macos/osx-arm64/ffmpeg`
-- Apple Development signing identity for controlled testing, or Developer ID Application plus notary credentials for public distribution
+- Apple Development signing identity for local testing, or Developer ID Application plus notary credentials for release packaging
 
 For Vulkan-backed GPU decode testing, the local machine also needs a working Vulkan loader/driver. CPU decode remains the default fallback when Vulkan is unavailable or unsupported.
 
@@ -199,8 +204,9 @@ GitHub Actions Windows CI is compile validation on a clean runner. The workflow 
 ## GitHub Resources
 
 - Releases: [github.com/jfleezy23/frame-player/releases](https://github.com/jfleezy23/frame-player/releases)
+- macOS Preview 0.1.0 release: [github.com/jfleezy23/frame-player/releases/tag/macos-preview-0.1.0](https://github.com/jfleezy23/frame-player/releases/tag/macos-preview-0.1.0)
 - .NET 10 Desktop Runtime: [dotnet.microsoft.com/en-us/download/dotnet/10.0](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)
-- Current release note: [docs/release-v1.8.4-feedback.md](docs/release-v1.8.4-feedback.md)
+- Current Windows release note: [docs/release-v1.8.4-feedback.md](docs/release-v1.8.4-feedback.md)
 - macOS preview note: [docs/release-macos-preview-0.1.0.md](docs/release-macos-preview-0.1.0.md)
 - macOS preview release process: [docs/macos-preview-release.md](docs/macos-preview-release.md)
 - Release checklist: [docs/release-checklist.md](docs/release-checklist.md)
