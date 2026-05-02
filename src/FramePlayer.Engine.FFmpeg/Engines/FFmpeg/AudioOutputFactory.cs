@@ -7,11 +7,6 @@ namespace FramePlayer.Engines.FFmpeg
     {
         public static IAudioOutput Create(int sampleRate, int channelCount, int bitsPerSample)
         {
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                return new WinMmAudioOutput(sampleRate, channelCount, bitsPerSample);
-            }
-
             if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             {
                 return new MacAudioQueueOutput(sampleRate, channelCount, bitsPerSample);
