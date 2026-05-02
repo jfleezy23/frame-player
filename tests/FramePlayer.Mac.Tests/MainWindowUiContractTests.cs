@@ -6,7 +6,9 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.VisualTree;
+using FramePlayer.Core.Models;
 using FramePlayer.Mac.Views;
 using Xunit;
 
@@ -501,7 +503,7 @@ namespace FramePlayer.Mac.Tests
         }
 
         [Fact]
-        public void ZoomCommands_ApplyResetAndLinkPaneScaleTransforms()
+        public void ZoomCommands_CropPresentedFramesThroughNativeMenuCommandPath()
         {
             _fixture.Run(() =>
             {
@@ -512,29 +514,71 @@ namespace FramePlayer.Mac.Tests
                     var compareSurface = RequireControl<Image>(window, "CompareVideoSurface");
                     var compareMode = RequireControl<CheckBox>(window, "CompareModeCheckBox");
                     var linkZoom = RequireControl<CheckBox>(window, "LinkPaneZoomCheckBox");
+                    var nativeMenu = NativeMenu.GetMenu(window)
+                        ?? throw new InvalidOperationException("Missing native menu.");
+                    var zoomIn = RequireNativeMenuItem(nativeMenu, "Zoom In");
+                    var resetZoom = RequireNativeMenuItem(nativeMenu, "Reset Zoom");
 
-                    InvokePrivate(window, "ZoomInFocusedPane");
-                    var primaryZoom = Assert.IsType<ScaleTransform>(primarySurface.RenderTransform);
-                    Assert.True(primaryZoom.ScaleX > 1d);
-                    Assert.Null(compareSurface.RenderTransform);
+                    InvokePrivate(window, "SetPaneBitmap", ParsePane("Primary"), CreateFrameBuffer(8, 4));
+                    Assert.Equal(new PixelSize(8, 4), RequireBitmap(primarySurface).PixelSize);
 
-                    InvokePrivate(window, "ResetZoomForFocusedPane");
-                    Assert.Null(primarySurface.RenderTransform);
+                    zoomIn.Command!.Execute(null);
+                    var primaryZoomedBitmap = RequireBitmap(primarySurface);
+                    Assert.True(primaryZoomedBitmap.PixelSize.Width < 8);
+                    Assert.True(primaryZoomedBitmap.PixelSize.Height <= 4);
+                    Assert.Null(compareSurface.Source);
+
+                    resetZoom.Command!.Execute(null);
+                    Assert.Equal(new PixelSize(8, 4), RequireBitmap(primarySurface).PixelSize);
 
                     compareMode.IsChecked = true;
                     linkZoom.IsChecked = true;
-                    InvokePrivate(window, "ZoomInFocusedPane");
+                    InvokePrivate(window, "SetPaneBitmap", ParsePane("Compare"), CreateFrameBuffer(8, 4));
+                    zoomIn.Command!.Execute(null);
 
-                    primaryZoom = Assert.IsType<ScaleTransform>(primarySurface.RenderTransform);
-                    var compareZoom = Assert.IsType<ScaleTransform>(compareSurface.RenderTransform);
-                    Assert.Equal(primaryZoom.ScaleX, compareZoom.ScaleX, precision: 6);
-                    Assert.Equal(primaryZoom.ScaleY, compareZoom.ScaleY, precision: 6);
+                    Assert.Equal(
+                        RequireBitmap(primarySurface).PixelSize,
+                        RequireBitmap(compareSurface).PixelSize);
                 }
                 finally
                 {
                     window.Close();
                 }
             });
+        }
+
+        private static WriteableBitmap RequireBitmap(Image image)
+        {
+            return Assert.IsType<WriteableBitmap>(image.Source);
+        }
+
+        private static DecodedFrameBuffer CreateFrameBuffer(int width, int height)
+        {
+            var pixels = new byte[width * height * 4];
+            for (var index = 0; index < pixels.Length; index += 4)
+            {
+                pixels[index] = 0x40;
+                pixels[index + 1] = 0x80;
+                pixels[index + 2] = 0xC0;
+                pixels[index + 3] = 0xFF;
+            }
+
+            return new DecodedFrameBuffer(
+                new FrameDescriptor(
+                    0,
+                    TimeSpan.Zero,
+                    false,
+                    true,
+                    width,
+                    height,
+                    "bgra",
+                    "bgra",
+                    null,
+                    null,
+                    null),
+                pixels,
+                width * 4,
+                "bgra");
         }
 
         private static T RequireControl<T>(Window window, string name)

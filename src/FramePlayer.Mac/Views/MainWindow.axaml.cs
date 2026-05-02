@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -30,6 +31,8 @@ namespace FramePlayer.Mac.Views
         private readonly FfmpegReviewEngineOptionsProvider _optionsProvider;
         private readonly IVideoReviewEngine _primaryEngine;
         private IVideoReviewEngine? _compareEngine;
+        private DecodedFrameBuffer? _primaryFrameBuffer;
+        private DecodedFrameBuffer? _compareFrameBuffer;
         private const int HundredFrameStep = 100;
         private const double MinimumPaneZoomFactor = 1d;
         private const double MaximumPaneZoomFactor = 12d;
@@ -272,8 +275,6 @@ namespace FramePlayer.Mac.Views
         {
             CustomVideoSurface.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
             CompareVideoSurface.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
-            ApplyZoomTransform(Pane.Primary);
-            ApplyZoomTransform(Pane.Compare);
         }
 
         private void ZoomInFocusedPane()
@@ -340,7 +341,7 @@ namespace FramePlayer.Mac.Views
                 _primaryZoomFactor = clampedZoomFactor;
             }
 
-            ApplyZoomTransform(pane);
+            RefreshPaneBitmap(pane);
             if (synchronizeLinkedPane && IsLinkedPaneZoomEnabled)
             {
                 var peerPane = pane == Pane.Compare ? Pane.Primary : Pane.Compare;
@@ -353,18 +354,38 @@ namespace FramePlayer.Mac.Views
             return pane == Pane.Compare ? _compareZoomFactor : _primaryZoomFactor;
         }
 
-        private void ApplyZoomTransform(Pane pane)
-        {
-            var image = pane == Pane.Compare ? CompareVideoSurface : CustomVideoSurface;
-            var zoomFactor = GetPaneZoomFactor(pane);
-            image.RenderTransform = zoomFactor <= MinimumPaneZoomFactor + 0.0001d
-                ? null
-                : new ScaleTransform(zoomFactor, zoomFactor);
-        }
-
         private static string FormatZoomFactor(double zoomFactor)
         {
             return string.Format(CultureInfo.InvariantCulture, "{0:0}%", zoomFactor * 100d);
+        }
+
+        private void RefreshPaneBitmap(Pane pane)
+        {
+            var frameBuffer = pane == Pane.Compare ? _compareFrameBuffer : _primaryFrameBuffer;
+            if (frameBuffer == null)
+            {
+                return;
+            }
+
+            SetPaneBitmap(pane, frameBuffer);
+        }
+
+        private void SetPaneBitmap(Pane pane, DecodedFrameBuffer frameBuffer)
+        {
+            var viewport = BuildPaneViewport(pane, frameBuffer);
+            var bitmap = AvaloniaFrameBufferPresenter.CreateBitmap(frameBuffer, viewport);
+            if (pane == Pane.Compare)
+            {
+                _compareFrameBuffer = frameBuffer;
+                CompareVideoSurface.Source = bitmap;
+                CompareEmptyStateOverlay.IsVisible = false;
+            }
+            else
+            {
+                _primaryFrameBuffer = frameBuffer;
+                CustomVideoSurface.Source = bitmap;
+                PrimaryEmptyStateOverlay.IsVisible = false;
+            }
         }
 
         private Pane GetFileOpenTargetPane()
@@ -444,6 +465,8 @@ namespace FramePlayer.Mac.Views
             CurrentFileTextBlock.Text = "No file loaded";
             PrimaryPaneFileTextBlock.Text = "No video loaded";
             ComparePaneFileTextBlock.Text = "No video loaded";
+            _primaryFrameBuffer = null;
+            _compareFrameBuffer = null;
             CustomVideoSurface.Source = null;
             CompareVideoSurface.Source = null;
             SetPaneZoomFactor(Pane.Primary, MinimumPaneZoomFactor, synchronizeLinkedPane: false);
@@ -1209,8 +1232,7 @@ namespace FramePlayer.Mac.Views
         {
             Dispatcher.UIThread.Post(() =>
             {
-                CustomVideoSurface.Source = AvaloniaFrameBufferPresenter.CreateBitmap(e.FrameBuffer);
-                PrimaryEmptyStateOverlay.IsVisible = false;
+                SetPaneBitmap(Pane.Primary, e.FrameBuffer);
             });
         }
 
@@ -1218,8 +1240,7 @@ namespace FramePlayer.Mac.Views
         {
             Dispatcher.UIThread.Post(() =>
             {
-                CompareVideoSurface.Source = AvaloniaFrameBufferPresenter.CreateBitmap(e.FrameBuffer);
-                CompareEmptyStateOverlay.IsVisible = false;
+                SetPaneBitmap(Pane.Compare, e.FrameBuffer);
             });
         }
 
@@ -1571,17 +1592,17 @@ namespace FramePlayer.Mac.Views
                 SetLoopMarker(LoopPlaybackMarkerEndpoint.Out);
                 e.Handled = true;
             }
-            else if (e.Key == Key.OemPlus)
+            else if (e.Key == Key.OemPlus || e.Key == Key.Add)
             {
                 ZoomInFocusedPane();
                 e.Handled = true;
             }
-            else if (e.Key == Key.OemMinus)
+            else if (e.Key == Key.OemMinus || e.Key == Key.Subtract)
             {
                 ZoomOutFocusedPane();
                 e.Handled = true;
             }
-            else if (e.Key == Key.D0)
+            else if (e.Key == Key.D0 || e.Key == Key.NumPad0)
             {
                 ResetZoomForFocusedPane();
                 e.Handled = true;
@@ -2007,8 +2028,17 @@ namespace FramePlayer.Mac.Views
 
         private PaneViewportSnapshot BuildPaneViewport(Pane pane, VideoMediaInfo mediaInfo)
         {
-            var sourceWidth = Math.Max(1, mediaInfo.PixelWidth);
-            var sourceHeight = Math.Max(1, mediaInfo.PixelHeight);
+            return BuildPaneViewport(pane, Math.Max(1, mediaInfo.PixelWidth), Math.Max(1, mediaInfo.PixelHeight));
+        }
+
+        private PaneViewportSnapshot BuildPaneViewport(Pane pane, DecodedFrameBuffer frameBuffer)
+        {
+            var descriptor = frameBuffer.Descriptor;
+            return BuildPaneViewport(pane, Math.Max(1, descriptor.PixelWidth), Math.Max(1, descriptor.PixelHeight));
+        }
+
+        private PaneViewportSnapshot BuildPaneViewport(Pane pane, int sourceWidth, int sourceHeight)
+        {
             var zoomFactor = GetPaneZoomFactor(pane);
             if (zoomFactor <= MinimumPaneZoomFactor + 0.0001d)
             {
@@ -2284,9 +2314,9 @@ namespace FramePlayer.Mac.Views
                 CreateMenuItem("Save Loop As Clip...", (sender, _) => SaveLoopAsClipMenuItem_Click(sender, new RoutedEventArgs())),
                 CreateMenuItem("Export Side-by-Side Compare...", (sender, _) => ExportSideBySideCompareMenuItem_Click(sender, new RoutedEventArgs())),
                 new NativeMenuItemSeparator(),
-                CreateMenuItem("Zoom In", (_, _) => ZoomInFocusedPane()),
-                CreateMenuItem("Zoom Out", (_, _) => ZoomOutFocusedPane()),
-                CreateMenuItem("Reset Zoom", (_, _) => ResetZoomForFocusedPane()),
+                CreateCommandMenuItem("Zoom In", ZoomInFocusedPane, new KeyGesture(Key.OemPlus)),
+                CreateCommandMenuItem("Zoom Out", ZoomOutFocusedPane, new KeyGesture(Key.OemMinus)),
+                CreateCommandMenuItem("Reset Zoom", ResetZoomForFocusedPane, new KeyGesture(Key.D0)),
                 new NativeMenuItemSeparator(),
                 _nativeGpuAccelerationMenuItem,
                 CreateMenuItem("Toggle Full Screen", (_, _) => ToggleFullScreen(), new KeyGesture(Key.F11)));
@@ -2336,6 +2366,20 @@ namespace FramePlayer.Mac.Views
             return menuItem;
         }
 
+        private static NativeMenuItem CreateCommandMenuItem(string header, Action execute, KeyGesture? gesture = null)
+        {
+            var menuItem = new NativeMenuItem(header)
+            {
+                Command = new ActionCommand(execute)
+            };
+            if (gesture != null)
+            {
+                menuItem.Gesture = gesture;
+            }
+
+            return menuItem;
+        }
+
         private static NativeMenuItem CreateToggleMenuItem(string header, KeyGesture? gesture = null)
         {
             var menuItem = new NativeMenuItem(header)
@@ -2348,6 +2392,33 @@ namespace FramePlayer.Mac.Views
             }
 
             return menuItem;
+        }
+
+        private sealed class ActionCommand : ICommand
+        {
+            private readonly Action _execute;
+            private EventHandler? _canExecuteChanged;
+
+            public ActionCommand(Action execute)
+            {
+                _execute = execute ?? throw new ArgumentNullException(nameof(execute));
+            }
+
+            public event EventHandler? CanExecuteChanged
+            {
+                add { _canExecuteChanged += value; }
+                remove { _canExecuteChanged -= value; }
+            }
+
+            public bool CanExecute(object? parameter)
+            {
+                return true;
+            }
+
+            public void Execute(object? parameter)
+            {
+                _execute();
+            }
         }
 
         private void ToggleFullScreen()
