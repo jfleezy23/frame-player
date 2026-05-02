@@ -30,6 +30,7 @@ The current expected GitHub repository settings are:
 - merged branches are deleted automatically
 - the required merge check on `main` is the `build` job from the `Windows CI` workflow
 - SonarQube is active, but is not currently a required merge check
+- macOS Avalonia CI is advisory unless branch protection is explicitly updated to require it for macOS preview PRs
 
 If the required check name changes in GitHub Actions, branch protection must be updated immediately or merges may be blocked unexpectedly.
 
@@ -69,6 +70,7 @@ Current role:
 
 - active and green
 - uses the Windows build path that matches this repository
+- also compiles the macOS preview project inside the same Sonar begin/end block without changing the Windows build command
 - not currently required for merge
 
 Required secret:
@@ -96,6 +98,20 @@ Current role:
 - manual and release-published helper
 - uploads packaged artifacts
 - supports GitHub artifact attestations for release provenance
+
+### [`.github/workflows/macos-avalonia.yml`](../.github/workflows/macos-avalonia.yml)
+
+Purpose:
+
+- clean-runner validation for the macOS Avalonia preview project
+
+Current role:
+
+- advisory unless branch protection is updated for macOS preview PRs
+- uses `global.json`
+- restores and builds `src/FramePlayer.Mac/FramePlayer.Mac.csproj`
+- runs `tests/FramePlayer.Mac.Tests` with `Category!=ReleaseCandidate`
+- intentionally does not run corpus release-candidate validation because the real corpus is not stored in git
 
 ## GitHub-Native Security Features Expected To Be Enabled
 
@@ -144,5 +160,6 @@ These are intentional gaps, not accidents:
 - SonarQube is active but not yet required for merge
 - Code scanning results are active but not yet enforced as a blocking branch rule
 - product-specific media regression coverage still lives outside generic GitHub quality tooling and remains a separate validation concern
+- macOS Developer ID signing and notarization are not complete until the Developer ID certificate and notary credentials are installed and the final notarized artifact passes Gatekeeper on a clean machine
 
 That split is intentional. Generic platform security tooling should support, not replace, the repo's domain-specific validation.

@@ -2,6 +2,12 @@
 
 Frame Player is a frame-first WPF review tool built on a custom FFmpeg engine with a bundled in-process FFmpeg runtime. It treats decoded display-order frame identity as the source of truth for exact frame stepping, frame seeks, and review state, prioritizing deterministic review behavior over generic consumer media-player parity.
 
+## Release Tracks
+
+- Windows stable: the supported Windows release line remains the WPF app at `v1.8.4`. Its source path, build path, tests, runtime bootstrap, and release process remain unchanged by the macOS preview work.
+- macOS Preview: `FramePlayer.Mac` is an Avalonia-based macOS-only preview app under `src/FramePlayer.Mac`. It mirrors the Windows app body, transport behavior, compare workflow, loop/export surfaces, menu commands, and keyboard shortcuts while using native macOS window/menu chrome.
+- The Avalonia app is not being declared the universal replacement for the Windows WPF release line in this preview.
+
 ## Who this is for
 
 FramePlayer is intended for people who need exact video frame review rather than ordinary playback:
@@ -97,6 +103,13 @@ The shipped app is packaged with the FFmpeg runtime DLLs next to `FramePlayer.ex
 - The runtime manifest records the expected archive filename, archive SHA256, human-readable FFmpeg version, DLL hashes, and source-build metadata
 - The current runtime manifest still points at the verified `v1.5.0` runtime-only GitHub release asset used for clean-runner bootstrap
 
+### macOS Preview Runtime Model
+
+- The macOS preview bundles pinned FFmpeg `.dylib` runtime files from `Runtime/macos/osx-arm64/ffmpeg` into the local `.app` bundle at packaging time.
+- macOS runtime dylibs are staged locally and ignored by git; tracked provenance and hashes live under `Runtime/macos/`.
+- CPU decode is the preview baseline. GPU acceleration should remain hidden or unavailable unless the bundled macOS FFmpeg runtime and the local machine pass explicit capability checks.
+- Recent files and diagnostics are stored under macOS application support/log locations and do not introduce telemetry, analytics, auto-update, HTTP client, socket, or background network-service behavior.
+
 ## Network and Telemetry Posture
 
 - The desktop app does not include telemetry, analytics, auto-update, HTTP client, socket, or background network-service code.
@@ -128,13 +141,35 @@ The local `ffmpeg-tools` bundle is still used by some harness and validation flo
 
 For phase-1 GPU validation, keep the default `Playback > Use GPU Acceleration` setting enabled and test on a machine with a working Vulkan loader/driver. Unsupported systems and unsupported codec/device combinations stay on CPU decode automatically.
 
+### macOS Preview Quick Start
+
+Use a Mac with the .NET SDK pinned by `global.json`, then stage the pinned macOS FFmpeg runtime under `Runtime/macos/osx-arm64/ffmpeg`.
+
+```bash
+dotnet build src/FramePlayer.Mac/FramePlayer.Mac.csproj -c Release
+dotnet test tests/FramePlayer.Mac.Tests/FramePlayer.Mac.Tests.csproj -c Release --filter "Category!=ReleaseCandidate"
+FRAMEPLAYER_MAC_CORPUS="Video Test Files" script/validate_macos_release_candidate.sh --corpus "Video Test Files"
+script/package_macos_release.sh --sign
+```
+
+The local preview bundle is `dist/Frame Player.app`. The signed release-candidate ZIP and SHA256 file are written under `artifacts/macos-release-candidate/`.
+
 ## Requirements
+
+Windows stable release:
 
 - Windows 10 or later
 - To run the released app: [.NET 10 Desktop Runtime for Windows](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)
 - To build from source: .NET 10 SDK (`10.0.2xx`)
 - Visual Studio 2026 Build Tools or Visual Studio 2026 with `.NET desktop development` for fully supported `net10.0-windows` targeting
 - PowerShell 5.1 or later
+
+macOS preview:
+
+- macOS 13 or later
+- .NET 10 SDK pinned by `global.json`
+- locally staged pinned macOS FFmpeg runtime under `Runtime/macos/osx-arm64/ffmpeg`
+- Apple Development signing identity for controlled testing, or Developer ID Application plus notary credentials for public distribution
 
 For Vulkan-backed GPU decode testing, the local machine also needs a working Vulkan loader/driver. CPU decode remains the default fallback when Vulkan is unavailable or unsupported.
 
@@ -166,6 +201,8 @@ GitHub Actions Windows CI is compile validation on a clean runner. The workflow 
 - Releases: [github.com/jfleezy23/frame-player/releases](https://github.com/jfleezy23/frame-player/releases)
 - .NET 10 Desktop Runtime: [dotnet.microsoft.com/en-us/download/dotnet/10.0](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)
 - Current release note: [docs/release-v1.8.4-feedback.md](docs/release-v1.8.4-feedback.md)
+- macOS preview note: [docs/release-macos-preview-0.1.0.md](docs/release-macos-preview-0.1.0.md)
+- macOS preview release process: [docs/macos-preview-release.md](docs/macos-preview-release.md)
 - Release checklist: [docs/release-checklist.md](docs/release-checklist.md)
 - Release verification notes: [TESTING_NOTES.md](TESTING_NOTES.md)
 - Security policy: [SECURITY.md](SECURITY.md)

@@ -47,6 +47,20 @@ Important note:
 - Role in this repo: enabled only in the separate FFmpeg export runtime path to provide H.264 MP4 export
 - License note: x264 is GPL-licensed; review the upstream project before redistributing builds that include it
 
+### macOS FFmpeg Preview Runtime
+
+- Project: <https://ffmpeg.org/>
+- Runtime path used by the macOS preview: `Runtime/macos/osx-arm64/ffmpeg`
+- Tracked provenance: `Runtime/macos/osx-arm64/ffmpeg/build-provenance.txt`
+- Tracked hashes: `Runtime/macos/osx-arm64/ffmpeg/SHA256SUMS.txt`
+- The local macOS runtime provenance currently shows FFmpeg configured with `--enable-gpl` and `--enable-libx264`.
+- The `.dylib` files are staged locally for packaging and are not stored in git history.
+
+Important note:
+
+- Because the macOS FFmpeg build enables GPL components and x264, redistribution of the macOS preview runtime has GPL implications.
+- Before publishing a public macOS artifact, verify the exact source offer, license text, and redistribution obligations that apply to the staged runtime.
+
 ## Attribution
 
 Frame Player itself is authored and released separately from the components above. Review the individual upstream projects and license texts before redistributing modified builds.
