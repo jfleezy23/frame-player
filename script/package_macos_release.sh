@@ -87,8 +87,12 @@ sign_app_bundle() {
   fi
 
   while IFS= read -r item; do
+    if [[ "$item" == "$main_executable" ]]; then
+      continue
+    fi
+
     codesign --force "${timestamp_args[@]}" --options runtime --sign "$identity" "$item"
-  done < <(find "$APP_BUNDLE/Contents/MacOS" -type f ! -path "$main_executable" | sort -r)
+  done < <(find "$APP_BUNDLE/Contents/MacOS" -type f | sort -r)
 
   codesign --force "${timestamp_args[@]}" --options runtime --entitlements "$entitlements" --sign "$identity" "$APP_BUNDLE"
   codesign --verify --deep --verbose=2 "$APP_BUNDLE"
@@ -115,13 +119,8 @@ fi
 rm -f "$ZIP_PATH"
 (
   cd "$DIST_DIR"
-  COPYFILE_DISABLE=1 /usr/bin/ditto -c -k --norsrc --keepParent "Frame Player.app" "$ZIP_PATH"
+  /usr/bin/ditto -c -k --keepParent "Frame Player.app" "$ZIP_PATH"
 )
-
-if unzip -l "$ZIP_PATH" | awk '{ print $4 }' | grep -q '/\._'; then
-  echo "Packaged archive contains AppleDouble metadata files." >&2
-  exit 1
-fi
 
 shasum -a 256 "$ZIP_PATH" > "$ZIP_PATH.sha256"
 
