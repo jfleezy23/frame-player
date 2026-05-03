@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
+using FramePlayer.Services;
 using Xunit;
 
 namespace FramePlayer.Desktop.Tests
@@ -18,6 +20,7 @@ namespace FramePlayer.Desktop.Tests
             Assert.Contains("Runtime\\ffmpeg-export\\*.dll", project, StringComparison.Ordinal);
             Assert.Contains("EnsureDesktopBundledRuntime", project, StringComparison.Ordinal);
             Assert.Contains("EnsureDesktopBundledExportRuntime", project, StringComparison.Ordinal);
+            Assert.Contains("AddDesktopBundledRuntimeContent", project, StringComparison.Ordinal);
             Assert.Contains("ConfigureExportHostRuntime", program, StringComparison.Ordinal);
             Assert.Contains("SetDllDirectory", program, StringComparison.Ordinal);
             Assert.Contains("FramePlayer.Desktop.Tests", File.ReadAllText(Path.Combine(root, "src", "FramePlayer.Desktop", "Properties", "AssemblyInfo.cs")), StringComparison.Ordinal);
@@ -51,6 +54,53 @@ namespace FramePlayer.Desktop.Tests
             Assert.DoesNotContain("FRAMEPLAYER_MAC", exportHost, StringComparison.Ordinal);
             Assert.DoesNotContain("FRAMEPLAYER_MAC", mainWindow, StringComparison.Ordinal);
             Assert.DoesNotContain("macOS preview release track", mainWindow, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void DesktopPreviewOutput_StagesWindowsRuntimeLayout()
+        {
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                return;
+            }
+
+            var baseDirectory = AppContext.BaseDirectory;
+            foreach (var fileName in new[]
+            {
+                "avcodec-62.dll",
+                "avformat-62.dll",
+                "avutil-60.dll",
+                "swresample-6.dll",
+                "swscale-9.dll",
+                "libwinpthread-1.dll"
+            })
+            {
+                Assert.True(
+                    File.Exists(Path.Combine(baseDirectory, fileName)),
+                    "Missing staged playback runtime file: " + fileName);
+            }
+
+            var exportRuntimeDirectory = Path.Combine(baseDirectory, ExportHostClient.ExportRuntimeFolderName);
+            Assert.True(Directory.Exists(exportRuntimeDirectory), "Missing staged export runtime directory.");
+            foreach (var fileName in new[]
+            {
+                "avcodec-62.dll",
+                "avfilter-11.dll",
+                "avformat-62.dll",
+                "avutil-60.dll",
+                "libx264-165.dll",
+                "swresample-6.dll",
+                "swscale-9.dll"
+            })
+            {
+                Assert.True(
+                    File.Exists(Path.Combine(exportRuntimeDirectory, fileName)),
+                    "Missing staged export runtime file: " + fileName);
+            }
+
+            Assert.True(
+                ExportRuntimeManifestService.TryValidateRuntimeDirectory(exportRuntimeDirectory, out var validationMessage),
+                validationMessage);
         }
 
         private static string FindRepositoryRoot()

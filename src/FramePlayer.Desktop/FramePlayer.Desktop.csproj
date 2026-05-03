@@ -37,14 +37,6 @@
   <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
     <None Remove="..\..\Runtime\ffmpeg\*.dll" />
     <None Remove="..\..\Runtime\ffmpeg-export\*.dll" />
-    <Content Include="..\..\Runtime\ffmpeg\*.dll">
-      <Link>%(Filename)%(Extension)</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\..\Runtime\ffmpeg-export\*.dll">
-      <Link>ffmpeg-export\%(Filename)%(Extension)</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
   </ItemGroup>
 
   <Target Name="EnsureDesktopBundledRuntime"
@@ -77,5 +69,27 @@
           Condition="'$(OS)' == 'Windows_NT' and '$(SkipRuntimeBootstrap)' != 'true' and !Exists('..\..\Runtime\\ffmpeg-export\\avfilter-11.dll')">
     <Message Importance="high"
              Text="FFmpeg export runtime DLLs are not present in Runtime\\ffmpeg-export for the Avalonia desktop preview. If restore failed, run .\\scripts\\Ensure-DevExportRuntime.ps1 manually and rebuild." />
+  </Target>
+
+  <Target Name="AddDesktopBundledRuntimeContent"
+          BeforeTargets="AssignTargetPaths"
+          DependsOnTargets="EnsureDesktopBundledRuntime;EnsureDesktopBundledExportRuntime"
+          Condition="'$(OS)' == 'Windows_NT'">
+    <ItemGroup Condition="Exists('..\..\Runtime\\ffmpeg\\avcodec-62.dll')">
+      <DesktopPlaybackRuntimeDll Include="..\..\Runtime\ffmpeg\*.dll" />
+      <Content Include="@(DesktopPlaybackRuntimeDll)">
+        <Link>%(DesktopPlaybackRuntimeDll.Filename)%(DesktopPlaybackRuntimeDll.Extension)</Link>
+        <TargetPath>%(DesktopPlaybackRuntimeDll.Filename)%(DesktopPlaybackRuntimeDll.Extension)</TargetPath>
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </Content>
+    </ItemGroup>
+    <ItemGroup Condition="Exists('..\..\Runtime\\ffmpeg-export\\avfilter-11.dll')">
+      <DesktopExportRuntimeDll Include="..\..\Runtime\ffmpeg-export\*.dll" />
+      <Content Include="@(DesktopExportRuntimeDll)">
+        <Link>ffmpeg-export\%(DesktopExportRuntimeDll.Filename)%(DesktopExportRuntimeDll.Extension)</Link>
+        <TargetPath>ffmpeg-export\%(DesktopExportRuntimeDll.Filename)%(DesktopExportRuntimeDll.Extension)</TargetPath>
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </Content>
+    </ItemGroup>
   </Target>
 </Project>
