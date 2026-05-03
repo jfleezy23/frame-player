@@ -19,7 +19,7 @@ namespace FramePlayer.Desktop.Tests
 
         public void Run(Action action)
         {
-            _session.Dispatch(action, CancellationToken.None);
+            _session.Dispatch(action, CancellationToken.None).GetAwaiter().GetResult();
         }
 
         public void Dispose()

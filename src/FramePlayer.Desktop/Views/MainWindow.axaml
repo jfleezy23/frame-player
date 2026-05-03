@@ -65,6 +65,32 @@
     <Style Selector="TextBlock.pane-loop-status">
       <Setter Property="Width" Value="176" />
     </Style>
+    <Style Selector="StackPanel.frame-entry">
+      <Setter Property="Orientation" Value="Horizontal" />
+      <Setter Property="HorizontalAlignment" Value="Right" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="StackPanel.pane-frame-entry">
+      <Setter Property="Margin" Value="0,6,0,0" />
+    </Style>
+    <Style Selector="TextBlock.frame-entry-label">
+      <Setter Property="Foreground" Value="#B7BDC6" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="0,0,6,0" />
+    </Style>
+    <Style Selector="TextBox.frame-number-box">
+      <Setter Property="Width" Value="104" />
+      <Setter Property="Height" Value="32" />
+      <Setter Property="MinHeight" Value="32" />
+      <Setter Property="MaxHeight" Value="32" />
+      <Setter Property="Padding" Value="8,3" />
+      <Setter Property="HorizontalContentAlignment" Value="Right" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBox.pane-frame-number-box">
+      <Setter Property="Width" Value="92" />
+    </Style>
     <Style Selector="TextBlock.status-text">
       <Setter Property="TextTrimming" Value="CharacterEllipsis" />
       <Setter Property="TextWrapping" Value="NoWrap" />
@@ -111,13 +137,13 @@
       </Border>
 
       <Border Grid.Row="1" x:Name="CompareToolbarBorder" Background="#1A2028" BorderBrush="#28313B" BorderThickness="0,0,0,1" Padding="18,8" IsVisible="False">
-        <StackPanel Orientation="Horizontal" Spacing="8">
+        <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*" ColumnSpacing="8">
           <CheckBox x:Name="AllPanesCheckBox" Content="All panes" IsChecked="True" />
-          <Button x:Name="AlignRightToLeftButton" Content="Sync Right to Left" ToolTip.Tip="Frame first: syncs the right pane to the left pane with exact frame identity when available." Click="AlignRightToLeftButton_Click" />
-          <Button x:Name="AlignLeftToRightButton" Content="Sync Left to Right" ToolTip.Tip="Frame first: syncs the left pane to the right pane with exact frame identity when available." Click="AlignLeftToRightButton_Click" />
-          <CheckBox x:Name="LinkPaneZoomCheckBox" Content="Link zoom" IsChecked="True" />
-          <TextBlock x:Name="CompareStatusTextBlock" Text="Compare: Load two videos to begin | Last sync: none" Foreground="#B7BDC6" VerticalAlignment="Center" Margin="12,0,0,0" />
-        </StackPanel>
+          <Button x:Name="AlignRightToLeftButton" Grid.Column="1" Content="Sync Right to Left" ToolTip.Tip="Frame first: syncs the right pane to the left pane with exact frame identity when available." Click="AlignRightToLeftButton_Click" />
+          <Button x:Name="AlignLeftToRightButton" Grid.Column="2" Content="Sync Left to Right" ToolTip.Tip="Frame first: syncs the left pane to the right pane with exact frame identity when available." Click="AlignLeftToRightButton_Click" />
+          <CheckBox x:Name="LinkPaneZoomCheckBox" Grid.Column="3" Content="Link zoom" IsChecked="True" />
+          <TextBlock x:Name="CompareStatusTextBlock" Grid.Column="4" Text="Compare: Load two videos to begin | Last sync: none" Foreground="#B7BDC6" VerticalAlignment="Center" Margin="12,0,0,0" MinWidth="0" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+        </Grid>
       </Border>
 
       <Border Grid.Row="2" x:Name="VideoPanel" Background="#11161C" Padding="14">
@@ -144,10 +170,10 @@
                 </Grid>
               </Border>
               <Border x:Name="PrimaryPaneFooterBorder" Grid.Row="2" Background="#171C22" BorderBrush="#28313B" BorderThickness="0,1,0,0" CornerRadius="0,0,8,8" Padding="10" IsVisible="False">
-                <Grid RowDefinitions="Auto,16,Auto" ColumnDefinitions="Auto,*,Auto">
+                <Grid RowDefinitions="Auto,16,Auto" ColumnDefinitions="Auto,*,176">
                   <TextBlock x:Name="PrimaryPaneCurrentPositionTextBlock" Text="00:00:00.000" Foreground="#B7BDC6" VerticalAlignment="Center" />
                   <Slider x:Name="PrimaryPanePositionSlider" Grid.Column="1" Classes="timeline-slider" Margin="10,0" Minimum="0" Maximum="1" Tag="pane-primary" PointerPressed="TimelineSlider_PointerPressed" ValueChanged="PanePositionSlider_ValueChanged" />
-                  <TextBlock x:Name="PrimaryPaneDurationTextBlock" Grid.Column="2" Text="00:00:00.000" Foreground="#B7BDC6" VerticalAlignment="Center" />
+                  <TextBlock x:Name="PrimaryPaneDurationTextBlock" Grid.Column="2" Text="00:00:00.000" Foreground="#B7BDC6" HorizontalAlignment="Right" TextAlignment="Right" VerticalAlignment="Center" />
                   <TextBlock x:Name="PrimaryPaneLoopStatusTextBlock" Grid.Row="1" Grid.Column="2" Classes="loop-status pane-loop-status" Text="Loop: off" />
                   <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,6,0,0">
                     <Button x:Name="PrimaryPaneStepBackButton" Classes="transport-button pane-transport-button" Tag="pane-primary" Click="PaneStepBackButton_Click" ToolTip.Tip="Previous Frame">
@@ -198,9 +224,9 @@
                       </Viewbox>
                     </Button>
                   </StackPanel>
-                  <StackPanel Grid.Row="2" Grid.Column="2" Orientation="Horizontal" Margin="0,6,0,0">
-                    <TextBlock Text="Frame" Foreground="#B7BDC6" VerticalAlignment="Center" Margin="0,0,6,0" />
-                    <TextBox x:Name="PrimaryPaneFrameNumberTextBox" Width="92" Tag="pane-primary" KeyDown="FrameNumberTextBox_KeyDown" />
+                  <StackPanel Grid.Row="2" Grid.Column="2" Classes="frame-entry pane-frame-entry">
+                    <TextBlock Classes="frame-entry-label" Text="Frame" />
+                    <TextBox x:Name="PrimaryPaneFrameNumberTextBox" Classes="frame-number-box pane-frame-number-box" Tag="pane-primary" KeyDown="FrameNumberTextBox_KeyDown" />
                   </StackPanel>
                 </Grid>
               </Border>
@@ -229,10 +255,10 @@
                 </Grid>
               </Border>
               <Border x:Name="ComparePaneFooterBorder" Grid.Row="2" Background="#171C22" BorderBrush="#28313B" BorderThickness="0,1,0,0" CornerRadius="0,0,8,8" Padding="10">
-                <Grid RowDefinitions="Auto,16,Auto" ColumnDefinitions="Auto,*,Auto">
+                <Grid RowDefinitions="Auto,16,Auto" ColumnDefinitions="Auto,*,176">
                   <TextBlock x:Name="ComparePaneCurrentPositionTextBlock" Text="00:00:00.000" Foreground="#B7BDC6" VerticalAlignment="Center" />
                   <Slider x:Name="ComparePanePositionSlider" Grid.Column="1" Classes="timeline-slider" Margin="10,0" Minimum="0" Maximum="1" Tag="pane-compare" PointerPressed="TimelineSlider_PointerPressed" ValueChanged="PanePositionSlider_ValueChanged" />
-                  <TextBlock x:Name="ComparePaneDurationTextBlock" Grid.Column="2" Text="00:00:00.000" Foreground="#B7BDC6" VerticalAlignment="Center" />
+                  <TextBlock x:Name="ComparePaneDurationTextBlock" Grid.Column="2" Text="00:00:00.000" Foreground="#B7BDC6" HorizontalAlignment="Right" TextAlignment="Right" VerticalAlignment="Center" />
                   <TextBlock x:Name="ComparePaneLoopStatusTextBlock" Grid.Row="1" Grid.Column="2" Classes="loop-status pane-loop-status" Text="Loop: off" />
                   <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,6,0,0">
                     <Button x:Name="ComparePaneStepBackButton" Classes="transport-button pane-transport-button" Tag="pane-compare" Click="PaneStepBackButton_Click" ToolTip.Tip="Previous Frame">
@@ -283,9 +309,9 @@
                       </Viewbox>
                     </Button>
                   </StackPanel>
-                  <StackPanel Grid.Row="2" Grid.Column="2" Orientation="Horizontal" Margin="0,6,0,0">
-                    <TextBlock Text="Frame" Foreground="#B7BDC6" VerticalAlignment="Center" Margin="0,0,6,0" />
-                    <TextBox x:Name="ComparePaneFrameNumberTextBox" Width="92" Tag="pane-compare" KeyDown="FrameNumberTextBox_KeyDown" />
+                  <StackPanel Grid.Row="2" Grid.Column="2" Classes="frame-entry pane-frame-entry">
+                    <TextBlock Classes="frame-entry-label" Text="Frame" />
+                    <TextBox x:Name="ComparePaneFrameNumberTextBox" Classes="frame-number-box pane-frame-number-box" Tag="pane-compare" KeyDown="FrameNumberTextBox_KeyDown" />
                   </StackPanel>
                 </Grid>
               </Border>
@@ -295,10 +321,10 @@
       </Border>
 
       <Border Grid.Row="3" x:Name="ControlPanel" Background="#21252B" BorderBrush="#31363F" BorderThickness="0,1,0,0" Padding="18,14,18,16" MinHeight="134">
-        <Grid RowDefinitions="40,20,42" ColumnDefinitions="Auto,*,Auto">
+        <Grid RowDefinitions="40,20,42" ColumnDefinitions="Auto,*,240">
           <TextBlock x:Name="CurrentPositionTextBlock" Text="00:00:00.000" Foreground="#B7BDC6" VerticalAlignment="Center" />
           <Slider x:Name="PositionSlider" Grid.Column="1" Classes="timeline-slider" Margin="12,0" Minimum="0" Maximum="1" PointerPressed="TimelineSlider_PointerPressed" ValueChanged="PositionSlider_ValueChanged" />
-          <TextBlock x:Name="DurationTextBlock" Grid.Column="2" Text="00:00:00.000" Foreground="#B7BDC6" VerticalAlignment="Center" />
+          <TextBlock x:Name="DurationTextBlock" Grid.Column="2" Text="00:00:00.000" Foreground="#B7BDC6" HorizontalAlignment="Right" TextAlignment="Right" VerticalAlignment="Center" />
           <TextBlock x:Name="LoopStatusTextBlock" Grid.Row="1" Grid.Column="2" Classes="loop-status main-loop-status" Text="Loop: off" />
           <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
             <Button x:Name="PreviousFrameButton" Classes="transport-button" Click="PreviousFrameButton_Click" ToolTip.Tip="Previous Frame">
@@ -356,9 +382,9 @@
               </Viewbox>
             </Button>
           </StackPanel>
-          <StackPanel Grid.Row="2" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-            <TextBlock Text="Frame" Foreground="#B7BDC6" VerticalAlignment="Center" Margin="0,0,6,0" />
-            <TextBox x:Name="FrameNumberTextBox" Width="108" KeyDown="FrameNumberTextBox_KeyDown" />
+          <StackPanel Grid.Row="2" Grid.Column="2" Classes="frame-entry">
+            <TextBlock Classes="frame-entry-label" Text="Frame" />
+            <TextBox x:Name="FrameNumberTextBox" Classes="frame-number-box" KeyDown="FrameNumberTextBox_KeyDown" />
           </StackPanel>
         </Grid>
       </Border>

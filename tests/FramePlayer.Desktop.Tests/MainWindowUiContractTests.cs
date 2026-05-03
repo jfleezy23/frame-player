@@ -155,13 +155,13 @@ namespace FramePlayer.Desktop.Tests
                     InvokePrivate(window, "SelectPane", ParsePane("Compare"));
 
                     Assert.Equal(new Thickness(1), primaryPaneBorder.BorderThickness);
-                    Assert.Equal(new Thickness(2), comparePaneBorder.BorderThickness);
+                    Assert.Equal(new Thickness(1), comparePaneBorder.BorderThickness);
                     AssertBrushColor("#28313B", primaryPaneBorder.BorderBrush);
                     AssertBrushColor("#5AA9E6", comparePaneBorder.BorderBrush);
 
                     InvokePrivate(window, "SelectPane", ParsePane("Primary"));
 
-                    Assert.Equal(new Thickness(2), primaryPaneBorder.BorderThickness);
+                    Assert.Equal(new Thickness(1), primaryPaneBorder.BorderThickness);
                     Assert.Equal(new Thickness(1), comparePaneBorder.BorderThickness);
                     AssertBrushColor("#5AA9E6", primaryPaneBorder.BorderBrush);
                     AssertBrushColor("#28313B", comparePaneBorder.BorderBrush);
@@ -260,6 +260,25 @@ namespace FramePlayer.Desktop.Tests
         }
 
         [Fact]
+        public void FrameEntries_UseFixedRightRailsAndStableBoxSizing()
+        {
+            _fixture.Run(() =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    AssertFrameEntryRail(window, "FrameNumberTextBox", "DurationTextBlock", 240, 104, 0);
+                    AssertFrameEntryRail(window, "PrimaryPaneFrameNumberTextBox", "PrimaryPaneDurationTextBlock", 176, 92, 6);
+                    AssertFrameEntryRail(window, "ComparePaneFrameNumberTextBox", "ComparePaneDurationTextBlock", 176, 92, 6);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
         public void MainTransport_ReservesClearanceAboveStatusPanel()
         {
             _fixture.Run(() =>
@@ -284,6 +303,7 @@ namespace FramePlayer.Desktop.Tests
                     Assert.Equal(new Thickness(0), transportParent.Margin);
 
                     var frameEntryParent = Assert.IsType<StackPanel>(RequireControl<TextBox>(window, "FrameNumberTextBox").Parent);
+                    Assert.Equal(HorizontalAlignment.Right, frameEntryParent.HorizontalAlignment);
                     Assert.Equal(VerticalAlignment.Center, frameEntryParent.VerticalAlignment);
                     Assert.Equal(new Thickness(0), frameEntryParent.Margin);
 
@@ -376,6 +396,8 @@ namespace FramePlayer.Desktop.Tests
                     Assert.Equal(
                         "Compare: Load two videos to begin | Last sync: none",
                         compareStatus.Text);
+                    Assert.Equal(TextTrimming.CharacterEllipsis, compareStatus.TextTrimming);
+                    Assert.Equal(TextWrapping.NoWrap, compareStatus.TextWrapping);
                     Assert.DoesNotContain("Align", syncRightToLeft.Content?.ToString() ?? string.Empty, StringComparison.Ordinal);
                     Assert.DoesNotContain("Align", syncLeftToRight.Content?.ToString() ?? string.Empty, StringComparison.Ordinal);
                     Assert.DoesNotContain("alignment", compareStatus.Text ?? string.Empty, StringComparison.OrdinalIgnoreCase);
@@ -739,6 +761,40 @@ namespace FramePlayer.Desktop.Tests
             Assert.Equal(1, Grid.GetRow(loopStatus));
             Assert.Equal(2, Grid.GetColumn(loopStatus));
             Assert.Equal(2, Grid.GetRow(transportParent!));
+        }
+
+        private static void AssertFrameEntryRail(
+            Window window,
+            string frameTextBoxName,
+            string durationTextBlockName,
+            double expectedRailWidth,
+            double expectedTextBoxWidth,
+            double expectedTopMargin)
+        {
+            var frameTextBox = RequireControl<TextBox>(window, frameTextBoxName);
+            var frameEntryParent = Assert.IsType<StackPanel>(frameTextBox.Parent);
+            var footerGrid = Assert.IsType<Grid>(frameEntryParent.Parent);
+            var durationTextBlock = RequireControl<TextBlock>(window, durationTextBlockName);
+
+            Assert.Equal(2, Grid.GetColumn(frameEntryParent));
+            Assert.Equal(2, Grid.GetRow(frameEntryParent));
+            Assert.Equal(HorizontalAlignment.Right, frameEntryParent.HorizontalAlignment);
+            Assert.Equal(VerticalAlignment.Center, frameEntryParent.VerticalAlignment);
+            Assert.Equal(new Thickness(0, expectedTopMargin, 0, 0), frameEntryParent.Margin);
+
+            Assert.Equal(GridUnitType.Pixel, footerGrid.ColumnDefinitions[2].Width.GridUnitType);
+            Assert.Equal(expectedRailWidth, footerGrid.ColumnDefinitions[2].Width.Value);
+            Assert.Equal(2, Grid.GetColumn(durationTextBlock));
+            Assert.Equal(HorizontalAlignment.Right, durationTextBlock.HorizontalAlignment);
+            Assert.Equal(TextAlignment.Right, durationTextBlock.TextAlignment);
+
+            Assert.Contains("frame-number-box", frameTextBox.Classes);
+            Assert.Equal(expectedTextBoxWidth, frameTextBox.Width);
+            Assert.Equal(32, frameTextBox.Height);
+            Assert.Equal(32, frameTextBox.MinHeight);
+            Assert.Equal(32, frameTextBox.MaxHeight);
+            Assert.Equal(HorizontalAlignment.Right, frameTextBox.HorizontalContentAlignment);
+            Assert.Equal(VerticalAlignment.Center, frameTextBox.VerticalContentAlignment);
         }
 
         private static NativeMenuItem RequireNativeMenuItem(NativeMenu menu, string header)

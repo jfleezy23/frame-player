@@ -518,14 +518,14 @@ namespace FramePlayer.Desktop.Views
             var primaryIsFocused = highlightPaneSelection && !compareIsFocused;
 
             PrimaryPaneBorder.BorderBrush = primaryIsFocused ? PaneSelectedBorderBrush : PaneChromeBorderBrush;
-            PrimaryPaneBorder.BorderThickness = primaryIsFocused ? new Thickness(2) : new Thickness(1);
+            PrimaryPaneBorder.BorderThickness = new Thickness(1);
             PrimaryPaneHeaderBorder.Background = compareIsFocused ? PaneChromeBrush : PaneSelectedBrush;
             PrimaryPaneHeaderBorder.BorderBrush = primaryIsFocused ? PaneSelectedBorderBrush : PaneChromeBorderBrush;
             PrimaryPaneFooterBorder.Background = compareIsFocused ? PaneChromeBrush : PaneSelectedBrush;
             PrimaryPaneFooterBorder.BorderBrush = primaryIsFocused ? PaneSelectedBorderBrush : PaneChromeBorderBrush;
 
             ComparePaneBorder.BorderBrush = compareIsFocused ? PaneSelectedBorderBrush : PaneChromeBorderBrush;
-            ComparePaneBorder.BorderThickness = compareIsFocused ? new Thickness(2) : new Thickness(1);
+            ComparePaneBorder.BorderThickness = new Thickness(1);
             ComparePaneHeaderBorder.Background = compareIsFocused ? PaneSelectedBrush : PaneChromeBrush;
             ComparePaneHeaderBorder.BorderBrush = compareIsFocused ? PaneSelectedBorderBrush : PaneChromeBorderBrush;
             ComparePaneFooterBorder.Background = compareIsFocused ? PaneSelectedBrush : PaneChromeBrush;
