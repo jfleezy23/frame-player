@@ -966,6 +966,12 @@ namespace FramePlayer.Desktop.Views
             var saveLoopItem = CreateFrameContextMenuItem("Save Loop As Clip...");
             saveLoopItem.Click += async (_, _) =>
             {
+                if (IsSharedTimelineContextDisabled(explicitPane))
+                {
+                    CacheStatusTextBlock.Text = "Use a pane-local timeline before exporting compare loop clips.";
+                    return;
+                }
+
                 var pane = ResolveTimelineContextPane(explicitPane);
                 SelectPane(pane);
                 await ExportLoopClipAsync(null, ResolvePaneId(pane));
@@ -979,16 +985,32 @@ namespace FramePlayer.Desktop.Views
             menu.Items.Add(saveLoopItem);
             menu.Opened += (_, _) =>
             {
+                if (IsSharedTimelineContextDisabled(explicitPane))
+                {
+                    setPositionAItem.IsEnabled = false;
+                    setPositionBItem.IsEnabled = false;
+                    loopPlaybackItem.IsEnabled = false;
+                    loopPlaybackItem.IsChecked = _isLoopPlaybackEnabled;
+                    saveLoopItem.IsEnabled = false;
+                    return;
+                }
+
                 var pane = ResolveTimelineContextPane(explicitPane);
                 SelectPane(pane);
                 var target = GetTimelineContextTarget(explicitPane);
                 setPositionAItem.IsEnabled = CanSetTimelineLoopMarker(pane, LoopPlaybackMarkerEndpoint.In, target);
                 setPositionBItem.IsEnabled = CanSetTimelineLoopMarker(pane, LoopPlaybackMarkerEndpoint.Out, target);
+                loopPlaybackItem.IsEnabled = true;
                 loopPlaybackItem.IsChecked = _isLoopPlaybackEnabled;
                 saveLoopItem.IsEnabled = CanExportLoopClip(pane);
             };
 
             return menu;
+        }
+
+        private bool IsSharedTimelineContextDisabled(Pane? explicitPane)
+        {
+            return explicitPane == null && IsCompareModeEnabled;
         }
 
         private static ContextMenu CreateFrameContextMenu()
@@ -1007,6 +1029,12 @@ namespace FramePlayer.Desktop.Views
 
         private async Task SetTimelineContextMarkerAsync(Pane? explicitPane, LoopPlaybackMarkerEndpoint endpoint)
         {
+            if (IsSharedTimelineContextDisabled(explicitPane))
+            {
+                CacheStatusTextBlock.Text = "Use the primary or compare pane timeline to set compare loop points.";
+                return;
+            }
+
             var pane = ResolveTimelineContextPane(explicitPane);
             SelectPane(pane);
             var set = await SetTimelineLoopMarkerAtAsync(ResolvePaneId(pane), endpoint, GetTimelineContextTarget(explicitPane));
@@ -1055,16 +1083,19 @@ namespace FramePlayer.Desktop.Views
         {
             var engine = TryGetExistingEngine(pane);
             var range = GetLoopRange(pane);
-            return engine != null &&
+            return ClipExportService.IsBundledRuntimeAvailable &&
+                   engine != null &&
                    engine.IsMediaOpen &&
                    range.HasLoopIn &&
                    range.HasLoopOut &&
+                   !range.HasPendingMarkers &&
                    !range.IsInvalidRange;
         }
 
         private bool CanExportSideBySideCompare()
         {
-            return CompareModeCheckBox.IsChecked == true &&
+            return CompareSideBySideExportService.IsBundledRuntimeAvailable &&
+                   CompareModeCheckBox.IsChecked == true &&
                    _primaryEngine.IsMediaOpen &&
                    _compareEngine != null &&
                    _compareEngine.IsMediaOpen;
@@ -1998,13 +2029,19 @@ namespace FramePlayer.Desktop.Views
 
         private async Task<CompareSideBySideExportResult?> ExportSideBySideCompareFromCurrentLoopStateAsync()
         {
-            var mode = _primaryLoopRange.HasLoopIn &&
-                       _primaryLoopRange.HasLoopOut &&
-                       _compareLoopRange.HasLoopIn &&
-                       _compareLoopRange.HasLoopOut
-                ? CompareSideBySideExportMode.Loop
-                : CompareSideBySideExportMode.WholeVideo;
-            return await ExportSideBySideCompareAsync(null, mode, CompareSideBySideExportAudioSource.Primary);
+            if (!CompareSideBySideExportService.IsBundledRuntimeAvailable)
+            {
+                CacheStatusTextBlock.Text = CompareSideBySideExportService.GetRuntimeAvailabilityMessage();
+                return null;
+            }
+
+            var selection = await PromptForCompareSideBySideExportOptionsAsync();
+            if (selection == null)
+            {
+                return null;
+            }
+
+            return await ExportSideBySideCompareAsync(null, selection.Mode, selection.AudioSource);
         }
 
         private async void ReplaceAudioTrackMenuItem_Click(object? sender, RoutedEventArgs e)
@@ -2014,6 +2051,12 @@ namespace FramePlayer.Desktop.Views
 
         private async Task<ClipExportResult?> ExportLoopClipAsync(string? outputPath, string? paneId)
         {
+            if (!ClipExportService.IsBundledRuntimeAvailable)
+            {
+                CacheStatusTextBlock.Text = ClipExportService.GetRuntimeAvailabilityMessage();
+                return null;
+            }
+
             var pane = ResolvePane(paneId);
             var engine = GetEngine(pane);
             var ffmpegEngine = engine as FfmpegReviewEngine;
@@ -2077,6 +2120,12 @@ namespace FramePlayer.Desktop.Views
             CompareSideBySideExportMode mode,
             CompareSideBySideExportAudioSource audioSource)
         {
+            if (!CompareSideBySideExportService.IsBundledRuntimeAvailable)
+            {
+                CacheStatusTextBlock.Text = CompareSideBySideExportService.GetRuntimeAvailabilityMessage();
+                return null;
+            }
+
             if (CompareModeCheckBox.IsChecked != true)
             {
                 CacheStatusTextBlock.Text = "Enable two-pane compare before exporting side-by-side video.";
@@ -2154,6 +2203,249 @@ namespace FramePlayer.Desktop.Views
                     Elapsed = TimeSpan.Zero
                 };
             }
+        }
+
+        private async Task<CompareSideBySideExportDialogSelection?> PromptForCompareSideBySideExportOptionsAsync()
+        {
+            if (CompareModeCheckBox.IsChecked != true ||
+                !_primaryEngine.IsMediaOpen ||
+                _compareEngine == null ||
+                !_compareEngine.IsMediaOpen)
+            {
+                CacheStatusTextBlock.Text = "Load both compare panes before exporting side-by-side video.";
+                return null;
+            }
+
+            var loopModeAvailable = IsCompareLoopModeAvailable();
+            var initialMode = loopModeAvailable
+                ? CompareSideBySideExportMode.Loop
+                : CompareSideBySideExportMode.WholeVideo;
+            var primaryHasAudio = _primaryEngine.MediaInfo.HasAudioStream;
+            var compareHasAudio = _compareEngine.MediaInfo.HasAudioStream;
+
+            var dialog = new Window
+            {
+                Title = "Export Side-by-Side Compare",
+                Width = 560,
+                Height = 420,
+                MinWidth = 480,
+                MinHeight = 360,
+                Background = Brush.Parse("#101418"),
+                WindowStartupLocation = WindowStartupLocation.CenterOwner
+            };
+
+            var loopModeRadio = new RadioButton
+            {
+                Content = "Loop",
+                GroupName = "CompareExportMode",
+                IsEnabled = loopModeAvailable,
+                IsChecked = initialMode == CompareSideBySideExportMode.Loop
+            };
+            var wholeVideoModeRadio = new RadioButton
+            {
+                Content = "Whole Video",
+                GroupName = "CompareExportMode",
+                IsChecked = initialMode == CompareSideBySideExportMode.WholeVideo
+            };
+            var primaryAudioRadio = new RadioButton
+            {
+                Content = BuildCompareExportAudioOptionLabel(Pane.Primary, primaryHasAudio),
+                GroupName = "CompareExportAudio",
+                IsChecked = true
+            };
+            var compareAudioRadio = new RadioButton
+            {
+                Content = BuildCompareExportAudioOptionLabel(Pane.Compare, compareHasAudio),
+                GroupName = "CompareExportAudio"
+            };
+
+            var cancelButton = new Button
+            {
+                Content = "Cancel",
+                MinWidth = 88
+            };
+            cancelButton.Click += (_, _) => dialog.Close(null);
+
+            var continueButton = new Button
+            {
+                Content = "Continue",
+                MinWidth = 96
+            };
+            continueButton.Click += (_, _) =>
+            {
+                var mode = loopModeRadio.IsChecked == true
+                    ? CompareSideBySideExportMode.Loop
+                    : CompareSideBySideExportMode.WholeVideo;
+                var audioSource = compareAudioRadio.IsChecked == true
+                    ? CompareSideBySideExportAudioSource.Compare
+                    : CompareSideBySideExportAudioSource.Primary;
+                dialog.Close(new CompareSideBySideExportDialogSelection(mode, audioSource));
+            };
+
+            var summaryGrid = new Grid
+            {
+                ColumnDefinitions = new ColumnDefinitions("*,*"),
+                Margin = new Thickness(0, 12, 0, 0)
+            };
+            var primarySummary = BuildCompareExportPaneSummary(Pane.Primary, _primaryEngine);
+            var compareSummary = BuildCompareExportPaneSummary(Pane.Compare, _compareEngine);
+            Grid.SetColumn(compareSummary, 1);
+            summaryGrid.Children.Add(primarySummary);
+            summaryGrid.Children.Add(compareSummary);
+
+            var choicesGrid = new Grid
+            {
+                ColumnDefinitions = new ColumnDefinitions("*,*"),
+                Margin = new Thickness(0, 16, 0, 0)
+            };
+            var modePanel = new StackPanel
+            {
+                Spacing = 8,
+                Children =
+                {
+                    new TextBlock { Text = "Export Mode", FontWeight = FontWeight.SemiBold },
+                    loopModeRadio,
+                    wholeVideoModeRadio,
+                    new TextBlock
+                    {
+                        Text = loopModeAvailable
+                            ? "Loop uses each pane's A/B range. Whole Video exports the aligned sources."
+                            : "Loop export requires valid A/B ranges on both panes.",
+                        Foreground = Brush.Parse("#B7BDC6"),
+                        TextWrapping = TextWrapping.Wrap
+                    }
+                }
+            };
+            var audioPanel = new StackPanel
+            {
+                Spacing = 8,
+                Children =
+                {
+                    new TextBlock { Text = "Audio Source", FontWeight = FontWeight.SemiBold },
+                    primaryAudioRadio,
+                    compareAudioRadio,
+                    new TextBlock
+                    {
+                        Text = "If the selected pane has no audio stream, the side-by-side export will be silent.",
+                        Foreground = Brush.Parse("#B7BDC6"),
+                        TextWrapping = TextWrapping.Wrap
+                    }
+                }
+            };
+            Grid.SetColumn(audioPanel, 1);
+            choicesGrid.Children.Add(modePanel);
+            choicesGrid.Children.Add(audioPanel);
+
+            var buttons = new StackPanel
+            {
+                Orientation = Avalonia.Layout.Orientation.Horizontal,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                Spacing = 8,
+                Children =
+                {
+                    cancelButton,
+                    continueButton
+                }
+            };
+
+            var layout = new Grid
+            {
+                RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto")
+            };
+            layout.Children.Add(new StackPanel
+            {
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = "Export Side-by-Side Compare",
+                        FontSize = 20,
+                        FontWeight = FontWeight.SemiBold
+                    },
+                    new TextBlock
+                    {
+                        Text = "Choose the compare export range and which pane supplies audio.",
+                        Foreground = Brush.Parse("#B7BDC6"),
+                        TextWrapping = TextWrapping.Wrap,
+                        Margin = new Thickness(0, 6, 0, 0)
+                    }
+                }
+            });
+            Grid.SetRow(summaryGrid, 1);
+            layout.Children.Add(summaryGrid);
+            Grid.SetRow(choicesGrid, 2);
+            layout.Children.Add(choicesGrid);
+            Grid.SetRow(buttons, 3);
+            layout.Children.Add(buttons);
+
+            dialog.Content = new Border
+            {
+                Padding = new Thickness(18),
+                Child = layout
+            };
+
+            return await dialog.ShowDialog<CompareSideBySideExportDialogSelection?>(this);
+        }
+
+        private bool IsCompareLoopModeAvailable()
+        {
+            return _primaryLoopRange.HasLoopIn &&
+                   _primaryLoopRange.HasLoopOut &&
+                   _compareLoopRange.HasLoopIn &&
+                   _compareLoopRange.HasLoopOut &&
+                   !_primaryLoopRange.HasPendingMarkers &&
+                   !_compareLoopRange.HasPendingMarkers &&
+                   !_primaryLoopRange.IsInvalidRange &&
+                   !_compareLoopRange.IsInvalidRange;
+        }
+
+        private static string BuildCompareExportAudioOptionLabel(Pane pane, bool hasAudio)
+        {
+            return ResolvePaneLabel(pane) + (hasAudio ? " pane" : " pane (silent)");
+        }
+
+        private static Control BuildCompareExportPaneSummary(Pane pane, IVideoReviewEngine engine)
+        {
+            var mediaInfo = engine.MediaInfo;
+            return new StackPanel
+            {
+                Margin = pane == Pane.Primary ? new Thickness(0, 0, 10, 0) : new Thickness(10, 0, 0, 0),
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = ResolvePaneLabel(pane),
+                        FontWeight = FontWeight.SemiBold
+                    },
+                    new TextBlock
+                    {
+                        Text = Path.GetFileName(engine.CurrentFilePath),
+                        Foreground = Brush.Parse("#F3F4F6"),
+                        TextWrapping = TextWrapping.Wrap,
+                        Margin = new Thickness(0, 4, 0, 0)
+                    },
+                    new TextBlock
+                    {
+                        Text = FormatCompareExportMediaSummary(mediaInfo),
+                        Foreground = Brush.Parse("#B7BDC6"),
+                        TextWrapping = TextWrapping.Wrap,
+                        Margin = new Thickness(0, 4, 0, 0)
+                    }
+                }
+            };
+        }
+
+        private static string FormatCompareExportMediaSummary(VideoMediaInfo mediaInfo)
+        {
+            var resolution = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}x{1}",
+                mediaInfo.PixelWidth,
+                mediaInfo.PixelHeight);
+            var audio = mediaInfo.HasAudioStream
+                ? "audio: " + FormatDialogValue(mediaInfo.AudioCodecName)
+                : "audio: none";
+            return resolution + " | " + audio;
         }
 
         private async Task<AudioInsertionResult?> ReplaceAudioTrackAsync()
@@ -2749,6 +3041,21 @@ namespace FramePlayer.Desktop.Views
             }
 
             return menuItem;
+        }
+
+        private sealed class CompareSideBySideExportDialogSelection
+        {
+            public CompareSideBySideExportDialogSelection(
+                CompareSideBySideExportMode mode,
+                CompareSideBySideExportAudioSource audioSource)
+            {
+                Mode = mode;
+                AudioSource = audioSource;
+            }
+
+            public CompareSideBySideExportMode Mode { get; }
+
+            public CompareSideBySideExportAudioSource AudioSource { get; }
         }
 
         private sealed class ActionCommand : ICommand

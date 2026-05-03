@@ -48,6 +48,11 @@ namespace FramePlayer.Desktop.Tests
             Assert.Contains("CommandKeyModifier", mainWindow, StringComparison.Ordinal);
             Assert.Contains("RestartLoopPlaybackIfNeeded(Pane.Compare", mainWindow, StringComparison.Ordinal);
             Assert.Contains("RestartLoopPlaybackAsync(Pane pane", mainWindow, StringComparison.Ordinal);
+            Assert.Contains("PromptForCompareSideBySideExportOptionsAsync", mainWindow, StringComparison.Ordinal);
+            Assert.Contains("CompareSideBySideExportDialogSelection", mainWindow, StringComparison.Ordinal);
+            Assert.Contains("ClipExportService.IsBundledRuntimeAvailable", mainWindow, StringComparison.Ordinal);
+            Assert.Contains("CompareSideBySideExportService.IsBundledRuntimeAvailable", mainWindow, StringComparison.Ordinal);
+            Assert.Contains("IsSharedTimelineContextDisabled", mainWindow, StringComparison.Ordinal);
             Assert.Contains("frame-player-desktop-diagnostics.txt", mainWindow, StringComparison.Ordinal);
             Assert.Contains("FramePlayer.DesktopPreview", recentFiles, StringComparison.Ordinal);
             Assert.Contains("StringComparer.OrdinalIgnoreCase", recentFiles, StringComparison.Ordinal);

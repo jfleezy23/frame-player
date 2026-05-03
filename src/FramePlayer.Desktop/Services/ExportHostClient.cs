@@ -16,7 +16,7 @@ namespace FramePlayer.Services
     /// Runs export, audio insertion, and export-side probe work in a hidden child Frame Player process.
     /// </summary>
     /// <remarks>
-    /// This keeps heavy FFmpeg export work outside the interactive WPF process while avoiding any
+    /// This keeps heavy FFmpeg export work outside the interactive desktop process while avoiding any
     /// network IPC surface. Requests and responses move through per-operation temporary JSON files.
     /// </remarks>
     internal sealed class ExportHostClient
