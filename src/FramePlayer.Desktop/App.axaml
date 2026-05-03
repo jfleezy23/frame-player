@@ -1,0 +1,43 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="FramePlayer.Desktop.App"
+             Name="Frame Player"
+             RequestedThemeVariant="Dark">
+  <Application.Styles>
+    <FluentTheme />
+    <Style Selector="Menu">
+      <Setter Property="Background" Value="#F8F8F8" />
+      <Setter Property="Foreground" Value="#111111" />
+    </Style>
+    <Style Selector="ContextMenu.frame-context-menu">
+      <Setter Property="Background" Value="#F8F8F8" />
+      <Setter Property="Foreground" Value="#111111" />
+    </Style>
+    <Style Selector="MenuItem">
+      <Setter Property="Foreground" Value="#111111" />
+      <Setter Property="Background" Value="#FFFFFF" />
+    </Style>
+    <Style Selector="MenuItem.frame-context-menu-item">
+      <Setter Property="Foreground" Value="#111111" />
+      <Setter Property="Background" Value="#FFFFFF" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+    <Style Selector="MenuItem:pointerover">
+      <Setter Property="Foreground" Value="#111111" />
+      <Setter Property="Background" Value="#E5E7EB" />
+    </Style>
+    <Style Selector="MenuItem:selected">
+      <Setter Property="Foreground" Value="#111111" />
+      <Setter Property="Background" Value="#E5E7EB" />
+    </Style>
+    <Style Selector="MenuItem:disabled">
+      <Setter Property="Foreground" Value="#6B7280" />
+      <Setter Property="Background" Value="#FFFFFF" />
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="MenuFlyoutPresenter">
+      <Setter Property="Background" Value="#FFFFFF" />
+      <Setter Property="Foreground" Value="#111111" />
+    </Style>
+  </Application.Styles>
+</Application>
