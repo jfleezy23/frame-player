@@ -34,8 +34,32 @@ Required Windows validation:
 
 - Existing WPF build and tests still pass.
 - `src\FramePlayer.Desktop\FramePlayer.Desktop.csproj` builds and launches on Windows.
-- Windows FFmpeg playback and export runtimes are staged and discovered.
-- Audio playback, open/recent files, two-pane compare, loop/export, diagnostics, and audio insertion work.
+- Windows FFmpeg playback DLLs are staged beside `FramePlayer.Desktop.exe`; export DLLs are staged under `ffmpeg-export`.
+- Open/recent files, two-pane compare, loop/export, diagnostics, and audio insertion work.
 - Screenshots confirm layout stability, disabled states, text fit, and no transport/control movement.
 
 Do not merge this branch until the Windows validation evidence is recorded in the PR.
+
+## Windows Validation Notes
+
+Validated on Windows on 2026-05-02:
+
+- `dotnet --info`
+- `dotnet restore src/FramePlayer.Desktop/FramePlayer.Desktop.csproj`
+- `dotnet build FramePlayer.csproj -c Release -p:Platform=x64`
+- `dotnet test tests/FramePlayer.Core.Tests/FramePlayer.Core.Tests.csproj -c Release`
+- `dotnet build src/FramePlayer.Desktop/FramePlayer.Desktop.csproj -c Release`
+- `dotnet test tests/FramePlayer.Desktop.Tests/FramePlayer.Desktop.Tests.csproj -c Release`
+- `dotnet run --project src/FramePlayer.Desktop/FramePlayer.Desktop.csproj -c Release`
+
+Observed:
+
+- The Desktop shell launched and loaded a temp H.264/AAC MP4 through the Windows open dialog path.
+- Desktop recent files were written under `%LOCALAPPDATA%\FramePlayer.DesktopPreview`, separate from the WPF `%LOCALAPPDATA%\FramePlayer` area.
+- Playback advanced frames and UI state to the end of the temp clip.
+- The hidden export-host probe wrote a valid response for the temp H.264/AAC MP4 after waiting for the WinExe child process.
+
+Remaining risk:
+
+- Audible Windows playback is not implemented in the `src/FramePlayer.Engine.FFmpeg` path. Non-macOS playback currently uses `ManagedAudioClockOutput`, which advances audio-clock timing from submitted PCM byte counts without writing PCM to a Windows audio device. The legacy WPF root engine has a separate `WinMmAudioOutput`, but that delivered WPF path is intentionally untouched by this preview branch.
+- Smallest follow-up is a separate shared-engine pass that adds a Windows `IAudioOutput` implementation under `src/FramePlayer.Engine.FFmpeg`, adapted from the existing WPF `WinMmAudioOutput`, and switches `AudioOutputFactory` to it only on Windows.
