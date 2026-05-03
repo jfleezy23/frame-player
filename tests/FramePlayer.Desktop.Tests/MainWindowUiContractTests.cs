@@ -475,26 +475,82 @@ namespace FramePlayer.Desktop.Tests
                 var newWindow = RequireNativeMenuItem(nativeMenu, "New Window");
                 var openVideo = RequireNativeMenuItem(nativeMenu, "Open Video...");
                 var closeVideo = RequireNativeMenuItem(nativeMenu, "Close Video");
+                var exportDiagnostics = RequireNativeMenuItem(nativeMenu, "Export Diagnostic Report...");
                 var play = RequireNativeMenuItem(nativeMenu, "Play");
+                var rewind = RequireNativeMenuItem(nativeMenu, "Rewind 5s");
+                var fastForward = RequireNativeMenuItem(nativeMenu, "Fast Forward 5s");
                 var previousFrame = RequireNativeMenuItem(nativeMenu, "Previous Frame");
                 var nextFrame = RequireNativeMenuItem(nativeMenu, "Next Frame");
+                var loopPlayback = RequireNativeMenuItem(nativeMenu, "Loop Playback");
+                var setLoopIn = RequireNativeMenuItem(nativeMenu, "Set Loop In");
+                var setLoopOut = RequireNativeMenuItem(nativeMenu, "Set Loop Out");
                 var zoomIn = RequireNativeMenuItem(nativeMenu, "Zoom In");
                 var zoomOut = RequireNativeMenuItem(nativeMenu, "Zoom Out");
                 var resetZoom = RequireNativeMenuItem(nativeMenu, "Reset Zoom");
                 var fullScreen = RequireNativeMenuItem(nativeMenu, "Toggle Full Screen");
                 var audioInsertion = RequireNativeMenuItem(nativeMenu, "Replace Audio Track...");
+                var help = RequireNativeMenuItem(nativeMenu, "Controls and Shortcuts...");
 
                 AssertGesture(newWindow.Gesture, Key.N, ExpectedCommandModifier);
                 AssertGesture(openVideo.Gesture, Key.O, ExpectedCommandModifier);
                 AssertGesture(closeVideo.Gesture, Key.W, ExpectedCommandModifier);
+                AssertGesture(exportDiagnostics.Gesture, Key.E, ExpectedCommandShiftModifier);
                 AssertGesture(play.Gesture, Key.Space, KeyModifiers.None);
+                AssertGesture(rewind.Gesture, Key.OemComma, KeyModifiers.None);
+                AssertGesture(fastForward.Gesture, Key.OemPeriod, KeyModifiers.None);
                 AssertGesture(previousFrame.Gesture, Key.Left, KeyModifiers.None);
                 AssertGesture(nextFrame.Gesture, Key.Right, KeyModifiers.None);
+                AssertGesture(loopPlayback.Gesture, Key.L, KeyModifiers.None);
+                AssertGesture(setLoopIn.Gesture, Key.OemOpenBrackets, KeyModifiers.None);
+                AssertGesture(setLoopOut.Gesture, Key.OemCloseBrackets, KeyModifiers.None);
                 AssertGesture(fullScreen.Gesture, Key.F11, KeyModifiers.None);
+                AssertGesture(help.Gesture, Key.F1, KeyModifiers.None);
                 Assert.NotNull(zoomIn);
                 Assert.NotNull(zoomOut);
                 Assert.NotNull(resetZoom);
                 Assert.NotNull(audioInsertion);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public void NativeMenuAndTransport_DisableMediaCommandsBeforeMediaLoads()
+        {
+            _fixture.Run(() =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var nativeMenu = NativeMenu.GetMenu(window);
+                    Assert.NotNull(nativeMenu);
+
+                    Assert.False(RequireNativeMenuItem(nativeMenu, "Close Video").IsEnabled);
+                    Assert.False(RequireNativeMenuItem(nativeMenu, "Video Info...").IsEnabled);
+                    Assert.False(RequireNativeMenuItem(nativeMenu, "Play").IsEnabled);
+                    Assert.False(RequireNativeMenuItem(nativeMenu, "Rewind 5s").IsEnabled);
+                    Assert.False(RequireNativeMenuItem(nativeMenu, "Fast Forward 5s").IsEnabled);
+                    Assert.False(RequireNativeMenuItem(nativeMenu, "Previous Frame").IsEnabled);
+                    Assert.False(RequireNativeMenuItem(nativeMenu, "Next Frame").IsEnabled);
+                    Assert.False(RequireNativeMenuItem(nativeMenu, "Loop Playback").IsEnabled);
+                    Assert.False(RequireNativeMenuItem(nativeMenu, "Set Loop In").IsEnabled);
+                    Assert.False(RequireNativeMenuItem(nativeMenu, "Set Loop Out").IsEnabled);
+                    Assert.False(RequireNativeMenuItem(nativeMenu, "Save Loop As Clip...").IsEnabled);
+                    Assert.False(RequireNativeMenuItem(nativeMenu, "Export Side-by-Side Compare...").IsEnabled);
+                    Assert.False(RequireNativeMenuItem(nativeMenu, "Replace Audio Track...").IsEnabled);
+
+                    Assert.False(RequireControl<Slider>(window, "PositionSlider").IsEnabled);
+                    Assert.False(RequireControl<TextBox>(window, "FrameNumberTextBox").IsEnabled);
+                    Assert.False(RequireControl<Button>(window, "PlayPauseButton").IsEnabled);
+                    Assert.False(RequireControl<Button>(window, "PreviousFrameButton").IsEnabled);
+                    Assert.False(RequireControl<Button>(window, "NextFrameButton").IsEnabled);
+                    Assert.False(RequireControl<Button>(window, "PrimaryPanePlayPauseButton").IsEnabled);
+                    Assert.False(RequireControl<Button>(window, "ComparePanePlayPauseButton").IsEnabled);
+                    Assert.False(RequireControl<Button>(window, "AlignRightToLeftButton").IsEnabled);
+                    Assert.False(RequireControl<Button>(window, "AlignLeftToRightButton").IsEnabled);
                 }
                 finally
                 {
@@ -706,6 +762,14 @@ namespace FramePlayer.Desktop.Tests
                 return RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
                     ? KeyModifiers.Meta
                     : KeyModifiers.Control;
+            }
+        }
+
+        private static KeyModifiers ExpectedCommandShiftModifier
+        {
+            get
+            {
+                return ExpectedCommandModifier | KeyModifiers.Shift;
             }
         }
 

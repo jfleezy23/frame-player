@@ -46,4 +46,36 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
+
+  <Target Name="EnsureDesktopBundledRuntime"
+          BeforeTargets="PrepareForBuild"
+          Condition="'$(OS)' == 'Windows_NT' and '$(SkipRuntimeBootstrap)' != 'true' and !Exists('..\..\Runtime\\ffmpeg\\avcodec-62.dll')">
+    <Message Importance="high"
+             Text="FFmpeg runtime DLLs are missing. Downloading the pinned runtime for the Avalonia desktop preview build..." />
+    <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\scripts\Ensure-DevRuntime.ps1&quot;"
+          WorkingDirectory="$(MSBuildProjectDirectory)\..\.." />
+  </Target>
+
+  <Target Name="EnsureDesktopBundledExportRuntime"
+          BeforeTargets="PrepareForBuild"
+          Condition="'$(OS)' == 'Windows_NT' and '$(SkipRuntimeBootstrap)' != 'true' and !Exists('..\..\Runtime\\ffmpeg-export\\avfilter-11.dll')">
+    <Message Importance="high"
+             Text="FFmpeg export runtime DLLs are missing. Restoring the pinned export runtime for the Avalonia desktop preview build..." />
+    <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\scripts\Ensure-DevExportRuntime.ps1&quot; -Required"
+          WorkingDirectory="$(MSBuildProjectDirectory)\..\.." />
+  </Target>
+
+  <Target Name="WarnIfDesktopBundledRuntimeMissing"
+          BeforeTargets="Build"
+          Condition="'$(OS)' == 'Windows_NT' and '$(SkipRuntimeBootstrap)' != 'true' and !Exists('..\..\Runtime\\ffmpeg\\avcodec-62.dll')">
+    <Message Importance="high"
+             Text="FFmpeg runtime DLLs are not present in Runtime\\ffmpeg for the Avalonia desktop preview. If restore failed, run .\\scripts\\Ensure-DevRuntime.ps1 manually and rebuild." />
+  </Target>
+
+  <Target Name="WarnIfDesktopBundledExportRuntimeMissing"
+          BeforeTargets="Build"
+          Condition="'$(OS)' == 'Windows_NT' and '$(SkipRuntimeBootstrap)' != 'true' and !Exists('..\..\Runtime\\ffmpeg-export\\avfilter-11.dll')">
+    <Message Importance="high"
+             Text="FFmpeg export runtime DLLs are not present in Runtime\\ffmpeg-export for the Avalonia desktop preview. If restore failed, run .\\scripts\\Ensure-DevExportRuntime.ps1 manually and rebuild." />
+  </Target>
 </Project>

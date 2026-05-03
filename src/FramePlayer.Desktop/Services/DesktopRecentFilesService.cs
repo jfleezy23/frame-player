@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 
 namespace FramePlayer.Desktop.Services
 {
@@ -38,7 +39,7 @@ namespace FramePlayer.Desktop.Services
             return File.ReadAllLines(_storagePath)
                 .Select(NormalizePath)
                 .Where(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path))
-                .Distinct(StringComparer.Ordinal)
+                .Distinct(RecentFilePathComparer)
                 .Take(MaxRecentFiles)
                 .ToArray();
         }
@@ -52,10 +53,20 @@ namespace FramePlayer.Desktop.Services
             }
 
             var entries = Load()
-                .Where(path => !string.Equals(path, normalized, StringComparison.Ordinal))
+                .Where(path => !RecentFilePathComparer.Equals(path, normalized))
                 .ToList();
             entries.Insert(0, normalized);
             File.WriteAllLines(_storagePath, entries.Take(MaxRecentFiles));
+        }
+
+        private static StringComparer RecentFilePathComparer
+        {
+            get
+            {
+                return RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                    ? StringComparer.OrdinalIgnoreCase
+                    : StringComparer.Ordinal;
+            }
         }
 
         private static string NormalizePath(string filePath)

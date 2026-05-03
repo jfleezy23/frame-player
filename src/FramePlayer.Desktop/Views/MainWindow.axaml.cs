@@ -34,6 +34,7 @@ namespace FramePlayer.Desktop.Views
         private IVideoReviewEngine? _compareEngine;
         private DecodedFrameBuffer? _primaryFrameBuffer;
         private DecodedFrameBuffer? _compareFrameBuffer;
+        private const int ControlModifiedFrameStep = 10;
         private const int HundredFrameStep = 100;
         private const double MinimumPaneZoomFactor = 1d;
         private const double MaximumPaneZoomFactor = 12d;
@@ -54,6 +55,21 @@ namespace FramePlayer.Desktop.Views
         private NativeMenuItem? _nativePlayPauseMenuItem;
         private NativeMenuItem? _nativeGpuAccelerationMenuItem;
         private NativeMenuItem? _nativeLoopPlaybackMenuItem;
+        private NativeMenuItem? _nativeCloseVideoMenuItem;
+        private NativeMenuItem? _nativeVideoInfoMenuItem;
+        private NativeMenuItem? _nativeRewindMenuItem;
+        private NativeMenuItem? _nativeFastForwardMenuItem;
+        private NativeMenuItem? _nativePreviousFrameMenuItem;
+        private NativeMenuItem? _nativeNextFrameMenuItem;
+        private NativeMenuItem? _nativeSetLoopInMenuItem;
+        private NativeMenuItem? _nativeSetLoopOutMenuItem;
+        private NativeMenuItem? _nativeClearLoopPointsMenuItem;
+        private NativeMenuItem? _nativeSaveLoopAsClipMenuItem;
+        private NativeMenuItem? _nativeExportSideBySideCompareMenuItem;
+        private NativeMenuItem? _nativeZoomInMenuItem;
+        private NativeMenuItem? _nativeZoomOutMenuItem;
+        private NativeMenuItem? _nativeResetZoomMenuItem;
+        private NativeMenuItem? _nativeReplaceAudioTrackMenuItem;
         private LoopPlaybackPaneRangeSnapshot _primaryLoopRange;
         private LoopPlaybackPaneRangeSnapshot _compareLoopRange;
         private bool _isLoopPlaybackEnabled;
@@ -84,6 +100,14 @@ namespace FramePlayer.Desktop.Views
             get
             {
                 return RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "Cmd" : "Ctrl";
+            }
+        }
+
+        private static KeyModifiers CommandShiftKeyModifier
+        {
+            get
+            {
+                return CommandKeyModifier | KeyModifiers.Shift;
             }
         }
 
@@ -122,6 +146,7 @@ namespace FramePlayer.Desktop.Views
             UpdateRecentFilesMenu();
             UpdatePaneSelectionVisuals();
             UpdateCompareOptionState();
+            UpdateCommandStates();
             InstallContextMenus();
             AddHandler(DragDrop.DropEvent, Window_Drop);
             AddHandler(DragDrop.DragOverEvent, Window_DragOver);
@@ -425,6 +450,8 @@ namespace FramePlayer.Desktop.Views
                 var peerPane = pane == Pane.Compare ? Pane.Primary : Pane.Compare;
                 SetPaneZoomFactor(peerPane, clampedZoomFactor, synchronizeLinkedPane: false);
             }
+
+            UpdateCommandStates();
         }
 
         private double GetPaneZoomFactor(Pane pane)
@@ -1225,6 +1252,98 @@ namespace FramePlayer.Desktop.Views
                 IsLinkedPaneZoomEnabled
                     ? "Zoom changes are mirrored between compare panes."
                     : "Zoom changes stay on the focused pane.");
+            UpdateCommandStates();
+        }
+
+        private void UpdateCommandStates()
+        {
+            var focusedPane = GetFocusedPane();
+            var focusedEngine = TryGetExistingEngine(focusedPane);
+            var focusedPaneLoaded = focusedEngine != null && focusedEngine.IsMediaOpen;
+            var primaryLoaded = _primaryEngine.IsMediaOpen;
+            var compareLoaded = _compareEngine != null && _compareEngine.IsMediaOpen;
+            var anyMediaLoaded = primaryLoaded || compareLoaded;
+            var focusedPaneCanZoom = focusedPaneLoaded && focusedEngine != null && !focusedEngine.IsPlaying;
+            var focusedLoopRange = GetLoopRange(focusedPane);
+            var canClearLoopPoints = focusedLoopRange != null && focusedLoopRange.HasAnyMarkers;
+            var canReplaceAudioTrack = CanReplaceAudioTrack(out _);
+
+            SetNativeMenuEnabled(_nativePlayPauseMenuItem, focusedPaneLoaded);
+            SetNativeMenuEnabled(_nativeCloseVideoMenuItem, anyMediaLoaded);
+            SetNativeMenuEnabled(_nativeVideoInfoMenuItem, focusedPaneLoaded);
+            SetNativeMenuEnabled(_nativeRewindMenuItem, focusedPaneLoaded);
+            SetNativeMenuEnabled(_nativeFastForwardMenuItem, focusedPaneLoaded);
+            SetNativeMenuEnabled(_nativePreviousFrameMenuItem, focusedPaneLoaded);
+            SetNativeMenuEnabled(_nativeNextFrameMenuItem, focusedPaneLoaded);
+            SetNativeMenuEnabled(_nativeLoopPlaybackMenuItem, focusedPaneLoaded);
+            SetNativeMenuEnabled(_nativeSetLoopInMenuItem, focusedPaneLoaded);
+            SetNativeMenuEnabled(_nativeSetLoopOutMenuItem, focusedPaneLoaded);
+            SetNativeMenuEnabled(_nativeClearLoopPointsMenuItem, canClearLoopPoints);
+            SetNativeMenuEnabled(_nativeSaveLoopAsClipMenuItem, CanExportLoopClip(focusedPane));
+            SetNativeMenuEnabled(_nativeExportSideBySideCompareMenuItem, CanExportSideBySideCompare());
+            SetNativeMenuEnabled(_nativeZoomInMenuItem, focusedPaneCanZoom && GetPaneZoomFactor(focusedPane) < MaximumPaneZoomFactor - 0.0001d);
+            SetNativeMenuEnabled(_nativeZoomOutMenuItem, focusedPaneCanZoom && GetPaneZoomFactor(focusedPane) > MinimumPaneZoomFactor + 0.0001d);
+            SetNativeMenuEnabled(_nativeResetZoomMenuItem, focusedPaneCanZoom && GetPaneZoomFactor(focusedPane) > MinimumPaneZoomFactor + 0.0001d);
+            SetNativeMenuEnabled(_nativeReplaceAudioTrackMenuItem, canReplaceAudioTrack);
+
+            SetControlEnabled(PositionSlider, primaryLoaded);
+            SetControlEnabled(FrameNumberTextBox, primaryLoaded);
+            SetControlEnabled(PreviousFrameButton, focusedPaneLoaded);
+            SetControlEnabled(RewindButton, focusedPaneLoaded);
+            SetControlEnabled(PlayPauseButton, focusedPaneLoaded);
+            SetControlEnabled(FastForwardButton, focusedPaneLoaded);
+            SetControlEnabled(NextFrameButton, focusedPaneLoaded);
+            SetControlEnabled(ToggleFullScreenButton, anyMediaLoaded);
+            SetPaneTransportEnabled(Pane.Primary, primaryLoaded);
+            SetPaneTransportEnabled(Pane.Compare, compareLoaded);
+            AlignRightToLeftButton.IsEnabled = primaryLoaded && compareLoaded;
+            AlignLeftToRightButton.IsEnabled = primaryLoaded && compareLoaded;
+            ToolTip.SetTip(
+                AlignRightToLeftButton,
+                primaryLoaded && compareLoaded
+                    ? "Syncs the right pane to the left pane with exact frame identity when available."
+                    : "Load both compare panes before syncing.");
+            ToolTip.SetTip(
+                AlignLeftToRightButton,
+                primaryLoaded && compareLoaded
+                    ? "Syncs the left pane to the right pane with exact frame identity when available."
+                    : "Load both compare panes before syncing.");
+        }
+
+        private static void SetNativeMenuEnabled(NativeMenuItem? item, bool isEnabled)
+        {
+            if (item != null)
+            {
+                item.IsEnabled = isEnabled;
+            }
+        }
+
+        private static void SetControlEnabled(Control control, bool isEnabled)
+        {
+            control.IsEnabled = isEnabled;
+        }
+
+        private void SetPaneTransportEnabled(Pane pane, bool isEnabled)
+        {
+            if (pane == Pane.Compare)
+            {
+                SetControlEnabled(ComparePanePositionSlider, isEnabled);
+                SetControlEnabled(ComparePaneFrameNumberTextBox, isEnabled);
+                SetControlEnabled(ComparePaneStepBackButton, isEnabled);
+                SetControlEnabled(ComparePaneSkipBackHundredFramesButton, isEnabled);
+                SetControlEnabled(ComparePanePlayPauseButton, isEnabled);
+                SetControlEnabled(ComparePaneSkipForwardHundredFramesButton, isEnabled);
+                SetControlEnabled(ComparePaneStepForwardButton, isEnabled);
+                return;
+            }
+
+            SetControlEnabled(PrimaryPanePositionSlider, isEnabled);
+            SetControlEnabled(PrimaryPaneFrameNumberTextBox, isEnabled);
+            SetControlEnabled(PrimaryPaneStepBackButton, isEnabled);
+            SetControlEnabled(PrimaryPaneSkipBackHundredFramesButton, isEnabled);
+            SetControlEnabled(PrimaryPanePlayPauseButton, isEnabled);
+            SetControlEnabled(PrimaryPaneSkipForwardHundredFramesButton, isEnabled);
+            SetControlEnabled(PrimaryPaneStepForwardButton, isEnabled);
         }
 
         private void AllPanesCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)
@@ -1297,12 +1416,13 @@ namespace FramePlayer.Desktop.Views
 
         private void PrimaryEngine_StateChanged(object? sender, VideoReviewEngineStateChangedEventArgs e)
         {
-            RestartLoopPlaybackIfNeeded(e);
+            RestartLoopPlaybackIfNeeded(Pane.Primary, e);
             Dispatcher.UIThread.Post(() => ApplyState(Pane.Primary, e));
         }
 
         private void CompareEngine_StateChanged(object? sender, VideoReviewEngineStateChangedEventArgs e)
         {
+            RestartLoopPlaybackIfNeeded(Pane.Compare, e);
             Dispatcher.UIThread.Post(() => ApplyState(Pane.Compare, e));
         }
 
@@ -1473,7 +1593,7 @@ namespace FramePlayer.Desktop.Views
             return _isLoopPlaybackEnabled ? "Loop: " + rangeText : "Loop: off (" + rangeText + ")";
         }
 
-        private void RestartLoopPlaybackIfNeeded(VideoReviewEngineStateChangedEventArgs state)
+        private void RestartLoopPlaybackIfNeeded(Pane pane, VideoReviewEngineStateChangedEventArgs state)
         {
             if (!_isLoopPlaybackEnabled ||
                 _isLoopRestartInFlight ||
@@ -1484,7 +1604,7 @@ namespace FramePlayer.Desktop.Views
                 return;
             }
 
-            var range = _primaryLoopRange;
+            var range = GetLoopRange(pane);
             if (range != null && range.HasAnyMarkers && range.IsInvalidRange)
             {
                 return;
@@ -1506,25 +1626,26 @@ namespace FramePlayer.Desktop.Views
                 return;
             }
 
-            _ = Task.Run(async () => await RestartLoopPlaybackAsync(range ?? CreateLoopRange(null, null)));
+            _ = Task.Run(async () => await RestartLoopPlaybackAsync(pane, range ?? CreateLoopRange(pane, null, null)));
         }
 
-        private async Task RestartLoopPlaybackAsync(LoopPlaybackPaneRangeSnapshot range)
+        private async Task RestartLoopPlaybackAsync(Pane pane, LoopPlaybackPaneRangeSnapshot range)
         {
             _isLoopRestartInFlight = true;
             try
             {
                 var restartTime = range != null && range.HasLoopIn ? range.EffectiveStartTime : TimeSpan.Zero;
-                await _primaryEngine.PauseAsync();
-                await _primaryEngine.SeekToTimeAsync(restartTime);
-                await _primaryEngine.PlayAsync();
-                CacheStatusTextBlock.Text = range != null && range.HasLoopIn
+                var engine = GetEngine(pane);
+                await engine.PauseAsync();
+                await engine.SeekToTimeAsync(restartTime);
+                await engine.PlayAsync();
+                await SetStatusMessageAsync(range != null && range.HasLoopIn
                     ? "Loop playback restarted from loop-in."
-                    : "Loop playback restarted from start.";
+                    : "Loop playback restarted from start.").ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                CacheStatusTextBlock.Text = "Loop playback restart failed: " + ex.Message;
+                await SetStatusMessageAsync("Loop playback restart failed: " + ex.Message).ConfigureAwait(false);
             }
             finally
             {
@@ -1570,6 +1691,8 @@ namespace FramePlayer.Desktop.Views
             {
                 _primaryLoopRange = range;
             }
+
+            UpdateCommandStates();
         }
 
         private static LoopPlaybackAnchorSnapshot? CreateLoopAnchor(IVideoReviewEngine engine, Pane pane)
@@ -1630,29 +1753,58 @@ namespace FramePlayer.Desktop.Views
 
         private async void Window_KeyDown(object? sender, KeyEventArgs e)
         {
-            if (e.Key == Key.Space)
-            {
-                PlayPauseButton_Click(sender, e);
-                e.Handled = true;
-            }
-            else if (e.Key == Key.N && e.KeyModifiers.HasFlag(CommandKeyModifier))
+            if (e.Key == Key.N && HasExactModifiers(e, CommandKeyModifier))
             {
                 LaunchNewWindow();
                 e.Handled = true;
             }
+            else if (e.Key == Key.O && HasExactModifiers(e, CommandKeyModifier))
+            {
+                await OpenVideoAsync(GetFileOpenTargetPane());
+                e.Handled = true;
+            }
+            else if (e.Key == Key.W && HasExactModifiers(e, CommandKeyModifier))
+            {
+                await CloseVideosAsync();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.E && HasExactModifiers(e, CommandShiftKeyModifier))
+            {
+                await ExportDiagnosticsAsync(null);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.F1)
+            {
+                HelpMenuItem_Click(sender, e);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.F11 || (e.Key == Key.Enter && HasExactModifiers(e, KeyModifiers.Alt)))
+            {
+                ToggleFullScreen();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Escape && WindowState == WindowState.FullScreen)
+            {
+                ToggleFullScreen();
+                e.Handled = true;
+            }
+            else if (IsTextEntryTarget(e))
+            {
+                return;
+            }
+            else if (e.Key == Key.Space)
+            {
+                PlayPauseButton_Click(sender, e);
+                e.Handled = true;
+            }
             else if (e.Key == Key.Left)
             {
-                await GetEngine(GetFocusedPane()).StepBackwardAsync();
+                await StepFrameAsync(-ResolveFrameStepCount(e.KeyModifiers));
                 e.Handled = true;
             }
             else if (e.Key == Key.Right)
             {
-                await GetEngine(GetFocusedPane()).StepForwardAsync();
-                e.Handled = true;
-            }
-            else if (e.Key == Key.O && e.KeyModifiers.HasFlag(CommandKeyModifier))
-            {
-                await OpenVideoAsync(GetFileOpenTargetPane());
+                await StepFrameAsync(ResolveFrameStepCount(e.KeyModifiers));
                 e.Handled = true;
             }
             else if (e.Key == Key.L)
@@ -1670,27 +1822,65 @@ namespace FramePlayer.Desktop.Views
                 SetLoopMarker(LoopPlaybackMarkerEndpoint.Out);
                 e.Handled = true;
             }
-            else if (TryHandleZoomShortcut(e.Key))
+            else if (e.Key == Key.J || e.Key == Key.OemComma)
+            {
+                await SeekRelativeAsync(TimeSpan.FromSeconds(-5));
+                e.Handled = true;
+            }
+            else if (e.Key == Key.OemPeriod)
+            {
+                await SeekRelativeAsync(TimeSpan.FromSeconds(5));
+                e.Handled = true;
+            }
+            else if (TryHandleZoomShortcut(e))
             {
                 e.Handled = true;
             }
         }
 
-        private bool TryHandleZoomShortcut(Key key)
+        private static bool HasExactModifiers(KeyEventArgs e, KeyModifiers modifiers)
         {
-            if (key == Key.OemPlus || key == Key.Add)
+            return e.KeyModifiers == modifiers;
+        }
+
+        private static bool IsTextEntryTarget(KeyEventArgs e)
+        {
+            return e.Source is TextBox;
+        }
+
+        private static int ResolveFrameStepCount(KeyModifiers modifiers)
+        {
+            if (modifiers == KeyModifiers.Control)
+            {
+                return ControlModifiedFrameStep;
+            }
+
+            if (modifiers == KeyModifiers.Shift)
+            {
+                return HundredFrameStep;
+            }
+
+            return 1;
+        }
+
+        private bool TryHandleZoomShortcut(KeyEventArgs e)
+        {
+            if ((e.KeyModifiers == KeyModifiers.None || e.KeyModifiers == KeyModifiers.Shift) &&
+                (e.Key == Key.OemPlus || e.Key == Key.Add))
             {
                 ZoomInFocusedPane();
                 return true;
             }
 
-            if (key == Key.OemMinus || key == Key.Subtract)
+            if ((e.KeyModifiers == KeyModifiers.None || e.KeyModifiers == KeyModifiers.Shift) &&
+                (e.Key == Key.OemMinus || e.Key == Key.Subtract))
             {
                 ZoomOutFocusedPane();
                 return true;
             }
 
-            if (key == Key.D0 || key == Key.NumPad0)
+            if (e.KeyModifiers == KeyModifiers.None &&
+                (e.Key == Key.D0 || e.Key == Key.NumPad0))
             {
                 ResetZoomForFocusedPane();
                 return true;
@@ -1968,6 +2158,12 @@ namespace FramePlayer.Desktop.Views
 
         private async Task<AudioInsertionResult?> ReplaceAudioTrackAsync()
         {
+            if (!CanReplaceAudioTrack(out var failureMessage))
+            {
+                CacheStatusTextBlock.Text = failureMessage;
+                return null;
+            }
+
             var replacementAudioPath = await PromptForOpenPathAsync(
                 "Select Replacement Audio",
                 "Audio Files",
@@ -2024,6 +2220,49 @@ namespace FramePlayer.Desktop.Views
             }
         }
 
+        private bool CanReplaceAudioTrack(out string status)
+        {
+            if (!AudioInsertionService.IsBundledRuntimeAvailable)
+            {
+                status = AudioInsertionService.GetRuntimeAvailabilityMessage();
+                return false;
+            }
+
+            if (IsCompareModeEnabled)
+            {
+                status = "Audio insertion is unavailable while two-pane compare mode is enabled.";
+                return false;
+            }
+
+            if (!_primaryEngine.IsMediaOpen || string.IsNullOrWhiteSpace(_primaryEngine.CurrentFilePath))
+            {
+                status = "Load a single-pane H.264 MP4 before replacing the audio track.";
+                return false;
+            }
+
+            if (!string.Equals(Path.GetExtension(_primaryEngine.CurrentFilePath), Mp4Extension, StringComparison.OrdinalIgnoreCase))
+            {
+                status = "Audio insertion is available only for loaded H.264 MP4 sources.";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(_primaryEngine.MediaInfo.VideoCodecName) ||
+                !IsH264Codec(_primaryEngine.MediaInfo.VideoCodecName))
+            {
+                status = "Audio insertion is available only for loaded MP4 sources with H.264 video.";
+                return false;
+            }
+
+            status = "Replace the reviewed source audio with a WAV or MP3 track and write a new MP4 copy.";
+            return true;
+        }
+
+        private static bool IsH264Codec(string codecName)
+        {
+            return codecName.IndexOf("h264", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                codecName.IndexOf("avc", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         private async Task<string?> ExportDiagnosticsAsync(string? outputPath)
         {
             var resolvedOutputPath = outputPath;
@@ -2031,7 +2270,7 @@ namespace FramePlayer.Desktop.Views
             {
                 resolvedOutputPath = await PromptForSavePathAsync(
                     "Export Diagnostic Report",
-                    "frame-player-macos-diagnostics.txt",
+                    "frame-player-desktop-diagnostics.txt",
                     "Text File",
                     "*.txt");
                 if (string.IsNullOrWhiteSpace(resolvedOutputPath))
@@ -2081,6 +2320,9 @@ namespace FramePlayer.Desktop.Views
             var builder = new StringBuilder();
             builder.AppendLine("Frame Player desktop preview diagnostics");
             builder.AppendLine("Generated: " + DateTimeOffset.Now.ToString("O", CultureInfo.InvariantCulture));
+            builder.AppendLine("Version: " + (typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? "unknown"));
+            builder.AppendLine("OS: " + RuntimeInformation.OSDescription);
+            builder.AppendLine(".NET: " + RuntimeInformation.FrameworkDescription);
             AppendEngineDiagnostics(builder, PanePrimaryLabel, _primaryEngine);
             if (_compareEngine != null)
             {
@@ -2090,6 +2332,9 @@ namespace FramePlayer.Desktop.Views
             builder.AppendLine("Loop primary: " + BuildLoopStatusText(_primaryLoopRange));
             builder.AppendLine("Loop compare: " + BuildLoopStatusText(_compareLoopRange));
             builder.AppendLine("Runtime base: " + AppContext.BaseDirectory);
+            builder.AppendLine("Export runtime: " + (ExportHostClient.IsBundledRuntimeAvailable
+                ? "available"
+                : ExportHostClient.GetRuntimeAvailabilityMessage()));
             return builder.ToString();
         }
 
@@ -2328,12 +2573,19 @@ namespace FramePlayer.Desktop.Views
                 Environment.NewLine,
                 "Space: play or pause",
                 "Left / Right: previous or next frame",
+                "Ctrl+Left / Ctrl+Right: previous or next 10 frames",
+                "Shift+Left / Shift+Right: previous or next 100 frames",
+                ", / .: rewind or fast forward 5 seconds",
                 CommandKeyLabel + "+O: open video",
                 CommandKeyLabel + "+N: new window",
+                CommandKeyLabel + "+W: close video",
+                CommandKeyLabel + "+Shift+E: export diagnostic report",
                 "L: loop playback",
                 "[ / ]: set loop in or loop out",
                 "Playback menu: zoom in, zoom out, reset zoom",
-                "F11: full screen",
+                "F1: controls and shortcuts",
+                "F11 / Alt+Enter: full screen",
+                "Escape: exit full screen",
                 "Right-click video: video info, reset zoom, loop export, compare export",
                 "Right-click timeline: set loop markers and export loop");
         }
@@ -2361,6 +2613,8 @@ namespace FramePlayer.Desktop.Views
             {
                 Menu = new NativeMenu()
             };
+            _nativeCloseVideoMenuItem = CreateMenuItem("Close Video", async (_, _) => await CloseVideosAsync(), new KeyGesture(Key.W, CommandKeyModifier));
+            _nativeVideoInfoMenuItem = CreateMenuItem("Video Info...", (sender, _) => VideoInfoMenuItem_Click(sender, new RoutedEventArgs()));
 
             var fileMenu = CreateTopLevelMenu(
                 "File",
@@ -2369,10 +2623,10 @@ namespace FramePlayer.Desktop.Views
                 CreateMenuItem("Open Video...", async (_, _) => await OpenVideoAsync(GetFileOpenTargetPane()), new KeyGesture(Key.O, CommandKeyModifier)),
                 _nativeRecentFilesMenuItem,
                 new NativeMenuItemSeparator(),
-                CreateMenuItem("Close Video", async (_, _) => await CloseVideosAsync(), new KeyGesture(Key.W, CommandKeyModifier)),
-                CreateMenuItem("Video Info...", (sender, _) => VideoInfoMenuItem_Click(sender, new RoutedEventArgs())),
+                _nativeCloseVideoMenuItem,
+                _nativeVideoInfoMenuItem,
                 new NativeMenuItemSeparator(),
-                CreateMenuItem("Export Diagnostic Report...", (sender, _) => ExportDiagnosticsMenuItem_Click(sender, new RoutedEventArgs())),
+                CreateMenuItem("Export Diagnostic Report...", (sender, _) => ExportDiagnosticsMenuItem_Click(sender, new RoutedEventArgs()), new KeyGesture(Key.E, CommandShiftKeyModifier)),
                 new NativeMenuItemSeparator(),
                 CreateMenuItem("Exit", (_, _) => Close()));
 
@@ -2386,38 +2640,51 @@ namespace FramePlayer.Desktop.Views
 
             _nativeLoopPlaybackMenuItem = CreateToggleMenuItem("Loop Playback", new KeyGesture(Key.L));
             _nativeLoopPlaybackMenuItem.Click += (_, _) => SetLoopPlaybackEnabled(!_isLoopPlaybackEnabled);
+            _nativeRewindMenuItem = CreateMenuItem("Rewind 5s", (sender, _) => RewindButton_Click(sender, new RoutedEventArgs()), new KeyGesture(Key.OemComma));
+            _nativeFastForwardMenuItem = CreateMenuItem("Fast Forward 5s", (sender, _) => FastForwardButton_Click(sender, new RoutedEventArgs()), new KeyGesture(Key.OemPeriod));
+            _nativePreviousFrameMenuItem = CreateMenuItem("Previous Frame", (sender, _) => PreviousFrameButton_Click(sender, new RoutedEventArgs()), new KeyGesture(Key.Left));
+            _nativeNextFrameMenuItem = CreateMenuItem("Next Frame", (sender, _) => NextFrameButton_Click(sender, new RoutedEventArgs()), new KeyGesture(Key.Right));
+            _nativeSetLoopInMenuItem = CreateMenuItem("Set Loop In", (_, _) => SetLoopMarker(LoopPlaybackMarkerEndpoint.In), new KeyGesture(Key.OemOpenBrackets));
+            _nativeSetLoopOutMenuItem = CreateMenuItem("Set Loop Out", (_, _) => SetLoopMarker(LoopPlaybackMarkerEndpoint.Out), new KeyGesture(Key.OemCloseBrackets));
+            _nativeClearLoopPointsMenuItem = CreateMenuItem("Clear Loop Points", (_, _) => ClearLoopPoints());
+            _nativeSaveLoopAsClipMenuItem = CreateMenuItem("Save Loop As Clip...", (sender, _) => SaveLoopAsClipMenuItem_Click(sender, new RoutedEventArgs()));
+            _nativeExportSideBySideCompareMenuItem = CreateMenuItem("Export Side-by-Side Compare...", (sender, _) => ExportSideBySideCompareMenuItem_Click(sender, new RoutedEventArgs()));
+            _nativeZoomInMenuItem = CreateCommandMenuItem("Zoom In", ZoomInFocusedPane, new KeyGesture(Key.OemPlus));
+            _nativeZoomOutMenuItem = CreateCommandMenuItem("Zoom Out", ZoomOutFocusedPane, new KeyGesture(Key.OemMinus));
+            _nativeResetZoomMenuItem = CreateCommandMenuItem("Reset Zoom", ResetZoomForFocusedPane, new KeyGesture(Key.D0));
 
             var playbackMenu = CreateTopLevelMenu(
                 "Playback",
                 _nativePlayPauseMenuItem,
                 new NativeMenuItemSeparator(),
-                CreateMenuItem("Rewind 5s", (sender, _) => RewindButton_Click(sender, new RoutedEventArgs())),
-                CreateMenuItem("Fast Forward 5s", (sender, _) => FastForwardButton_Click(sender, new RoutedEventArgs())),
+                _nativeRewindMenuItem,
+                _nativeFastForwardMenuItem,
                 new NativeMenuItemSeparator(),
-                CreateMenuItem("Previous Frame", (sender, _) => PreviousFrameButton_Click(sender, new RoutedEventArgs()), new KeyGesture(Key.Left)),
-                CreateMenuItem("Next Frame", (sender, _) => NextFrameButton_Click(sender, new RoutedEventArgs()), new KeyGesture(Key.Right)),
+                _nativePreviousFrameMenuItem,
+                _nativeNextFrameMenuItem,
                 new NativeMenuItemSeparator(),
                 _nativeLoopPlaybackMenuItem,
-                CreateMenuItem("Set Loop In", (_, _) => SetLoopMarker(LoopPlaybackMarkerEndpoint.In)),
-                CreateMenuItem("Set Loop Out", (_, _) => SetLoopMarker(LoopPlaybackMarkerEndpoint.Out)),
-                CreateMenuItem("Clear Loop Points", (_, _) => ClearLoopPoints()),
-                CreateMenuItem("Save Loop As Clip...", (sender, _) => SaveLoopAsClipMenuItem_Click(sender, new RoutedEventArgs())),
-                CreateMenuItem("Export Side-by-Side Compare...", (sender, _) => ExportSideBySideCompareMenuItem_Click(sender, new RoutedEventArgs())),
+                _nativeSetLoopInMenuItem,
+                _nativeSetLoopOutMenuItem,
+                _nativeClearLoopPointsMenuItem,
+                _nativeSaveLoopAsClipMenuItem,
+                _nativeExportSideBySideCompareMenuItem,
                 new NativeMenuItemSeparator(),
-                CreateCommandMenuItem("Zoom In", ZoomInFocusedPane, new KeyGesture(Key.OemPlus)),
-                CreateCommandMenuItem("Zoom Out", ZoomOutFocusedPane, new KeyGesture(Key.OemMinus)),
-                CreateCommandMenuItem("Reset Zoom", ResetZoomForFocusedPane, new KeyGesture(Key.D0)),
+                _nativeZoomInMenuItem,
+                _nativeZoomOutMenuItem,
+                _nativeResetZoomMenuItem,
                 new NativeMenuItemSeparator(),
                 _nativeGpuAccelerationMenuItem,
                 CreateMenuItem("Toggle Full Screen", (_, _) => ToggleFullScreen(), new KeyGesture(Key.F11)));
 
+            _nativeReplaceAudioTrackMenuItem = CreateMenuItem("Replace Audio Track...", (sender, _) => ReplaceAudioTrackMenuItem_Click(sender, new RoutedEventArgs()));
             var audioMenu = CreateTopLevelMenu(
                 "Audio Insertion",
-                CreateMenuItem("Replace Audio Track...", (sender, _) => ReplaceAudioTrackMenuItem_Click(sender, new RoutedEventArgs())));
+                _nativeReplaceAudioTrackMenuItem);
 
             var helpMenu = CreateTopLevelMenu(
                 "Help",
-                CreateMenuItem("Controls and Shortcuts...", (sender, _) => HelpMenuItem_Click(sender, new RoutedEventArgs())),
+                CreateMenuItem("Controls and Shortcuts...", (sender, _) => HelpMenuItem_Click(sender, new RoutedEventArgs()), new KeyGesture(Key.F1)),
                 new NativeMenuItemSeparator(),
                 CreateMenuItem("About Frame Player", (sender, _) => AboutMenuItem_Click(sender, new RoutedEventArgs())));
 

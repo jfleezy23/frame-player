@@ -312,6 +312,14 @@ namespace FramePlayer.Services
                     configuredBaseDirectory);
             }
 
+            var bundledExecutablePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ResolveDefaultExecutableName());
+            if (File.Exists(bundledExecutablePath))
+            {
+                return new ExportHostLaunchInfo(
+                    bundledExecutablePath,
+                    AppDomain.CurrentDomain.BaseDirectory);
+            }
+
             return new ExportHostLaunchInfo(
                 Environment.ProcessPath ?? string.Empty,
                 AppDomain.CurrentDomain.BaseDirectory);

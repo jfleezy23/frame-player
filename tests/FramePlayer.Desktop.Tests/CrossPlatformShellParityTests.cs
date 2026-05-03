@@ -18,7 +18,7 @@ namespace FramePlayer.Desktop.Tests
             Assert.Contains("LaunchNewWindow();", windowsCode, StringComparison.Ordinal);
             Assert.Contains("CreateMenuItem(\"New Window\"", desktopCode, StringComparison.Ordinal);
             Assert.Contains("new KeyGesture(Key.N, CommandKeyModifier)", desktopCode, StringComparison.Ordinal);
-            Assert.Contains("e.KeyModifiers.HasFlag(CommandKeyModifier)", desktopCode, StringComparison.Ordinal);
+            Assert.Contains("HasExactModifiers(e, CommandKeyModifier)", desktopCode, StringComparison.Ordinal);
             Assert.Contains("LaunchNewWindow();", desktopCode, StringComparison.Ordinal);
 
             Assert.Contains("Header=\"_Open Video...\"", windowsXaml, StringComparison.Ordinal);
@@ -30,6 +30,34 @@ namespace FramePlayer.Desktop.Tests
             Assert.Contains("InputGestureText=\"Ctrl+W\"", windowsXaml, StringComparison.Ordinal);
             Assert.Contains("CreateMenuItem(\"Close Video\"", desktopCode, StringComparison.Ordinal);
             Assert.Contains("new KeyGesture(Key.W, CommandKeyModifier)", desktopCode, StringComparison.Ordinal);
+            Assert.Contains("await CloseVideosAsync();", desktopCode, StringComparison.Ordinal);
+
+            Assert.Contains("Export _Diagnostic Report", windowsXaml, StringComparison.Ordinal);
+            Assert.Contains("InputGestureText=\"Ctrl+Shift+E\"", windowsXaml, StringComparison.Ordinal);
+            Assert.Contains("CreateMenuItem(\"Export Diagnostic Report...\"", desktopCode, StringComparison.Ordinal);
+            Assert.Contains("new KeyGesture(Key.E, CommandShiftKeyModifier)", desktopCode, StringComparison.Ordinal);
+            Assert.Contains("await ExportDiagnosticsAsync(null);", desktopCode, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void PlaybackShortcuts_MatchWindowsTransportContract()
+        {
+            var windowsXaml = ReadRepositoryFile("MainWindow.xaml");
+            var windowsCode = ReadRepositoryFile("MainWindow.xaml.cs");
+            var desktopCode = ReadRepositoryFile("src", "FramePlayer.Desktop", "Views", "MainWindow.axaml.cs");
+
+            Assert.Contains("Header=\"_Rewind 5s\"", windowsXaml, StringComparison.Ordinal);
+            Assert.Contains("InputGestureText=\",\"", windowsXaml, StringComparison.Ordinal);
+            Assert.Contains("Header=\"_Fast Forward 5s\"", windowsXaml, StringComparison.Ordinal);
+            Assert.Contains("InputGestureText=\".\"", windowsXaml, StringComparison.Ordinal);
+            Assert.Contains("TryGetModifiedFrameStepCount", windowsCode, StringComparison.Ordinal);
+
+            Assert.Contains("new KeyGesture(Key.OemComma)", desktopCode, StringComparison.Ordinal);
+            Assert.Contains("new KeyGesture(Key.OemPeriod)", desktopCode, StringComparison.Ordinal);
+            Assert.Contains("ResolveFrameStepCount(e.KeyModifiers)", desktopCode, StringComparison.Ordinal);
+            Assert.Contains("await StepFrameAsync(-ResolveFrameStepCount(e.KeyModifiers));", desktopCode, StringComparison.Ordinal);
+            Assert.Contains("await StepFrameAsync(ResolveFrameStepCount(e.KeyModifiers));", desktopCode, StringComparison.Ordinal);
+            Assert.Contains("IsTextEntryTarget(e)", desktopCode, StringComparison.Ordinal);
         }
 
         [Fact]
