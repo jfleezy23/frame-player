@@ -45,6 +45,8 @@ namespace FramePlayer.Desktop.Views
         private const double PaneWheelZoomDeltaThreshold = 0.01d;
         private const double PaneHeaderHeight = 46d;
         private const double PaneFooterHeight = 118d;
+        private const string WindowsAudioPlaybackUnavailableMessage =
+            "Windows preview audio output is not available yet; frame stepping remains available.";
         private const string PanePrimaryId = "pane-primary";
         private const string PaneCompareId = "pane-compare";
         private const string PanePrimaryKey = "primary";
@@ -280,6 +282,11 @@ namespace FramePlayer.Desktop.Views
 
                 UpdateLoopUi();
                 UpdateCompareOptionState();
+                if (IsWindowsAudioPlaybackBlocked(engine.MediaInfo))
+                {
+                    CacheStatusTextBlock.Text = WindowsAudioPlaybackUnavailableMessage;
+                }
+
                 SetPaneState(pane, "Ready");
             }
             catch (Exception ex)
@@ -617,6 +624,12 @@ namespace FramePlayer.Desktop.Views
                 }
                 else
                 {
+                    if (!CanStartAllPanePlayback())
+                    {
+                        TryShowWindowsAudioPlaybackBlockedForAllPanes();
+                        return;
+                    }
+
                     await StartAllPanePlaybackAsync();
                 }
             }
@@ -629,6 +642,12 @@ namespace FramePlayer.Desktop.Views
                 }
                 else
                 {
+                    if (!CanStartPlayback(engine))
+                    {
+                        TryShowWindowsAudioPlaybackBlocked(engine);
+                        return;
+                    }
+
                     await engine.PlayAsync();
                 }
             }
@@ -654,6 +673,12 @@ namespace FramePlayer.Desktop.Views
             }
             else
             {
+                if (!CanStartPlayback(engine))
+                {
+                    TryShowWindowsAudioPlaybackBlocked(engine);
+                    return;
+                }
+
                 await engine.PlayAsync();
             }
         }
@@ -706,7 +731,14 @@ namespace FramePlayer.Desktop.Views
                 return;
             }
 
-            await GetEngine(ResolvePane(paneId)).PlayAsync();
+            var engine = GetEngine(ResolvePane(paneId));
+            if (!CanStartPlayback(engine))
+            {
+                TryShowWindowsAudioPlaybackBlocked(engine);
+                return;
+            }
+
+            await engine.PlayAsync();
         }
 
         [SuppressMessage("Major Code Smell", "S1144:Unused private types or members", Justification = "Preserves the Windows parity harness surface.")]
@@ -776,6 +808,12 @@ namespace FramePlayer.Desktop.Views
         {
             if (!_primaryEngine.IsMediaOpen || _compareEngine == null || !_compareEngine.IsMediaOpen)
             {
+                return;
+            }
+
+            if (!CanStartAllPanePlayback())
+            {
+                TryShowWindowsAudioPlaybackBlockedForAllPanes();
                 return;
             }
 
@@ -1329,6 +1367,10 @@ namespace FramePlayer.Desktop.Views
             var compareLoaded = _compareEngine != null && _compareEngine.IsMediaOpen;
             var anyMediaLoaded = primaryLoaded || compareLoaded;
             var focusedPaneCanZoom = focusedPaneLoaded && focusedEngine != null && !focusedEngine.IsPlaying;
+            var focusedPaneCanTogglePlayback = CanTogglePlayback(focusedEngine);
+            var mainPlayPauseCanToggle = IsAllPaneTransportEnabled
+                ? CanToggleAllPanePlayback()
+                : focusedPaneCanTogglePlayback;
             var focusedLoopRange = GetLoopRange(focusedPane);
             var canClearLoopPoints = focusedLoopRange != null && focusedLoopRange.HasAnyMarkers;
             var canReplaceAudioTrack = CanReplaceAudioTrack(out _);
@@ -1337,7 +1379,7 @@ namespace FramePlayer.Desktop.Views
             var canZoomIn = focusedPaneCanZoom && GetPaneZoomFactor(focusedPane) < MaximumPaneZoomFactor - 0.0001d;
             var canZoomOut = focusedPaneCanZoom && GetPaneZoomFactor(focusedPane) > MinimumPaneZoomFactor + 0.0001d;
 
-            SetNativeMenuEnabled(_nativePlayPauseMenuItem, focusedPaneLoaded);
+            SetNativeMenuEnabled(_nativePlayPauseMenuItem, mainPlayPauseCanToggle);
             SetNativeMenuEnabled(_nativeCloseVideoMenuItem, anyMediaLoaded);
             SetNativeMenuEnabled(_nativeVideoInfoMenuItem, focusedPaneLoaded);
             SetNativeMenuEnabled(_nativeRewindMenuItem, focusedPaneLoaded);
@@ -1355,7 +1397,7 @@ namespace FramePlayer.Desktop.Views
             SetNativeMenuEnabled(_nativeResetZoomMenuItem, canZoomOut);
             SetNativeMenuEnabled(_nativeReplaceAudioTrackMenuItem, canReplaceAudioTrack);
 
-            SetControlEnabled(PlayPauseMenuItem, focusedPaneLoaded);
+            SetControlEnabled(PlayPauseMenuItem, mainPlayPauseCanToggle);
             SetControlEnabled(CloseVideoMenuItem, anyMediaLoaded);
             SetControlEnabled(VideoInfoMenuItem, focusedPaneLoaded);
             SetControlEnabled(RewindMenuItem, focusedPaneLoaded);
@@ -1377,12 +1419,12 @@ namespace FramePlayer.Desktop.Views
             SetControlEnabled(FrameNumberTextBox, primaryLoaded);
             SetControlEnabled(PreviousFrameButton, focusedPaneLoaded);
             SetControlEnabled(RewindButton, focusedPaneLoaded);
-            SetControlEnabled(PlayPauseButton, focusedPaneLoaded);
+            SetControlEnabled(PlayPauseButton, mainPlayPauseCanToggle);
             SetControlEnabled(FastForwardButton, focusedPaneLoaded);
             SetControlEnabled(NextFrameButton, focusedPaneLoaded);
             SetControlEnabled(ToggleFullScreenButton, anyMediaLoaded);
-            SetPaneTransportEnabled(Pane.Primary, primaryLoaded);
-            SetPaneTransportEnabled(Pane.Compare, compareLoaded);
+            SetPaneTransportEnabled(Pane.Primary, primaryLoaded, CanTogglePlayback(_primaryEngine));
+            SetPaneTransportEnabled(Pane.Compare, compareLoaded, CanTogglePlayback(_compareEngine));
             AlignRightToLeftButton.IsEnabled = primaryLoaded && compareLoaded;
             AlignLeftToRightButton.IsEnabled = primaryLoaded && compareLoaded;
             ToolTip.SetTip(
@@ -1395,6 +1437,7 @@ namespace FramePlayer.Desktop.Views
                 primaryLoaded && compareLoaded
                     ? "Syncs the left pane to the right pane with exact frame identity when available."
                     : "Load both compare panes before syncing.");
+            UpdatePlaybackAvailabilityToolTips(focusedEngine);
         }
 
         private static void SetNativeMenuEnabled(NativeMenuItem? item, bool isEnabled)
@@ -1410,7 +1453,7 @@ namespace FramePlayer.Desktop.Views
             control.IsEnabled = isEnabled;
         }
 
-        private void SetPaneTransportEnabled(Pane pane, bool isEnabled)
+        private void SetPaneTransportEnabled(Pane pane, bool isEnabled, bool canTogglePlayback)
         {
             if (pane == Pane.Compare)
             {
@@ -1418,7 +1461,7 @@ namespace FramePlayer.Desktop.Views
                 SetControlEnabled(ComparePaneFrameNumberTextBox, isEnabled);
                 SetControlEnabled(ComparePaneStepBackButton, isEnabled);
                 SetControlEnabled(ComparePaneSkipBackHundredFramesButton, isEnabled);
-                SetControlEnabled(ComparePanePlayPauseButton, isEnabled);
+                SetControlEnabled(ComparePanePlayPauseButton, canTogglePlayback);
                 SetControlEnabled(ComparePaneSkipForwardHundredFramesButton, isEnabled);
                 SetControlEnabled(ComparePaneStepForwardButton, isEnabled);
                 return;
@@ -1428,9 +1471,93 @@ namespace FramePlayer.Desktop.Views
             SetControlEnabled(PrimaryPaneFrameNumberTextBox, isEnabled);
             SetControlEnabled(PrimaryPaneStepBackButton, isEnabled);
             SetControlEnabled(PrimaryPaneSkipBackHundredFramesButton, isEnabled);
-            SetControlEnabled(PrimaryPanePlayPauseButton, isEnabled);
+            SetControlEnabled(PrimaryPanePlayPauseButton, canTogglePlayback);
             SetControlEnabled(PrimaryPaneSkipForwardHundredFramesButton, isEnabled);
             SetControlEnabled(PrimaryPaneStepForwardButton, isEnabled);
+        }
+
+        internal static bool IsWindowsAudioPlaybackBlocked(VideoMediaInfo? mediaInfo)
+        {
+            return RuntimeInformation.IsOSPlatform(OSPlatform.Windows) &&
+                mediaInfo != null &&
+                mediaInfo.HasAudioStream;
+        }
+
+        private static bool IsWindowsAudioPlaybackBlocked(IVideoReviewEngine? engine)
+        {
+            return engine != null &&
+                engine.IsMediaOpen &&
+                IsWindowsAudioPlaybackBlocked(engine.MediaInfo);
+        }
+
+        private static bool CanStartPlayback(IVideoReviewEngine? engine)
+        {
+            return engine != null &&
+                engine.IsMediaOpen &&
+                !IsWindowsAudioPlaybackBlocked(engine);
+        }
+
+        private static bool CanTogglePlayback(IVideoReviewEngine? engine)
+        {
+            return engine != null &&
+                engine.IsMediaOpen &&
+                (engine.IsPlaying || CanStartPlayback(engine));
+        }
+
+        private bool CanStartAllPanePlayback()
+        {
+            return _primaryEngine.IsMediaOpen &&
+                _compareEngine != null &&
+                _compareEngine.IsMediaOpen &&
+                CanStartPlayback(_primaryEngine) &&
+                CanStartPlayback(_compareEngine);
+        }
+
+        private bool CanToggleAllPanePlayback()
+        {
+            return _primaryEngine.IsMediaOpen &&
+                _compareEngine != null &&
+                _compareEngine.IsMediaOpen &&
+                (_primaryEngine.IsPlaying || _compareEngine.IsPlaying || CanStartAllPanePlayback());
+        }
+
+        private bool TryShowWindowsAudioPlaybackBlocked(IVideoReviewEngine? engine)
+        {
+            if (!IsWindowsAudioPlaybackBlocked(engine))
+            {
+                return false;
+            }
+
+            CacheStatusTextBlock.Text = WindowsAudioPlaybackUnavailableMessage;
+            return true;
+        }
+
+        private bool TryShowWindowsAudioPlaybackBlockedForAllPanes()
+        {
+            if (!IsWindowsAudioPlaybackBlocked(_primaryEngine) &&
+                !IsWindowsAudioPlaybackBlocked(_compareEngine))
+            {
+                return false;
+            }
+
+            CacheStatusTextBlock.Text = WindowsAudioPlaybackUnavailableMessage;
+            return true;
+        }
+
+        private void UpdatePlaybackAvailabilityToolTips(IVideoReviewEngine? focusedEngine)
+        {
+            var focusedTip = IsWindowsAudioPlaybackBlocked(focusedEngine)
+                ? WindowsAudioPlaybackUnavailableMessage
+                : "Play";
+            ToolTip.SetTip(PlayPauseButton, focusedTip);
+            ToolTip.SetTip(PlayPauseMenuItem, focusedTip);
+
+            ToolTip.SetTip(
+                PrimaryPanePlayPauseButton,
+                IsWindowsAudioPlaybackBlocked(_primaryEngine) ? WindowsAudioPlaybackUnavailableMessage : "Play");
+            ToolTip.SetTip(
+                ComparePanePlayPauseButton,
+                IsWindowsAudioPlaybackBlocked(_compareEngine) ? WindowsAudioPlaybackUnavailableMessage : "Play");
         }
 
         private void AllPanesCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)

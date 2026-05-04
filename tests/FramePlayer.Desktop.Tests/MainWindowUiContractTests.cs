@@ -752,6 +752,18 @@ namespace FramePlayer.Desktop.Tests
         }
 
         [Fact]
+        public void WindowsAudioPlaybackGate_BlocksAudioStreamsOnlyOnWindows()
+        {
+            var audioInfo = CreateMediaInfo(hasAudioStream: true);
+            var silentInfo = CreateMediaInfo(hasAudioStream: false);
+
+            Assert.Equal(
+                RuntimeInformation.IsOSPlatform(OSPlatform.Windows),
+                MainWindow.IsWindowsAudioPlaybackBlocked(audioInfo));
+            Assert.False(MainWindow.IsWindowsAudioPlaybackBlocked(silentInfo));
+        }
+
+        [Fact]
         public void ZoomCommands_CropPresentedFramesThroughNativeMenuCommandPath()
         {
             _fixture.Run(() =>
@@ -879,6 +891,24 @@ namespace FramePlayer.Desktop.Tests
                 pixels,
                 width * 4,
                 "bgra");
+        }
+
+        private static VideoMediaInfo CreateMediaInfo(bool hasAudioStream)
+        {
+            return new VideoMediaInfo(
+                "sample.mp4",
+                TimeSpan.FromSeconds(1),
+                TimeSpan.FromMilliseconds(16),
+                60d,
+                1920,
+                1080,
+                "h264",
+                0,
+                60,
+                1,
+                1,
+                90000,
+                hasAudioStream);
         }
 
         private static T RequireControl<T>(Window window, string name)
