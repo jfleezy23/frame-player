@@ -53,6 +53,7 @@ namespace FramePlayer.Avalonia.Views
         private const string PaneCompareLabel = "Compare";
         private const string Mp4Pattern = "*.mp4";
         private const string Mp4Extension = ".mp4";
+        private const string CompareExportSecondaryTextColor = "#B7BDC6";
         private static readonly string[] VideoFilePatterns = new[] { "*.avi", "*.m4v", Mp4Pattern, "*.mkv", "*.wmv", "*.mov" };
         private NativeMenuItem? _nativeRecentFilesMenuItem;
         private NativeMenuItem? _nativePlayPauseMenuItem;
@@ -179,6 +180,7 @@ namespace FramePlayer.Avalonia.Views
             }
         }
 
+        [SuppressMessage("Major Code Smell", "S1075:URIs should not be hardcoded", Justification = "Avalonia embedded assets are addressed by avares resource URI.")]
         private void TryApplyWindowIcon()
         {
             var outputIconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "FramePlayer.ico");
@@ -2521,7 +2523,7 @@ namespace FramePlayer.Avalonia.Views
                         Text = loopModeAvailable
                             ? "Loop uses each pane's A/B range. Whole Video exports the aligned sources."
                             : "Loop export requires valid A/B ranges on both panes.",
-                        Foreground = Brush.Parse("#B7BDC6"),
+                        Foreground = Brush.Parse(CompareExportSecondaryTextColor),
                         TextWrapping = TextWrapping.Wrap
                     }
                 }
@@ -2537,7 +2539,7 @@ namespace FramePlayer.Avalonia.Views
                     new TextBlock
                     {
                         Text = "If the selected pane has no audio stream, the side-by-side export will be silent.",
-                        Foreground = Brush.Parse("#B7BDC6"),
+                        Foreground = Brush.Parse(CompareExportSecondaryTextColor),
                         TextWrapping = TextWrapping.Wrap
                     }
                 }
@@ -2575,7 +2577,7 @@ namespace FramePlayer.Avalonia.Views
                     new TextBlock
                     {
                         Text = "Choose the compare export range and which pane supplies audio.",
-                        Foreground = Brush.Parse("#B7BDC6"),
+                        Foreground = Brush.Parse(CompareExportSecondaryTextColor),
                         TextWrapping = TextWrapping.Wrap,
                         Margin = new Thickness(0, 6, 0, 0)
                     }
@@ -2614,7 +2616,7 @@ namespace FramePlayer.Avalonia.Views
             return ResolvePaneLabel(pane) + (hasAudio ? " pane" : " pane (silent)");
         }
 
-        private static Control BuildCompareExportPaneSummary(Pane pane, IVideoReviewEngine engine)
+        private static StackPanel BuildCompareExportPaneSummary(Pane pane, IVideoReviewEngine engine)
         {
             var mediaInfo = engine.MediaInfo;
             return new StackPanel
@@ -2637,7 +2639,7 @@ namespace FramePlayer.Avalonia.Views
                     new TextBlock
                     {
                         Text = FormatCompareExportMediaSummary(mediaInfo),
-                        Foreground = Brush.Parse("#B7BDC6"),
+                        Foreground = Brush.Parse(CompareExportSecondaryTextColor),
                         TextWrapping = TextWrapping.Wrap,
                         Margin = new Thickness(0, 4, 0, 0)
                     }
@@ -2761,8 +2763,8 @@ namespace FramePlayer.Avalonia.Views
 
         private static bool IsH264Codec(string codecName)
         {
-            return codecName.IndexOf("h264", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                codecName.IndexOf("avc", StringComparison.OrdinalIgnoreCase) >= 0;
+            return codecName.Contains("h264", StringComparison.OrdinalIgnoreCase) ||
+                codecName.Contains("avc", StringComparison.OrdinalIgnoreCase);
         }
 
         private async Task<string?> ExportDiagnosticsAsync(string? outputPath)
