@@ -7,7 +7,7 @@ Frame Player is a frame-first desktop video review tool for exact stepping, seek
 | Release track | Platform | Current release | Download |
 | --- | --- | --- | --- |
 | Windows stable | Windows 10 or later | `v1.8.4` | [Frame Player v1.8.4](https://github.com/jfleezy23/frame-player/releases/tag/v1.8.4) |
-| macOS Preview | Apple Silicon, macOS 13 or later | `0.1.0` | [Frame Player v1.8.4 unified downloads](https://github.com/jfleezy23/frame-player/releases/tag/v1.8.4) |
+| macOS Preview | Apple Silicon, macOS 13 or later | `0.1.1` | [Frame Player macOS Preview 0.1.1](https://github.com/jfleezy23/frame-player/releases/tag/macos-preview-0.1.1) |
 | Windows Avalonia Preview | Windows 10 or later, x64 | `0.1.0` | [Frame Player v1.8.4 unified downloads](https://github.com/jfleezy23/frame-player/releases/tag/v1.8.4) |
 
 The Windows WPF app remains the stable release line. The Apple Silicon macOS Preview and Windows Avalonia Preview are controlled preview builds for the cross-platform Avalonia direction.
@@ -35,7 +35,7 @@ These screenshots are captured from the actual Windows stable app and macOS Prev
 
 - [Wiki](https://github.com/jfleezy23/frame-player/wiki): user guide, screenshots, shortcuts, troubleshooting, build notes, validation, and security notes.
 - [All releases](https://github.com/jfleezy23/frame-player/releases): Windows stable, macOS Preview, and Windows Avalonia Preview downloads.
-- [macOS Preview release note](docs/release-macos-preview-0.1.0.md): notarization, validation evidence, and current preview limitations.
+- [macOS Preview release note](docs/release-macos-preview-0.1.1.md): notarization, validation evidence, and current preview limitations.
 - [Windows Avalonia Preview release note](docs/release-avalonia-windows-preview-0.1.0.md): validation evidence and current preview limitations.
 - [Release checklist](docs/release-checklist.md): release validation steps.
 - [Security policy](SECURITY.md): supported versions and reporting process.
@@ -68,7 +68,7 @@ See the [Wiki build guide](https://github.com/jfleezy23/frame-player/wiki/Build-
 ## Release Tracks
 
 - Windows stable remains `v1.8.4` and keeps the existing WPF source path, build path, runtime bootstrap, tests, and release process.
-- macOS Preview `0.1.0` is Apple Silicon only and is not yet a declaration that Avalonia replaces the Windows WPF app.
+- macOS Preview `0.1.1` is Apple Silicon only and is not yet a declaration that Avalonia replaces the Windows WPF app.
 - Windows Avalonia Preview `0.1.0` is a separate ZIP preview under `src/FramePlayer.Desktop`; it does not replace the Windows WPF app.
 - Current public downloads are linked from the unified [Frame Player v1.8.4 release page](https://github.com/jfleezy23/frame-player/releases/tag/v1.8.4).
 
