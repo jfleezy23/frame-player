@@ -72,8 +72,29 @@ jobs:
             exit 1
           fi
           chmod +x "$executable_path"
-          test -x "$executable_path"
-          test -f "$app_path/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/libavformat.62.dylib"
-          test -f "$app_path/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/libavcodec.62.dylib"
-          test "$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app_path/Contents/Info.plist")" = "0.2.0"
-          test "$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$app_path/Contents/Info.plist")" = "com.frameplayer.unified-preview"
+          if [[ ! -x "$executable_path" ]]; then
+            ls -l "$executable_path"
+            echo "Extracted FramePlayer.Avalonia is not executable" >&2
+            exit 1
+          fi
+
+          for required_path in \
+            "$app_path/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/libavformat.62.dylib" \
+            "$app_path/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/libavcodec.62.dylib"; do
+            if [[ ! -f "$required_path" ]]; then
+              find "$app_path/Contents/MacOS/Runtime" -maxdepth 5 -print
+              echo "Extracted package is missing required runtime file: $required_path" >&2
+              exit 1
+            fi
+          done
+
+          bundle_version="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app_path/Contents/Info.plist")"
+          bundle_id="$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$app_path/Contents/Info.plist")"
+          if [[ "$bundle_version" != "0.2.0" ]]; then
+            echo "Expected CFBundleShortVersionString 0.2.0 but found $bundle_version" >&2
+            exit 1
+          fi
+          if [[ "$bundle_id" != "com.frameplayer.unified-preview" ]]; then
+            echo "Expected CFBundleIdentifier com.frameplayer.unified-preview but found $bundle_id" >&2
+            exit 1
+          fi
