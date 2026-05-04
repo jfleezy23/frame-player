@@ -10,11 +10,14 @@ namespace FramePlayer.Engines.FFmpeg
         private const int WaveMapper = -1;
         private const int CallbackNull = 0;
         private const int WhdrDone = 0x00000001;
+        private const int TimeMilliseconds = 0x0001;
+        private const int TimeSamples = 0x0002;
         private const int TimeBytes = 0x0004;
         private const int MaxQueuedMilliseconds = 700;
         private const int PollMilliseconds = 5;
 
         private readonly List<QueuedBuffer> _queuedBuffers = new List<QueuedBuffer>();
+        private readonly int _sampleRate;
         private readonly int _bytesPerSecond;
         private readonly int _maxQueuedBytes;
         private IntPtr _waveOutHandle;
@@ -40,6 +43,7 @@ namespace FramePlayer.Engines.FFmpeg
             }
 
             var blockAlign = checked((ushort)(channelCount * bitsPerSample / 8));
+            _sampleRate = sampleRate;
             _bytesPerSecond = checked(sampleRate * blockAlign);
             _maxQueuedBytes = Math.Max(_bytesPerSecond * MaxQueuedMilliseconds / 1000, blockAlign);
 
@@ -93,7 +97,7 @@ namespace FramePlayer.Engines.FFmpeg
                     return TimeSpan.Zero;
                 }
 
-                return BytesToDuration(time.u);
+                return MmTimeToDuration(time);
             }
         }
 
@@ -257,6 +261,32 @@ namespace FramePlayer.Engines.FFmpeg
             }
 
             var seconds = byteCount / (double)_bytesPerSecond;
+            return TimeSpan.FromTicks((long)Math.Round(seconds * TimeSpan.TicksPerSecond));
+        }
+
+        private TimeSpan MmTimeToDuration(MmTime time)
+        {
+            switch (time.wType)
+            {
+                case TimeBytes:
+                    return BytesToDuration(time.u);
+                case TimeSamples:
+                    return SamplesToDuration(time.u);
+                case TimeMilliseconds:
+                    return TimeSpan.FromMilliseconds(time.u);
+                default:
+                    return TimeSpan.Zero;
+            }
+        }
+
+        private TimeSpan SamplesToDuration(long sampleCount)
+        {
+            if (sampleCount <= 0L || _sampleRate <= 0)
+            {
+                return TimeSpan.Zero;
+            }
+
+            var seconds = sampleCount / (double)_sampleRate;
             return TimeSpan.FromTicks((long)Math.Round(seconds * TimeSpan.TicksPerSecond));
         }
 
