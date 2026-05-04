@@ -11,7 +11,7 @@ using FramePlayer.Services;
 
 namespace FramePlayer.Avalonia
 {
-    internal static class Program
+    internal static partial class Program
     {
         [STAThread]
         public static void Main(string[] args)
@@ -61,7 +61,7 @@ namespace FramePlayer.Avalonia
                     : validationMessage);
             }
 
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && !SetDllDirectory(exportRuntimeDirectory))
+            if (!SetDllDirectory(exportRuntimeDirectory))
             {
                 throw new InvalidOperationException("The bundled FFmpeg export runtime directory could not be activated for native DLL loading. Win32 error: " + Marshal.GetLastWin32Error().ToString());
             }
@@ -77,8 +77,9 @@ namespace FramePlayer.Avalonia
                 : runtimeBase;
         }
 
-        [DllImport("kernel32", SetLastError = true)]
-        private static extern bool SetDllDirectory(string lpPathName);
+        [LibraryImport("kernel32", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static partial bool SetDllDirectory(string lpPathName);
     }
 
     public sealed class App : Application

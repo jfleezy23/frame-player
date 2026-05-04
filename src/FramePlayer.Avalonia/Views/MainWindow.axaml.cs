@@ -629,39 +629,51 @@ namespace FramePlayer.Avalonia.Views
 
         private async void PlayPauseButton_Click(object? sender, RoutedEventArgs e)
         {
+            await TogglePlaybackAsync();
+        }
+
+        private async Task TogglePlaybackAsync()
+        {
             if (IsAllPaneTransportEnabled)
             {
-                if (_primaryEngine.IsPlaying || (_compareEngine != null && _compareEngine.IsPlaying))
-                {
-                    await PauseAllPanePlaybackAsync();
-                }
-                else
-                {
-                    if (!CanStartAllPanePlayback())
-                    {
-                        return;
-                    }
-
-                    await StartAllPanePlaybackAsync();
-                }
+                await ToggleAllPanePlaybackAsync();
+                return;
             }
-            else
+
+            await ToggleFocusedPanePlaybackAsync();
+        }
+
+        private async Task ToggleAllPanePlaybackAsync()
+        {
+            if (_primaryEngine.IsPlaying || (_compareEngine != null && _compareEngine.IsPlaying))
             {
-                var engine = GetEngine(GetFocusedPane());
-                if (engine.IsPlaying)
-                {
-                    await engine.PauseAsync();
-                }
-                else
-                {
-                    if (!CanStartPlayback(engine))
-                    {
-                        return;
-                    }
-
-                    await engine.PlayAsync();
-                }
+                await PauseAllPanePlaybackAsync();
+                return;
             }
+
+            if (!CanStartAllPanePlayback())
+            {
+                return;
+            }
+
+            await StartAllPanePlaybackAsync();
+        }
+
+        private async Task ToggleFocusedPanePlaybackAsync()
+        {
+            var engine = GetEngine(GetFocusedPane());
+            if (engine.IsPlaying)
+            {
+                await engine.PauseAsync();
+                return;
+            }
+
+            if (!CanStartPlayback(engine))
+            {
+                return;
+            }
+
+            await engine.PlayAsync();
         }
 
         private async void PlayButton_Click(object? sender, RoutedEventArgs e)
@@ -863,7 +875,7 @@ namespace FramePlayer.Avalonia.Views
                 target = TimeSpan.Zero;
             }
 
-            await engine.SeekToTimeAsync(target);
+            await SeekToTimePreservingPlaybackAsync(engine, target);
         }
 
         private Pane ResolvePaneFromSender(object? sender)
@@ -1179,7 +1191,7 @@ namespace FramePlayer.Avalonia.Views
         private async Task CommitSliderSeekAsync(string interactionName, TimeSpan target)
         {
             _ = interactionName;
-            await _primaryEngine.SeekToTimeAsync(target);
+            await SeekToTimePreservingPlaybackAsync(_primaryEngine, target);
         }
 
         private async void PositionSlider_ValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
@@ -1189,7 +1201,7 @@ namespace FramePlayer.Avalonia.Views
                 return;
             }
 
-            await _primaryEngine.SeekToTimeAsync(TimeSpan.FromSeconds(PositionSlider.Value));
+            await SeekToTimePreservingPlaybackAsync(_primaryEngine, TimeSpan.FromSeconds(PositionSlider.Value));
         }
 
         private async void PanePositionSlider_ValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
@@ -1202,12 +1214,22 @@ namespace FramePlayer.Avalonia.Views
             if (sender == PrimaryPanePositionSlider && _primaryEngine.IsMediaOpen)
             {
                 SelectPane(Pane.Primary);
-                await _primaryEngine.SeekToTimeAsync(TimeSpan.FromSeconds(PrimaryPanePositionSlider.Value));
+                await SeekToTimePreservingPlaybackAsync(_primaryEngine, TimeSpan.FromSeconds(PrimaryPanePositionSlider.Value));
             }
             else if (sender == ComparePanePositionSlider && _compareEngine != null && _compareEngine.IsMediaOpen)
             {
                 SelectPane(Pane.Compare);
-                await _compareEngine.SeekToTimeAsync(TimeSpan.FromSeconds(ComparePanePositionSlider.Value));
+                await SeekToTimePreservingPlaybackAsync(_compareEngine, TimeSpan.FromSeconds(ComparePanePositionSlider.Value));
+            }
+        }
+
+        private static async Task SeekToTimePreservingPlaybackAsync(IVideoReviewEngine engine, TimeSpan target)
+        {
+            var resumePlayback = engine.IsPlaying;
+            await engine.SeekToTimeAsync(target);
+            if (resumePlayback && CanStartPlayback(engine))
+            {
+                await engine.PlayAsync();
             }
         }
 
@@ -1950,94 +1972,132 @@ namespace FramePlayer.Avalonia.Views
 
         private async void Window_KeyDown(object? sender, KeyEventArgs e)
         {
-            if (e.Key == Key.N && HasExactModifiers(e, CommandKeyModifier))
+            if (await TryHandleWindowCommandShortcutAsync(sender, e))
             {
-                LaunchNewWindow();
                 e.Handled = true;
+                return;
             }
-            else if (e.Key == Key.O && HasExactModifiers(e, CommandKeyModifier))
-            {
-                await OpenVideoAsync(GetFileOpenTargetPane());
-                e.Handled = true;
-            }
-            else if (e.Key == Key.W && HasExactModifiers(e, CommandKeyModifier))
-            {
-                await CloseVideosAsync();
-                e.Handled = true;
-            }
-            else if (e.Key == Key.E && HasExactModifiers(e, CommandShiftKeyModifier))
-            {
-                await ExportDiagnosticsAsync(null);
-                e.Handled = true;
-            }
-            else if (e.Key == Key.F1)
-            {
-                HelpMenuItem_Click(sender, e);
-                e.Handled = true;
-            }
-            else if (e.Key == Key.F11 || (e.Key == Key.Enter && HasExactModifiers(e, KeyModifiers.Alt)))
-            {
-                ToggleFullScreen();
-                e.Handled = true;
-            }
-            else if (e.Key == Key.Escape && WindowState == WindowState.FullScreen)
-            {
-                ToggleFullScreen();
-                e.Handled = true;
-            }
-            else if (IsTextEntryTarget(e))
+
+            if (IsTextEntryTarget(e))
             {
                 return;
             }
-            else if (e.Key == Key.Space)
-            {
-                PlayPauseButton_Click(sender, e);
-                e.Handled = true;
-            }
-            else if (e.Key == Key.Left)
-            {
-                await StepFrameAsync(-ResolveFrameStepCount(e.KeyModifiers));
-                e.Handled = true;
-            }
-            else if (e.Key == Key.Right)
-            {
-                await StepFrameAsync(ResolveFrameStepCount(e.KeyModifiers));
-                e.Handled = true;
-            }
-            else if (e.Key == Key.L)
-            {
-                SetLoopPlaybackEnabled(!_isLoopPlaybackEnabled);
-                e.Handled = true;
-            }
-            else if (e.Key == Key.OemOpenBrackets)
-            {
-                SetLoopMarker(LoopPlaybackMarkerEndpoint.In);
-                e.Handled = true;
-            }
-            else if (e.Key == Key.OemCloseBrackets)
-            {
-                SetLoopMarker(LoopPlaybackMarkerEndpoint.Out);
-                e.Handled = true;
-            }
-            else if (e.Key == Key.J || e.Key == Key.OemComma)
-            {
-                await SeekRelativeAsync(TimeSpan.FromSeconds(-5));
-                e.Handled = true;
-            }
-            else if (e.Key == Key.OemPeriod)
-            {
-                await SeekRelativeAsync(TimeSpan.FromSeconds(5));
-                e.Handled = true;
-            }
-            else if (TryHandleZoomShortcut(e))
+
+            if (await TryHandleReviewShortcutAsync(sender, e))
             {
                 e.Handled = true;
             }
         }
 
+        private async Task<bool> TryHandleWindowCommandShortcutAsync(object? sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.N && HasExactModifiers(e, CommandKeyModifier))
+            {
+                LaunchNewWindow();
+                return true;
+            }
+
+            if (e.Key == Key.O && HasExactModifiers(e, CommandKeyModifier))
+            {
+                await OpenVideoAsync(GetFileOpenTargetPane());
+                return true;
+            }
+
+            if (e.Key == Key.W && HasExactModifiers(e, CommandKeyModifier))
+            {
+                await CloseVideosAsync();
+                return true;
+            }
+
+            if (e.Key == Key.E && HasExactModifiers(e, CommandShiftKeyModifier))
+            {
+                await ExportDiagnosticsAsync(null);
+                return true;
+            }
+
+            if (e.Key == Key.F1)
+            {
+                HelpMenuItem_Click(sender, e);
+                return true;
+            }
+
+            if (ShouldToggleFullScreen(e))
+            {
+                ToggleFullScreen();
+                return true;
+            }
+
+            return false;
+        }
+
+        private async Task<bool> TryHandleReviewShortcutAsync(object? sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Space)
+            {
+                await TogglePlaybackAsync();
+                return true;
+            }
+
+            if (e.Key == Key.Left)
+            {
+                await StepFrameAsync(-ResolveFrameStepCount(e.KeyModifiers));
+                return true;
+            }
+
+            if (e.Key == Key.Right)
+            {
+                await StepFrameAsync(ResolveFrameStepCount(e.KeyModifiers));
+                return true;
+            }
+
+            if (e.Key == Key.L)
+            {
+                SetLoopPlaybackEnabled(!_isLoopPlaybackEnabled);
+                return true;
+            }
+
+            if (e.Key == Key.OemOpenBrackets)
+            {
+                SetLoopMarker(LoopPlaybackMarkerEndpoint.In);
+                return true;
+            }
+
+            if (e.Key == Key.OemCloseBrackets)
+            {
+                SetLoopMarker(LoopPlaybackMarkerEndpoint.Out);
+                return true;
+            }
+
+            if (e.Key == Key.J || e.Key == Key.OemComma)
+            {
+                await SeekRelativeAsync(TimeSpan.FromSeconds(-5));
+                return true;
+            }
+
+            if (e.Key == Key.OemPeriod)
+            {
+                await SeekRelativeAsync(TimeSpan.FromSeconds(5));
+                return true;
+            }
+
+            if (TryHandleZoomShortcut(e))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
         private static bool HasExactModifiers(KeyEventArgs e, KeyModifiers modifiers)
         {
             return e.KeyModifiers == modifiers;
+        }
+
+        private bool ShouldToggleFullScreen(KeyEventArgs e)
+        {
+            return e.Key == Key.F11 ||
+                (e.Key == Key.Enter && HasExactModifiers(e, KeyModifiers.Alt)) ||
+                (e.Key == Key.Escape && WindowState == WindowState.FullScreen);
         }
 
         private static bool IsTextEntryTarget(KeyEventArgs e)
