@@ -152,6 +152,9 @@ namespace FramePlayer.Engines.FFmpeg
         {
             var dataPointer = Marshal.AllocHGlobal(buffer.Length);
             var headerPointer = IntPtr.Zero;
+            var headerPrepared = false;
+            var headerSubmitted = false;
+            var headerSize = Marshal.SizeOf(typeof(WaveHeader));
             try
             {
                 Marshal.Copy(buffer, 0, dataPointer, buffer.Length);
@@ -161,15 +164,18 @@ namespace FramePlayer.Engines.FFmpeg
                     lpData = dataPointer,
                     dwBufferLength = buffer.Length
                 };
-                headerPointer = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(WaveHeader)));
+                headerPointer = Marshal.AllocHGlobal(headerSize);
                 Marshal.StructureToPtr(header, headerPointer, false);
 
                 ThrowIfWaveError(
-                    waveOutPrepareHeader(_waveOutHandle, headerPointer, Marshal.SizeOf(typeof(WaveHeader))),
+                    waveOutPrepareHeader(_waveOutHandle, headerPointer, headerSize),
                     "Prepare audio output buffer");
+                headerPrepared = true;
+
                 ThrowIfWaveError(
-                    waveOutWrite(_waveOutHandle, headerPointer, Marshal.SizeOf(typeof(WaveHeader))),
+                    waveOutWrite(_waveOutHandle, headerPointer, headerSize),
                     "Submit audio output buffer");
+                headerSubmitted = true;
 
                 _queuedBuffers.Add(new QueuedBuffer(headerPointer, dataPointer, buffer.Length));
                 _queuedBytes += buffer.Length;
@@ -177,6 +183,11 @@ namespace FramePlayer.Engines.FFmpeg
             }
             catch
             {
+                if (headerPrepared && !headerSubmitted && _waveOutHandle != IntPtr.Zero)
+                {
+                    waveOutUnprepareHeader(_waveOutHandle, headerPointer, headerSize);
+                }
+
                 if (headerPointer != IntPtr.Zero)
                 {
                     Marshal.FreeHGlobal(headerPointer);

@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
@@ -35,20 +36,14 @@ namespace FramePlayer.Avalonia.Services
 
             using (var locked = bitmap.Lock())
             {
-                unsafe
+                var sourceStride = frameBuffer.Stride;
+                const int bytesPerPixel = 4;
+                var copyBytesPerRow = Math.Min(crop.Width * bytesPerPixel, locked.RowBytes);
+                for (var y = 0; y < crop.Height; y++)
                 {
-                    fixed (byte* sourceStart = frameBuffer.PixelBuffer)
-                    {
-                        var sourceStride = frameBuffer.Stride;
-                        const int bytesPerPixel = 4;
-                        var copyBytesPerRow = Math.Min(crop.Width * bytesPerPixel, locked.RowBytes);
-                        for (var y = 0; y < crop.Height; y++)
-                        {
-                            var sourceRow = sourceStart + ((crop.Y + y) * sourceStride) + (crop.X * bytesPerPixel);
-                            var destinationRow = (byte*)locked.Address + (y * locked.RowBytes);
-                            Buffer.MemoryCopy(sourceRow, destinationRow, locked.RowBytes, copyBytesPerRow);
-                        }
-                    }
+                    var sourceOffset = ((crop.Y + y) * sourceStride) + (crop.X * bytesPerPixel);
+                    var destinationRow = IntPtr.Add(locked.Address, y * locked.RowBytes);
+                    Marshal.Copy(frameBuffer.PixelBuffer, sourceOffset, destinationRow, copyBytesPerRow);
                 }
             }
 
