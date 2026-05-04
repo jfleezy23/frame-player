@@ -100,3 +100,32 @@ Use this section only for the macOS Avalonia preview release line. Do not use it
 - Confirm the release ZIP was produced with `ditto -c -k --keepParent` so detached .NET assembly signatures are preserved.
 - Extract the final ZIP and verify `xcrun stapler validate` and `spctl -a -vvv -t exec` both pass.
 - Do not attach, rename, or modify Windows release artifacts.
+
+## Windows Avalonia Preview Checklist
+
+Use this section only for the Windows Avalonia preview release line. Do not use it to publish or modify Windows WPF stable artifacts or macOS preview artifacts.
+
+### Pre-Ship Repo Hygiene
+
+- Confirm the preview branch was created from the current `origin/main`.
+- Confirm `git diff --name-status origin/main...HEAD` contains no changes to root `FramePlayer.csproj`, root `MainWindow.xaml`, root `MainWindow.xaml.cs`, root `Engines/FFmpeg/**`, root `Services/**`, `src/FramePlayer.Mac/**`, `tests/FramePlayer.Mac.Tests/**`, Windows packaging scripts, macOS packaging scripts, or `Runtime/macos/**` unless explicitly authorized.
+- Confirm `Video Test Files/`, `dist/`, `artifacts/`, `bin/`, `obj/`, and local runtime binaries are not staged.
+
+### Validation Gate
+
+- Build the Desktop preview:
+  - `dotnet build src\FramePlayer.Desktop\FramePlayer.Desktop.csproj -c Release`
+- Run Desktop preview tests:
+  - `dotnet test tests\FramePlayer.Desktop.Tests\FramePlayer.Desktop.Tests.csproj -c Release`
+- Run Core tests and the stable WPF build as guardrails:
+  - `dotnet test tests\FramePlayer.Core.Tests\FramePlayer.Core.Tests.csproj -c Release`
+  - `dotnet build FramePlayer.csproj -c Release -p:Platform=x64`
+- Launch the Desktop preview and perform manual tester checks for open/recent files, compare review, loop/export paths, disabled states, layout stability, and diagnostics.
+
+### Publish Gate
+
+- Tag the validated preview commit with a Windows Avalonia-only preview tag such as `avalonia-windows-preview-0.1.0`.
+- Create a GitHub prerelease titled `Frame Player Avalonia Windows Preview 0.1.0`.
+- Attach the Windows x64 preview ZIP and SHA256 file to the preview release and the unified current-download release page.
+- Confirm the stable `v*` release remains the latest release.
+- Do not rename, remove, or replace the stable Windows WPF artifact.

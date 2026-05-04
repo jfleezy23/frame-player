@@ -15,7 +15,7 @@ Do not edit the GitHub Wiki directly unless you are making an emergency correcti
 The README is intentionally short. It should answer:
 
 - what Frame Player is
-- where to download Windows stable and macOS Preview builds
+- where to download Windows stable, macOS Preview, and Windows Avalonia Preview builds
 - what the main features are
 - where the Wiki, releases, security notes, and third-party notices live
 

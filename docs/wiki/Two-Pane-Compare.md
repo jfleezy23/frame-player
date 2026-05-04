@@ -20,8 +20,8 @@ Two-pane compare mode is designed for original vs processed review. The left pan
 
 ## Focused Pane Behavior
 
-Click a pane to focus it. The focused pane should receive pane-local Open Recent behavior, frame entry, context-menu actions, and compare navigation. On macOS, the right pane is expected to support focused `Open Recent` behavior like the Windows version.
+Click a pane to focus it. The focused pane should receive pane-local Open Recent behavior, frame entry, context-menu actions, and compare navigation. On macOS Preview and Windows Avalonia Preview, the right pane is expected to support focused `Open Recent` behavior like the Windows stable version.
 
 ## Context Menus
 
-Right-click a video pane for pane-specific actions such as Video Info and related review commands. Menu colors should match the main menu treatment on the macOS Preview.
+Right-click a video pane for pane-specific actions such as Video Info and related review commands. Menu colors should match the main menu treatment on the Avalonia previews.

@@ -38,6 +38,23 @@ codesign --verify --deep --verbose=2 "dist/Frame Player.app"
 
 Developer ID notarization is documented in [docs/macos-preview-release.md](https://github.com/jfleezy23/frame-player/blob/main/docs/macos-preview-release.md).
 
+## Windows Avalonia Preview
+
+The Windows Avalonia Preview builds from `src\FramePlayer.Desktop` and uses separate preview tests.
+
+```powershell
+dotnet restore src\FramePlayer.Desktop\FramePlayer.Desktop.csproj
+dotnet build src\FramePlayer.Desktop\FramePlayer.Desktop.csproj -c Release
+dotnet test tests\FramePlayer.Desktop.Tests\FramePlayer.Desktop.Tests.csproj -c Release
+```
+
+For a local tester ZIP, publish the Desktop preview and compress the published folder:
+
+```powershell
+dotnet publish src\FramePlayer.Desktop\FramePlayer.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o artifacts\avalonia-windows-preview\publish
+Compress-Archive -Path artifacts\avalonia-windows-preview\publish\* -DestinationPath artifacts\avalonia-windows-preview\FramePlayer-Desktop-Windows-x64-local.zip -Force
+```
+
 ## Runtime Notes
 
 FFmpeg playback and export runtimes are pinned. Runtime binaries are staged locally and are not committed unless a later release explicitly changes that policy.
