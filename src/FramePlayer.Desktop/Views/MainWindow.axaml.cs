@@ -45,8 +45,6 @@ namespace FramePlayer.Desktop.Views
         private const double PaneWheelZoomDeltaThreshold = 0.01d;
         private const double PaneHeaderHeight = 46d;
         private const double PaneFooterHeight = 118d;
-        private const string WindowsAudioPlaybackUnavailableMessage =
-            "Windows preview audio output is not available yet; frame stepping remains available.";
         private const string PanePrimaryId = "pane-primary";
         private const string PaneCompareId = "pane-compare";
         private const string PanePrimaryKey = "primary";
@@ -282,11 +280,6 @@ namespace FramePlayer.Desktop.Views
 
                 UpdateLoopUi();
                 UpdateCompareOptionState();
-                if (IsWindowsAudioPlaybackBlocked(engine.MediaInfo))
-                {
-                    CacheStatusTextBlock.Text = WindowsAudioPlaybackUnavailableMessage;
-                }
-
                 SetPaneState(pane, "Ready");
             }
             catch (Exception ex)
@@ -626,7 +619,6 @@ namespace FramePlayer.Desktop.Views
                 {
                     if (!CanStartAllPanePlayback())
                     {
-                        TryShowWindowsAudioPlaybackBlockedForAllPanes();
                         return;
                     }
 
@@ -644,7 +636,6 @@ namespace FramePlayer.Desktop.Views
                 {
                     if (!CanStartPlayback(engine))
                     {
-                        TryShowWindowsAudioPlaybackBlocked(engine);
                         return;
                     }
 
@@ -675,7 +666,6 @@ namespace FramePlayer.Desktop.Views
             {
                 if (!CanStartPlayback(engine))
                 {
-                    TryShowWindowsAudioPlaybackBlocked(engine);
                     return;
                 }
 
@@ -734,7 +724,6 @@ namespace FramePlayer.Desktop.Views
             var engine = GetEngine(ResolvePane(paneId));
             if (!CanStartPlayback(engine))
             {
-                TryShowWindowsAudioPlaybackBlocked(engine);
                 return;
             }
 
@@ -813,7 +802,6 @@ namespace FramePlayer.Desktop.Views
 
             if (!CanStartAllPanePlayback())
             {
-                TryShowWindowsAudioPlaybackBlockedForAllPanes();
                 return;
             }
 
@@ -1476,25 +1464,10 @@ namespace FramePlayer.Desktop.Views
             SetControlEnabled(PrimaryPaneStepForwardButton, isEnabled);
         }
 
-        internal static bool IsWindowsAudioPlaybackBlocked(VideoMediaInfo? mediaInfo)
-        {
-            return RuntimeInformation.IsOSPlatform(OSPlatform.Windows) &&
-                mediaInfo != null &&
-                mediaInfo.HasAudioStream;
-        }
-
-        private static bool IsWindowsAudioPlaybackBlocked(IVideoReviewEngine? engine)
-        {
-            return engine != null &&
-                engine.IsMediaOpen &&
-                IsWindowsAudioPlaybackBlocked(engine.MediaInfo);
-        }
-
         private static bool CanStartPlayback(IVideoReviewEngine? engine)
         {
             return engine != null &&
-                engine.IsMediaOpen &&
-                !IsWindowsAudioPlaybackBlocked(engine);
+                engine.IsMediaOpen;
         }
 
         private static bool CanTogglePlayback(IVideoReviewEngine? engine)
@@ -1521,43 +1494,13 @@ namespace FramePlayer.Desktop.Views
                 (_primaryEngine.IsPlaying || _compareEngine.IsPlaying || CanStartAllPanePlayback());
         }
 
-        private bool TryShowWindowsAudioPlaybackBlocked(IVideoReviewEngine? engine)
-        {
-            if (!IsWindowsAudioPlaybackBlocked(engine))
-            {
-                return false;
-            }
-
-            CacheStatusTextBlock.Text = WindowsAudioPlaybackUnavailableMessage;
-            return true;
-        }
-
-        private bool TryShowWindowsAudioPlaybackBlockedForAllPanes()
-        {
-            if (!IsWindowsAudioPlaybackBlocked(_primaryEngine) &&
-                !IsWindowsAudioPlaybackBlocked(_compareEngine))
-            {
-                return false;
-            }
-
-            CacheStatusTextBlock.Text = WindowsAudioPlaybackUnavailableMessage;
-            return true;
-        }
-
         private void UpdatePlaybackAvailabilityToolTips(IVideoReviewEngine? focusedEngine)
         {
-            var focusedTip = IsWindowsAudioPlaybackBlocked(focusedEngine)
-                ? WindowsAudioPlaybackUnavailableMessage
-                : "Play";
-            ToolTip.SetTip(PlayPauseButton, focusedTip);
-            ToolTip.SetTip(PlayPauseMenuItem, focusedTip);
-
-            ToolTip.SetTip(
-                PrimaryPanePlayPauseButton,
-                IsWindowsAudioPlaybackBlocked(_primaryEngine) ? WindowsAudioPlaybackUnavailableMessage : "Play");
-            ToolTip.SetTip(
-                ComparePanePlayPauseButton,
-                IsWindowsAudioPlaybackBlocked(_compareEngine) ? WindowsAudioPlaybackUnavailableMessage : "Play");
+            _ = focusedEngine;
+            ToolTip.SetTip(PlayPauseButton, "Play");
+            ToolTip.SetTip(PlayPauseMenuItem, "Play");
+            ToolTip.SetTip(PrimaryPanePlayPauseButton, "Play");
+            ToolTip.SetTip(ComparePanePlayPauseButton, "Play");
         }
 
         private void AllPanesCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)
