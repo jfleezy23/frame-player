@@ -20,6 +20,8 @@
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="CornerRadius" Value="8" />
       <Setter Property="FontSize" Value="12" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
     <Style Selector="Button:pointerover">
       <Setter Property="Background" Value="#343B45" />
@@ -65,6 +67,32 @@
     <Style Selector="TextBlock.pane-loop-status">
       <Setter Property="Width" Value="176" />
     </Style>
+    <Style Selector="StackPanel.frame-entry">
+      <Setter Property="Orientation" Value="Horizontal" />
+      <Setter Property="HorizontalAlignment" Value="Right" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="StackPanel.pane-frame-entry">
+      <Setter Property="Margin" Value="0,6,0,0" />
+    </Style>
+    <Style Selector="TextBlock.frame-entry-label">
+      <Setter Property="Foreground" Value="#B7BDC6" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="0,0,6,0" />
+    </Style>
+    <Style Selector="TextBox.frame-number-box">
+      <Setter Property="Width" Value="104" />
+      <Setter Property="Height" Value="32" />
+      <Setter Property="MinHeight" Value="32" />
+      <Setter Property="MaxHeight" Value="32" />
+      <Setter Property="Padding" Value="8,3" />
+      <Setter Property="HorizontalContentAlignment" Value="Right" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBox.pane-frame-number-box">
+      <Setter Property="Width" Value="92" />
+    </Style>
     <Style Selector="TextBlock.status-text">
       <Setter Property="TextTrimming" Value="CharacterEllipsis" />
       <Setter Property="TextWrapping" Value="NoWrap" />
@@ -99,10 +127,10 @@
   </Window.Styles>
 
   <Border BorderBrush="#31363F" BorderThickness="1" Background="#11161C">
-    <Grid RowDefinitions="Auto,Auto,*,134,38">
-      <Border Grid.Row="0" x:Name="HeaderPanel" Margin="10,10,10,0" Background="#21252B" BorderBrush="#31363F" BorderThickness="1" CornerRadius="10" Padding="10">
+    <Grid RowDefinitions="Auto,Auto,*,134,Auto">
+      <Border Grid.Row="0" x:Name="HeaderPanel" Margin="14,10,14,0" Background="#21252B" BorderBrush="#31363F" BorderThickness="1" CornerRadius="10" Padding="12">
         <Grid ColumnDefinitions="*,Auto">
-          <StackPanel>
+          <StackPanel MinWidth="0" VerticalAlignment="Center">
             <TextBlock Text="Current Video" Foreground="#B7BDC6" FontSize="11" />
             <TextBlock x:Name="CurrentFileTextBlock" Margin="0,3,0,0" Text="No file loaded" Foreground="#F3F4F6" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
           </StackPanel>
@@ -111,43 +139,45 @@
       </Border>
 
       <Border Grid.Row="1" x:Name="CompareToolbarBorder" Background="#1A2028" BorderBrush="#28313B" BorderThickness="0,0,0,1" Padding="18,8" IsVisible="False">
-        <StackPanel Orientation="Horizontal" Spacing="8">
+        <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*" ColumnSpacing="8">
           <CheckBox x:Name="AllPanesCheckBox" Content="All panes" IsChecked="True" />
-          <Button x:Name="AlignRightToLeftButton" Content="Sync Right to Left" ToolTip.Tip="Frame first: syncs the right pane to the left pane with exact frame identity when available." Click="AlignRightToLeftButton_Click" />
-          <Button x:Name="AlignLeftToRightButton" Content="Sync Left to Right" ToolTip.Tip="Frame first: syncs the left pane to the right pane with exact frame identity when available." Click="AlignLeftToRightButton_Click" />
-          <CheckBox x:Name="LinkPaneZoomCheckBox" Content="Link zoom" IsChecked="True" />
-          <TextBlock x:Name="CompareStatusTextBlock" Text="Compare: Load two videos to begin | Last sync: none" Foreground="#B7BDC6" VerticalAlignment="Center" Margin="12,0,0,0" />
-        </StackPanel>
+          <Button x:Name="AlignRightToLeftButton" Grid.Column="1" Content="Sync Right to Left" ToolTip.Tip="Frame first: syncs the right pane to the left pane with exact frame identity when available." Click="AlignRightToLeftButton_Click" />
+          <Button x:Name="AlignLeftToRightButton" Grid.Column="2" Content="Sync Left to Right" ToolTip.Tip="Frame first: syncs the left pane to the right pane with exact frame identity when available." Click="AlignLeftToRightButton_Click" />
+          <CheckBox x:Name="LinkPaneZoomCheckBox" Grid.Column="3" Content="Link zoom" IsChecked="True" />
+          <TextBlock x:Name="CompareStatusTextBlock" Grid.Column="4" Text="Compare: Load two videos to begin | Last sync: none" Foreground="#B7BDC6" VerticalAlignment="Center" Margin="12,0,0,0" MinWidth="0" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+        </Grid>
       </Border>
 
-      <Border Grid.Row="2" x:Name="VideoPanel" Background="#11161C" Padding="14">
-        <Grid ColumnDefinitions="*,0" x:Name="VideoPaneGrid" ColumnSpacing="12">
-          <Border x:Name="PrimaryPaneBorder" Grid.Column="0" Background="#171C22" BorderBrush="#28313B" BorderThickness="1" CornerRadius="8" Tag="pane-primary" PointerPressed="PaneBorder_PointerPressed">
-            <Grid RowDefinitions="42,*,118">
-              <Border x:Name="PrimaryPaneHeaderBorder" Grid.Row="0" Background="#1D2934" BorderBrush="#28313B" BorderThickness="0,0,0,1" CornerRadius="8,8,0,0" Padding="12,7">
+      <Border Grid.Row="2" x:Name="VideoPanel" Margin="14,8,14,0" Background="#11161C" Padding="0">
+        <Grid ColumnDefinitions="*,0" x:Name="VideoPaneGrid" ColumnSpacing="0">
+          <Border x:Name="PrimaryPaneBorder" Grid.Column="0" Background="#101418" BorderBrush="#28313B" BorderThickness="1" CornerRadius="0" ClipToBounds="True" Tag="pane-primary" PointerPressed="PaneBorder_PointerPressed">
+            <Grid x:Name="PrimaryPaneLayoutGrid" RowDefinitions="0,*,0">
+              <Border x:Name="PrimaryPaneHeaderBorder" Grid.Row="0" Background="#1D2934" BorderBrush="#28313B" BorderThickness="0,0,0,1" CornerRadius="8,8,0,0" Padding="12,6" IsVisible="False">
                 <Grid ColumnDefinitions="*,Auto">
-                  <StackPanel>
+                  <StackPanel MinWidth="0" VerticalAlignment="Center">
                     <TextBlock x:Name="PrimaryPaneTitleTextBlock" Text="Primary" FontWeight="SemiBold" />
                     <TextBlock x:Name="PrimaryPaneFileTextBlock" Text="No video loaded" Foreground="#B7BDC6" FontSize="11" TextTrimming="CharacterEllipsis" />
                   </StackPanel>
                   <TextBlock x:Name="PrimaryPaneStateTextBlock" Grid.Column="1" Text="Ready" Foreground="#B7BDC6" VerticalAlignment="Center" />
                 </Grid>
               </Border>
-              <Border Grid.Row="1" x:Name="CustomVideoSurfaceHost" Background="#050608" ClipToBounds="True" Tag="pane-primary" PointerPressed="PaneBorder_PointerPressed">
+              <Border Grid.Row="1" x:Name="CustomVideoSurfaceHost" Background="#101418" ClipToBounds="True" Tag="pane-primary" PointerPressed="PaneBorder_PointerPressed">
                 <Grid>
                   <Image x:Name="CustomVideoSurface" Stretch="Uniform" />
-                  <StackPanel x:Name="PrimaryEmptyStateOverlay" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="7">
-                    <TextBlock x:Name="PrimaryEmptyStateTitleTextBlock" Text="Drop a video to begin" Foreground="#F3F4F6" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" />
-                    <TextBlock x:Name="PrimaryEmptyStateBodyTextBlock" Text="AVI, M4V, MP4, MKV, and WMV review with exact frame controls" Foreground="#B7BDC6" HorizontalAlignment="Center" />
-                    <Button Content="Open Video" HorizontalAlignment="Center" Click="OpenVideoButton_Click" />
-                  </StackPanel>
+                  <Border x:Name="PrimaryEmptyStateOverlay" Width="382" Padding="38,30" Background="#11161C" BorderBrush="#28313B" BorderThickness="1" CornerRadius="14" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <StackPanel Spacing="14">
+                      <TextBlock x:Name="PrimaryEmptyStateTitleTextBlock" Text="Drop a video here" Foreground="#F3F4F6" FontSize="30" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                      <TextBlock x:Name="PrimaryEmptyStateBodyTextBlock" Text="Or open a video to begin" Foreground="#B7BDC6" FontSize="15" HorizontalAlignment="Center" />
+                      <Button x:Name="PrimaryOpenVideoButton" Content="Open Video" Width="200" Margin="0" HorizontalAlignment="Center" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Click="OpenVideoButton_Click" />
+                    </StackPanel>
+                  </Border>
                 </Grid>
               </Border>
               <Border x:Name="PrimaryPaneFooterBorder" Grid.Row="2" Background="#171C22" BorderBrush="#28313B" BorderThickness="0,1,0,0" CornerRadius="0,0,8,8" Padding="10" IsVisible="False">
-                <Grid RowDefinitions="Auto,16,Auto" ColumnDefinitions="Auto,*,Auto">
+                <Grid RowDefinitions="Auto,16,Auto" ColumnDefinitions="Auto,*,176">
                   <TextBlock x:Name="PrimaryPaneCurrentPositionTextBlock" Text="00:00:00.000" Foreground="#B7BDC6" VerticalAlignment="Center" />
                   <Slider x:Name="PrimaryPanePositionSlider" Grid.Column="1" Classes="timeline-slider" Margin="10,0" Minimum="0" Maximum="1" Tag="pane-primary" PointerPressed="TimelineSlider_PointerPressed" ValueChanged="PanePositionSlider_ValueChanged" />
-                  <TextBlock x:Name="PrimaryPaneDurationTextBlock" Grid.Column="2" Text="00:00:00.000" Foreground="#B7BDC6" VerticalAlignment="Center" />
+                  <TextBlock x:Name="PrimaryPaneDurationTextBlock" Grid.Column="2" Text="00:00:00.000" Foreground="#B7BDC6" HorizontalAlignment="Right" TextAlignment="Right" VerticalAlignment="Center" />
                   <TextBlock x:Name="PrimaryPaneLoopStatusTextBlock" Grid.Row="1" Grid.Column="2" Classes="loop-status pane-loop-status" Text="Loop: off" />
                   <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,6,0,0">
                     <Button x:Name="PrimaryPaneStepBackButton" Classes="transport-button pane-transport-button" Tag="pane-primary" Click="PaneStepBackButton_Click" ToolTip.Tip="Previous Frame">
@@ -198,20 +228,20 @@
                       </Viewbox>
                     </Button>
                   </StackPanel>
-                  <StackPanel Grid.Row="2" Grid.Column="2" Orientation="Horizontal" Margin="0,6,0,0">
-                    <TextBlock Text="Frame" Foreground="#B7BDC6" VerticalAlignment="Center" Margin="0,0,6,0" />
-                    <TextBox x:Name="PrimaryPaneFrameNumberTextBox" Width="92" Tag="pane-primary" KeyDown="FrameNumberTextBox_KeyDown" />
+                  <StackPanel Grid.Row="2" Grid.Column="2" Classes="frame-entry pane-frame-entry">
+                    <TextBlock Classes="frame-entry-label" Text="Frame" />
+                    <TextBox x:Name="PrimaryPaneFrameNumberTextBox" Classes="frame-number-box pane-frame-number-box" Tag="pane-primary" KeyDown="FrameNumberTextBox_KeyDown" />
                   </StackPanel>
                 </Grid>
               </Border>
             </Grid>
           </Border>
 
-          <Border x:Name="ComparePaneBorder" Grid.Column="1" Background="#171C22" BorderBrush="#28313B" BorderThickness="1" CornerRadius="8" Tag="pane-compare" PointerPressed="PaneBorder_PointerPressed" IsVisible="False">
-            <Grid RowDefinitions="42,*,118">
-              <Border x:Name="ComparePaneHeaderBorder" Grid.Row="0" Background="#171C22" BorderBrush="#28313B" BorderThickness="0,0,0,1" CornerRadius="8,8,0,0" Padding="12,7">
+          <Border x:Name="ComparePaneBorder" Grid.Column="1" Background="#171C22" BorderBrush="#28313B" BorderThickness="1" CornerRadius="0" ClipToBounds="True" Tag="pane-compare" PointerPressed="PaneBorder_PointerPressed" IsVisible="False">
+            <Grid x:Name="ComparePaneLayoutGrid" RowDefinitions="46,*,118">
+              <Border x:Name="ComparePaneHeaderBorder" Grid.Row="0" Background="#171C22" BorderBrush="#28313B" BorderThickness="0,0,0,1" CornerRadius="8,8,0,0" Padding="12,6">
                 <Grid ColumnDefinitions="*,Auto">
-                  <StackPanel>
+                  <StackPanel MinWidth="0" VerticalAlignment="Center">
                     <TextBlock x:Name="ComparePaneTitleTextBlock" Text="Compare" FontWeight="SemiBold" />
                     <TextBlock x:Name="ComparePaneFileTextBlock" Text="No video loaded" Foreground="#B7BDC6" FontSize="11" TextTrimming="CharacterEllipsis" />
                   </StackPanel>
@@ -229,10 +259,10 @@
                 </Grid>
               </Border>
               <Border x:Name="ComparePaneFooterBorder" Grid.Row="2" Background="#171C22" BorderBrush="#28313B" BorderThickness="0,1,0,0" CornerRadius="0,0,8,8" Padding="10">
-                <Grid RowDefinitions="Auto,16,Auto" ColumnDefinitions="Auto,*,Auto">
+                <Grid RowDefinitions="Auto,16,Auto" ColumnDefinitions="Auto,*,176">
                   <TextBlock x:Name="ComparePaneCurrentPositionTextBlock" Text="00:00:00.000" Foreground="#B7BDC6" VerticalAlignment="Center" />
                   <Slider x:Name="ComparePanePositionSlider" Grid.Column="1" Classes="timeline-slider" Margin="10,0" Minimum="0" Maximum="1" Tag="pane-compare" PointerPressed="TimelineSlider_PointerPressed" ValueChanged="PanePositionSlider_ValueChanged" />
-                  <TextBlock x:Name="ComparePaneDurationTextBlock" Grid.Column="2" Text="00:00:00.000" Foreground="#B7BDC6" VerticalAlignment="Center" />
+                  <TextBlock x:Name="ComparePaneDurationTextBlock" Grid.Column="2" Text="00:00:00.000" Foreground="#B7BDC6" HorizontalAlignment="Right" TextAlignment="Right" VerticalAlignment="Center" />
                   <TextBlock x:Name="ComparePaneLoopStatusTextBlock" Grid.Row="1" Grid.Column="2" Classes="loop-status pane-loop-status" Text="Loop: off" />
                   <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,6,0,0">
                     <Button x:Name="ComparePaneStepBackButton" Classes="transport-button pane-transport-button" Tag="pane-compare" Click="PaneStepBackButton_Click" ToolTip.Tip="Previous Frame">
@@ -283,9 +313,9 @@
                       </Viewbox>
                     </Button>
                   </StackPanel>
-                  <StackPanel Grid.Row="2" Grid.Column="2" Orientation="Horizontal" Margin="0,6,0,0">
-                    <TextBlock Text="Frame" Foreground="#B7BDC6" VerticalAlignment="Center" Margin="0,0,6,0" />
-                    <TextBox x:Name="ComparePaneFrameNumberTextBox" Width="92" Tag="pane-compare" KeyDown="FrameNumberTextBox_KeyDown" />
+                  <StackPanel Grid.Row="2" Grid.Column="2" Classes="frame-entry pane-frame-entry">
+                    <TextBlock Classes="frame-entry-label" Text="Frame" />
+                    <TextBox x:Name="ComparePaneFrameNumberTextBox" Classes="frame-number-box pane-frame-number-box" Tag="pane-compare" KeyDown="FrameNumberTextBox_KeyDown" />
                   </StackPanel>
                 </Grid>
               </Border>
@@ -294,13 +324,15 @@
         </Grid>
       </Border>
 
-      <Border Grid.Row="3" x:Name="ControlPanel" Background="#21252B" BorderBrush="#31363F" BorderThickness="0,1,0,0" Padding="18,14,18,16" MinHeight="134">
-        <Grid RowDefinitions="40,20,42" ColumnDefinitions="Auto,*,Auto">
-          <TextBlock x:Name="CurrentPositionTextBlock" Text="00:00:00.000" Foreground="#B7BDC6" VerticalAlignment="Center" />
-          <Slider x:Name="PositionSlider" Grid.Column="1" Classes="timeline-slider" Margin="12,0" Minimum="0" Maximum="1" PointerPressed="TimelineSlider_PointerPressed" ValueChanged="PositionSlider_ValueChanged" />
-          <TextBlock x:Name="DurationTextBlock" Grid.Column="2" Text="00:00:00.000" Foreground="#B7BDC6" VerticalAlignment="Center" />
-          <TextBlock x:Name="LoopStatusTextBlock" Grid.Row="1" Grid.Column="2" Classes="loop-status main-loop-status" Text="Loop: off" />
-          <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+      <Border Grid.Row="3" x:Name="ControlPanel" Margin="14,8,14,0" Background="#21252B" BorderBrush="#31363F" BorderThickness="1" CornerRadius="10" Padding="18,14,18,16" MinHeight="126">
+        <Grid RowDefinitions="34,20,42" ColumnDefinitions="*,240">
+          <Grid x:Name="MainTimelineRailGrid" Grid.Row="0" Grid.ColumnSpan="2" ColumnDefinitions="Auto,*,Auto">
+            <TextBlock x:Name="CurrentPositionTextBlock" Text="00:00:00.000" Foreground="#B7BDC6" Height="34" VerticalAlignment="Center" />
+            <Slider x:Name="PositionSlider" Grid.Column="1" Classes="timeline-slider" Margin="16,0" Minimum="0" Maximum="1" PointerPressed="TimelineSlider_PointerPressed" ValueChanged="PositionSlider_ValueChanged" />
+            <TextBlock x:Name="DurationTextBlock" Grid.Column="2" Text="00:00:00.000" Foreground="#B7BDC6" Height="34" HorizontalAlignment="Right" TextAlignment="Right" VerticalAlignment="Center" />
+          </Grid>
+          <TextBlock x:Name="LoopStatusTextBlock" Grid.Row="1" Grid.Column="1" Classes="loop-status main-loop-status" Text="Loop: off" />
+          <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
             <Button x:Name="PreviousFrameButton" Classes="transport-button" Click="PreviousFrameButton_Click" ToolTip.Tip="Previous Frame">
               <Viewbox Classes="transport-icon">
                 <Canvas Width="20" Height="20">
@@ -356,20 +388,24 @@
               </Viewbox>
             </Button>
           </StackPanel>
-          <StackPanel Grid.Row="2" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-            <TextBlock Text="Frame" Foreground="#B7BDC6" VerticalAlignment="Center" Margin="0,0,6,0" />
-            <TextBox x:Name="FrameNumberTextBox" Width="108" KeyDown="FrameNumberTextBox_KeyDown" />
+          <StackPanel Grid.Row="2" Grid.Column="1" Classes="frame-entry">
+            <TextBlock Classes="frame-entry-label" Text="Frame" />
+            <TextBox x:Name="FrameNumberTextBox" Classes="frame-number-box" KeyDown="FrameNumberTextBox_KeyDown" />
           </StackPanel>
         </Grid>
       </Border>
 
-      <Border Grid.Row="4" x:Name="StatusPanelContainer" Background="#171C22" BorderBrush="#31363F" BorderThickness="0,1,0,0" Padding="10,0" MinHeight="38">
-        <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto">
-          <TextBlock x:Name="PlaybackStateTextBlock" Classes="status-text" Text="Ready" Foreground="#B7BDC6" Margin="0,0,22,0" />
-          <TextBlock x:Name="CurrentFrameTextBlock" Grid.Column="1" Classes="status-text" Text="Frame --" Foreground="#B7BDC6" Margin="0,0,22,0" />
-          <TextBlock x:Name="TimecodeTextBlock" Grid.Column="2" Classes="status-text" Text="Timecode --" Foreground="#B7BDC6" Margin="0,0,22,0" />
-          <TextBlock x:Name="CacheStatusTextBlock" Grid.Column="3" Classes="status-text" Text="Cache: idle" Foreground="#B7BDC6" />
-          <TextBlock x:Name="PointerCoordinatesTextBlock" Grid.Column="4" Classes="status-text" Text="x -- y --" Foreground="#B7BDC6" />
+      <Border Grid.Row="4" x:Name="StatusPanelContainer" Margin="14,8,14,10" Background="#21252B" BorderBrush="#31363F" BorderThickness="1" CornerRadius="10" Padding="4,3" MinHeight="38">
+        <Grid ColumnDefinitions="1.4*,Auto,88,Auto,1*,Auto,0.9*,Auto,80">
+          <TextBlock x:Name="PlaybackStateTextBlock" Grid.Column="0" Classes="status-text" Text="A/V playback + frame review" Foreground="#F3F4F6" FontSize="12" Margin="8,0" />
+          <Border Grid.Column="1" Width="1" Background="#6B7280" Opacity="0.65" Margin="0,5" />
+          <TextBlock x:Name="CurrentFrameTextBlock" Grid.Column="2" Classes="status-text" Text="Frame --" Foreground="#B7BDC6" FontSize="12" Margin="8,0" />
+          <TextBlock Grid.Column="3" Text="|" Foreground="#B7BDC6" FontSize="12" VerticalAlignment="Center" Margin="8,0" />
+          <TextBlock x:Name="TimecodeTextBlock" Grid.Column="4" Classes="status-text" Text="--:--:--.--- / --:--:--.---" Foreground="#B7BDC6" FontSize="12" Margin="0,0,8,0" />
+          <Border Grid.Column="5" Width="1" Background="#6B7280" Opacity="0.65" Margin="0,5" />
+          <TextBlock x:Name="CacheStatusTextBlock" Grid.Column="6" Classes="status-text" Text="Cache: idle" Foreground="#B7BDC6" FontSize="12" Margin="8,0" />
+          <Border Grid.Column="7" Width="1" Background="#6B7280" Opacity="0.65" Margin="0,5" />
+          <TextBlock x:Name="PointerCoordinatesTextBlock" Grid.Column="8" Classes="status-text" Text="Pixel: --" Foreground="#B7BDC6" FontSize="12" Margin="8,0" />
         </Grid>
       </Border>
     </Grid>

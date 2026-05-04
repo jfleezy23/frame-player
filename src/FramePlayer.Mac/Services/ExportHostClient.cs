@@ -27,6 +27,7 @@ namespace FramePlayer.Services
         internal const string ExportRuntimeFolderName = "ffmpeg-export";
         internal const string MacAppBundleEnvironmentVariable = "FRAMEPLAYER_MAC_APP_BUNDLE";
         internal const string MacExportHostExecutableEnvironmentVariable = "FRAMEPLAYER_MAC_EXPORT_HOST_EXECUTABLE";
+        internal const string MacRuntimeBaseEnvironmentVariable = "FRAMEPLAYER_MAC_RUNTIME_BASE";
         private const string MacExecutableName = "FramePlayer.Mac";
         private static readonly Lazy<RuntimeAvailability> CachedRuntimeAvailability =
             new Lazy<RuntimeAvailability>(DiscoverRuntimeAvailability);
@@ -271,6 +272,12 @@ namespace FramePlayer.Services
             if (!string.IsNullOrWhiteSpace(appBundleBaseDirectory) && yieldedDirectories.Add(appBundleBaseDirectory))
             {
                 yield return appBundleBaseDirectory;
+            }
+
+            var explicitRuntimeBaseDirectory = Environment.GetEnvironmentVariable(MacRuntimeBaseEnvironmentVariable);
+            if (!string.IsNullOrWhiteSpace(explicitRuntimeBaseDirectory) && yieldedDirectories.Add(explicitRuntimeBaseDirectory))
+            {
+                yield return explicitRuntimeBaseDirectory;
             }
 
             if (!string.IsNullOrWhiteSpace(baseDirectory) && yieldedDirectories.Add(baseDirectory))

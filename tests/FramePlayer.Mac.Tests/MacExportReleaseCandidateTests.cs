@@ -27,19 +27,21 @@ namespace FramePlayer.Mac.Tests
         [Trait("Category", "ReleaseCandidate")]
         public async Task MacWindow_ExportsLoopClipCompareDiagnosticsAndAudioInsertion()
         {
-            ConfigureRuntime();
-            var files = FindCorpusFiles();
-            var h264Mp4 = await FindH264Mp4Async(files);
-            Assert.False(string.IsNullOrWhiteSpace(h264Mp4), "The corpus does not contain an H.264 MP4 needed to validate audio insertion.");
-            var primaryFile = h264Mp4!;
-            var compareFile = files.FirstOrDefault(path => string.Equals(Path.GetFileName(path), "sample-test.m4v", StringComparison.OrdinalIgnoreCase))
-                ?? files.FirstOrDefault(path => !string.Equals(path, primaryFile, StringComparison.OrdinalIgnoreCase))
-                ?? primaryFile;
-
+            var previousRuntimeBase = Environment.GetEnvironmentVariable(ExportHostClient.MacRuntimeBaseEnvironmentVariable);
+            var previousExportHostExecutable = Environment.GetEnvironmentVariable(ExportHostClient.MacExportHostExecutableEnvironmentVariable);
             using var temp = new TemporaryDirectory();
             MainWindow? window = null;
             try
             {
+                ConfigureRuntime();
+                var files = FindCorpusFiles();
+                var h264Mp4 = await FindH264Mp4Async(files);
+                Assert.False(string.IsNullOrWhiteSpace(h264Mp4), "The corpus does not contain an H.264 MP4 needed to validate audio insertion.");
+                var primaryFile = h264Mp4!;
+                var compareFile = files.FirstOrDefault(path => string.Equals(Path.GetFileName(path), "sample-test.m4v", StringComparison.OrdinalIgnoreCase))
+                    ?? files.FirstOrDefault(path => !string.Equals(path, primaryFile, StringComparison.OrdinalIgnoreCase))
+                    ?? primaryFile;
+
                 window = CreateWindow();
                 SetCompareMode(window!, true);
                 await InvokeWindowTaskAsync(window!, "OpenMediaAsync", primaryFile, "pane-primary");
@@ -98,12 +100,27 @@ namespace FramePlayer.Mac.Tests
                 {
                     _fixture.Run(() => window.Close());
                 }
+
+                Environment.SetEnvironmentVariable(ExportHostClient.MacRuntimeBaseEnvironmentVariable, previousRuntimeBase);
+                Environment.SetEnvironmentVariable(ExportHostClient.MacExportHostExecutableEnvironmentVariable, previousExportHostExecutable);
             }
         }
 
         private static void ConfigureRuntime()
         {
-            FfmpegRuntimeBootstrap.ConfigureForCurrentPlatform(ResolveRuntimeBaseDirectory());
+            var runtimeBaseDirectory = ResolveRuntimeBaseDirectory();
+            var testOutputExportHost = Path.Combine(AppContext.BaseDirectory, "FramePlayer.Mac");
+            Environment.SetEnvironmentVariable(
+                ExportHostClient.MacRuntimeBaseEnvironmentVariable,
+                runtimeBaseDirectory);
+            if (File.Exists(testOutputExportHost))
+            {
+                Environment.SetEnvironmentVariable(
+                    ExportHostClient.MacExportHostExecutableEnvironmentVariable,
+                    testOutputExportHost);
+            }
+
+            FfmpegRuntimeBootstrap.ConfigureForCurrentPlatform(runtimeBaseDirectory);
         }
 
         private static string ResolveRuntimeBaseDirectory()

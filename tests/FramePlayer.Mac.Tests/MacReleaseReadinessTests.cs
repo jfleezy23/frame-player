@@ -41,7 +41,8 @@ namespace FramePlayer.Mac.Tests
             var program = File.ReadAllText(RepositoryPath("src", "FramePlayer.Mac", "Program.cs"));
             var hostClient = File.ReadAllText(RepositoryPath("src", "FramePlayer.Mac", "Services", "ExportHostClient.cs"));
 
-            Assert.Contains("FfmpegRuntimeBootstrap.ConfigureForCurrentPlatform(AppContext.BaseDirectory)", program, StringComparison.Ordinal);
+            Assert.Contains("FfmpegRuntimeBootstrap.ConfigureForCurrentPlatform(ResolveRuntimeBaseDirectory())", program, StringComparison.Ordinal);
+            Assert.Contains("FRAMEPLAYER_MAC_RUNTIME_BASE", hostClient, StringComparison.Ordinal);
             Assert.Contains("process.Kill(entireProcessTree: true)", hostClient, StringComparison.Ordinal);
             Assert.Contains("OperationCanceledException", hostClient, StringComparison.Ordinal);
         }

@@ -57,8 +57,9 @@ namespace FramePlayer.Mac.Tests
             Assert.Contains("x:Key=\"PaneSelectedBorderBrush\" Color=\"#5AA9E6\"", windowsXaml, StringComparison.Ordinal);
             Assert.Contains("paneSnapshot.IsFocused", windowsCode, StringComparison.Ordinal);
             Assert.Contains("PaneSelectedBorderBrush = Brush.Parse(\"#5AA9E6\")", macCode, StringComparison.Ordinal);
-            Assert.Contains("PrimaryPaneBorder.BorderThickness = primaryIsFocused ? new Thickness(2)", macCode, StringComparison.Ordinal);
-            Assert.Contains("ComparePaneBorder.BorderThickness = compareIsFocused ? new Thickness(2)", macCode, StringComparison.Ordinal);
+            Assert.Contains("PrimaryPaneBorder.BorderThickness = new Thickness(1);", macCode, StringComparison.Ordinal);
+            Assert.Contains("ComparePaneBorder.BorderThickness = new Thickness(1);", macCode, StringComparison.Ordinal);
+            Assert.DoesNotContain("new Thickness(2)", macCode, StringComparison.Ordinal);
         }
 
         private static string ReadRepositoryFile(params string[] pathParts)

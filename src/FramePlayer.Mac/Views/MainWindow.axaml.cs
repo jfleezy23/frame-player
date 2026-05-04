@@ -40,6 +40,8 @@ namespace FramePlayer.Mac.Views
         private const double PaneWheelZoomStep = 1.08d;
         private const double PaneWheelZoomDeltaLimit = 4d;
         private const double PaneWheelZoomDeltaThreshold = 0.01d;
+        private const double PaneHeaderHeight = 46d;
+        private const double PaneFooterHeight = 118d;
         private const string PanePrimaryId = "pane-primary";
         private const string PaneCompareId = "pane-compare";
         private const string PanePrimaryKey = "primary";
@@ -75,18 +77,19 @@ namespace FramePlayer.Mac.Views
 
             if (string.Equals(Environment.GetEnvironmentVariable("FRAMEPLAYER_MAC_SKIP_RUNTIME_BOOTSTRAP"), "1", StringComparison.Ordinal))
             {
-                CacheStatusTextBlock.Text = "Runtime: skipped";
+                CacheStatusTextBlock.Text = "Cache: idle";
             }
             else
             {
                 try
                 {
-                    var configuredRuntime = FfmpegRuntimeBootstrap.ConfigureForCurrentPlatform(AppContext.BaseDirectory);
-                    CacheStatusTextBlock.Text = "Runtime: " + configuredRuntime;
+                    FfmpegRuntimeBootstrap.ConfigureForCurrentPlatform(AppContext.BaseDirectory);
+                    CacheStatusTextBlock.Text = "Cache: idle";
                 }
                 catch (Exception ex)
                 {
-                    CacheStatusTextBlock.Text = "Runtime unavailable: " + ex.Message;
+                    CacheStatusTextBlock.Text = "Cache: runtime unavailable";
+                    ToolTip.SetTip(CacheStatusTextBlock, ex.Message);
                 }
             }
 
@@ -464,6 +467,7 @@ namespace FramePlayer.Mac.Views
                 ? Pane.Compare
                 : Pane.Primary;
             UpdatePaneSelectionVisuals();
+            UpdateCommandStates();
         }
 
         private void UpdatePaneSelectionVisuals()
@@ -473,14 +477,14 @@ namespace FramePlayer.Mac.Views
             var primaryIsFocused = highlightPaneSelection && !compareIsFocused;
 
             PrimaryPaneBorder.BorderBrush = primaryIsFocused ? PaneSelectedBorderBrush : PaneChromeBorderBrush;
-            PrimaryPaneBorder.BorderThickness = primaryIsFocused ? new Thickness(2) : new Thickness(1);
+            PrimaryPaneBorder.BorderThickness = new Thickness(1);
             PrimaryPaneHeaderBorder.Background = compareIsFocused ? PaneChromeBrush : PaneSelectedBrush;
             PrimaryPaneHeaderBorder.BorderBrush = primaryIsFocused ? PaneSelectedBorderBrush : PaneChromeBorderBrush;
             PrimaryPaneFooterBorder.Background = compareIsFocused ? PaneChromeBrush : PaneSelectedBrush;
             PrimaryPaneFooterBorder.BorderBrush = primaryIsFocused ? PaneSelectedBorderBrush : PaneChromeBorderBrush;
 
             ComparePaneBorder.BorderBrush = compareIsFocused ? PaneSelectedBorderBrush : PaneChromeBorderBrush;
-            ComparePaneBorder.BorderThickness = compareIsFocused ? new Thickness(2) : new Thickness(1);
+            ComparePaneBorder.BorderThickness = new Thickness(1);
             ComparePaneHeaderBorder.Background = compareIsFocused ? PaneSelectedBrush : PaneChromeBrush;
             ComparePaneHeaderBorder.BorderBrush = compareIsFocused ? PaneSelectedBorderBrush : PaneChromeBorderBrush;
             ComparePaneFooterBorder.Background = compareIsFocused ? PaneSelectedBrush : PaneChromeBrush;
@@ -533,9 +537,9 @@ namespace FramePlayer.Mac.Views
             SetPaneZoomFactor(Pane.Compare, MinimumPaneZoomFactor, synchronizeLinkedPane: false);
             PrimaryEmptyStateOverlay.IsVisible = true;
             CompareEmptyStateOverlay.IsVisible = true;
-            PlaybackStateTextBlock.Text = "Ready";
+            PlaybackStateTextBlock.Text = "A/V playback + frame review";
             CurrentFrameTextBlock.Text = "Frame --";
-            TimecodeTextBlock.Text = "Timecode --";
+            TimecodeTextBlock.Text = "--:--:--.--- / --:--:--.---";
             UpdateCompareOptionState();
         }
 
@@ -1168,7 +1172,8 @@ namespace FramePlayer.Mac.Views
         private void ShowCompareMode()
         {
             VideoPaneGrid.ColumnDefinitions[1].Width = new GridLength(1, GridUnitType.Star);
-            PrimaryPaneFooterBorder.IsVisible = true;
+            VideoPaneGrid.ColumnSpacing = 12;
+            SetPrimaryPaneLocalChromeVisible(true);
             ComparePaneBorder.IsVisible = true;
             ComparePaneFooterBorder.IsVisible = true;
             CompareToolbarBorder.IsVisible = true;
@@ -1180,12 +1185,21 @@ namespace FramePlayer.Mac.Views
         {
             _focusedPane = Pane.Primary;
             VideoPaneGrid.ColumnDefinitions[1].Width = new GridLength(0);
-            PrimaryPaneFooterBorder.IsVisible = false;
+            VideoPaneGrid.ColumnSpacing = 0;
+            SetPrimaryPaneLocalChromeVisible(false);
             ComparePaneBorder.IsVisible = false;
             ComparePaneFooterBorder.IsVisible = false;
             CompareToolbarBorder.IsVisible = false;
             UpdatePaneSelectionVisuals();
             UpdateCompareOptionState();
+        }
+
+        private void SetPrimaryPaneLocalChromeVisible(bool isVisible)
+        {
+            PrimaryPaneLayoutGrid.RowDefinitions[0].Height = new GridLength(isVisible ? PaneHeaderHeight : 0, GridUnitType.Pixel);
+            PrimaryPaneLayoutGrid.RowDefinitions[2].Height = new GridLength(isVisible ? PaneFooterHeight : 0, GridUnitType.Pixel);
+            PrimaryPaneHeaderBorder.IsVisible = isVisible;
+            PrimaryPaneFooterBorder.IsVisible = isVisible;
         }
 
         private void UpdateCompareOptionState()
@@ -1207,6 +1221,71 @@ namespace FramePlayer.Mac.Views
                 IsLinkedPaneZoomEnabled
                     ? "Zoom changes are mirrored between compare panes."
                     : "Zoom changes stay on the focused pane.");
+            UpdateCommandStates();
+        }
+
+        private void UpdateCommandStates()
+        {
+            var focusedPane = GetFocusedPane();
+            var focusedEngine = TryGetExistingEngine(focusedPane);
+            var focusedPaneLoaded = focusedEngine != null && focusedEngine.IsMediaOpen;
+            var primaryLoaded = _primaryEngine.IsMediaOpen;
+            var compareLoaded = _compareEngine != null && _compareEngine.IsMediaOpen;
+            var anyMediaLoaded = primaryLoaded || compareLoaded;
+            var mainPlayPauseCanToggle = IsAllPaneTransportEnabled
+                ? primaryLoaded && compareLoaded
+                : focusedPaneLoaded;
+
+            SetControlEnabled(PositionSlider, primaryLoaded);
+            SetControlEnabled(FrameNumberTextBox, primaryLoaded);
+            SetControlEnabled(PreviousFrameButton, focusedPaneLoaded);
+            SetControlEnabled(RewindButton, focusedPaneLoaded);
+            SetControlEnabled(PlayPauseButton, mainPlayPauseCanToggle);
+            SetControlEnabled(FastForwardButton, focusedPaneLoaded);
+            SetControlEnabled(NextFrameButton, focusedPaneLoaded);
+            SetControlEnabled(ToggleFullScreenButton, anyMediaLoaded);
+            SetPaneTransportEnabled(Pane.Primary, primaryLoaded);
+            SetPaneTransportEnabled(Pane.Compare, compareLoaded);
+            AlignRightToLeftButton.IsEnabled = primaryLoaded && compareLoaded;
+            AlignLeftToRightButton.IsEnabled = primaryLoaded && compareLoaded;
+            ToolTip.SetTip(
+                AlignRightToLeftButton,
+                primaryLoaded && compareLoaded
+                    ? "Syncs the right pane to the left pane with exact frame identity when available."
+                    : "Load both compare panes before syncing.");
+            ToolTip.SetTip(
+                AlignLeftToRightButton,
+                primaryLoaded && compareLoaded
+                    ? "Syncs the left pane to the right pane with exact frame identity when available."
+                    : "Load both compare panes before syncing.");
+        }
+
+        private static void SetControlEnabled(Control control, bool isEnabled)
+        {
+            control.IsEnabled = isEnabled;
+        }
+
+        private void SetPaneTransportEnabled(Pane pane, bool isEnabled)
+        {
+            if (pane == Pane.Compare)
+            {
+                SetControlEnabled(ComparePanePositionSlider, isEnabled);
+                SetControlEnabled(ComparePaneFrameNumberTextBox, isEnabled);
+                SetControlEnabled(ComparePaneStepBackButton, isEnabled);
+                SetControlEnabled(ComparePaneSkipBackHundredFramesButton, isEnabled);
+                SetControlEnabled(ComparePanePlayPauseButton, isEnabled);
+                SetControlEnabled(ComparePaneSkipForwardHundredFramesButton, isEnabled);
+                SetControlEnabled(ComparePaneStepForwardButton, isEnabled);
+                return;
+            }
+
+            SetControlEnabled(PrimaryPanePositionSlider, isEnabled);
+            SetControlEnabled(PrimaryPaneFrameNumberTextBox, isEnabled);
+            SetControlEnabled(PrimaryPaneStepBackButton, isEnabled);
+            SetControlEnabled(PrimaryPaneSkipBackHundredFramesButton, isEnabled);
+            SetControlEnabled(PrimaryPanePlayPauseButton, isEnabled);
+            SetControlEnabled(PrimaryPaneSkipForwardHundredFramesButton, isEnabled);
+            SetControlEnabled(PrimaryPaneStepForwardButton, isEnabled);
         }
 
         private void AllPanesCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)
@@ -1356,7 +1435,7 @@ namespace FramePlayer.Mac.Views
             DurationTextBlock.Text = durationText;
             PrimaryPaneDurationTextBlock.Text = durationText;
             CurrentFrameTextBlock.Text = frameText;
-            TimecodeTextBlock.Text = "Timecode " + positionText;
+            TimecodeTextBlock.Text = positionText + " / " + durationText;
             FrameNumberTextBox.Text = FormatFrameNumberEntry(state.Position);
             PrimaryPaneFrameNumberTextBox.Text = FrameNumberTextBox.Text;
             PlayPausePlayIcon.IsVisible = !state.IsPlaying;
