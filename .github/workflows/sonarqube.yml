@@ -155,6 +155,7 @@ jobs:
             "src/FramePlayer.Mac/Services/MediaProbeService.cs"
             "src/FramePlayer.Mac/Services/Native*.cs"
             "src/FramePlayer.Mac/Diagnostics/ExportHostCli.cs"
+            "src/FramePlayer.Avalonia/**"
             "src/FramePlayer.Core/Core/Abstractions/IVideoReviewEngine.cs"
             "src/FramePlayer.Core/Core/Coordination/MultiVideoWorkspaceState.cs"
             "src/FramePlayer.Core/Core/Coordination/ReviewPaneState.cs"
@@ -211,6 +212,7 @@ jobs:
             "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/IAudioOutput.cs"
             "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/MacAudioQueueOutput.cs"
             "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/ManagedAudioClockOutput.cs"
+            "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/WinMmAudioOutput.cs"
             "src/FramePlayer.Engine.FFmpeg/Services/AppPreferences.cs"
             "src/FramePlayer.Engine.FFmpeg/Services/AppPreferencesService.cs"
             "src/FramePlayer.Engine.FFmpeg/Services/DecodedFrameBudgetCoordinator.cs"
@@ -243,6 +245,7 @@ jobs:
             "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/FfmpegHardwareDeviceCache.cs"
             "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/FfmpegNativeHelpers.cs"
             "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/FfmpegReviewEngine.cs"
+            "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/WinMmAudioOutput.cs"
             "src/FramePlayer.Mac/Services/AvaloniaFrameBufferPresenter.cs"
           ) -join ","
 
@@ -257,6 +260,7 @@ jobs:
             "src/FramePlayer.Engine.FFmpeg/**"
             "src/FramePlayer.Mac/Core/Models/**"
             "src/FramePlayer.Mac/Services/*Export*.cs"
+            "src/FramePlayer.Avalonia/**"
           ) -join ","
 
           .\.sonar\scanner\dotnet-sonarscanner begin `
@@ -269,6 +273,7 @@ jobs:
 
           dotnet build .\FramePlayer.csproj -c Release -p:Platform=x64
           dotnet build .\src\FramePlayer.Mac\FramePlayer.Mac.csproj -c Release
+          dotnet build .\src\FramePlayer.Avalonia\FramePlayer.Avalonia.csproj -c Release
 
           .\.sonar\scanner\dotnet-sonarscanner end `
             /d:sonar.token="$env:SONAR_TOKEN"
