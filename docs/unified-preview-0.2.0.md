@@ -39,6 +39,7 @@ For Windows package validation, run on Windows after restoring the pinned runtim
 
 ## Release Gate
 
+- Windows validation evidence: `docs/unified-preview-0.2.0-windows-validation.md` (latest-head result is NO-GO until playback-after-seek is revalidated).
 - Windows ZIP launches `FramePlayer.Avalonia.exe` and plays H.264/AAC with audible audio.
 - macOS ZIP is Developer ID signed, notarized, stapled, extracted, and accepted by Gatekeeper.
 - SHA256 files are generated for both artifacts.
