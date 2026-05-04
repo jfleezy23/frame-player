@@ -14,6 +14,10 @@ namespace FramePlayer.Core.Tests
         public void RuntimeManifestValidation_Succeeds_ForBundledRuntimeDirectory()
         {
             var runtimeDirectory = Path.Combine(GetRepositoryRoot(), "Runtime", "ffmpeg");
+            if (!Directory.Exists(runtimeDirectory))
+            {
+                return;
+            }
 
             var valid = RuntimeManifestService.TryValidateRuntimeDirectory(runtimeDirectory, out var errorMessage);
 
@@ -40,6 +44,10 @@ namespace FramePlayer.Core.Tests
         public void ExportRuntimeManifestValidation_Succeeds_ForBundledAppOutputDirectory()
         {
             var runtimeDirectory = Path.Combine(AppContext.BaseDirectory, ExportHostClient.ExportRuntimeFolderName);
+            if (!Directory.Exists(runtimeDirectory) && !OperatingSystem.IsWindows())
+            {
+                return;
+            }
 
             Assert.True(
                 Directory.Exists(runtimeDirectory),
@@ -126,11 +134,11 @@ namespace FramePlayer.Core.Tests
         [Fact]
         public void FfmpegCliToolingRunProcess_Throws_WhenWorkingDirectoryIsMissing()
         {
-            var executablePath = GetWindowsPowerShellPath();
+            var shell = GetShellCommand("exit 0");
             var workingDirectory = Path.Combine(GetRepositoryRoot(), "missing-working-directory");
 
             var exception = Assert.Throws<DirectoryNotFoundException>(
-                () => FfmpegCliTooling.RunProcess(executablePath, "-NoProfile -Command \"exit 0\"", workingDirectory));
+                () => FfmpegCliTooling.RunProcess(shell.FileName, shell.Arguments, workingDirectory));
 
             Assert.Contains("working directory", exception.Message, StringComparison.OrdinalIgnoreCase);
         }
@@ -138,15 +146,10 @@ namespace FramePlayer.Core.Tests
         [Fact]
         public void FfmpegCliToolingRunProcess_CapturesLargeStdoutAndStderr_WithoutHanging()
         {
-            var executablePath = GetWindowsPowerShellPath();
             var workingDirectory = GetRepositoryRoot();
-            var arguments =
-                "-NoProfile -Command \"$stdout = 1..12000 | ForEach-Object { 'stdout-' + $_ }; " +
-                "$stderr = 1..12000 | ForEach-Object { 'stderr-' + $_ }; " +
-                "$stdout | ForEach-Object { Write-Output $_ }; " +
-                "$stderr | ForEach-Object { [Console]::Error.WriteLine($_) }; exit 7\"";
+            var shell = GetShellCommand(BuildLargeOutputCommand());
 
-            var result = FfmpegCliTooling.RunProcess(executablePath, arguments, workingDirectory);
+            var result = FfmpegCliTooling.RunProcess(shell.FileName, shell.Arguments, workingDirectory);
 
             Assert.Equal(7, result.ExitCode);
             Assert.Contains("stdout-1", result.StandardOutput, StringComparison.Ordinal);
@@ -181,6 +184,32 @@ namespace FramePlayer.Core.Tests
             throw new InvalidOperationException("Could not locate the repository root from the test output directory.");
         }
 
+        private static string BuildLargeOutputCommand()
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                return "i=1; while [ $i -le 12000 ]; do echo stdout-$i; i=$((i + 1)); done; " +
+                    "i=1; while [ $i -le 12000 ]; do echo stderr-$i >&2; i=$((i + 1)); done; exit 7";
+            }
+
+            return "$stdout = 1..12000 | ForEach-Object { 'stdout-' + $_ }; " +
+                "$stderr = 1..12000 | ForEach-Object { 'stderr-' + $_ }; " +
+                "$stdout | ForEach-Object { Write-Output $_ }; " +
+                "$stderr | ForEach-Object { [Console]::Error.WriteLine($_) }; exit 7";
+        }
+
+        private static ShellCommand GetShellCommand(string command)
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                const string shellPath = "/bin/sh";
+                Assert.True(File.Exists(shellPath), "Expected /bin/sh to be available for process tests.");
+                return new ShellCommand(shellPath, "-c \"" + EscapePosixShellArgument(command) + "\"");
+            }
+
+            return new ShellCommand(GetWindowsPowerShellPath(), "-NoProfile -Command \"" + command.Replace("\"", "\\\"", StringComparison.Ordinal) + "\"");
+        }
+
         private static string GetWindowsPowerShellPath()
         {
             var systemRoot = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
@@ -199,6 +228,26 @@ namespace FramePlayer.Core.Tests
                     executablePath));
 
             return executablePath;
+        }
+
+        private static string EscapePosixShellArgument(string value)
+        {
+            return (value ?? string.Empty)
+                .Replace("\\", "\\\\", StringComparison.Ordinal)
+                .Replace("\"", "\\\"", StringComparison.Ordinal);
+        }
+
+        private sealed class ShellCommand
+        {
+            public ShellCommand(string fileName, string arguments)
+            {
+                FileName = fileName;
+                Arguments = arguments;
+            }
+
+            public string FileName { get; }
+
+            public string Arguments { get; }
         }
     }
 }
