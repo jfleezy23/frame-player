@@ -24,4 +24,4 @@ Windows stable remains `v1.8.4`. Its WPF source path, build path, tests, runtime
 
 ## Screenshot Validation
 
-The checked-in screenshots in `docs/assets/screenshots/` are real app screenshots. The macOS captures were refreshed from the installed app during this documentation pass. The Windows captures were taken from clean existing Windows app screenshots in the developer folder. No loaded-video Windows screenshots were available locally for this pass.
+The checked-in screenshots in `docs/assets/screenshots/` are real app screenshots. The macOS captures were refreshed from the installed app during this documentation pass. The Windows captures were refreshed from the built WPF `v1.8.4` app surface at 1280x820. No loaded-video Windows screenshots were available locally for this pass.
