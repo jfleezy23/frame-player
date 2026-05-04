@@ -9,6 +9,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\..\Assets\FramePlayer.ico</ApplicationIcon>
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
 
@@ -25,6 +26,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <AvaloniaResource Include="..\..\Assets\FramePlayer.ico" Link="Assets\FramePlayer.ico" />
+    <None Include="..\..\Assets\FramePlayer.ico" Link="Assets\FramePlayer.ico" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Assets\FramePlayer.icns" Link="Assets\FramePlayer.icns" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\LICENSE" Link="LICENSE" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\THIRD_PARTY_NOTICES.md" Link="THIRD_PARTY_NOTICES.md" CopyToOutputDirectory="PreserveNewest" />

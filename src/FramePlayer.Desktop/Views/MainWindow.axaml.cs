@@ -13,6 +13,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using FramePlayer.Core.Abstractions;
@@ -42,6 +43,8 @@ namespace FramePlayer.Desktop.Views
         private const double PaneWheelZoomStep = 1.08d;
         private const double PaneWheelZoomDeltaLimit = 4d;
         private const double PaneWheelZoomDeltaThreshold = 0.01d;
+        private const double PaneHeaderHeight = 46d;
+        private const double PaneFooterHeight = 118d;
         private const string PanePrimaryId = "pane-primary";
         private const string PaneCompareId = "pane-compare";
         private const string PanePrimaryKey = "primary";
@@ -114,21 +117,23 @@ namespace FramePlayer.Desktop.Views
         public MainWindow()
         {
             InitializeComponent();
+            TryApplyWindowIcon();
 
             if (string.Equals(Environment.GetEnvironmentVariable("FRAMEPLAYER_DESKTOP_SKIP_RUNTIME_BOOTSTRAP"), "1", StringComparison.Ordinal))
             {
-                CacheStatusTextBlock.Text = "Runtime: skipped";
+                CacheStatusTextBlock.Text = "Cache: idle";
             }
             else
             {
                 try
                 {
-                    var configuredRuntime = FfmpegRuntimeBootstrap.ConfigureForCurrentPlatform(AppContext.BaseDirectory);
-                    CacheStatusTextBlock.Text = "Runtime: " + configuredRuntime;
+                    FfmpegRuntimeBootstrap.ConfigureForCurrentPlatform(AppContext.BaseDirectory);
+                    CacheStatusTextBlock.Text = "Cache: idle";
                 }
                 catch (Exception ex)
                 {
-                    CacheStatusTextBlock.Text = "Runtime unavailable: " + ex.Message;
+                    CacheStatusTextBlock.Text = "Cache: runtime unavailable";
+                    ToolTip.SetTip(CacheStatusTextBlock, ex.Message);
                 }
             }
 
@@ -143,6 +148,7 @@ namespace FramePlayer.Desktop.Views
 
             ConfigurePaneZoomSurfaces();
             NativeMenu.SetMenu(this, BuildNativeMenu(_optionsProvider.UseGpuAcceleration));
+            UseGpuAccelerationMenuItem.IsChecked = _optionsProvider.UseGpuAcceleration;
             UpdateRecentFilesMenu();
             UpdatePaneSelectionVisuals();
             UpdateCompareOptionState();
@@ -153,6 +159,23 @@ namespace FramePlayer.Desktop.Views
             KeyDown += Window_KeyDown;
             AllPanesCheckBox.IsCheckedChanged += AllPanesCheckBox_IsCheckedChanged;
             LinkPaneZoomCheckBox.IsCheckedChanged += LinkPaneZoomCheckBox_IsCheckedChanged;
+        }
+
+        private void TryApplyWindowIcon()
+        {
+            var outputIconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "FramePlayer.ico");
+            if (File.Exists(outputIconPath))
+            {
+                Icon = new WindowIcon(outputIconPath);
+                return;
+            }
+
+            var iconUri = new Uri("avares://FramePlayer.Desktop/Assets/FramePlayer.ico");
+            if (AssetLoader.Exists(iconUri))
+            {
+                using var iconStream = AssetLoader.Open(iconUri);
+                Icon = new WindowIcon(iconStream);
+            }
         }
 
         private async void OpenVideoMenuItem_Click(object? sender, RoutedEventArgs e)
@@ -578,9 +601,9 @@ namespace FramePlayer.Desktop.Views
             SetPaneZoomFactor(Pane.Compare, MinimumPaneZoomFactor, synchronizeLinkedPane: false);
             PrimaryEmptyStateOverlay.IsVisible = true;
             CompareEmptyStateOverlay.IsVisible = true;
-            PlaybackStateTextBlock.Text = "Ready";
+            PlaybackStateTextBlock.Text = "A/V playback + frame review";
             CurrentFrameTextBlock.Text = "Frame --";
-            TimecodeTextBlock.Text = "Timecode --";
+            TimecodeTextBlock.Text = "--:--:--.--- / --:--:--.---";
             UpdateCompareOptionState();
         }
 
@@ -1226,6 +1249,7 @@ namespace FramePlayer.Desktop.Views
                 _nativeLoopPlaybackMenuItem.IsChecked = isEnabled;
             }
 
+            LoopPlaybackMenuItem.IsChecked = isEnabled;
             UpdateLoopUi();
         }
 
@@ -1244,7 +1268,8 @@ namespace FramePlayer.Desktop.Views
         private void ShowCompareMode()
         {
             VideoPaneGrid.ColumnDefinitions[1].Width = new GridLength(1, GridUnitType.Star);
-            PrimaryPaneFooterBorder.IsVisible = true;
+            VideoPaneGrid.ColumnSpacing = 12;
+            SetPrimaryPaneLocalChromeVisible(true);
             ComparePaneBorder.IsVisible = true;
             ComparePaneFooterBorder.IsVisible = true;
             CompareToolbarBorder.IsVisible = true;
@@ -1256,12 +1281,21 @@ namespace FramePlayer.Desktop.Views
         {
             _focusedPane = Pane.Primary;
             VideoPaneGrid.ColumnDefinitions[1].Width = new GridLength(0);
-            PrimaryPaneFooterBorder.IsVisible = false;
+            VideoPaneGrid.ColumnSpacing = 0;
+            SetPrimaryPaneLocalChromeVisible(false);
             ComparePaneBorder.IsVisible = false;
             ComparePaneFooterBorder.IsVisible = false;
             CompareToolbarBorder.IsVisible = false;
             UpdatePaneSelectionVisuals();
             UpdateCompareOptionState();
+        }
+
+        private void SetPrimaryPaneLocalChromeVisible(bool isVisible)
+        {
+            PrimaryPaneLayoutGrid.RowDefinitions[0].Height = new GridLength(isVisible ? PaneHeaderHeight : 0, GridUnitType.Pixel);
+            PrimaryPaneLayoutGrid.RowDefinitions[2].Height = new GridLength(isVisible ? PaneFooterHeight : 0, GridUnitType.Pixel);
+            PrimaryPaneHeaderBorder.IsVisible = isVisible;
+            PrimaryPaneFooterBorder.IsVisible = isVisible;
         }
 
         private void UpdateCompareOptionState()
@@ -1298,6 +1332,10 @@ namespace FramePlayer.Desktop.Views
             var focusedLoopRange = GetLoopRange(focusedPane);
             var canClearLoopPoints = focusedLoopRange != null && focusedLoopRange.HasAnyMarkers;
             var canReplaceAudioTrack = CanReplaceAudioTrack(out _);
+            var canExportLoopClip = CanExportLoopClip(focusedPane);
+            var canExportSideBySideCompare = CanExportSideBySideCompare();
+            var canZoomIn = focusedPaneCanZoom && GetPaneZoomFactor(focusedPane) < MaximumPaneZoomFactor - 0.0001d;
+            var canZoomOut = focusedPaneCanZoom && GetPaneZoomFactor(focusedPane) > MinimumPaneZoomFactor + 0.0001d;
 
             SetNativeMenuEnabled(_nativePlayPauseMenuItem, focusedPaneLoaded);
             SetNativeMenuEnabled(_nativeCloseVideoMenuItem, anyMediaLoaded);
@@ -1310,12 +1348,30 @@ namespace FramePlayer.Desktop.Views
             SetNativeMenuEnabled(_nativeSetLoopInMenuItem, focusedPaneLoaded);
             SetNativeMenuEnabled(_nativeSetLoopOutMenuItem, focusedPaneLoaded);
             SetNativeMenuEnabled(_nativeClearLoopPointsMenuItem, canClearLoopPoints);
-            SetNativeMenuEnabled(_nativeSaveLoopAsClipMenuItem, CanExportLoopClip(focusedPane));
-            SetNativeMenuEnabled(_nativeExportSideBySideCompareMenuItem, CanExportSideBySideCompare());
-            SetNativeMenuEnabled(_nativeZoomInMenuItem, focusedPaneCanZoom && GetPaneZoomFactor(focusedPane) < MaximumPaneZoomFactor - 0.0001d);
-            SetNativeMenuEnabled(_nativeZoomOutMenuItem, focusedPaneCanZoom && GetPaneZoomFactor(focusedPane) > MinimumPaneZoomFactor + 0.0001d);
-            SetNativeMenuEnabled(_nativeResetZoomMenuItem, focusedPaneCanZoom && GetPaneZoomFactor(focusedPane) > MinimumPaneZoomFactor + 0.0001d);
+            SetNativeMenuEnabled(_nativeSaveLoopAsClipMenuItem, canExportLoopClip);
+            SetNativeMenuEnabled(_nativeExportSideBySideCompareMenuItem, canExportSideBySideCompare);
+            SetNativeMenuEnabled(_nativeZoomInMenuItem, canZoomIn);
+            SetNativeMenuEnabled(_nativeZoomOutMenuItem, canZoomOut);
+            SetNativeMenuEnabled(_nativeResetZoomMenuItem, canZoomOut);
             SetNativeMenuEnabled(_nativeReplaceAudioTrackMenuItem, canReplaceAudioTrack);
+
+            SetControlEnabled(PlayPauseMenuItem, focusedPaneLoaded);
+            SetControlEnabled(CloseVideoMenuItem, anyMediaLoaded);
+            SetControlEnabled(VideoInfoMenuItem, focusedPaneLoaded);
+            SetControlEnabled(RewindMenuItem, focusedPaneLoaded);
+            SetControlEnabled(FastForwardMenuItem, focusedPaneLoaded);
+            SetControlEnabled(PreviousFrameMenuItem, focusedPaneLoaded);
+            SetControlEnabled(NextFrameMenuItem, focusedPaneLoaded);
+            SetControlEnabled(LoopPlaybackMenuItem, focusedPaneLoaded);
+            SetControlEnabled(SetLoopInMenuItem, focusedPaneLoaded);
+            SetControlEnabled(SetLoopOutMenuItem, focusedPaneLoaded);
+            SetControlEnabled(ClearLoopPointsMenuItem, canClearLoopPoints);
+            SetControlEnabled(SaveLoopAsClipMenuItem, canExportLoopClip);
+            SetControlEnabled(ExportSideBySideCompareMenuItem, canExportSideBySideCompare);
+            SetControlEnabled(ZoomInMenuItem, canZoomIn);
+            SetControlEnabled(ZoomOutMenuItem, canZoomOut);
+            SetControlEnabled(ResetZoomMenuItem, canZoomOut);
+            SetControlEnabled(ReplaceAudioTrackMenuItem, canReplaceAudioTrack);
 
             SetControlEnabled(PositionSlider, primaryLoaded);
             SetControlEnabled(FrameNumberTextBox, primaryLoaded);
@@ -1525,7 +1581,7 @@ namespace FramePlayer.Desktop.Views
             DurationTextBlock.Text = durationText;
             PrimaryPaneDurationTextBlock.Text = durationText;
             CurrentFrameTextBlock.Text = frameText;
-            TimecodeTextBlock.Text = "Timecode " + positionText;
+            TimecodeTextBlock.Text = positionText + " / " + durationText;
             FrameNumberTextBox.Text = FormatFrameNumberEntry(state.Position);
             PrimaryPaneFrameNumberTextBox.Text = FrameNumberTextBox.Text;
             PlayPausePlayIcon.IsVisible = !state.IsPlaying;
@@ -1537,6 +1593,7 @@ namespace FramePlayer.Desktop.Views
                 _nativePlayPauseMenuItem.Header = state.IsPlaying ? "Pause" : "Play";
             }
 
+            PlayPauseMenuItem.Header = state.IsPlaying ? "Pause" : "Play";
             PlaybackStateTextBlock.Text = FormatPlaybackState(state);
         }
 
@@ -1758,17 +1815,26 @@ namespace FramePlayer.Desktop.Views
 
         private void UpdateRecentFilesMenu()
         {
-            if (_nativeRecentFilesMenuItem?.Menu == null)
+            var recentFiles = _recentFilesService.Load().ToList();
+            if (_nativeRecentFilesMenuItem?.Menu != null)
             {
-                return;
+                _nativeRecentFilesMenuItem.Menu.Items.Clear();
             }
 
-            _nativeRecentFilesMenuItem.Menu.Items.Clear();
-            var recentFiles = _recentFilesService.Load().ToList();
+            RecentFilesMenuItem.Items.Clear();
             if (recentFiles.Count == 0)
             {
-                _nativeRecentFilesMenuItem.Menu.Items.Add(new NativeMenuItem("No Recent Files")
+                if (_nativeRecentFilesMenuItem?.Menu != null)
                 {
+                    _nativeRecentFilesMenuItem.Menu.Items.Add(new NativeMenuItem("No Recent Files")
+                    {
+                        IsEnabled = false
+                    });
+                }
+
+                RecentFilesMenuItem.Items.Add(new MenuItem
+                {
+                    Header = "No Recent Files",
                     IsEnabled = false
                 });
                 return;
@@ -1776,9 +1842,19 @@ namespace FramePlayer.Desktop.Views
 
             foreach (var filePath in recentFiles)
             {
-                var menuItem = new NativeMenuItem(Path.GetFileName(filePath));
+                if (_nativeRecentFilesMenuItem?.Menu != null)
+                {
+                    var nativeMenuItem = new NativeMenuItem(Path.GetFileName(filePath));
+                    nativeMenuItem.Click += async (_, _) => await OpenRecentPathAsync(filePath);
+                    _nativeRecentFilesMenuItem.Menu.Items.Add(nativeMenuItem);
+                }
+
+                var menuItem = new MenuItem
+                {
+                    Header = Path.GetFileName(filePath)
+                };
                 menuItem.Click += async (_, _) => await OpenRecentPathAsync(filePath);
-                _nativeRecentFilesMenuItem.Menu.Items.Add(menuItem);
+                RecentFilesMenuItem.Items.Add(menuItem);
             }
         }
 
@@ -1969,6 +2045,7 @@ namespace FramePlayer.Desktop.Views
         private void ToggleWindowState_Click(object? sender, RoutedEventArgs e)
         {
             WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+            WindowStateButton.Content = WindowState == WindowState.Maximized ? "\uE923" : "\uE922";
         }
 
         private void CloseWindow_Click(object? sender, RoutedEventArgs e)
@@ -1984,6 +2061,11 @@ namespace FramePlayer.Desktop.Views
             }
         }
 
+        private void NewWindowMenuItem_Click(object? sender, RoutedEventArgs e)
+        {
+            LaunchNewWindow();
+        }
+
         private void ExitMenuItem_Click(object? sender, RoutedEventArgs e)
         {
             Close();
@@ -1992,6 +2074,46 @@ namespace FramePlayer.Desktop.Views
         private void ToggleFullScreenMenuItem_Click(object? sender, RoutedEventArgs e)
         {
             ToggleFullScreen();
+        }
+
+        private void LoopPlaybackMenuItem_Click(object? sender, RoutedEventArgs e)
+        {
+            SetLoopPlaybackEnabled(!_isLoopPlaybackEnabled);
+        }
+
+        private void SetLoopInMenuItem_Click(object? sender, RoutedEventArgs e)
+        {
+            SetLoopMarker(LoopPlaybackMarkerEndpoint.In);
+        }
+
+        private void SetLoopOutMenuItem_Click(object? sender, RoutedEventArgs e)
+        {
+            SetLoopMarker(LoopPlaybackMarkerEndpoint.Out);
+        }
+
+        private void ClearLoopPointsMenuItem_Click(object? sender, RoutedEventArgs e)
+        {
+            ClearLoopPoints();
+        }
+
+        private void ZoomInMenuItem_Click(object? sender, RoutedEventArgs e)
+        {
+            ZoomInFocusedPane();
+        }
+
+        private void ZoomOutMenuItem_Click(object? sender, RoutedEventArgs e)
+        {
+            ZoomOutFocusedPane();
+        }
+
+        private void ResetZoomMenuItem_Click(object? sender, RoutedEventArgs e)
+        {
+            ResetZoomForFocusedPane();
+        }
+
+        private void UseGpuAccelerationMenuItem_Click(object? sender, RoutedEventArgs e)
+        {
+            SetGpuAccelerationPreference(!_optionsProvider.UseGpuAcceleration);
         }
 
         private void VideoInfoMenuItem_Click(object? sender, RoutedEventArgs e)
@@ -2766,6 +2888,7 @@ namespace FramePlayer.Desktop.Views
                 _nativeGpuAccelerationMenuItem.IsChecked = useGpuAcceleration;
             }
 
+            UseGpuAccelerationMenuItem.IsChecked = useGpuAcceleration;
             if (_optionsProvider.UseGpuAcceleration != useGpuAcceleration)
             {
                 _optionsProvider.SetUseGpuAcceleration(useGpuAcceleration);

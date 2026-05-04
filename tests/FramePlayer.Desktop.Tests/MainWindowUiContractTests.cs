@@ -25,7 +25,7 @@ namespace FramePlayer.Desktop.Tests
         }
 
         [Fact]
-        public void MainWindow_UsesNativeChromeAndNativeMenuOnly()
+        public void MainWindow_UsesNativeChromeWithAvaloniaAndNativeMenus()
         {
             _fixture.Run(() =>
             {
@@ -35,8 +35,58 @@ namespace FramePlayer.Desktop.Tests
 
                 var nativeMenu = NativeMenu.GetMenu(window);
                 Assert.NotNull(nativeMenu);
-                Assert.Equal(WindowDecorations.Full, window.WindowDecorations);
-                Assert.Empty(window.GetVisualDescendants().OfType<Menu>());
+                Assert.Equal(WindowDecorations.None, window.WindowDecorations);
+                Assert.NotNull(window.Icon);
+
+                var menuPanel = RequireControl<Border>(window, "MenuPanel");
+                Assert.Equal(0, Grid.GetRow(menuPanel));
+                Assert.Equal(new Thickness(0, 0, 0, 1), menuPanel.BorderThickness);
+                AssertBrushColor("#FFFFFF", menuPanel.Background);
+                AssertBrushColor("#D1D5DB", menuPanel.BorderBrush);
+
+                var visualMenu = RequireControl<Menu>(window, "WindowsMenuBar");
+                var menuThemeScope = Assert.IsType<ThemeVariantScope>(visualMenu.Parent);
+                Assert.Equal(1, Grid.GetColumn(menuThemeScope));
+                Assert.Equal(
+                    new[] { "File", "Playback", "Audio Insertion", "Help" },
+                    visualMenu.Items
+                        .OfType<MenuItem>()
+                        .Select(item => item.Header?.ToString() ?? string.Empty)
+                        .ToArray());
+                AssertMenuItemHeaders(
+                    RequireControl<MenuItem>(window, "FileRootMenuItem"),
+                    "New Window",
+                    "Open Video...",
+                    "Open Recent",
+                    "Close Video",
+                    "Video Info...",
+                    "Export Diagnostic Report...",
+                    "Exit");
+                AssertMenuItemHeaders(
+                    RequireControl<MenuItem>(window, "PlaybackRootMenuItem"),
+                    "Play",
+                    "Rewind 5s",
+                    "Fast Forward 5s",
+                    "Previous Frame",
+                    "Next Frame",
+                    "Loop Playback",
+                    "Set Loop In",
+                    "Set Loop Out",
+                    "Clear Loop Points",
+                    "Save Loop As Clip...",
+                    "Export Side-by-Side Compare...",
+                    "Zoom In",
+                    "Zoom Out",
+                    "Reset Zoom",
+                    "Use GPU Acceleration",
+                    "Toggle Full Screen");
+                AssertMenuItemHeaders(
+                    RequireControl<MenuItem>(window, "AudioInsertionRootMenuItem"),
+                    "Replace Audio Track...");
+                AssertMenuItemHeaders(
+                    RequireControl<MenuItem>(window, "HelpRootMenuItem"),
+                    "Controls and Shortcuts...",
+                    "About Frame Player");
 
                 var topLevelHeaders = nativeMenu.Items
                     .OfType<NativeMenuItem>()
@@ -64,14 +114,53 @@ namespace FramePlayer.Desktop.Tests
                 {
 
                 var header = RequireControl<Border>(window, "HeaderPanel");
+                var primaryPaneHeader = RequireControl<Border>(window, "PrimaryPaneHeaderBorder");
                 var primaryPaneFooter = RequireControl<Border>(window, "PrimaryPaneFooterBorder");
+                var primaryPaneLayout = RequireControl<Grid>(window, "PrimaryPaneLayoutGrid");
+                var videoPaneGrid = RequireControl<Grid>(window, "VideoPaneGrid");
                 var comparePaneBorder = RequireControl<Border>(window, "ComparePaneBorder");
                 var compareToolbar = RequireControl<Border>(window, "CompareToolbarBorder");
 
-                Assert.Equal(0, Grid.GetRow(header));
+                Assert.Equal(1, Grid.GetRow(header));
+                Assert.False(primaryPaneHeader.IsVisible);
                 Assert.False(primaryPaneFooter.IsVisible);
+                Assert.Equal(0, primaryPaneLayout.RowDefinitions[0].Height.Value);
+                Assert.Equal(0, primaryPaneLayout.RowDefinitions[2].Height.Value);
+                Assert.Equal(0, videoPaneGrid.ColumnDefinitions[1].Width.Value);
+                Assert.Equal(0, videoPaneGrid.ColumnSpacing);
                 Assert.False(comparePaneBorder.IsVisible);
                 Assert.False(compareToolbar.IsVisible);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public void HeaderAndPrimaryPane_ShareOuterRailsAndTextInsets()
+        {
+            _fixture.Run(() =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var header = RequireControl<Border>(window, "HeaderPanel");
+                    var videoPanel = RequireControl<Border>(window, "VideoPanel");
+                    var primaryPaneBorder = RequireControl<Border>(window, "PrimaryPaneBorder");
+                    var comparePaneBorder = RequireControl<Border>(window, "ComparePaneBorder");
+                    var primaryHeader = RequireControl<Border>(window, "PrimaryPaneHeaderBorder");
+                    var compareHeader = RequireControl<Border>(window, "ComparePaneHeaderBorder");
+
+                    Assert.Equal(new Thickness(14, 6, 14, 0), header.Margin);
+                    Assert.Equal(new Thickness(12), header.Padding);
+                    Assert.Equal(new Thickness(14, 8, 14, 0), videoPanel.Margin);
+                    Assert.Equal(new Thickness(0), videoPanel.Padding);
+                    Assert.Equal(new CornerRadius(0), primaryPaneBorder.CornerRadius);
+                    Assert.Equal(new CornerRadius(0), comparePaneBorder.CornerRadius);
+                    Assert.Equal(new Thickness(12, 6, 12, 6), primaryHeader.Padding);
+                    Assert.Equal(new Thickness(12, 6, 12, 6), compareHeader.Padding);
                 }
                 finally
                 {
@@ -90,19 +179,32 @@ namespace FramePlayer.Desktop.Tests
                 {
 
                 var compareMode = RequireControl<CheckBox>(window, "CompareModeCheckBox");
+                var primaryPaneHeader = RequireControl<Border>(window, "PrimaryPaneHeaderBorder");
                 var primaryPaneFooter = RequireControl<Border>(window, "PrimaryPaneFooterBorder");
+                var primaryPaneLayout = RequireControl<Grid>(window, "PrimaryPaneLayoutGrid");
+                var videoPaneGrid = RequireControl<Grid>(window, "VideoPaneGrid");
                 var comparePaneBorder = RequireControl<Border>(window, "ComparePaneBorder");
                 var compareToolbar = RequireControl<Border>(window, "CompareToolbarBorder");
 
                 compareMode.IsChecked = true;
 
+                Assert.True(primaryPaneHeader.IsVisible);
                 Assert.True(primaryPaneFooter.IsVisible);
+                Assert.Equal(46, primaryPaneLayout.RowDefinitions[0].Height.Value);
+                Assert.Equal(118, primaryPaneLayout.RowDefinitions[2].Height.Value);
+                Assert.Equal(GridUnitType.Star, videoPaneGrid.ColumnDefinitions[1].Width.GridUnitType);
+                Assert.Equal(12, videoPaneGrid.ColumnSpacing);
                 Assert.True(comparePaneBorder.IsVisible);
                 Assert.True(compareToolbar.IsVisible);
 
                 compareMode.IsChecked = false;
 
+                Assert.False(primaryPaneHeader.IsVisible);
                 Assert.False(primaryPaneFooter.IsVisible);
+                Assert.Equal(0, primaryPaneLayout.RowDefinitions[0].Height.Value);
+                Assert.Equal(0, primaryPaneLayout.RowDefinitions[2].Height.Value);
+                Assert.Equal(0, videoPaneGrid.ColumnDefinitions[1].Width.Value);
+                Assert.Equal(0, videoPaneGrid.ColumnSpacing);
                 Assert.False(comparePaneBorder.IsVisible);
                 Assert.False(compareToolbar.IsVisible);
                 }
@@ -248,7 +350,14 @@ namespace FramePlayer.Desktop.Tests
                 var window = new MainWindow();
                 try
                 {
-                    AssertLoopStatusPlacement(window, "LoopStatusTextBlock", "PlayPauseButton", 240);
+                    var mainLoopStatus = RequireControl<TextBlock>(window, "LoopStatusTextBlock");
+                    var mainTransportParent = Assert.IsType<StackPanel>(RequireControl<Button>(window, "PlayPauseButton").Parent);
+                    Assert.Equal(240, mainLoopStatus.Width);
+                    Assert.Equal(1, Grid.GetRow(mainLoopStatus));
+                    Assert.Equal(1, Grid.GetColumn(mainLoopStatus));
+                    Assert.Equal(2, Grid.GetRow(mainTransportParent));
+                    Assert.Equal(2, Grid.GetColumnSpan(mainTransportParent));
+
                     AssertLoopStatusPlacement(window, "PrimaryPaneLoopStatusTextBlock", "PrimaryPanePlayPauseButton", 176);
                     AssertLoopStatusPlacement(window, "ComparePaneLoopStatusTextBlock", "ComparePanePlayPauseButton", 176);
                 }
@@ -267,7 +376,23 @@ namespace FramePlayer.Desktop.Tests
                 var window = new MainWindow();
                 try
                 {
-                    AssertFrameEntryRail(window, "FrameNumberTextBox", "DurationTextBlock", 240, 104, 0);
+                    var frameTextBox = RequireControl<TextBox>(window, "FrameNumberTextBox");
+                    var frameEntryParent = Assert.IsType<StackPanel>(frameTextBox.Parent);
+                    var controlGrid = Assert.IsType<Grid>(frameEntryParent.Parent);
+                    var durationTextBlock = RequireControl<TextBlock>(window, "DurationTextBlock");
+
+                    Assert.Equal(1, Grid.GetColumn(frameEntryParent));
+                    Assert.Equal(2, Grid.GetRow(frameEntryParent));
+                    Assert.Equal(HorizontalAlignment.Right, frameEntryParent.HorizontalAlignment);
+                    Assert.Equal(VerticalAlignment.Center, frameEntryParent.VerticalAlignment);
+                    Assert.Equal(new Thickness(0), frameEntryParent.Margin);
+                    Assert.Equal(GridUnitType.Pixel, controlGrid.ColumnDefinitions[1].Width.GridUnitType);
+                    Assert.Equal(240, controlGrid.ColumnDefinitions[1].Width.Value);
+                    Assert.Equal(2, Grid.GetColumn(durationTextBlock));
+                    Assert.Equal(HorizontalAlignment.Right, durationTextBlock.HorizontalAlignment);
+                    Assert.Equal(TextAlignment.Right, durationTextBlock.TextAlignment);
+                    Assert.Equal(104, frameTextBox.Width);
+
                     AssertFrameEntryRail(window, "PrimaryPaneFrameNumberTextBox", "PrimaryPaneDurationTextBlock", 176, 92, 6);
                     AssertFrameEntryRail(window, "ComparePaneFrameNumberTextBox", "ComparePaneDurationTextBlock", 176, 92, 6);
                 }
@@ -290,13 +415,33 @@ namespace FramePlayer.Desktop.Tests
                     var statusPanel = RequireControl<Border>(window, "StatusPanelContainer");
                     var shellGrid = Assert.IsType<Grid>(controlPanel.Parent);
 
-                    Assert.Equal(GridUnitType.Pixel, shellGrid.RowDefinitions[3].Height.GridUnitType);
-                    Assert.Equal(134, shellGrid.RowDefinitions[3].Height.Value);
                     Assert.Equal(GridUnitType.Pixel, shellGrid.RowDefinitions[4].Height.GridUnitType);
-                    Assert.Equal(38, shellGrid.RowDefinitions[4].Height.Value);
+                    Assert.Equal(134, shellGrid.RowDefinitions[4].Height.Value);
+                    Assert.Equal(GridUnitType.Auto, shellGrid.RowDefinitions[5].Height.GridUnitType);
+                    Assert.Equal(new Thickness(14, 8, 14, 0), controlPanel.Margin);
                     Assert.Equal(new Thickness(18, 14, 18, 16), controlPanel.Padding);
-                    Assert.True(controlPanel.MinHeight >= 134);
+                    Assert.Equal(new Thickness(1), controlPanel.BorderThickness);
+                    Assert.Equal(new CornerRadius(10), controlPanel.CornerRadius);
+                    Assert.True(controlPanel.MinHeight >= 126);
                     Assert.True(statusPanel.MinHeight >= 38);
+                    Assert.Equal(new Thickness(14, 8, 14, 10), statusPanel.Margin);
+                    Assert.Equal(new Thickness(4, 3), statusPanel.Padding);
+                    Assert.Equal(new CornerRadius(10), statusPanel.CornerRadius);
+
+                    var timelineGrid = RequireControl<Grid>(window, "MainTimelineRailGrid");
+                    var positionSlider = RequireControl<Slider>(window, "PositionSlider");
+                    var currentPosition = RequireControl<TextBlock>(window, "CurrentPositionTextBlock");
+                    var duration = RequireControl<TextBlock>(window, "DurationTextBlock");
+                    Assert.Equal(0, Grid.GetRow(timelineGrid));
+                    Assert.Equal(2, Grid.GetColumnSpan(timelineGrid));
+                    Assert.Equal(GridUnitType.Auto, timelineGrid.ColumnDefinitions[0].Width.GridUnitType);
+                    Assert.Equal(GridUnitType.Star, timelineGrid.ColumnDefinitions[1].Width.GridUnitType);
+                    Assert.Equal(GridUnitType.Auto, timelineGrid.ColumnDefinitions[2].Width.GridUnitType);
+                    Assert.Same(timelineGrid, positionSlider.Parent);
+                    Assert.Equal(1, Grid.GetColumn(positionSlider));
+                    Assert.Equal(new Thickness(16, 0), positionSlider.Margin);
+                    Assert.Equal(34, currentPosition.Height);
+                    Assert.Equal(34, duration.Height);
 
                     var transportParent = Assert.IsType<StackPanel>(RequireControl<Button>(window, "PlayPauseButton").Parent);
                     Assert.Equal(VerticalAlignment.Center, transportParent.VerticalAlignment);
@@ -308,6 +453,12 @@ namespace FramePlayer.Desktop.Tests
                     Assert.Equal(new Thickness(0), frameEntryParent.Margin);
 
                     var cacheStatus = RequireControl<TextBlock>(window, "CacheStatusTextBlock");
+                    Assert.Equal("A/V playback + frame review", RequireControl<TextBlock>(window, "PlaybackStateTextBlock").Text);
+                    Assert.Equal("Frame --", RequireControl<TextBlock>(window, "CurrentFrameTextBlock").Text);
+                    Assert.Equal("--:--:--.--- / --:--:--.---", RequireControl<TextBlock>(window, "TimecodeTextBlock").Text);
+                    Assert.Equal("Cache: idle", cacheStatus.Text);
+                    Assert.Equal("Pixel: --", RequireControl<TextBlock>(window, "PointerCoordinatesTextBlock").Text);
+                    Assert.DoesNotContain("runtime", cacheStatus.Text, StringComparison.OrdinalIgnoreCase);
                     Assert.Equal(TextTrimming.CharacterEllipsis, cacheStatus.TextTrimming);
                     Assert.Equal(TextWrapping.NoWrap, cacheStatus.TextWrapping);
                 }
@@ -360,7 +511,7 @@ namespace FramePlayer.Desktop.Tests
                     Assert.True(RequireControl<CheckBox>(window, "CompareModeCheckBox").FontSize > 12);
                     Assert.True(RequireControl<CheckBox>(window, "AllPanesCheckBox").FontSize > 12);
                     Assert.True(RequireControl<TextBlock>(window, "CompareStatusTextBlock").FontSize > 12);
-                    Assert.True(RequireControl<TextBlock>(window, "PlaybackStateTextBlock").FontSize > 12);
+                    Assert.Equal(12, RequireControl<TextBlock>(window, "PlaybackStateTextBlock").FontSize);
                     Assert.True(RequireControl<TextBlock>(window, "CurrentPositionTextBlock").FontSize > 12);
 
                     Assert.Equal(16, RequireControl<TextBlock>(window, "CurrentFileTextBlock").FontSize);
@@ -369,8 +520,13 @@ namespace FramePlayer.Desktop.Tests
                     Assert.Equal(13, RequireControl<TextBlock>(window, "LoopStatusTextBlock").FontSize);
                     Assert.Equal(11, RequireControl<TextBlock>(window, "PrimaryPaneLoopStatusTextBlock").FontSize);
                     Assert.Equal(11, RequireControl<TextBlock>(window, "ComparePaneLoopStatusTextBlock").FontSize);
-                    Assert.Equal(20, RequireControl<TextBlock>(window, "PrimaryEmptyStateTitleTextBlock").FontSize);
+                    Assert.Equal(30, RequireControl<TextBlock>(window, "PrimaryEmptyStateTitleTextBlock").FontSize);
                     Assert.Equal(20, RequireControl<TextBlock>(window, "CompareEmptyStateTitleTextBlock").FontSize);
+
+                    var primaryOpenVideoButton = RequireControl<Button>(window, "PrimaryOpenVideoButton");
+                    Assert.Equal(HorizontalAlignment.Center, primaryOpenVideoButton.HorizontalContentAlignment);
+                    Assert.Equal(VerticalAlignment.Center, primaryOpenVideoButton.VerticalContentAlignment);
+                    Assert.Equal(new Thickness(0), primaryOpenVideoButton.Margin);
                 }
                 finally
                 {
@@ -563,6 +719,20 @@ namespace FramePlayer.Desktop.Tests
                     Assert.False(RequireNativeMenuItem(nativeMenu, "Save Loop As Clip...").IsEnabled);
                     Assert.False(RequireNativeMenuItem(nativeMenu, "Export Side-by-Side Compare...").IsEnabled);
                     Assert.False(RequireNativeMenuItem(nativeMenu, "Replace Audio Track...").IsEnabled);
+
+                    Assert.False(RequireControl<MenuItem>(window, "CloseVideoMenuItem").IsEnabled);
+                    Assert.False(RequireControl<MenuItem>(window, "VideoInfoMenuItem").IsEnabled);
+                    Assert.False(RequireControl<MenuItem>(window, "PlayPauseMenuItem").IsEnabled);
+                    Assert.False(RequireControl<MenuItem>(window, "RewindMenuItem").IsEnabled);
+                    Assert.False(RequireControl<MenuItem>(window, "FastForwardMenuItem").IsEnabled);
+                    Assert.False(RequireControl<MenuItem>(window, "PreviousFrameMenuItem").IsEnabled);
+                    Assert.False(RequireControl<MenuItem>(window, "NextFrameMenuItem").IsEnabled);
+                    Assert.False(RequireControl<MenuItem>(window, "LoopPlaybackMenuItem").IsEnabled);
+                    Assert.False(RequireControl<MenuItem>(window, "SetLoopInMenuItem").IsEnabled);
+                    Assert.False(RequireControl<MenuItem>(window, "SetLoopOutMenuItem").IsEnabled);
+                    Assert.False(RequireControl<MenuItem>(window, "SaveLoopAsClipMenuItem").IsEnabled);
+                    Assert.False(RequireControl<MenuItem>(window, "ExportSideBySideCompareMenuItem").IsEnabled);
+                    Assert.False(RequireControl<MenuItem>(window, "ReplaceAudioTrackMenuItem").IsEnabled);
 
                     Assert.False(RequireControl<Slider>(window, "PositionSlider").IsEnabled);
                     Assert.False(RequireControl<TextBox>(window, "FrameNumberTextBox").IsEnabled);
@@ -835,6 +1005,16 @@ namespace FramePlayer.Desktop.Tests
             Assert.Equal(
                 expectedHeaders,
                 menu!.Items
+                    .OfType<MenuItem>()
+                    .Select(item => item.Header?.ToString() ?? string.Empty)
+                    .ToArray());
+        }
+
+        private static void AssertMenuItemHeaders(MenuItem menuItem, params string[] expectedHeaders)
+        {
+            Assert.Equal(
+                expectedHeaders,
+                menuItem.Items
                     .OfType<MenuItem>()
                     .Select(item => item.Header?.ToString() ?? string.Empty)
                     .ToArray());

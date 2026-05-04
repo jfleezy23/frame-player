@@ -6,11 +6,11 @@
   <Application.Styles>
     <FluentTheme />
     <Style Selector="Menu">
-      <Setter Property="Background" Value="#F8F8F8" />
+      <Setter Property="Background" Value="#FFFFFF" />
       <Setter Property="Foreground" Value="#111111" />
     </Style>
     <Style Selector="ContextMenu.frame-context-menu">
-      <Setter Property="Background" Value="#F8F8F8" />
+      <Setter Property="Background" Value="#FFFFFF" />
       <Setter Property="Foreground" Value="#111111" />
     </Style>
     <Style Selector="MenuItem">
