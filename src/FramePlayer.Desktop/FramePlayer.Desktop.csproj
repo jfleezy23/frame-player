@@ -1,0 +1,98 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>FramePlayer.Desktop</RootNamespace>
+    <AssemblyName>FramePlayer.Desktop</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\..\Assets\FramePlayer.ico</ApplicationIcon>
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.0.2" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.0.2" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.2" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FramePlayer.Core\FramePlayer.Core.csproj" />
+    <ProjectReference Include="..\FramePlayer.Engine.FFmpeg\FramePlayer.Engine.FFmpeg.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="..\..\Assets\FramePlayer.ico" Link="Assets\FramePlayer.ico" />
+    <None Include="..\..\Assets\FramePlayer.ico" Link="Assets\FramePlayer.ico" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Assets\FramePlayer.icns" Link="Assets\FramePlayer.icns" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\LICENSE" Link="LICENSE" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\THIRD_PARTY_NOTICES.md" Link="THIRD_PARTY_NOTICES.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\Runtime\runtime-manifest.json" Link="Runtime\runtime-manifest.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\Runtime\export-runtime-manifest.json" Link="Runtime\export-runtime-manifest.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\Runtime\export-tools-manifest.json" Link="Runtime\export-tools-manifest.json" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="..\..\Runtime\export-runtime-manifest.json" LogicalName="FramePlayer.Runtime.export-runtime-manifest.json" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
+    <None Remove="..\..\Runtime\ffmpeg\*.dll" />
+    <None Remove="..\..\Runtime\ffmpeg-export\*.dll" />
+  </ItemGroup>
+
+  <Target Name="EnsureDesktopBundledRuntime"
+          BeforeTargets="PrepareForBuild"
+          Condition="'$(OS)' == 'Windows_NT' and '$(SkipRuntimeBootstrap)' != 'true' and !Exists('..\..\Runtime\\ffmpeg\\avcodec-62.dll')">
+    <Message Importance="high"
+             Text="FFmpeg runtime DLLs are missing. Downloading the pinned runtime for the Avalonia desktop preview build..." />
+    <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\scripts\Ensure-DevRuntime.ps1&quot;"
+          WorkingDirectory="$(MSBuildProjectDirectory)\..\.." />
+  </Target>
+
+  <Target Name="EnsureDesktopBundledExportRuntime"
+          BeforeTargets="PrepareForBuild"
+          Condition="'$(OS)' == 'Windows_NT' and '$(SkipRuntimeBootstrap)' != 'true' and !Exists('..\..\Runtime\\ffmpeg-export\\avfilter-11.dll')">
+    <Message Importance="high"
+             Text="FFmpeg export runtime DLLs are missing. Restoring the pinned export runtime for the Avalonia desktop preview build..." />
+    <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\scripts\Ensure-DevExportRuntime.ps1&quot; -Required"
+          WorkingDirectory="$(MSBuildProjectDirectory)\..\.." />
+  </Target>
+
+  <Target Name="WarnIfDesktopBundledRuntimeMissing"
+          BeforeTargets="Build"
+          Condition="'$(OS)' == 'Windows_NT' and '$(SkipRuntimeBootstrap)' != 'true' and !Exists('..\..\Runtime\\ffmpeg\\avcodec-62.dll')">
+    <Message Importance="high"
+             Text="FFmpeg runtime DLLs are not present in Runtime\\ffmpeg for the Avalonia desktop preview. If restore failed, run .\\scripts\\Ensure-DevRuntime.ps1 manually and rebuild." />
+  </Target>
+
+  <Target Name="WarnIfDesktopBundledExportRuntimeMissing"
+          BeforeTargets="Build"
+          Condition="'$(OS)' == 'Windows_NT' and '$(SkipRuntimeBootstrap)' != 'true' and !Exists('..\..\Runtime\\ffmpeg-export\\avfilter-11.dll')">
+    <Message Importance="high"
+             Text="FFmpeg export runtime DLLs are not present in Runtime\\ffmpeg-export for the Avalonia desktop preview. If restore failed, run .\\scripts\\Ensure-DevExportRuntime.ps1 manually and rebuild." />
+  </Target>
+
+  <Target Name="AddDesktopBundledRuntimeContent"
+          BeforeTargets="AssignTargetPaths"
+          DependsOnTargets="EnsureDesktopBundledRuntime;EnsureDesktopBundledExportRuntime"
+          Condition="'$(OS)' == 'Windows_NT'">
+    <ItemGroup Condition="Exists('..\..\Runtime\\ffmpeg\\avcodec-62.dll')">
+      <DesktopPlaybackRuntimeDll Include="..\..\Runtime\ffmpeg\*.dll" />
+      <Content Include="@(DesktopPlaybackRuntimeDll)">
+        <Link>%(DesktopPlaybackRuntimeDll.Filename)%(DesktopPlaybackRuntimeDll.Extension)</Link>
+        <TargetPath>%(DesktopPlaybackRuntimeDll.Filename)%(DesktopPlaybackRuntimeDll.Extension)</TargetPath>
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </Content>
+    </ItemGroup>
+    <ItemGroup Condition="Exists('..\..\Runtime\\ffmpeg-export\\avfilter-11.dll')">
+      <DesktopExportRuntimeDll Include="..\..\Runtime\ffmpeg-export\*.dll" />
+      <Content Include="@(DesktopExportRuntimeDll)">
+        <Link>ffmpeg-export\%(DesktopExportRuntimeDll.Filename)%(DesktopExportRuntimeDll.Extension)</Link>
+        <TargetPath>ffmpeg-export\%(DesktopExportRuntimeDll.Filename)%(DesktopExportRuntimeDll.Extension)</TargetPath>
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </Content>
+    </ItemGroup>
+  </Target>
+</Project>
