@@ -1,6 +1,9 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
 using FramePlayer.Services;
 using Xunit;
 
@@ -108,6 +111,36 @@ namespace FramePlayer.Desktop.Tests
                 validationMessage);
         }
 
+        [Fact]
+        public void ExportRuntimeValidation_AcceptsSha256SumsWithBinaryMarkersAndPaths()
+        {
+            var runtimeDirectory = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "frame-player-export-runtime-" + Guid.NewGuid().ToString("N")));
+            try
+            {
+                var lines = ResolveCurrentPlatformExportRuntimeFiles()
+                    .Select((fileName, index) =>
+                    {
+                        var filePath = Path.Combine(runtimeDirectory.FullName, fileName);
+                        File.WriteAllText(filePath, "runtime-" + fileName, Encoding.UTF8);
+                        var hash = ComputeSha256(filePath);
+                        var manifestName = index % 2 == 0
+                            ? "*" + fileName
+                            : "/tmp/frame-player/" + fileName;
+                        return hash + "  " + manifestName;
+                    })
+                    .ToArray();
+                File.WriteAllLines(Path.Combine(runtimeDirectory.FullName, "SHA256SUMS.txt"), lines, Encoding.UTF8);
+
+                Assert.True(
+                    ExportRuntimeManifestService.TryValidateRuntimeDirectory(runtimeDirectory.FullName, out var validationMessage),
+                    validationMessage);
+            }
+            finally
+            {
+                runtimeDirectory.Delete(recursive: true);
+            }
+        }
+
         private static string FindRepositoryRoot()
         {
             var directory = new DirectoryInfo(AppContext.BaseDirectory);
@@ -123,6 +156,54 @@ namespace FramePlayer.Desktop.Tests
             }
 
             throw new DirectoryNotFoundException("Could not find frame-player repository root from " + AppContext.BaseDirectory);
+        }
+
+        private static string[] ResolveCurrentPlatformExportRuntimeFiles()
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                return new[]
+                {
+                    "avutil-60.dll",
+                    "swresample-6.dll",
+                    "swscale-9.dll",
+                    "avfilter-11.dll",
+                    "avcodec-62.dll",
+                    "avformat-62.dll"
+                };
+            }
+
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            {
+                return new[]
+                {
+                    "libavutil.60.dylib",
+                    "libswresample.6.dylib",
+                    "libswscale.9.dylib",
+                    "libavfilter.11.dylib",
+                    "libavcodec.62.dylib",
+                    "libavformat.62.dylib"
+                };
+            }
+
+            return new[]
+            {
+                "libavutil.so.60",
+                "libswresample.so.6",
+                "libswscale.so.9",
+                "libavfilter.so.11",
+                "libavcodec.so.62",
+                "libavformat.so.62"
+            };
+        }
+
+        private static string ComputeSha256(string filePath)
+        {
+            using (var stream = File.OpenRead(filePath))
+            using (var sha256 = SHA256.Create())
+            {
+                return BitConverter.ToString(sha256.ComputeHash(stream)).Replace("-", string.Empty).ToLowerInvariant();
+            }
         }
     }
 }

@@ -191,10 +191,30 @@ namespace FramePlayer.Services
             }
 
             expectedHash = trimmed.Substring(0, separatorIndex);
-            fileName = trimmed.Substring(separatorIndex).Trim();
+            fileName = NormalizeSha256FileName(trimmed.Substring(separatorIndex).Trim());
             return expectedHash.Length == Sha256HexLength &&
                 expectedHash.All(IsHexCharacter) &&
                 !string.IsNullOrWhiteSpace(fileName);
+        }
+
+        private static string NormalizeSha256FileName(string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                return string.Empty;
+            }
+
+            var normalized = fileName.Trim();
+            if (normalized.Length > 0 && normalized[0] == '*')
+            {
+                normalized = normalized.Substring(1);
+            }
+
+            normalized = normalized.Replace('\\', '/');
+            var lastSeparatorIndex = normalized.LastIndexOf('/');
+            return lastSeparatorIndex >= 0
+                ? normalized.Substring(lastSeparatorIndex + 1)
+                : normalized;
         }
 
         private static bool IsHexCharacter(char value)
