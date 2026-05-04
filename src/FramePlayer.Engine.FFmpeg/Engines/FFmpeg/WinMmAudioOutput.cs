@@ -16,6 +16,8 @@ namespace FramePlayer.Engines.FFmpeg
         private const int MaxQueuedMilliseconds = 700;
         private const int PollMilliseconds = 5;
         private const long CounterRolloverSpan = (long)uint.MaxValue + 1L;
+        private const uint CounterRolloverHighWatermark = 0xC0000000;
+        private const uint CounterRolloverLowWatermark = 0x40000000;
 
         private readonly List<QueuedBuffer> _queuedBuffers = new List<QueuedBuffer>();
         private readonly object _positionSync = new object();
@@ -283,7 +285,14 @@ namespace FramePlayer.Engines.FFmpeg
 
                 if (time.u < _lastPositionValue)
                 {
-                    _positionRolloverOffset += CounterRolloverSpan;
+                    if (_lastPositionValue >= CounterRolloverHighWatermark && time.u <= CounterRolloverLowWatermark)
+                    {
+                        _positionRolloverOffset += CounterRolloverSpan;
+                    }
+                    else
+                    {
+                        _positionRolloverOffset = 0L;
+                    }
                 }
 
                 _lastPositionValue = time.u;
