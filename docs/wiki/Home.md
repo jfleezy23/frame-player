@@ -8,8 +8,9 @@ Frame Player is a frame-first video review tool for people who need to know exac
 | --- | --- | --- | --- |
 | Windows stable | Windows 10 or later | `v1.8.4` | [Frame Player v1.8.4](https://github.com/jfleezy23/frame-player/releases/tag/v1.8.4) |
 | macOS Preview | Apple Silicon, macOS 13 or later | `0.1.0` | [Unified v1.8.4 download page](https://github.com/jfleezy23/frame-player/releases/tag/v1.8.4) |
+| Windows Avalonia Preview | Windows 10 or later, x64 | `0.1.0` | [Unified v1.8.4 download page](https://github.com/jfleezy23/frame-player/releases/tag/v1.8.4) |
 
-The Windows release remains the stable WPF app. The macOS Preview is an Avalonia app that mirrors the Windows review workflow while using native macOS window and menu chrome.
+The Windows release remains the stable WPF app. The macOS Preview and Windows Avalonia Preview are controlled Avalonia preview builds for cross-platform validation.
 
 ## Screenshot Gallery
 
