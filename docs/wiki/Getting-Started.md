@@ -10,12 +10,12 @@ Windows stable:
 
 macOS Preview:
 
-1. Download `FramePlayer-macOS-arm64-macos-preview-0.1.0.zip` and its SHA256 file from the [Frame Player v1.8.4 release page](https://github.com/jfleezy23/frame-player/releases/tag/v1.8.4).
+1. Download `FramePlayer-macOS-arm64-macos-preview-0.1.1.zip` and its SHA256 file from the [Frame Player macOS Preview 0.1.1 release page](https://github.com/jfleezy23/frame-player/releases/tag/macos-preview-0.1.1).
 2. Verify the ZIP hash if you are validating the release candidate.
 3. Unzip the app and move `Frame Player.app` to `/Applications`.
 4. Launch `Frame Player.app`.
 
-The macOS Preview is notarized for Apple Silicon. Intel and universal macOS builds are not part of `0.1.0`.
+The macOS Preview is notarized for Apple Silicon. Intel and universal macOS builds are not part of `0.1.1`.
 
 Windows Avalonia Preview:
 

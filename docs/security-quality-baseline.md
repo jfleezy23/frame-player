@@ -161,6 +161,6 @@ These are intentional gaps, not accidents:
 - SonarQube is active but not yet required for merge
 - Code scanning results are active but not yet enforced as a blocking branch rule
 - product-specific media regression coverage still lives outside generic GitHub quality tooling and remains a separate validation concern
-- future macOS releases must repeat Developer ID signing, notarization, stapling, and Gatekeeper validation; `macos-preview-0.1.0` completed that path for the Apple Silicon preview artifact
+- future macOS releases must repeat Developer ID signing, notarization, stapling, and Gatekeeper validation; `macos-preview-0.1.1` completed that path for the Apple Silicon preview artifact
 
 That split is intentional. Generic platform security tooling should support, not replace, the repo's domain-specific validation.
