@@ -15,13 +15,18 @@ namespace FramePlayer.Engines.FFmpeg
         private const int TimeBytes = 0x0004;
         private const int MaxQueuedMilliseconds = 700;
         private const int PollMilliseconds = 5;
+        private const long CounterRolloverSpan = (long)uint.MaxValue + 1L;
 
         private readonly List<QueuedBuffer> _queuedBuffers = new List<QueuedBuffer>();
+        private readonly object _positionSync = new object();
         private readonly int _sampleRate;
         private readonly int _bytesPerSecond;
         private readonly int _maxQueuedBytes;
         private IntPtr _waveOutHandle;
         private long _submittedBytes;
+        private uint _lastPositionValue;
+        private uint _lastPositionType;
+        private long _positionRolloverOffset;
         private int _queuedBytes;
         private bool _disposed;
 
@@ -97,7 +102,7 @@ namespace FramePlayer.Engines.FFmpeg
                     return TimeSpan.Zero;
                 }
 
-                return MmTimeToDuration(time);
+                return MmTimeToDuration(time.wType, ExtendPositionCounter(time));
             }
         }
 
@@ -264,16 +269,38 @@ namespace FramePlayer.Engines.FFmpeg
             return TimeSpan.FromTicks((long)Math.Round(seconds * TimeSpan.TicksPerSecond));
         }
 
-        private TimeSpan MmTimeToDuration(MmTime time)
+        private long ExtendPositionCounter(MmTime time)
         {
-            switch (time.wType)
+            lock (_positionSync)
+            {
+                if (_lastPositionType != time.wType)
+                {
+                    _lastPositionType = time.wType;
+                    _lastPositionValue = time.u;
+                    _positionRolloverOffset = 0L;
+                    return time.u;
+                }
+
+                if (time.u < _lastPositionValue)
+                {
+                    _positionRolloverOffset += CounterRolloverSpan;
+                }
+
+                _lastPositionValue = time.u;
+                return _positionRolloverOffset + time.u;
+            }
+        }
+
+        private TimeSpan MmTimeToDuration(uint timeType, long timeValue)
+        {
+            switch (timeType)
             {
                 case TimeBytes:
-                    return BytesToDuration(time.u);
+                    return BytesToDuration(timeValue);
                 case TimeSamples:
-                    return SamplesToDuration(time.u);
+                    return SamplesToDuration(timeValue);
                 case TimeMilliseconds:
-                    return TimeSpan.FromMilliseconds(time.u);
+                    return TimeSpan.FromMilliseconds(timeValue);
                 default:
                     return TimeSpan.Zero;
             }
