@@ -79,8 +79,10 @@ jobs:
           fi
 
           for required_path in \
-            "$app_path/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/libavformat.62.dylib" \
-            "$app_path/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/libavcodec.62.dylib"; do
+            "$app_path/Contents/MacOS/Runtime/runtime-manifest.json" \
+            "$app_path/Contents/MacOS/Runtime/export-runtime-manifest.json" \
+            "$app_path/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/SHA256SUMS.txt" \
+            "$app_path/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/build-provenance.txt"; do
             if [[ ! -f "$required_path" ]]; then
               find "$app_path/Contents/MacOS/Runtime" -maxdepth 5 -print
               echo "Extracted package is missing required runtime file: $required_path" >&2
