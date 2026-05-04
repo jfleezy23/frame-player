@@ -80,6 +80,32 @@ namespace FramePlayer.Mac.Tests
             }
         }
 
+        [Fact]
+        public void ExportHostClient_UsesExplicitMacRuntimeBaseBeforeBuildOutputFallback()
+        {
+            using var temp = new TemporaryDirectory();
+            var explicitRuntimeBase = Path.Combine(temp.Path, "repo-root");
+            Directory.CreateDirectory(explicitRuntimeBase);
+
+            var previousRuntimeBase = Environment.GetEnvironmentVariable(ExportHostClient.MacRuntimeBaseEnvironmentVariable);
+            var previousAppBundle = Environment.GetEnvironmentVariable(ExportHostClient.MacAppBundleEnvironmentVariable);
+            try
+            {
+                Environment.SetEnvironmentVariable(ExportHostClient.MacAppBundleEnvironmentVariable, null);
+                Environment.SetEnvironmentVariable(ExportHostClient.MacRuntimeBaseEnvironmentVariable, explicitRuntimeBase);
+
+                var runtimeBaseDirectories = ExportHostClient.ResolveRuntimeBaseDirectories("/tmp/frameplayer-tests").ToArray();
+
+                Assert.Equal(explicitRuntimeBase, runtimeBaseDirectories[0]);
+                Assert.Equal("/tmp/frameplayer-tests", runtimeBaseDirectories[1]);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(ExportHostClient.MacRuntimeBaseEnvironmentVariable, previousRuntimeBase);
+                Environment.SetEnvironmentVariable(ExportHostClient.MacAppBundleEnvironmentVariable, previousAppBundle);
+            }
+        }
+
         private static string ComputeSha256(string filePath)
         {
             using var stream = File.OpenRead(filePath);

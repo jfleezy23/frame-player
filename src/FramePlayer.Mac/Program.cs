@@ -4,6 +4,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using FramePlayer.Diagnostics;
 using FramePlayer.Engines.FFmpeg;
+using FramePlayer.Services;
 
 namespace FramePlayer.Mac
 {
@@ -16,7 +17,7 @@ namespace FramePlayer.Mac
             {
                 try
                 {
-                    FfmpegRuntimeBootstrap.ConfigureForCurrentPlatform(AppContext.BaseDirectory);
+                    FfmpegRuntimeBootstrap.ConfigureForCurrentPlatform(ResolveRuntimeBaseDirectory());
                     Environment.ExitCode = ExportHostCli.RunAsync(requestPath, default).GetAwaiter().GetResult();
                 }
                 catch (Exception ex)
@@ -39,6 +40,20 @@ namespace FramePlayer.Mac
                 .UsePlatformDetect()
                 .WithInterFont()
                 .LogToTrace();
+        }
+
+        private static string ResolveRuntimeBaseDirectory()
+        {
+            var appBundle = Environment.GetEnvironmentVariable(ExportHostClient.MacAppBundleEnvironmentVariable);
+            if (!string.IsNullOrWhiteSpace(appBundle))
+            {
+                return System.IO.Path.Combine(appBundle, "Contents", "MacOS");
+            }
+
+            var runtimeBase = Environment.GetEnvironmentVariable(ExportHostClient.MacRuntimeBaseEnvironmentVariable);
+            return string.IsNullOrWhiteSpace(runtimeBase)
+                ? AppContext.BaseDirectory
+                : runtimeBase;
         }
     }
 
