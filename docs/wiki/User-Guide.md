@@ -2,7 +2,7 @@
 
 ## Main Review Window
 
-The main window is organized around a video surface, timeline, transport controls, frame entry, loop status, and status bar. The Windows stable app, macOS Preview, and Windows Avalonia Preview are intended to behave the same in the review body.
+The main window is organized around a video surface, timeline, transport controls, frame entry, loop status, and status bar. The Windows stable app and Unified Avalonia Preview are intended to behave the same in the review body.
 
 Key surfaces:
 

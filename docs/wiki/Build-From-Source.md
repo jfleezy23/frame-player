@@ -19,41 +19,36 @@ Direct build when the runtime is already staged:
 dotnet build .\FramePlayer.csproj -c Release -p:Platform=x64
 ```
 
-## macOS Preview
+## Unified Avalonia Preview
 
-Stage the pinned macOS FFmpeg runtime under `Runtime/macos/osx-arm64/ffmpeg`, then run:
+The current cross-platform preview builds from `src\FramePlayer.Avalonia`. On Windows, restore the pinned playback and export runtimes before building or packaging:
+
+```powershell
+.\scripts\Ensure-DevRuntime.ps1
+.\scripts\Ensure-DevExportRuntime.ps1 -Required
+dotnet build .\src\FramePlayer.Avalonia\FramePlayer.Avalonia.csproj -c Release
+dotnet test .\tests\FramePlayer.Avalonia.Tests\FramePlayer.Avalonia.Tests.csproj -c Release
+.\scripts\Package-UnifiedWindowsPreview.ps1
+```
+
+On macOS, stage the pinned macOS FFmpeg runtime under `Runtime/macos/osx-arm64/ffmpeg`, then run:
 
 ```bash
-dotnet build src/FramePlayer.Mac/FramePlayer.Mac.csproj -c Release
-dotnet test tests/FramePlayer.Mac.Tests/FramePlayer.Mac.Tests.csproj -c Release --filter "Category!=ReleaseCandidate"
+dotnet build src/FramePlayer.Avalonia/FramePlayer.Avalonia.csproj -c Release
+dotnet test tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj -c Release
 FRAMEPLAYER_MAC_CORPUS="Video Test Files" script/validate_macos_release_candidate.sh --corpus "Video Test Files"
 ```
 
 Package a local signed release candidate:
 
 ```bash
-script/package_macos_release.sh --sign
+PACKAGE_VERSION=unified-preview-0.2.0 script/package_unified_macos_release.sh --sign
 codesign --verify --deep --verbose=2 "dist/Frame Player.app"
 ```
 
 Developer ID notarization is documented in [docs/macos-preview-release.md](https://github.com/jfleezy23/frame-player/blob/main/docs/macos-preview-release.md).
 
-## Windows Avalonia Preview
-
-The Windows Avalonia Preview builds from `src\FramePlayer.Desktop` and uses separate preview tests.
-
-```powershell
-dotnet restore src\FramePlayer.Desktop\FramePlayer.Desktop.csproj
-dotnet build src\FramePlayer.Desktop\FramePlayer.Desktop.csproj -c Release
-dotnet test tests\FramePlayer.Desktop.Tests\FramePlayer.Desktop.Tests.csproj -c Release
-```
-
-For a local tester ZIP, publish the Desktop preview and compress the published folder:
-
-```powershell
-dotnet publish src\FramePlayer.Desktop\FramePlayer.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o artifacts\avalonia-windows-preview\publish
-Compress-Archive -Path artifacts\avalonia-windows-preview\publish\* -DestinationPath artifacts\avalonia-windows-preview\FramePlayer-Desktop-Windows-x64-local.zip -Force
-```
+The old `src\FramePlayer.Mac` and `src\FramePlayer.Desktop` split-preview projects are superseded by the unified preview project.
 
 ## Runtime Notes
 

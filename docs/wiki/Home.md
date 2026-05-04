@@ -7,19 +7,18 @@ Frame Player is a frame-first video review tool for people who need to know exac
 | Release track | Platform | Current release | Download |
 | --- | --- | --- | --- |
 | Windows stable | Windows 10 or later | `v1.8.4` | [Frame Player v1.8.4](https://github.com/jfleezy23/frame-player/releases/tag/v1.8.4) |
-| macOS Preview | Apple Silicon, macOS 13 or later | `0.1.1` | [Frame Player macOS Preview 0.1.1](https://github.com/jfleezy23/frame-player/releases/tag/macos-preview-0.1.1) |
-| Windows Avalonia Preview | Windows 10 or later, x64 | `0.1.0` | [Unified v1.8.4 download page](https://github.com/jfleezy23/frame-player/releases/tag/v1.8.4) |
+| Unified Avalonia Preview | Windows x64 and Apple Silicon macOS | `0.2.0` | [Frame Player Unified Preview 0.2.0](https://github.com/jfleezy23/frame-player/releases/tag/unified-preview-0.2.0) |
 
-The Windows release remains the stable WPF app. The macOS Preview and Windows Avalonia Preview are controlled Avalonia preview builds for cross-platform validation.
+The Windows release remains the stable WPF app. Unified Avalonia Preview `0.2.0` is the current synchronized Windows/macOS preview. The earlier split preview releases are superseded and kept only for historical validation.
 
 ## Screenshot Gallery
 
 These are real app captures. The current checked-in shots show empty-state layouts because clean loaded-video Windows screenshots were not available in this docs pass.
 
-| Windows stable | macOS Preview |
+| Windows stable | Avalonia macOS preview |
 | --- | --- |
-| ![Windows stable single-pane empty state](../assets/screenshots/windows-main.png) | ![macOS Preview single-pane empty state](../assets/screenshots/macos-main.png) |
-| ![Windows stable two-pane compare empty state](../assets/screenshots/windows-compare.png) | ![macOS Preview two-pane compare empty state](../assets/screenshots/macos-compare.png) |
+| ![Windows stable single-pane empty state](../assets/screenshots/windows-main.png) | ![Avalonia macOS preview single-pane empty state](../assets/screenshots/macos-main.png) |
+| ![Windows stable two-pane compare empty state](../assets/screenshots/windows-compare.png) | ![Avalonia macOS preview two-pane compare empty state](../assets/screenshots/macos-compare.png) |
 
 ## What To Read Next
 

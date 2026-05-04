@@ -1,6 +1,6 @@
 # Keyboard Shortcuts
 
-| Action | Windows stable | macOS Preview | Windows Avalonia Preview |
+| Action | Windows stable | Unified Preview on macOS | Unified Preview on Windows |
 | --- | --- | --- | --- |
 | New window | `Ctrl+N` | `Cmd+N` | `Ctrl+N` |
 | Open video | `Ctrl+O` | `Cmd+O` | `Ctrl+O` |

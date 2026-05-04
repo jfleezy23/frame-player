@@ -1,48 +1,34 @@
 # Validation
 
-## macOS Preview 0.1.1
+## Unified Avalonia Preview 0.2.0
 
-The Apple Silicon macOS Preview was validated as a controlled preview release refresh on 2026-05-04.
-
-Recorded validation evidence:
-
-- `dotnet build src/FramePlayer.Mac/FramePlayer.Mac.csproj -c Release`: passed.
-- `dotnet test tests/FramePlayer.Mac.Tests/FramePlayer.Mac.Tests.csproj -c Release --filter "Category!=ReleaseCandidate"`: passed, 50 tests.
-- `FRAMEPLAYER_MAC_CORPUS="Video Test Files" script/validate_macos_release_candidate.sh --corpus "Video Test Files"`: passed, 55 tests against 10 supported corpus media files.
-- GitHub PR #62 checks for the macOS preview refresh passed, including Windows CI, macOS Avalonia CI, Dependency Review, CodeQL, and SonarCloud.
-- The published ZIP was Developer ID signed, notarized, stapled, and accepted by Gatekeeper.
-
-Published macOS Preview details:
-
-- Artifact: `FramePlayer-macOS-arm64-macos-preview-0.1.1.zip`
-- SHA256: `7c9ee402c7a7b2375a00567cd0bff1bf7fc8629deceb5d6837cc82d0b6ac0f62`
-- Notarization submission: `4e9a64b3-4004-4d38-aaaa-73a0ce69c5eb`
-
-## Windows Avalonia Preview 0.1.0
-
-The Windows Avalonia Preview was validated as a controlled preview release on 2026-05-04.
+Unified Avalonia Preview `0.2.0` was validated as the first synchronized Windows/macOS preview on 2026-05-04.
 
 Recorded validation evidence:
 
-- `dotnet build src\FramePlayer.Desktop\FramePlayer.Desktop.csproj -c Release`: passed.
-- `dotnet test tests\FramePlayer.Desktop.Tests\FramePlayer.Desktop.Tests.csproj -c Release`: passed, 30 tests.
-- `dotnet test tests\FramePlayer.Core.Tests\FramePlayer.Core.Tests.csproj -c Release`: passed, 37 tests.
-- `dotnet build FramePlayer.csproj -c Release -p:Platform=x64`: passed, guarding the stable WPF build.
-- Self-contained Windows x64 publish of `src\FramePlayer.Desktop`: passed.
-- Published ZIP contents were verified for `FramePlayer.Desktop.exe`, app icon, playback DLLs, export runtime DLLs, runtime manifests, license, and third-party notices.
-- Packaged launch smoke from the published folder: passed.
-- GitHub PR checks for PR #60 passed, including Windows CI, macOS Avalonia CI, Dependency Review, CodeQL, and SonarCloud.
-- `@codex review`: no major issues on the final requested review pass.
+- Release target: `585a277f4c6c939562d1fdd10de2c31370b4ebb6`.
+- GitHub checks on the release target passed: Windows CI, macOS Avalonia, SonarQube, CodeQL, and dependency submission.
+- PR #65 and PR #66 received `@codex review`; no major issues were reported after the final changes.
+- Windows packaged smoke was GO, including H.264/AAC playback, seek-after-playback, and nonzero endpoint audio evidence.
+- Windows ZIP was rebuilt from the release target with pinned FFmpeg runtime archives restored from the checked-in manifests and validated by SHA256 before packaging.
+- macOS ZIP was Developer ID signed, notarized, stapled, extracted, and accepted by Gatekeeper.
 
-Published Windows Avalonia Preview details:
+Published Unified Preview details:
 
-- Artifact: `FramePlayer-Desktop-Windows-x64-avalonia-windows-preview-0.1.0.zip`
-- SHA256: `7e3f19e2f16dd752e6424d6679405f63a490b78a822c729e3280e1f50c87469b`
-- Known limitation: audible Windows audio output is not implemented in the shared `src/FramePlayer.Engine.FFmpeg` path yet, so Play/Play-Pause is gated for media with audio streams in this preview.
+- Release: [Frame Player Unified Preview 0.2.0](https://github.com/jfleezy23/frame-player/releases/tag/unified-preview-0.2.0)
+- Windows artifact: `FramePlayer-Windows-x64-unified-preview-0.2.0.zip`
+- Windows SHA256: `f417f3535627da5ea857cc8e9aec23bcebb83ac56a40bc26edeec1fbc5fdce79`
+- macOS artifact: `FramePlayer-macOS-arm64-unified-preview-0.2.0.zip`
+- macOS SHA256: `9dd253ffd1e18bceb7432230100bfbc5d7cd7cb4975c5458f1357317d72afb87`
+- Apple notarization submission: `cd7a2d35-df28-4170-bd31-3ca49e4acebd`
+
+## Superseded Split Previews
+
+The split macOS Preview `0.1.1` and Windows Avalonia Preview `0.1.0` releases are superseded by Unified Avalonia Preview `0.2.0`. They remain available only as historical validation and provenance records.
 
 ## Windows Stable
 
-Windows stable remains `v1.8.4`. Its WPF source path, build path, tests, runtime bootstrap, and release process are intentionally separate from the macOS Preview and Windows Avalonia Preview.
+Windows stable remains `v1.8.4`. Its WPF source path, build path, tests, runtime bootstrap, and release process are intentionally separate from Unified Avalonia Preview.
 
 ## Screenshot Validation
 
