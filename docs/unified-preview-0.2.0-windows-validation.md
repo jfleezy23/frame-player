@@ -6,11 +6,11 @@ This note records the Windows-side validation evidence for PR #65 so the macOS d
 
 - PR: https://github.com/jfleezy23/frame-player/pull/65
 - Branch: `codex/unified-avalonia-preview-0.2.0`
-- Latest product head checked: `e3e36d73ced245aa3c6a8c03d04360f85181247b`
-- Last fully passing Windows validation head: `41d60c703872737313ba949da81d56b8850f8e76`
-- Earlier heads observed during validation: `3e9b45bd9b62ccc35e5e1ea570d15132fe2aa489`, `754dfa82df8fb1cbfcfc0581e5e4a7184a20daf0`
+- Latest Windows packaged smoke head: `7e1128bb3d95fb24d3fc759d48c913db4119f96a`
+- Playback fix head: `16e9f6e3ed09fe93b2ca8268717fc9744b787ae3`
+- Earlier failing head: `8d99a0b55f86c2717542813cc5dcaf7b56283fc2`
 - Date: 2026-05-04
-- Decision: NO-GO for the latest PR head until the playback-after-seek regression is addressed and revalidated. The Windows package built from `41d60c703872737313ba949da81d56b8850f8e76` had a passing smoke, but that result is superseded by the later audio-path commit `e3e36d73ced245aa3c6a8c03d04360f85181247b`.
+- Decision: GO for the Windows packaged smoke. The playback-after-seek blocker reproduced on `8d99a0b55f86c2717542813cc5dcaf7b56283fc2` and was revalidated as fixed in the package built from `7e1128bb3d95fb24d3fc759d48c913db4119f96a`. Final release artifacts should still be rebuilt from the merged release head.
 
 No product code changes were made by this Windows validation pass.
 
@@ -24,7 +24,7 @@ No product code changes were made by this Windows validation pass.
 
 ## CI
 
-GitHub PR checks were green for `41d60c703872737313ba949da81d56b8850f8e76`. After the branch advanced to `e3e36d73ced245aa3c6a8c03d04360f85181247b`, a recheck on 2026-05-04 showed `submit-nuget` still pending while the listed analysis/build checks had passed.
+GitHub PR checks were green for `7e1128bb3d95fb24d3fc759d48c913db4119f96a` after the Windows package smoke completed. Release acceptance still requires the final PR head to pass CI, SonarCloud, dependency review, CodeQL, and Codex review before merging and rebuilding final artifacts.
 
 - Windows CI: pass
 - macOS Avalonia: pass
@@ -58,7 +58,7 @@ C:\Projects\RPCS3\Video Player\artifacts\unified-preview-0.2.0\FramePlayer-Windo
 SHA256:
 
 ```text
-4229bdf6ea2df7506f13697e0031be18b24a0e7b69fe43254c8d914fbce8652f
+15a76d42933b03a374fbbc388026968964f529cc0c1b7df1b105b2ebd187a9f3
 ```
 
 The ZIP was extracted to:
@@ -91,11 +91,14 @@ This file was made by stream-looping the known-good local H.264/AAC MP4 without 
 - Video: H.264, 1920x1080, 24000/1001 fps, 20.250833 seconds
 - Audio: AAC, 48000 Hz, 2 channels, 20.251000 seconds
 
-Latest-head smoke result:
+Latest Windows packaged smoke result:
 
-- Playback after seek: fail on `e3e36d73ced245aa3c6a8c03d04360f85181247b`. While playback was active, clicking the timeline slider around 35% moved the position to `00:00:06.986` / `Frame 168`, changed state to `Paused`, and remained paused for at least 3 seconds.
+- Launch/open/play from clean extraction: pass on `7e1128bb3d95fb24d3fc759d48c913db4119f96a`.
+- Audio before seek: pass; Windows default render endpoint peak reached `0.416`.
+- Playback after seek: pass; the timeline seek landed at `00:00:16.538`, stayed `Playing` after 300 ms and 1300 ms, and post-seek audio peak reached `0.4222`.
+- Current-head rebuilt package also launched, opened media, and played from clean extraction with nonzero post-click audio peak `0.4375`.
 
-Previous fully passing smoke results from `41d60c703872737313ba949da81d56b8850f8e76`:
+Earlier fully passing smoke results from `41d60c703872737313ba949da81d56b8850f8e76`:
 
 - Launch: pass.
 - Open media through the Windows file picker: pass.
@@ -114,9 +117,10 @@ Previous fully passing smoke results from `41d60c703872737313ba949da81d56b8850f8
 Audio evidence:
 
 - Windows default render endpoint baseline peak: `0`
-- Peak during playback: `0.4378`
-- Peak after seek while playback continued: `0.4214`
-- This confirms Windows produced a nonzero audible output signal through the default render endpoint during AAC playback and after seek on `41d60c703872737313ba949da81d56b8850f8e76`. No subjective human-ear listening note was captured separately.
+- Peak during playback: `0.416`
+- Peak after seek while playback continued: `0.4222`
+- Current-head rebuilt package post-click peak: `0.4375`
+- This confirms Windows produced a nonzero audible output signal through the default render endpoint during AAC playback and after seek on the accepted Windows package smoke. No subjective human-ear listening note was captured separately.
 
 ## Local Commands
 
@@ -160,15 +164,15 @@ dotnet test .\tests\FramePlayer.Desktop.Tests\FramePlayer.Desktop.Tests.csproj -
 Test results:
 
 - `FramePlayer.Core.Tests`: passed, 37/37.
-- `FramePlayer.Avalonia.Tests`: passed, 26/26.
+- `FramePlayer.Avalonia.Tests`: passed, 27/27 on the full local matrix head; Windows audio contract quick rerun passed, 4/4, after the later UI contract addition.
 - `FramePlayer.Desktop.Tests`: passed, 32/32.
-- `FramePlayer.Avalonia.Tests --filter WindowsAudioOutputContractTests`: passed, 3/3.
+- `FramePlayer.Avalonia.Tests --filter WindowsAudioOutputContractTests`: passed, 4/4.
 - `FramePlayer.Desktop.Tests --filter WindowsAudioOutputContractTests`: passed, 3/3.
 
 ## Notes for Acceptance
 
-- Do not accept the current Windows package from `e3e36d73ced245aa3c6a8c03d04360f85181247b` until the playback-after-seek failure is fixed or explained and revalidated.
-- The previously passing Windows artifact was built from `41d60c703872737313ba949da81d56b8850f8e76`; do not treat that as acceptance for the later audio-path commit.
+- The Windows playback-after-seek blocker is fixed and revalidated in the package built from `7e1128bb3d95fb24d3fc759d48c913db4119f96a`.
+- Later commits after that package smoke did not change the Windows playback path, but the final public ZIP must still be rebuilt from the merged release head.
 - The PR branch advanced during validation, so release acceptance must use the head SHA and SHA256 from the final revalidation pass.
 - The validation pass did not merge PR #65 and did not publish a release.
 - If release acceptance requires subjective listening through speakers or headphones, have a human tester perform that final listening check. The automated Windows output-meter evidence confirms the app produced nonzero audio through the default render endpoint.
