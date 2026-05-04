@@ -126,7 +126,7 @@ fi
 rm -f "$ZIP_PATH"
 (
   cd "$DIST_DIR"
-  COPYFILE_DISABLE=1 /usr/bin/ditto -c -k --norsrc --keepParent "Frame Player.app" "$ZIP_PATH"
+  /usr/bin/ditto -c -k --keepParent "Frame Player.app" "$ZIP_PATH"
 )
 
 shasum -a 256 "$ZIP_PATH" > "$ZIP_PATH.sha256"
