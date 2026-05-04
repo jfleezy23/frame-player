@@ -47,8 +47,54 @@ jobs:
 
       - name: Restore and build
         shell: pwsh
-        run: dotnet build .\FramePlayer.csproj -c Release -p:Platform=x64
+        run: |
+          dotnet build .\FramePlayer.csproj -c Release -p:Platform=x64
+          dotnet build .\src\FramePlayer.Avalonia\FramePlayer.Avalonia.csproj -c Release
 
       - name: Run cold-path unit tests
         shell: pwsh
-        run: dotnet test .\tests\FramePlayer.Core.Tests\FramePlayer.Core.Tests.csproj -c Release
+        run: |
+          dotnet test .\tests\FramePlayer.Core.Tests\FramePlayer.Core.Tests.csproj -c Release
+          dotnet test .\tests\FramePlayer.Avalonia.Tests\FramePlayer.Avalonia.Tests.csproj -c Release
+
+      - name: Package unified Windows preview
+        shell: pwsh
+        run: |
+          .\scripts\Package-UnifiedWindowsPreview.ps1
+
+          $artifactRoot = "artifacts\unified-preview-0.2.0"
+          $zipPath = Join-Path $artifactRoot "FramePlayer-Windows-x64-unified-preview-0.2.0.zip"
+          $shaPath = "$zipPath.sha256"
+          if (-not (Test-Path $zipPath)) { throw "Missing unified Windows ZIP: $zipPath" }
+          if (-not (Test-Path $shaPath)) { throw "Missing unified Windows SHA256 sidecar: $shaPath" }
+
+          $expectedHash = ((Get-Content $shaPath -Raw).Trim() -split '\s+')[0]
+          $actualHash = (Get-FileHash -Algorithm SHA256 $zipPath).Hash.ToLowerInvariant()
+          if ($actualHash -ne $expectedHash) {
+              throw "Unified Windows ZIP hash mismatch. Expected $expectedHash but got $actualHash."
+          }
+
+          $extractDir = Join-Path $env:RUNNER_TEMP "unified-windows-package"
+          if (Test-Path $extractDir) { Remove-Item -Recurse -Force $extractDir }
+          New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+          Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+
+          $requiredFiles = @(
+              "FramePlayer.Avalonia.exe",
+              "avcodec-62.dll",
+              "avformat-62.dll",
+              "avutil-60.dll",
+              "swresample-6.dll",
+              "swscale-9.dll",
+              "ffmpeg-export\avfilter-11.dll",
+              "Runtime\runtime-manifest.json",
+              "Runtime\export-runtime-manifest.json",
+              "LICENSE",
+              "THIRD_PARTY_NOTICES.md"
+          )
+          foreach ($relativePath in $requiredFiles) {
+              $fullPath = Join-Path $extractDir $relativePath
+              if (-not (Test-Path $fullPath)) {
+                  throw "Extracted unified Windows ZIP is missing: $relativePath"
+              }
+          }

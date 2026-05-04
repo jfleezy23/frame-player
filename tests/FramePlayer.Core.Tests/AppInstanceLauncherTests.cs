@@ -10,7 +10,7 @@ namespace FramePlayer.Core.Tests
         [Fact]
         public void BuildNewInstanceStartInfo_UsesExecutableWithoutStartupArguments()
         {
-            var executablePath = GetWindowsPowerShellPath();
+            var executablePath = GetLauncherExecutablePath();
             var baseDirectory = Path.GetDirectoryName(executablePath);
             Assert.False(string.IsNullOrWhiteSpace(baseDirectory));
             var resolvedBaseDirectory = baseDirectory ?? throw new InvalidOperationException("PowerShell base directory was unavailable.");
@@ -35,8 +35,15 @@ namespace FramePlayer.Core.Tests
             Assert.Equal(Path.GetFullPath(missingPath), exception.FileName);
         }
 
-        private static string GetWindowsPowerShellPath()
+        private static string GetLauncherExecutablePath()
         {
+            if (!OperatingSystem.IsWindows())
+            {
+                const string shellPath = "/bin/sh";
+                Assert.True(File.Exists(shellPath), "Expected /bin/sh to be available for launcher tests.");
+                return shellPath;
+            }
+
             var systemRoot = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
             var executablePath = Path.Combine(
                 systemRoot,

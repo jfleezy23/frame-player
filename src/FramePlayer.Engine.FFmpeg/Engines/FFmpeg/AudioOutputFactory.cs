@@ -12,6 +12,11 @@ namespace FramePlayer.Engines.FFmpeg
                 return new MacAudioQueueOutput(sampleRate, channelCount, bitsPerSample);
             }
 
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                return new WinMmAudioOutput(sampleRate, channelCount, bitsPerSample);
+            }
+
             return new ManagedAudioClockOutput(sampleRate, channelCount, bitsPerSample);
         }
     }

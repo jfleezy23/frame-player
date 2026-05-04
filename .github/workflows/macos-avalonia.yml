@@ -30,12 +30,18 @@ jobs:
         run: |
           dotnet restore src/FramePlayer.Mac/FramePlayer.Mac.csproj
           dotnet restore tests/FramePlayer.Mac.Tests/FramePlayer.Mac.Tests.csproj
+          dotnet restore src/FramePlayer.Avalonia/FramePlayer.Avalonia.csproj
+          dotnet restore tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj
 
       - name: Build
-        run: dotnet build src/FramePlayer.Mac/FramePlayer.Mac.csproj -c Release --no-restore
+        run: |
+          dotnet build src/FramePlayer.Mac/FramePlayer.Mac.csproj -c Release --no-restore
+          dotnet build src/FramePlayer.Avalonia/FramePlayer.Avalonia.csproj -c Release --no-restore
 
       - name: Test
-        run: dotnet test tests/FramePlayer.Mac.Tests/FramePlayer.Mac.Tests.csproj -c Release --no-restore --filter "Category!=ReleaseCandidate"
+        run: |
+          dotnet test tests/FramePlayer.Mac.Tests/FramePlayer.Mac.Tests.csproj -c Release --no-restore --filter "Category!=ReleaseCandidate"
+          dotnet test tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj -c Release --no-restore
 
       - name: Bundle smoke test
         run: |
@@ -43,3 +49,54 @@ jobs:
           test -x "dist/Frame Player.app/Contents/MacOS/FramePlayer.Mac"
           /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "dist/Frame Player.app/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "dist/Frame Player.app/Contents/Info.plist"
+          PACKAGE_VERSION=unified-preview-0.2.0 script/package_unified_macos_release.sh --unsigned
+          zip_path="artifacts/unified-preview-0.2.0/FramePlayer-macOS-arm64-unified-preview-0.2.0.zip"
+          sha_path="$zip_path.sha256"
+          test -f "$zip_path"
+          test -f "$sha_path"
+          shasum -a 256 -c "$sha_path"
+          extract_dir="$RUNNER_TEMP/unified-macos-package"
+          rm -rf "$extract_dir"
+          mkdir -p "$extract_dir"
+          /usr/bin/ditto -x -k "$zip_path" "$extract_dir"
+          app_path="$(find "$extract_dir" -maxdepth 2 -type d -name "Frame Player.app" -print -quit)"
+          if [[ -z "$app_path" ]]; then
+            find "$extract_dir" -maxdepth 4 -print
+            echo "Extracted package did not contain Frame Player.app" >&2
+            exit 1
+          fi
+          executable_path="$app_path/Contents/MacOS/FramePlayer.Avalonia"
+          if [[ ! -f "$executable_path" ]]; then
+            find "$app_path/Contents/MacOS" -maxdepth 3 -print
+            echo "Extracted package is missing FramePlayer.Avalonia" >&2
+            exit 1
+          fi
+          chmod +x "$executable_path"
+          if [[ ! -x "$executable_path" ]]; then
+            ls -l "$executable_path"
+            echo "Extracted FramePlayer.Avalonia is not executable" >&2
+            exit 1
+          fi
+
+          for required_path in \
+            "$app_path/Contents/MacOS/Runtime/runtime-manifest.json" \
+            "$app_path/Contents/MacOS/Runtime/export-runtime-manifest.json" \
+            "$app_path/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/SHA256SUMS.txt" \
+            "$app_path/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/build-provenance.txt"; do
+            if [[ ! -f "$required_path" ]]; then
+              find "$app_path/Contents/MacOS/Runtime" -maxdepth 5 -print
+              echo "Extracted package is missing required runtime file: $required_path" >&2
+              exit 1
+            fi
+          done
+
+          bundle_version="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app_path/Contents/Info.plist")"
+          bundle_id="$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$app_path/Contents/Info.plist")"
+          if [[ "$bundle_version" != "0.2.0" ]]; then
+            echo "Expected CFBundleShortVersionString 0.2.0 but found $bundle_version" >&2
+            exit 1
+          fi
+          if [[ "$bundle_id" != "com.frameplayer.unified-preview" ]]; then
+            echo "Expected CFBundleIdentifier com.frameplayer.unified-preview but found $bundle_id" >&2
+            exit 1
+          fi

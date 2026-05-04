@@ -1,9 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0-windows</TargetFramework>
-    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <TargetFramework Condition="'$(OS)' == 'Windows_NT'">net10.0-windows</TargetFramework>
+    <TargetFramework Condition="'$(OS)' != 'Windows_NT'">net10.0</TargetFramework>
+    <EnableWindowsTargeting Condition="'$(OS)' == 'Windows_NT'">true</EnableWindowsTargeting>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <NoWarn Condition="'$(OS)' != 'Windows_NT'">$(NoWarn);CS8600;CS8601;CS8603;CS8604;CS8618;CS8625</NoWarn>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
@@ -21,8 +24,37 @@
     </PackageReference>
   </ItemGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
     <ProjectReference Include="..\..\FramePlayer.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(OS)' != 'Windows_NT'">
+    <ProjectReference Include="..\..\src\FramePlayer.Core\FramePlayer.Core.csproj" />
+    <ProjectReference Include="..\..\src\FramePlayer.Engine.FFmpeg\FramePlayer.Engine.FFmpeg.csproj" />
+    <Compile Include="..\..\Diagnostics\ExportHostCli.cs" Link="Diagnostics\ExportHostCli.cs" />
+    <Compile Include="..\..\Diagnostics\ReviewEngineComparisonRunner.cs" Link="Diagnostics\ReviewEngineComparisonRunner.cs" />
+    <Compile Include="..\..\Diagnostics\ReviewEngineManualTestCli.cs" Link="Diagnostics\ReviewEngineManualTestCli.cs" />
+    <Compile Include="..\..\Diagnostics\ReviewEngineManualTestRunner.cs" Link="Diagnostics\ReviewEngineManualTestRunner.cs" />
+    <Compile Include="..\..\src\FramePlayer.Core\Core\Models\ExportHostRequest.cs" Link="Core\Models\ExportHostRequest.cs" />
+    <Compile Include="..\..\src\FramePlayer.Core\Core\Models\ExportHostResponse.cs" Link="Core\Models\ExportHostResponse.cs" />
+    <Compile Include="..\..\Services\AppInstanceLauncher.cs" Link="Services\AppInstanceLauncher.cs" />
+    <Compile Include="..\..\Services\AudioInsertionService.cs" Link="Services\AudioInsertionService.cs" />
+    <Compile Include="..\..\Services\ClipExportService.cs" Link="Services\ClipExportService.cs" />
+    <Compile Include="..\..\Services\CompareSideBySideExportService.cs" Link="Services\CompareSideBySideExportService.cs" />
+    <Compile Include="..\..\Services\ExportHostClient.cs" Link="Services\ExportHostClient.cs" />
+    <Compile Include="..\..\Services\ExportRuntimeManifestService.cs" Link="Services\ExportRuntimeManifestService.cs" />
+    <Compile Include="..\..\Services\ExportToolsManifestService.cs" Link="Services\ExportToolsManifestService.cs" />
+    <Compile Include="..\..\Services\FfmpegCliTooling.cs" Link="Services\FfmpegCliTooling.cs" />
+    <Compile Include="..\..\Services\FfmpegExportTiming.cs" Link="Services\FfmpegExportTiming.cs" />
+    <Compile Include="..\..\Services\MediaProbeService.cs" Link="Services\MediaProbeService.cs" />
+    <Compile Include="..\..\Services\NativeAudioInsertionService.cs" Link="Services\NativeAudioInsertionService.cs" />
+    <Compile Include="..\..\Services\NativeClipExportService.cs" Link="Services\NativeClipExportService.cs" />
+    <Compile Include="..\..\Services\NativeCompareSideBySideExportService.cs" Link="Services\NativeCompareSideBySideExportService.cs" />
+    <Compile Include="..\..\Services\NativeExportSupport.cs" Link="Services\NativeExportSupport.cs" />
+    <Compile Include="..\..\Services\RuntimeManifestService.cs" Link="Services\RuntimeManifestService.cs" />
+    <EmbeddedResource Include="..\..\Runtime\runtime-manifest.json" LogicalName="FramePlayer.Runtime.runtime-manifest.json" />
+    <EmbeddedResource Include="..\..\Runtime\export-runtime-manifest.json" LogicalName="FramePlayer.Runtime.export-runtime-manifest.json" />
+    <EmbeddedResource Include="..\..\Runtime\export-tools-manifest.json" LogicalName="FramePlayer.Runtime.export-tools-manifest.json" />
   </ItemGroup>
 
   <Target Name="RemoveStaleExportToolsOutput"

@@ -21,15 +21,15 @@ using FramePlayer.Core.Coordination;
 using FramePlayer.Core.Events;
 using FramePlayer.Core.Models;
 using FramePlayer.Engines.FFmpeg;
-using FramePlayer.Desktop.Services;
+using FramePlayer.Avalonia.Services;
 using FramePlayer.Services;
 
-namespace FramePlayer.Desktop.Views
+namespace FramePlayer.Avalonia.Views
 {
     public sealed partial class MainWindow : Window
     {
         private readonly VideoReviewEngineFactory _engineFactory;
-        private readonly DesktopRecentFilesService _recentFilesService;
+        private readonly UnifiedRecentFilesService _recentFilesService;
         private readonly FfmpegReviewEngineOptionsProvider _optionsProvider;
         private readonly IVideoReviewEngine _primaryEngine;
         private IVideoReviewEngine? _compareEngine;
@@ -53,6 +53,7 @@ namespace FramePlayer.Desktop.Views
         private const string PaneCompareLabel = "Compare";
         private const string Mp4Pattern = "*.mp4";
         private const string Mp4Extension = ".mp4";
+        private const string CompareExportSecondaryTextColor = "#B7BDC6";
         private static readonly string[] VideoFilePatterns = new[] { "*.avi", "*.m4v", Mp4Pattern, "*.mkv", "*.wmv", "*.mov" };
         private NativeMenuItem? _nativeRecentFilesMenuItem;
         private NativeMenuItem? _nativePlayPauseMenuItem;
@@ -117,9 +118,10 @@ namespace FramePlayer.Desktop.Views
         public MainWindow()
         {
             InitializeComponent();
+            ConfigurePlatformChrome();
             TryApplyWindowIcon();
 
-            if (string.Equals(Environment.GetEnvironmentVariable("FRAMEPLAYER_DESKTOP_SKIP_RUNTIME_BOOTSTRAP"), "1", StringComparison.Ordinal))
+            if (string.Equals(Environment.GetEnvironmentVariable("FRAMEPLAYER_AVALONIA_SKIP_RUNTIME_BOOTSTRAP"), "1", StringComparison.Ordinal))
             {
                 CacheStatusTextBlock.Text = "Cache: idle";
             }
@@ -137,7 +139,7 @@ namespace FramePlayer.Desktop.Views
                 }
             }
 
-            _recentFilesService = new DesktopRecentFilesService();
+            _recentFilesService = new UnifiedRecentFilesService();
             _optionsProvider = new FfmpegReviewEngineOptionsProvider(new AppPreferencesService());
             _engineFactory = new VideoReviewEngineFactory(_optionsProvider);
             _primaryEngine = _engineFactory.Create(PanePrimaryKey);
@@ -161,6 +163,24 @@ namespace FramePlayer.Desktop.Views
             LinkPaneZoomCheckBox.IsCheckedChanged += LinkPaneZoomCheckBox_IsCheckedChanged;
         }
 
+        private void ConfigurePlatformChrome()
+        {
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            {
+                WindowDecorations = WindowDecorations.None;
+                MenuPanel.IsVisible = true;
+                return;
+            }
+
+            WindowDecorations = WindowDecorations.Full;
+            MenuPanel.IsVisible = false;
+            if (RootGrid.RowDefinitions.Count > 0)
+            {
+                RootGrid.RowDefinitions[0].Height = new GridLength(0);
+            }
+        }
+
+        [SuppressMessage("Major Code Smell", "S1075:URIs should not be hardcoded", Justification = "Avalonia embedded assets are addressed by avares resource URI.")]
         private void TryApplyWindowIcon()
         {
             var outputIconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "FramePlayer.ico");
@@ -170,7 +190,7 @@ namespace FramePlayer.Desktop.Views
                 return;
             }
 
-            var iconUri = new Uri("avares://FramePlayer.Desktop/Assets/FramePlayer.ico");
+            var iconUri = new Uri("avares://FramePlayer.Avalonia/Assets/FramePlayer.ico");
             if (AssetLoader.Exists(iconUri))
             {
                 using var iconStream = AssetLoader.Open(iconUri);
@@ -609,39 +629,51 @@ namespace FramePlayer.Desktop.Views
 
         private async void PlayPauseButton_Click(object? sender, RoutedEventArgs e)
         {
+            await TogglePlaybackAsync();
+        }
+
+        private async Task TogglePlaybackAsync()
+        {
             if (IsAllPaneTransportEnabled)
             {
-                if (_primaryEngine.IsPlaying || (_compareEngine != null && _compareEngine.IsPlaying))
-                {
-                    await PauseAllPanePlaybackAsync();
-                }
-                else
-                {
-                    if (!CanStartAllPanePlayback())
-                    {
-                        return;
-                    }
-
-                    await StartAllPanePlaybackAsync();
-                }
+                await ToggleAllPanePlaybackAsync();
+                return;
             }
-            else
+
+            await ToggleFocusedPanePlaybackAsync();
+        }
+
+        private async Task ToggleAllPanePlaybackAsync()
+        {
+            if (_primaryEngine.IsPlaying || (_compareEngine != null && _compareEngine.IsPlaying))
             {
-                var engine = GetEngine(GetFocusedPane());
-                if (engine.IsPlaying)
-                {
-                    await engine.PauseAsync();
-                }
-                else
-                {
-                    if (!CanStartPlayback(engine))
-                    {
-                        return;
-                    }
-
-                    await engine.PlayAsync();
-                }
+                await PauseAllPanePlaybackAsync();
+                return;
             }
+
+            if (!CanStartAllPanePlayback())
+            {
+                return;
+            }
+
+            await StartAllPanePlaybackAsync();
+        }
+
+        private async Task ToggleFocusedPanePlaybackAsync()
+        {
+            var engine = GetEngine(GetFocusedPane());
+            if (engine.IsPlaying)
+            {
+                await engine.PauseAsync();
+                return;
+            }
+
+            if (!CanStartPlayback(engine))
+            {
+                return;
+            }
+
+            await engine.PlayAsync();
         }
 
         private async void PlayButton_Click(object? sender, RoutedEventArgs e)
@@ -843,7 +875,7 @@ namespace FramePlayer.Desktop.Views
                 target = TimeSpan.Zero;
             }
 
-            await engine.SeekToTimeAsync(target);
+            await SeekToTimePreservingPlaybackAsync(engine, target);
         }
 
         private Pane ResolvePaneFromSender(object? sender)
@@ -1159,7 +1191,7 @@ namespace FramePlayer.Desktop.Views
         private async Task CommitSliderSeekAsync(string interactionName, TimeSpan target)
         {
             _ = interactionName;
-            await _primaryEngine.SeekToTimeAsync(target);
+            await SeekToTimePreservingPlaybackAsync(_primaryEngine, target);
         }
 
         private async void PositionSlider_ValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
@@ -1169,7 +1201,7 @@ namespace FramePlayer.Desktop.Views
                 return;
             }
 
-            await _primaryEngine.SeekToTimeAsync(TimeSpan.FromSeconds(PositionSlider.Value));
+            await SeekToTimePreservingPlaybackAsync(_primaryEngine, TimeSpan.FromSeconds(PositionSlider.Value));
         }
 
         private async void PanePositionSlider_ValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
@@ -1182,12 +1214,22 @@ namespace FramePlayer.Desktop.Views
             if (sender == PrimaryPanePositionSlider && _primaryEngine.IsMediaOpen)
             {
                 SelectPane(Pane.Primary);
-                await _primaryEngine.SeekToTimeAsync(TimeSpan.FromSeconds(PrimaryPanePositionSlider.Value));
+                await SeekToTimePreservingPlaybackAsync(_primaryEngine, TimeSpan.FromSeconds(PrimaryPanePositionSlider.Value));
             }
             else if (sender == ComparePanePositionSlider && _compareEngine != null && _compareEngine.IsMediaOpen)
             {
                 SelectPane(Pane.Compare);
-                await _compareEngine.SeekToTimeAsync(TimeSpan.FromSeconds(ComparePanePositionSlider.Value));
+                await SeekToTimePreservingPlaybackAsync(_compareEngine, TimeSpan.FromSeconds(ComparePanePositionSlider.Value));
+            }
+        }
+
+        private static async Task SeekToTimePreservingPlaybackAsync(IVideoReviewEngine engine, TimeSpan target)
+        {
+            var resumePlayback = engine.IsPlaying;
+            await engine.SeekToTimeAsync(target);
+            if (resumePlayback && CanStartPlayback(engine))
+            {
+                await engine.PlayAsync();
             }
         }
 
@@ -1930,94 +1972,132 @@ namespace FramePlayer.Desktop.Views
 
         private async void Window_KeyDown(object? sender, KeyEventArgs e)
         {
-            if (e.Key == Key.N && HasExactModifiers(e, CommandKeyModifier))
+            if (await TryHandleWindowCommandShortcutAsync(sender, e))
             {
-                LaunchNewWindow();
                 e.Handled = true;
+                return;
             }
-            else if (e.Key == Key.O && HasExactModifiers(e, CommandKeyModifier))
-            {
-                await OpenVideoAsync(GetFileOpenTargetPane());
-                e.Handled = true;
-            }
-            else if (e.Key == Key.W && HasExactModifiers(e, CommandKeyModifier))
-            {
-                await CloseVideosAsync();
-                e.Handled = true;
-            }
-            else if (e.Key == Key.E && HasExactModifiers(e, CommandShiftKeyModifier))
-            {
-                await ExportDiagnosticsAsync(null);
-                e.Handled = true;
-            }
-            else if (e.Key == Key.F1)
-            {
-                HelpMenuItem_Click(sender, e);
-                e.Handled = true;
-            }
-            else if (e.Key == Key.F11 || (e.Key == Key.Enter && HasExactModifiers(e, KeyModifiers.Alt)))
-            {
-                ToggleFullScreen();
-                e.Handled = true;
-            }
-            else if (e.Key == Key.Escape && WindowState == WindowState.FullScreen)
-            {
-                ToggleFullScreen();
-                e.Handled = true;
-            }
-            else if (IsTextEntryTarget(e))
+
+            if (IsTextEntryTarget(e))
             {
                 return;
             }
-            else if (e.Key == Key.Space)
-            {
-                PlayPauseButton_Click(sender, e);
-                e.Handled = true;
-            }
-            else if (e.Key == Key.Left)
-            {
-                await StepFrameAsync(-ResolveFrameStepCount(e.KeyModifiers));
-                e.Handled = true;
-            }
-            else if (e.Key == Key.Right)
-            {
-                await StepFrameAsync(ResolveFrameStepCount(e.KeyModifiers));
-                e.Handled = true;
-            }
-            else if (e.Key == Key.L)
-            {
-                SetLoopPlaybackEnabled(!_isLoopPlaybackEnabled);
-                e.Handled = true;
-            }
-            else if (e.Key == Key.OemOpenBrackets)
-            {
-                SetLoopMarker(LoopPlaybackMarkerEndpoint.In);
-                e.Handled = true;
-            }
-            else if (e.Key == Key.OemCloseBrackets)
-            {
-                SetLoopMarker(LoopPlaybackMarkerEndpoint.Out);
-                e.Handled = true;
-            }
-            else if (e.Key == Key.J || e.Key == Key.OemComma)
-            {
-                await SeekRelativeAsync(TimeSpan.FromSeconds(-5));
-                e.Handled = true;
-            }
-            else if (e.Key == Key.OemPeriod)
-            {
-                await SeekRelativeAsync(TimeSpan.FromSeconds(5));
-                e.Handled = true;
-            }
-            else if (TryHandleZoomShortcut(e))
+
+            if (await TryHandleReviewShortcutAsync(e))
             {
                 e.Handled = true;
             }
         }
 
+        private async Task<bool> TryHandleWindowCommandShortcutAsync(object? sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.N && HasExactModifiers(e, CommandKeyModifier))
+            {
+                LaunchNewWindow();
+                return true;
+            }
+
+            if (e.Key == Key.O && HasExactModifiers(e, CommandKeyModifier))
+            {
+                await OpenVideoAsync(GetFileOpenTargetPane());
+                return true;
+            }
+
+            if (e.Key == Key.W && HasExactModifiers(e, CommandKeyModifier))
+            {
+                await CloseVideosAsync();
+                return true;
+            }
+
+            if (e.Key == Key.E && HasExactModifiers(e, CommandShiftKeyModifier))
+            {
+                await ExportDiagnosticsAsync(null);
+                return true;
+            }
+
+            if (e.Key == Key.F1)
+            {
+                HelpMenuItem_Click(sender, e);
+                return true;
+            }
+
+            if (ShouldToggleFullScreen(e))
+            {
+                ToggleFullScreen();
+                return true;
+            }
+
+            return false;
+        }
+
+        private async Task<bool> TryHandleReviewShortcutAsync(KeyEventArgs e)
+        {
+            if (e.Key == Key.Space)
+            {
+                await TogglePlaybackAsync();
+                return true;
+            }
+
+            if (e.Key == Key.Left)
+            {
+                await StepFrameAsync(-ResolveFrameStepCount(e.KeyModifiers));
+                return true;
+            }
+
+            if (e.Key == Key.Right)
+            {
+                await StepFrameAsync(ResolveFrameStepCount(e.KeyModifiers));
+                return true;
+            }
+
+            if (e.Key == Key.L)
+            {
+                SetLoopPlaybackEnabled(!_isLoopPlaybackEnabled);
+                return true;
+            }
+
+            if (e.Key == Key.OemOpenBrackets)
+            {
+                SetLoopMarker(LoopPlaybackMarkerEndpoint.In);
+                return true;
+            }
+
+            if (e.Key == Key.OemCloseBrackets)
+            {
+                SetLoopMarker(LoopPlaybackMarkerEndpoint.Out);
+                return true;
+            }
+
+            if (e.Key == Key.J || e.Key == Key.OemComma)
+            {
+                await SeekRelativeAsync(TimeSpan.FromSeconds(-5));
+                return true;
+            }
+
+            if (e.Key == Key.OemPeriod)
+            {
+                await SeekRelativeAsync(TimeSpan.FromSeconds(5));
+                return true;
+            }
+
+            if (TryHandleZoomShortcut(e))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
         private static bool HasExactModifiers(KeyEventArgs e, KeyModifiers modifiers)
         {
             return e.KeyModifiers == modifiers;
+        }
+
+        private bool ShouldToggleFullScreen(KeyEventArgs e)
+        {
+            return e.Key == Key.F11 ||
+                (e.Key == Key.Enter && HasExactModifiers(e, KeyModifiers.Alt)) ||
+                (e.Key == Key.Escape && WindowState == WindowState.FullScreen);
         }
 
         private static bool IsTextEntryTarget(KeyEventArgs e)
@@ -2503,7 +2583,7 @@ namespace FramePlayer.Desktop.Views
                         Text = loopModeAvailable
                             ? "Loop uses each pane's A/B range. Whole Video exports the aligned sources."
                             : "Loop export requires valid A/B ranges on both panes.",
-                        Foreground = Brush.Parse("#B7BDC6"),
+                        Foreground = Brush.Parse(CompareExportSecondaryTextColor),
                         TextWrapping = TextWrapping.Wrap
                     }
                 }
@@ -2519,7 +2599,7 @@ namespace FramePlayer.Desktop.Views
                     new TextBlock
                     {
                         Text = "If the selected pane has no audio stream, the side-by-side export will be silent.",
-                        Foreground = Brush.Parse("#B7BDC6"),
+                        Foreground = Brush.Parse(CompareExportSecondaryTextColor),
                         TextWrapping = TextWrapping.Wrap
                     }
                 }
@@ -2530,8 +2610,8 @@ namespace FramePlayer.Desktop.Views
 
             var buttons = new StackPanel
             {
-                Orientation = Avalonia.Layout.Orientation.Horizontal,
-                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                Orientation = global::Avalonia.Layout.Orientation.Horizontal,
+                HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Right,
                 Spacing = 8,
                 Children =
                 {
@@ -2557,7 +2637,7 @@ namespace FramePlayer.Desktop.Views
                     new TextBlock
                     {
                         Text = "Choose the compare export range and which pane supplies audio.",
-                        Foreground = Brush.Parse("#B7BDC6"),
+                        Foreground = Brush.Parse(CompareExportSecondaryTextColor),
                         TextWrapping = TextWrapping.Wrap,
                         Margin = new Thickness(0, 6, 0, 0)
                     }
@@ -2596,7 +2676,7 @@ namespace FramePlayer.Desktop.Views
             return ResolvePaneLabel(pane) + (hasAudio ? " pane" : " pane (silent)");
         }
 
-        private static Control BuildCompareExportPaneSummary(Pane pane, IVideoReviewEngine engine)
+        private static StackPanel BuildCompareExportPaneSummary(Pane pane, IVideoReviewEngine engine)
         {
             var mediaInfo = engine.MediaInfo;
             return new StackPanel
@@ -2619,7 +2699,7 @@ namespace FramePlayer.Desktop.Views
                     new TextBlock
                     {
                         Text = FormatCompareExportMediaSummary(mediaInfo),
-                        Foreground = Brush.Parse("#B7BDC6"),
+                        Foreground = Brush.Parse(CompareExportSecondaryTextColor),
                         TextWrapping = TextWrapping.Wrap,
                         Margin = new Thickness(0, 4, 0, 0)
                     }
@@ -2743,8 +2823,8 @@ namespace FramePlayer.Desktop.Views
 
         private static bool IsH264Codec(string codecName)
         {
-            return codecName.IndexOf("h264", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                codecName.IndexOf("avc", StringComparison.OrdinalIgnoreCase) >= 0;
+            return codecName.Contains("h264", StringComparison.OrdinalIgnoreCase) ||
+                codecName.Contains("avc", StringComparison.OrdinalIgnoreCase);
         }
 
         private async Task<string?> ExportDiagnosticsAsync(string? outputPath)
@@ -2985,7 +3065,7 @@ namespace FramePlayer.Desktop.Views
             var closeButton = new Button
             {
                 Content = "Close",
-                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Right,
                 MinWidth = 88
             };
             closeButton.Click += (_, _) => dialog.Close();

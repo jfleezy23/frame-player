@@ -10,10 +10,10 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.VisualTree;
 using FramePlayer.Core.Models;
-using FramePlayer.Desktop.Views;
+using FramePlayer.Avalonia.Views;
 using Xunit;
 
-namespace FramePlayer.Desktop.Tests
+namespace FramePlayer.Avalonia.Tests
 {
     public sealed class MainWindowUiContractTests : IClassFixture<AvaloniaHeadlessFixture>
     {
@@ -25,7 +25,7 @@ namespace FramePlayer.Desktop.Tests
         }
 
         [Fact]
-        public void MainWindow_UsesNativeChromeWithAvaloniaAndNativeMenus()
+        public void MainWindow_UsesPlatformChromeWithAvaloniaAndNativeMenus()
         {
             _fixture.Run(() =>
             {
@@ -35,58 +35,67 @@ namespace FramePlayer.Desktop.Tests
 
                 var nativeMenu = NativeMenu.GetMenu(window);
                 Assert.NotNull(nativeMenu);
-                Assert.Equal(WindowDecorations.None, window.WindowDecorations);
-                Assert.NotNull(window.Icon);
-
                 var menuPanel = RequireControl<Border>(window, "MenuPanel");
-                Assert.Equal(0, Grid.GetRow(menuPanel));
-                Assert.Equal(new Thickness(0, 0, 0, 1), menuPanel.BorderThickness);
-                AssertBrushColor("#FFFFFF", menuPanel.Background);
-                AssertBrushColor("#D1D5DB", menuPanel.BorderBrush);
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                {
+                    Assert.Equal(WindowDecorations.Full, window.WindowDecorations);
+                    Assert.False(menuPanel.IsVisible);
+                    Assert.Empty(window.GetVisualDescendants().OfType<Menu>());
+                }
+                else
+                {
+                    Assert.Equal(WindowDecorations.None, window.WindowDecorations);
+                    Assert.NotNull(window.Icon);
 
-                var visualMenu = RequireControl<Menu>(window, "WindowsMenuBar");
-                var menuThemeScope = Assert.IsType<ThemeVariantScope>(visualMenu.Parent);
-                Assert.Equal(1, Grid.GetColumn(menuThemeScope));
-                Assert.Equal(
-                    new[] { "File", "Playback", "Audio Insertion", "Help" },
-                    visualMenu.Items
-                        .OfType<MenuItem>()
-                        .Select(item => item.Header?.ToString() ?? string.Empty)
-                        .ToArray());
-                AssertMenuItemHeaders(
-                    RequireControl<MenuItem>(window, "FileRootMenuItem"),
-                    "New Window",
-                    "Open Video...",
-                    "Open Recent",
-                    "Close Video",
-                    "Video Info...",
-                    "Export Diagnostic Report...",
-                    "Exit");
-                AssertMenuItemHeaders(
-                    RequireControl<MenuItem>(window, "PlaybackRootMenuItem"),
-                    "Play",
-                    "Rewind 5s",
-                    "Fast Forward 5s",
-                    "Previous Frame",
-                    "Next Frame",
-                    "Loop Playback",
-                    "Set Loop In",
-                    "Set Loop Out",
-                    "Clear Loop Points",
-                    "Save Loop As Clip...",
-                    "Export Side-by-Side Compare...",
-                    "Zoom In",
-                    "Zoom Out",
-                    "Reset Zoom",
-                    "Use GPU Acceleration",
-                    "Toggle Full Screen");
-                AssertMenuItemHeaders(
-                    RequireControl<MenuItem>(window, "AudioInsertionRootMenuItem"),
-                    "Replace Audio Track...");
-                AssertMenuItemHeaders(
-                    RequireControl<MenuItem>(window, "HelpRootMenuItem"),
-                    "Controls and Shortcuts...",
-                    "About Frame Player");
+                    Assert.Equal(0, Grid.GetRow(menuPanel));
+                    Assert.Equal(new Thickness(0, 0, 0, 1), menuPanel.BorderThickness);
+                    AssertBrushColor("#FFFFFF", menuPanel.Background);
+                    AssertBrushColor("#D1D5DB", menuPanel.BorderBrush);
+
+                    var visualMenu = RequireControl<Menu>(window, "WindowsMenuBar");
+                    var menuThemeScope = Assert.IsType<ThemeVariantScope>(visualMenu.Parent);
+                    Assert.Equal(1, Grid.GetColumn(menuThemeScope));
+                    Assert.Equal(
+                        new[] { "File", "Playback", "Audio Insertion", "Help" },
+                        visualMenu.Items
+                            .OfType<MenuItem>()
+                            .Select(item => item.Header?.ToString() ?? string.Empty)
+                            .ToArray());
+                    AssertMenuItemHeaders(
+                        RequireControl<MenuItem>(window, "FileRootMenuItem"),
+                        "New Window",
+                        "Open Video...",
+                        "Open Recent",
+                        "Close Video",
+                        "Video Info...",
+                        "Export Diagnostic Report...",
+                        "Exit");
+                    AssertMenuItemHeaders(
+                        RequireControl<MenuItem>(window, "PlaybackRootMenuItem"),
+                        "Play",
+                        "Rewind 5s",
+                        "Fast Forward 5s",
+                        "Previous Frame",
+                        "Next Frame",
+                        "Loop Playback",
+                        "Set Loop In",
+                        "Set Loop Out",
+                        "Clear Loop Points",
+                        "Save Loop As Clip...",
+                        "Export Side-by-Side Compare...",
+                        "Zoom In",
+                        "Zoom Out",
+                        "Reset Zoom",
+                        "Use GPU Acceleration",
+                        "Toggle Full Screen");
+                    AssertMenuItemHeaders(
+                        RequireControl<MenuItem>(window, "AudioInsertionRootMenuItem"),
+                        "Replace Audio Track...");
+                    AssertMenuItemHeaders(
+                        RequireControl<MenuItem>(window, "HelpRootMenuItem"),
+                        "Controls and Shortcuts...",
+                        "About Frame Player");
+                }
 
                 var topLevelHeaders = nativeMenu.Items
                     .OfType<NativeMenuItem>()
