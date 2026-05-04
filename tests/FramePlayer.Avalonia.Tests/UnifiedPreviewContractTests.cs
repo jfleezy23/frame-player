@@ -40,8 +40,26 @@ namespace FramePlayer.Avalonia.Tests
             Assert.Contains("Runtime\\ffmpeg\\*.dll", project, StringComparison.Ordinal);
             Assert.Contains("Runtime\\ffmpeg-export\\*.dll", project, StringComparison.Ordinal);
             Assert.Contains("FramePlayer.Avalonia.entitlements", project, StringComparison.Ordinal);
-            Assert.Contains("FfmpegRuntimeBootstrap.ConfigureForCurrentPlatform(ResolveRuntimeBaseDirectory())", program, StringComparison.Ordinal);
+            Assert.Contains("FfmpegRuntimeBootstrap.ResolveRuntimeDirectory(runtimeBaseDirectory)", program, StringComparison.Ordinal);
+            Assert.Contains("FfmpegRuntimeBootstrap.ConfigureForCurrentPlatform(runtimeBaseDirectory)", program, StringComparison.Ordinal);
             Assert.Contains("SetDllDirectory", program, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void UnifiedExportHost_ValidatesSharedLibraryRuntimeBeforeLoadingFfmpeg()
+        {
+            var root = FindRepositoryRoot();
+            var program = File.ReadAllText(Path.Combine(root, "src", "FramePlayer.Avalonia", "Program.cs"));
+            var helperStart = program.IndexOf("private static void ConfigureSharedLibraryExportHostRuntime()", StringComparison.Ordinal);
+
+            Assert.True(helperStart >= 0, "The unified export host should keep non-Windows runtime setup in a dedicated helper.");
+
+            var validationCall = program.IndexOf("ValidateExportRuntimeDirectory(exportRuntimeDirectory);", helperStart, StringComparison.Ordinal);
+            var configureCall = program.IndexOf("FfmpegRuntimeBootstrap.ConfigureForCurrentPlatform(runtimeBaseDirectory)", helperStart, StringComparison.Ordinal);
+
+            Assert.True(validationCall >= 0, "The non-Windows export host runtime should be manifest-validated.");
+            Assert.True(configureCall >= 0, "The non-Windows export host runtime should still initialize the FFmpeg shared-library bindings.");
+            Assert.True(validationCall < configureCall, "The non-Windows export host runtime must be validated before loading FFmpeg.");
         }
 
         [Fact]

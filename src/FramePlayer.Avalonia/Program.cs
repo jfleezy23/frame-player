@@ -49,17 +49,12 @@ namespace FramePlayer.Avalonia
         {
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                FfmpegRuntimeBootstrap.ConfigureForCurrentPlatform(ResolveRuntimeBaseDirectory());
+                ConfigureSharedLibraryExportHostRuntime();
                 return;
             }
 
             var exportRuntimeDirectory = Path.Combine(AppContext.BaseDirectory, ExportHostClient.ExportRuntimeFolderName);
-            if (!ExportRuntimeManifestService.TryValidateRuntimeDirectory(exportRuntimeDirectory, out var validationMessage))
-            {
-                throw new InvalidOperationException(string.IsNullOrWhiteSpace(validationMessage)
-                    ? "The bundled FFmpeg export runtime could not be validated."
-                    : validationMessage);
-            }
+            ValidateExportRuntimeDirectory(exportRuntimeDirectory);
 
             if (!SetDllDirectory(exportRuntimeDirectory))
             {
@@ -67,6 +62,24 @@ namespace FramePlayer.Avalonia
             }
 
             ffmpeg.RootPath = exportRuntimeDirectory;
+        }
+
+        private static void ConfigureSharedLibraryExportHostRuntime()
+        {
+            var runtimeBaseDirectory = ResolveRuntimeBaseDirectory();
+            var exportRuntimeDirectory = FfmpegRuntimeBootstrap.ResolveRuntimeDirectory(runtimeBaseDirectory);
+            ValidateExportRuntimeDirectory(exportRuntimeDirectory);
+            FfmpegRuntimeBootstrap.ConfigureForCurrentPlatform(runtimeBaseDirectory);
+        }
+
+        private static void ValidateExportRuntimeDirectory(string exportRuntimeDirectory)
+        {
+            if (!ExportRuntimeManifestService.TryValidateRuntimeDirectory(exportRuntimeDirectory, out var validationMessage))
+            {
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(validationMessage)
+                    ? "The bundled FFmpeg export runtime could not be validated."
+                    : validationMessage);
+            }
         }
 
         private static string ResolveRuntimeBaseDirectory()
