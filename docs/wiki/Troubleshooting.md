@@ -18,6 +18,7 @@
 Recent files are stored locally and protected at rest by platform storage:
 
 - Windows: user-profile DPAPI-backed storage.
+- Windows Avalonia Preview: `%LOCALAPPDATA%\FramePlayer.DesktopPreview`, separate from Windows stable.
 - macOS Preview: macOS application support storage.
 
 If recent files do not appear, open a file successfully, close the app, relaunch, and check `File > Open Recent`.
