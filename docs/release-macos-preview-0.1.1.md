@@ -1,5 +1,7 @@
 # Frame Player macOS Preview 0.1.1 Release Note
 
+> Superseded: use [Frame Player Unified Preview 0.2.0](https://github.com/jfleezy23/frame-player/releases/tag/unified-preview-0.2.0) for current Windows/macOS Avalonia preview testing. This split macOS preview remains available only as historical validation evidence.
+
 This note documents the controlled Apple Silicon macOS Preview refresh. Windows stable remains the WPF `v1.8.4` release line and is not changed by this preview.
 
 - Release: [Frame Player macOS Preview 0.1.1](https://github.com/jfleezy23/frame-player/releases/tag/macos-preview-0.1.1)

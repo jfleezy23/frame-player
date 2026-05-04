@@ -8,23 +8,25 @@ Windows stable:
 2. Extract the ZIP to a local folder.
 3. Run `FramePlayer.exe`.
 
-macOS Preview:
+Unified Avalonia Preview:
 
-1. Download `FramePlayer-macOS-arm64-macos-preview-0.1.1.zip` and its SHA256 file from the [Frame Player macOS Preview 0.1.1 release page](https://github.com/jfleezy23/frame-player/releases/tag/macos-preview-0.1.1).
+macOS:
+
+1. Download `FramePlayer-macOS-arm64-unified-preview-0.2.0.zip` and its SHA256 file from the [Frame Player Unified Preview 0.2.0 release page](https://github.com/jfleezy23/frame-player/releases/tag/unified-preview-0.2.0).
 2. Verify the ZIP hash if you are validating the release candidate.
 3. Unzip the app and move `Frame Player.app` to `/Applications`.
 4. Launch `Frame Player.app`.
 
-The macOS Preview is notarized for Apple Silicon. Intel and universal macOS builds are not part of `0.1.1`.
+The unified macOS preview is Developer ID signed, notarized, stapled, and built for Apple Silicon. Intel and universal macOS builds are not part of `0.2.0`.
 
-Windows Avalonia Preview:
+Windows:
 
-1. Download `FramePlayer-Desktop-Windows-x64-avalonia-windows-preview-0.1.0.zip` and its SHA256 file from the [Frame Player v1.8.4 release page](https://github.com/jfleezy23/frame-player/releases/tag/v1.8.4).
+1. Download `FramePlayer-Windows-x64-unified-preview-0.2.0.zip` and its SHA256 file from the [Frame Player Unified Preview 0.2.0 release page](https://github.com/jfleezy23/frame-player/releases/tag/unified-preview-0.2.0).
 2. Verify the ZIP hash if you are validating the preview candidate.
 3. Extract the ZIP to a local folder.
-4. Run `FramePlayer.Desktop.exe`.
+4. Run `FramePlayer.Avalonia.exe`.
 
-The Windows Avalonia Preview is self-contained for Windows x64 testers. It is a separate preview path and does not replace the stable Windows WPF app.
+The unified Windows preview is self-contained for Windows x64 testers. It supersedes the old Windows Avalonia Preview `0.1.0`, but it does not replace the stable Windows WPF app.
 
 ## Open A Video
 
