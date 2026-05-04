@@ -59,9 +59,21 @@ jobs:
           rm -rf "$extract_dir"
           mkdir -p "$extract_dir"
           /usr/bin/ditto -x -k "$zip_path" "$extract_dir"
-          app_path="$extract_dir/Frame Player.app"
-          test -x "$app_path/Contents/MacOS/FramePlayer.Avalonia"
+          app_path="$(find "$extract_dir" -maxdepth 2 -type d -name "Frame Player.app" -print -quit)"
+          if [[ -z "$app_path" ]]; then
+            find "$extract_dir" -maxdepth 4 -print
+            echo "Extracted package did not contain Frame Player.app" >&2
+            exit 1
+          fi
+          executable_path="$app_path/Contents/MacOS/FramePlayer.Avalonia"
+          if [[ ! -f "$executable_path" ]]; then
+            find "$app_path/Contents/MacOS" -maxdepth 3 -print
+            echo "Extracted package is missing FramePlayer.Avalonia" >&2
+            exit 1
+          fi
+          chmod +x "$executable_path"
+          test -x "$executable_path"
           test -f "$app_path/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/libavformat.62.dylib"
-          test -f "$app_path/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/libavfilter.11.dylib"
+          test -f "$app_path/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/libavcodec.62.dylib"
           test "$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app_path/Contents/Info.plist")" = "0.2.0"
           test "$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$app_path/Contents/Info.plist")" = "com.frameplayer.unified-preview"
