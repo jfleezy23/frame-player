@@ -1983,7 +1983,7 @@ namespace FramePlayer.Avalonia.Views
                 return;
             }
 
-            if (await TryHandleReviewShortcutAsync(sender, e))
+            if (await TryHandleReviewShortcutAsync(e))
             {
                 e.Handled = true;
             }
@@ -2030,7 +2030,7 @@ namespace FramePlayer.Avalonia.Views
             return false;
         }
 
-        private async Task<bool> TryHandleReviewShortcutAsync(object? sender, KeyEventArgs e)
+        private async Task<bool> TryHandleReviewShortcutAsync(KeyEventArgs e)
         {
             if (e.Key == Key.Space)
             {
