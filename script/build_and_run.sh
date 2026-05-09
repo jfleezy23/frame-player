@@ -62,6 +62,7 @@ fi
 pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 
 build_app() {
+  rm -rf "$PUBLISH_ROOT/osx-arm64"
   "$DOTNET_BIN" publish "$PROJECT" -c "$CONFIGURATION" -r osx-arm64 --self-contained true -p:PublishSingleFile=false -o "$PUBLISH_ROOT/osx-arm64"
   rm -rf "$APP_BUNDLE"
   mkdir -p "$APP_MACOS" "$APP_RESOURCES"
