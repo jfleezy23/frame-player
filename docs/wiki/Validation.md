@@ -1,5 +1,30 @@
 # Validation
 
+## Unified Avalonia Preview 0.3.0
+
+Unified Avalonia Preview `0.3.0` is the next combined Windows/macOS preview release candidate.
+It is the first combined preview planned to ship the Rust FFmpeg native pipeline in both platform packages.
+
+Release-candidate baseline:
+
+- Rust pipeline merge PR: [#69](https://github.com/jfleezy23/frame-player/pull/69), merged as `3902a121f634e80dd7058ca547f1eb36736e9950`.
+- `@codex review`: completed with no major issues reported.
+- GitHub checks on PR #69 passed: Windows CI, macOS Avalonia, SonarQube/SonarCloud, CodeQL, dependency review, and dependency submission.
+- Final release target, artifact SHA256 values, and notarization evidence must be filled from the merged release-prep head and final packaged artifacts.
+
+Required release-candidate evidence:
+
+- Windows ZIP: `FramePlayer-Windows-x64-unified-preview-0.3.0.zip`, including `frameplayer_ffmpeg_probe.dll` beside `FramePlayer.Avalonia.exe`.
+- macOS ZIP: `FramePlayer-macOS-arm64-unified-preview-0.3.0.zip`, including `libframeplayer_ffmpeg_probe.dylib` beside the app executable.
+- Forced Rust validation on both platforms with `FRAMEPLAYER_FFMPEG_INDEX_BUILDER=rust`, `FRAMEPLAYER_FFMPEG_DECODE_CORE=rust`, and `FRAMEPLAYER_FFMPEG_FRAME_CONVERTER=rust` so fallback cannot hide native-path failures.
+- macOS Developer ID signing, notarization, stapling, extraction, and Gatekeeper verification before public publication.
+
+Planned Unified Preview details:
+
+- Release: [Frame Player Unified Preview 0.3.0](https://github.com/jfleezy23/frame-player/releases/tag/unified-preview-0.3.0)
+- Windows artifact: `FramePlayer-Windows-x64-unified-preview-0.3.0.zip`
+- macOS artifact: `FramePlayer-macOS-arm64-unified-preview-0.3.0.zip`
+
 ## Unified Avalonia Preview 0.2.0
 
 Unified Avalonia Preview `0.2.0` was validated as the first synchronized Windows/macOS preview on 2026-05-04.
@@ -26,7 +51,7 @@ Published Unified Preview details:
 
 ## Superseded Split Previews
 
-The split macOS Preview `0.1.1` and Windows Avalonia Preview `0.1.0` releases are superseded by Unified Avalonia Preview `0.2.0`. They remain available only as historical validation and provenance records.
+The split macOS Preview `0.1.1` and Windows Avalonia Preview `0.1.0` releases are superseded by Unified Avalonia Preview `0.3.0`. They remain available only as historical validation and provenance records.
 
 ## Windows Stable
 

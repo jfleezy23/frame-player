@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ARTIFACT_VERSION="${PACKAGE_VERSION:-${VERSION:-unified-preview-0.2.0}}"
+ARTIFACT_VERSION="${PACKAGE_VERSION:-${VERSION:-unified-preview-0.3.0}}"
 SIGN_MODE="${SIGN_MODE:-auto}"
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-}"
 DIST_DIR="$ROOT_DIR/dist"
@@ -17,7 +17,7 @@ usage() {
 usage: $0 [--unsigned|--sign [identity]]
 
 Environment:
-  PACKAGE_VERSION=<label>      Artifact version label. Default: unified-preview-0.2.0
+  PACKAGE_VERSION=<label>      Artifact version label. Default: unified-preview-0.3.0
   SIGNING_IDENTITY=<identity>  codesign identity name/hash
 
 Signing notes:
@@ -104,7 +104,7 @@ env -u VERSION \
 env -u VERSION \
   CONFIGURATION=Release \
   APP_NAME=FramePlayer.Avalonia \
-  APP_VERSION=0.2.0 \
+  APP_VERSION=0.3.0 \
   BUNDLE_ID=com.frameplayer.unified-preview \
   PROJECT="$ROOT_DIR/src/FramePlayer.Avalonia/FramePlayer.Avalonia.csproj" \
   APP_ICON_SOURCE="$ROOT_DIR/src/FramePlayer.Avalonia/Assets/FramePlayer.icns" \

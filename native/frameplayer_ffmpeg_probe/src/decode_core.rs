@@ -284,6 +284,114 @@ impl Drop for DecodeSession {
     }
 }
 
+struct DecodeWindowState {
+    window_frames: Vec<FramePlayerRustNativeFrame>,
+    frames_before_target: Vec<FramePlayerRustNativeFrame>,
+    anchor_reached: bool,
+    next_absolute_frame_index: i64,
+}
+
+impl DecodeWindowState {
+    fn new(
+        anchor_entry: &FramePlayerRustDecodeCoreIndexEntry,
+        previous_frame_limit: usize,
+        forward_frame_limit: usize,
+    ) -> Self {
+        let anchor_reached =
+            anchor_entry.absolute_frame_index == 0 && anchor_entry.seek_anchor_timestamp <= 0;
+        let next_absolute_frame_index = if anchor_reached {
+            anchor_entry.absolute_frame_index
+        } else {
+            -1
+        };
+
+        Self {
+            window_frames: Vec::with_capacity(previous_frame_limit + forward_frame_limit + 1),
+            frames_before_target: Vec::with_capacity(previous_frame_limit),
+            anchor_reached,
+            next_absolute_frame_index,
+        }
+    }
+
+    unsafe fn release_all(&mut self) {
+        free_native_frames(std::mem::take(&mut self.frames_before_target));
+        free_native_frames(std::mem::take(&mut self.window_frames));
+    }
+
+    unsafe fn read_frame(
+        &mut self,
+        session: &mut DecodeSession,
+        cancel_flag: *const c_int,
+        result: *mut FramePlayerRustDecodeWindowResult,
+    ) -> Result<FramePlayerRustNativeFrame, c_int> {
+        match read_next_frame(session, cancel_flag, result) {
+            Ok(Some(frame)) => Ok(frame),
+            Ok(None) => {
+                self.release_all();
+                write_window_message(
+                    result,
+                    "Rust decode window could not find the requested target frame.",
+                );
+                Err(if self.anchor_reached {
+                    STATUS_TARGET_NOT_FOUND
+                } else {
+                    STATUS_ANCHOR_NOT_FOUND
+                })
+            }
+            Err(status) => {
+                self.release_all();
+                Err(status)
+            }
+        }
+    }
+
+    unsafe fn accept_anchor_or_skip(
+        &mut self,
+        frame: &FramePlayerRustNativeFrame,
+        anchor_entry: &FramePlayerRustDecodeCoreIndexEntry,
+    ) -> bool {
+        if self.anchor_reached {
+            return true;
+        }
+
+        if !frame_matches_entry(frame, anchor_entry) {
+            return false;
+        }
+
+        self.anchor_reached = true;
+        self.next_absolute_frame_index = anchor_entry.absolute_frame_index;
+        true
+    }
+
+    fn assign_absolute_frame_index(&self, frame: &mut FramePlayerRustNativeFrame) {
+        frame.absolute_frame_index = self.next_absolute_frame_index;
+    }
+
+    fn target_reached(&self, target_entry: &FramePlayerRustDecodeCoreIndexEntry) -> bool {
+        self.next_absolute_frame_index == target_entry.absolute_frame_index
+    }
+
+    unsafe fn remember_before_target(
+        &mut self,
+        frame: FramePlayerRustNativeFrame,
+        previous_frame_limit: usize,
+    ) {
+        self.frames_before_target.push(frame);
+        while self.frames_before_target.len() > previous_frame_limit {
+            let removed = self.frames_before_target.remove(0);
+            free_native_frame(removed);
+        }
+
+        self.next_absolute_frame_index += 1;
+    }
+}
+
+enum DecodeReadAction {
+    Continue,
+    End,
+    ReadPacket,
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn frameplayer_rust_ffmpeg_frame_buffer_free(buffer: *mut RustFrameBuffer) {
     if buffer.is_null() {
@@ -597,100 +705,75 @@ unsafe fn decode_window(
         result,
     )?;
 
-    let mut window_frames = Vec::with_capacity(previous_frame_limit + forward_frame_limit + 1);
-    let mut frames_before_target = Vec::with_capacity(previous_frame_limit);
-    let mut anchor_reached =
-        anchor_entry.absolute_frame_index == 0 && anchor_entry.seek_anchor_timestamp <= 0;
-    let mut next_absolute_frame_index = if anchor_reached {
-        anchor_entry.absolute_frame_index
-    } else {
-        -1
-    };
+    let mut state =
+        DecodeWindowState::new(&anchor_entry, previous_frame_limit, forward_frame_limit);
 
     loop {
-        if cancellation_requested(cancel_flag) {
-            free_native_frames(frames_before_target);
-            free_native_frames(window_frames);
-            write_window_message(result, "Rust decode window was cancelled.");
-            return Err(STATUS_CANCELLED);
+        if let Err(status) = ensure_decode_window_not_cancelled(cancel_flag, result) {
+            state.release_all();
+            return Err(status);
         }
 
-        let mut frame = match read_next_frame(&mut session, cancel_flag, result) {
+        let mut frame = state.read_frame(&mut session, cancel_flag, result)?;
+        if !state.accept_anchor_or_skip(&frame, &anchor_entry) {
+            free_native_frame(frame);
+            continue;
+        }
+
+        state.assign_absolute_frame_index(&mut frame);
+        if state.target_reached(&target_entry) {
+            return finish_decode_window(
+                &mut session,
+                state,
+                frame,
+                forward_frame_limit,
+                cancel_flag,
+                result,
+            );
+        }
+
+        state.remember_before_target(frame, previous_frame_limit);
+    }
+}
+
+unsafe fn finish_decode_window(
+    session: &mut DecodeSession,
+    mut state: DecodeWindowState,
+    current_frame: FramePlayerRustNativeFrame,
+    forward_frame_limit: usize,
+    cancel_flag: *const c_int,
+    result: *mut FramePlayerRustDecodeWindowResult,
+) -> Result<(), c_int> {
+    state.window_frames.append(&mut state.frames_before_target);
+    let current_index = state.window_frames.len() as c_int;
+    state.window_frames.push(current_frame);
+
+    while state.window_frames.len() - (current_index as usize) - 1 < forward_frame_limit {
+        if let Err(status) = ensure_decode_window_not_cancelled(cancel_flag, result) {
+            free_native_frames(state.window_frames);
+            return Err(status);
+        }
+
+        let mut next_frame = match read_next_frame(session, cancel_flag, result) {
             Ok(Some(value)) => value,
-            Ok(None) => {
-                free_native_frames(frames_before_target);
-                free_native_frames(window_frames);
-                write_window_message(
-                    result,
-                    "Rust decode window could not find the requested target frame.",
-                );
-                return Err(if anchor_reached {
-                    STATUS_TARGET_NOT_FOUND
-                } else {
-                    STATUS_ANCHOR_NOT_FOUND
-                });
-            }
+            Ok(None) => break,
             Err(status) => {
-                free_native_frames(frames_before_target);
-                free_native_frames(window_frames);
+                free_native_frames(state.window_frames);
                 return Err(status);
             }
         };
-
-        if !anchor_reached {
-            if !frame_matches_entry(&frame, &anchor_entry) {
-                free_native_frame(frame);
-                continue;
-            }
-
-            anchor_reached = true;
-            next_absolute_frame_index = anchor_entry.absolute_frame_index;
-        }
-
-        frame.absolute_frame_index = next_absolute_frame_index;
-
-        if next_absolute_frame_index == target_entry.absolute_frame_index {
-            window_frames.append(&mut frames_before_target);
-            let current_index = window_frames.len() as c_int;
-            window_frames.push(frame);
-
-            while window_frames.len() - (current_index as usize) - 1 < forward_frame_limit {
-                if cancellation_requested(cancel_flag) {
-                    free_native_frames(window_frames);
-                    write_window_message(result, "Rust decode window was cancelled.");
-                    return Err(STATUS_CANCELLED);
-                }
-
-                let mut next_frame = match read_next_frame(&mut session, cancel_flag, result) {
-                    Ok(Some(value)) => value,
-                    Ok(None) => break,
-                    Err(status) => {
-                        free_native_frames(window_frames);
-                        return Err(status);
-                    }
-                };
-                next_absolute_frame_index += 1;
-                next_frame.absolute_frame_index = next_absolute_frame_index;
-                window_frames.push(next_frame);
-            }
-
-            (*result).frame_count = window_frames.len() as u64;
-            (*result).current_index = current_index;
-            let mut boxed = window_frames.into_boxed_slice();
-            (*result).frames = boxed.as_mut_ptr();
-            std::mem::forget(boxed);
-            write_window_message(result, "Rust decoded indexed frame window.");
-            return Ok(());
-        }
-
-        frames_before_target.push(frame);
-        while frames_before_target.len() > previous_frame_limit {
-            let removed = frames_before_target.remove(0);
-            free_native_frame(removed);
-        }
-
-        next_absolute_frame_index += 1;
+        state.next_absolute_frame_index += 1;
+        next_frame.absolute_frame_index = state.next_absolute_frame_index;
+        state.window_frames.push(next_frame);
     }
+
+    (*result).frame_count = state.window_frames.len() as u64;
+    (*result).current_index = current_index;
+    let mut boxed = state.window_frames.into_boxed_slice();
+    (*result).frames = boxed.as_mut_ptr();
+    std::mem::forget(boxed);
+    write_window_message(result, "Rust decoded indexed frame window.");
+    Ok(())
 }
 
 unsafe fn create_decode_session(
@@ -888,75 +971,119 @@ unsafe fn read_next_frame(
     result: *mut FramePlayerRustDecodeWindowResult,
 ) -> Result<Option<FramePlayerRustNativeFrame>, c_int> {
     loop {
-        if cancellation_requested(cancel_flag) {
-            write_window_message(result, "Rust decode window was cancelled.");
-            return Err(STATUS_CANCELLED);
-        }
+        ensure_decode_window_not_cancelled(cancel_flag, result)?;
 
         match try_receive_frame(session, result)? {
             Some(frame) => return Ok(Some(frame)),
             None => {}
         }
 
-        if session.has_pending_video_packet {
-            let send_pending_result =
-                (session.symbols.avcodec_send_packet)(session.codec_context, session.packet);
-            if send_pending_result == AVERROR_EAGAIN {
-                continue;
-            }
-
-            if send_pending_result < 0 {
-                write_window_message(result, "Rust decode core could not submit packet.");
-                return Err(STATUS_PACKET_SEND_FAILED);
-            }
-
-            session.has_pending_video_packet = false;
-            (session.symbols.av_packet_unref)(session.packet);
+        if submit_pending_decode_packet(session, result)? {
             continue;
         }
 
-        if session.input_exhausted {
-            if session.flush_packet_sent {
-                return Ok(None);
-            }
-
-            let flush_result =
-                (session.symbols.avcodec_send_packet)(session.codec_context, std::ptr::null());
-            if flush_result == AVERROR_EAGAIN {
-                continue;
-            }
-            if flush_result == AVERROR_EOF {
-                session.flush_packet_sent = true;
-                return Ok(None);
-            }
-            if flush_result < 0 {
-                write_window_message(result, "Rust decode core could not flush decoder.");
-                return Err(STATUS_PACKET_SEND_FAILED);
-            }
-            session.flush_packet_sent = true;
-            continue;
+        match flush_decode_session(session, result)? {
+            DecodeReadAction::Continue => continue,
+            DecodeReadAction::End => return Ok(None),
+            DecodeReadAction::ReadPacket => {}
         }
 
-        let read_result = (session.symbols.av_read_frame)(session.format_context, session.packet);
-        if read_result == AVERROR_EOF {
-            session.input_exhausted = true;
-            continue;
-        }
-
-        if read_result < 0 {
-            write_window_message(result, "Rust decode core could not read packet.");
-            return Err(STATUS_PACKET_READ_FAILED);
-        }
-
-        if read_field::<c_int>(session.packet, AVPACKET_STREAM_INDEX_OFFSET)
-            != session.video_stream_index
-        {
-            (session.symbols.av_packet_unref)(session.packet);
-            continue;
-        }
-
-        session.has_pending_video_packet = true;
+        read_decode_packet(session, result)?;
     }
+}
+
+unsafe fn ensure_decode_window_not_cancelled(
+    cancel_flag: *const c_int,
+    result: *mut FramePlayerRustDecodeWindowResult,
+) -> Result<(), c_int> {
+    if cancellation_requested(cancel_flag) {
+        write_window_message(result, "Rust decode window was cancelled.");
+        return Err(STATUS_CANCELLED);
+    }
+
+    Ok(())
+}
+
+unsafe fn submit_pending_decode_packet(
+    session: &mut DecodeSession,
+    result: *mut FramePlayerRustDecodeWindowResult,
+) -> Result<bool, c_int> {
+    if !session.has_pending_video_packet {
+        return Ok(false);
+    }
+
+    let send_pending_result =
+        (session.symbols.avcodec_send_packet)(session.codec_context, session.packet);
+    if send_pending_result == AVERROR_EAGAIN {
+        return Ok(true);
+    }
+
+    if send_pending_result < 0 {
+        write_window_message(result, "Rust decode core could not submit packet.");
+        return Err(STATUS_PACKET_SEND_FAILED);
+    }
+
+    session.has_pending_video_packet = false;
+    (session.symbols.av_packet_unref)(session.packet);
+    Ok(true)
+}
+
+unsafe fn flush_decode_session(
+    session: &mut DecodeSession,
+    result: *mut FramePlayerRustDecodeWindowResult,
+) -> Result<DecodeReadAction, c_int> {
+    if !session.input_exhausted {
+        return Ok(DecodeReadAction::ReadPacket);
+    }
+
+    if session.flush_packet_sent {
+        return Ok(DecodeReadAction::End);
+    }
+
+    let flush_result =
+        (session.symbols.avcodec_send_packet)(session.codec_context, std::ptr::null());
+    if flush_result == AVERROR_EAGAIN {
+        return Ok(DecodeReadAction::Continue);
+    }
+
+    if flush_result == AVERROR_EOF {
+        session.flush_packet_sent = true;
+        return Ok(DecodeReadAction::End);
+    }
+
+    if flush_result < 0 {
+        write_window_message(result, "Rust decode core could not flush decoder.");
+        return Err(STATUS_PACKET_SEND_FAILED);
+    }
+
+    session.flush_packet_sent = true;
+    Ok(DecodeReadAction::Continue)
+}
+
+unsafe fn read_decode_packet(
+    session: &mut DecodeSession,
+    result: *mut FramePlayerRustDecodeWindowResult,
+) -> Result<(), c_int> {
+    let read_result = (session.symbols.av_read_frame)(session.format_context, session.packet);
+    if read_result == AVERROR_EOF {
+        session.input_exhausted = true;
+        return Ok(());
+    }
+
+    if read_result < 0 {
+        write_window_message(result, "Rust decode core could not read packet.");
+        return Err(STATUS_PACKET_READ_FAILED);
+    }
+
+    if read_field::<c_int>(session.packet, AVPACKET_STREAM_INDEX_OFFSET)
+        != session.video_stream_index
+    {
+        (session.symbols.av_packet_unref)(session.packet);
+        return Ok(());
+    }
+
+    session.has_pending_video_packet = true;
+    Ok(())
 }
 
 unsafe fn try_receive_frame(
