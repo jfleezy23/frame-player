@@ -195,6 +195,21 @@ impl Drop for FrameGuard {
     }
 }
 
+struct IndexSession {
+    _runtime: crate::RuntimeLibraries,
+    symbols: Symbols,
+    format_context: FormatContextGuard,
+    codec_context: CodecContextGuard,
+    packet: PacketGuard,
+    frame: FrameGuard,
+}
+
+enum IndexLoopAction {
+    Continue,
+    End,
+    ReadPacket,
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn frameplayer_rust_ffmpeg_global_frame_index(
     runtime_directory: *const c_char,
@@ -290,22 +305,90 @@ unsafe fn build_global_frame_index(
     cancel_flag: *const c_int,
     result: *mut FramePlayerRustFfmpegGlobalIndexResult,
 ) -> Result<(), c_int> {
-    if cancellation_requested(cancel_flag) {
-        write_message(result, "Exact frame index build was cancelled.");
-        return Err(STATUS_CANCELLED);
+    ensure_index_not_cancelled(cancel_flag, result)?;
+
+    let session = create_index_session(runtime_directory, file_path, video_stream_index, result)?;
+    let entries = decode_index_entries(
+        &session.symbols,
+        session.format_context.ptr,
+        session.codec_context.ptr,
+        session.packet.ptr,
+        session.frame.ptr,
+        video_stream_index,
+        cancel_flag,
+        result,
+    )?;
+
+    (*result).entry_count = entries.len() as u64;
+    if entries.is_empty() {
+        (*result).entries = std::ptr::null_mut();
+    } else {
+        let mut boxed = entries.into_boxed_slice();
+        (*result).entries = boxed.as_mut_ptr();
+        std::mem::forget(boxed);
     }
 
-    if !runtime_directory.is_dir() {
-        write_message(
-            result,
-            &format!(
-                "FFmpeg runtime directory does not exist: {}",
-                runtime_directory.display()
-            ),
-        );
-        return Err(STATUS_RUNTIME_DIRECTORY_MISSING);
+    write_message(
+        result,
+        "Rust exact frame index decoded display-order frames.",
+    );
+    Ok(())
+}
+
+unsafe fn create_index_session(
+    runtime_directory: &Path,
+    file_path: &str,
+    video_stream_index: c_int,
+    result: *mut FramePlayerRustFfmpegGlobalIndexResult,
+) -> Result<IndexSession, c_int> {
+    ensure_index_runtime_directory(runtime_directory, result)?;
+
+    let (runtime, symbols) = load_index_runtime_symbols(runtime_directory, result)?;
+    let format_context = open_index_format_context(&symbols, file_path, result)?;
+    let (video_stream, video_time_base) =
+        resolve_index_video_stream(format_context.ptr, video_stream_index, result)?;
+    let codec_context = create_index_codec_context(
+        &symbols,
+        format_context.ptr,
+        video_stream,
+        video_time_base,
+        result,
+    )?;
+    let packet = allocate_index_packet(&symbols, result)?;
+    let frame = allocate_index_frame(&symbols, result)?;
+
+    Ok(IndexSession {
+        _runtime: runtime,
+        symbols,
+        format_context,
+        codec_context,
+        packet,
+        frame,
+    })
+}
+
+unsafe fn ensure_index_runtime_directory(
+    runtime_directory: &Path,
+    result: *mut FramePlayerRustFfmpegGlobalIndexResult,
+) -> Result<(), c_int> {
+    if runtime_directory.is_dir() {
+        return Ok(());
     }
 
+    write_message(
+        result,
+        &format!(
+            "FFmpeg runtime directory does not exist: {}",
+            runtime_directory.display()
+        ),
+    );
+    Err(STATUS_RUNTIME_DIRECTORY_MISSING)
+}
+
+unsafe fn load_index_runtime_symbols(
+    runtime_directory: &Path,
+    result: *mut FramePlayerRustFfmpegGlobalIndexResult,
+) -> Result<(crate::RuntimeLibraries, Symbols), c_int> {
     let runtime = match load_runtime_libraries(runtime_directory) {
         Ok(value) => value,
         Err(STATUS_LIBRARY_LOAD_FAILED) => {
@@ -319,7 +402,14 @@ unsafe fn build_global_frame_index(
         Err(status) => return Err(status),
     };
     let symbols = load_symbols(&runtime)?;
+    Ok((runtime, symbols))
+}
 
+unsafe fn open_index_format_context(
+    symbols: &Symbols,
+    file_path: &str,
+    result: *mut FramePlayerRustFfmpegGlobalIndexResult,
+) -> Result<FormatContextGuard, c_int> {
     let input_path = match CString::new(file_path) {
         Ok(value) => value,
         Err(_) => {
@@ -366,17 +456,62 @@ unsafe fn build_global_frame_index(
         return Err(STATUS_FILE_OPEN_FAILED);
     }
 
-    let video_stream = get_stream(format_context.ptr, video_stream_index, result)?;
+    Ok(format_context)
+}
+
+unsafe fn resolve_index_video_stream(
+    format_context: *mut c_void,
+    video_stream_index: c_int,
+    result: *mut FramePlayerRustFfmpegGlobalIndexResult,
+) -> Result<(*mut c_void, AVRational), c_int> {
+    let video_stream = get_stream(format_context, video_stream_index, result)?;
     let video_time_base = read_field::<AVRational>(video_stream, AVSTREAM_TIME_BASE_OFFSET);
     (*result).time_base_num = video_time_base.num;
     (*result).time_base_den = video_time_base.den;
 
+    Ok((video_stream, video_time_base))
+}
+
+unsafe fn create_index_codec_context(
+    symbols: &Symbols,
+    format_context: *mut c_void,
+    video_stream: *mut c_void,
+    video_time_base: AVRational,
+    result: *mut FramePlayerRustFfmpegGlobalIndexResult,
+) -> Result<CodecContextGuard, c_int> {
+    let codec_parameters = require_index_codec_parameters(video_stream, result)?;
+    let decoder = find_index_decoder(symbols, codec_parameters, result)?;
+    let codec_context = allocate_index_codec_context(symbols, decoder, result)?;
+
+    copy_index_codec_parameters(symbols, codec_context.ptr, codec_parameters, result)?;
+    configure_index_codec_context(
+        symbols,
+        codec_context.ptr,
+        format_context,
+        video_stream,
+        video_time_base,
+    );
+    open_index_decoder(symbols, codec_context.ptr, decoder, result)?;
+    Ok(codec_context)
+}
+
+unsafe fn require_index_codec_parameters(
+    video_stream: *mut c_void,
+    result: *mut FramePlayerRustFfmpegGlobalIndexResult,
+) -> Result<*mut c_void, c_int> {
     let codec_parameters = read_field::<*mut c_void>(video_stream, AVSTREAM_CODECPAR_OFFSET);
     if codec_parameters.is_null() {
         write_message(result, "Video stream codec parameters were unavailable.");
         return Err(STATUS_STREAM_UNAVAILABLE);
     }
+    Ok(codec_parameters)
+}
 
+unsafe fn find_index_decoder(
+    symbols: &Symbols,
+    codec_parameters: *mut c_void,
+    result: *mut FramePlayerRustFfmpegGlobalIndexResult,
+) -> Result<*mut c_void, c_int> {
     let codec_id = read_field::<c_int>(codec_parameters, AVCODEC_PARAMETERS_CODEC_ID_OFFSET);
     let decoder = (symbols.avcodec_find_decoder)(codec_id);
     if decoder.is_null() {
@@ -386,7 +521,14 @@ unsafe fn build_global_frame_index(
         );
         return Err(STATUS_DECODER_UNAVAILABLE);
     }
+    Ok(decoder)
+}
 
+unsafe fn allocate_index_codec_context(
+    symbols: &Symbols,
+    decoder: *mut c_void,
+    result: *mut FramePlayerRustFfmpegGlobalIndexResult,
+) -> Result<CodecContextGuard, c_int> {
     let raw_codec_context = (symbols.avcodec_alloc_context3)(decoder);
     if raw_codec_context.is_null() {
         write_message(
@@ -399,8 +541,16 @@ unsafe fn build_global_frame_index(
         ptr: raw_codec_context,
         free: symbols.avcodec_free_context,
     };
+    Ok(codec_context)
+}
 
-    let copy_result = (symbols.avcodec_parameters_to_context)(codec_context.ptr, codec_parameters);
+unsafe fn copy_index_codec_parameters(
+    symbols: &Symbols,
+    codec_context: *mut c_void,
+    codec_parameters: *mut c_void,
+    result: *mut FramePlayerRustFfmpegGlobalIndexResult,
+) -> Result<(), c_int> {
+    let copy_result = (symbols.avcodec_parameters_to_context)(codec_context, codec_parameters);
     if copy_result < 0 {
         write_message(
             result,
@@ -411,20 +561,35 @@ unsafe fn build_global_frame_index(
         );
         return Err(STATUS_CODEC_CONTEXT_FAILED);
     }
+    Ok(())
+}
 
+unsafe fn configure_index_codec_context(
+    symbols: &Symbols,
+    codec_context: *mut c_void,
+    format_context: *mut c_void,
+    video_stream: *mut c_void,
+    video_time_base: AVRational,
+) {
     write_field(
-        codec_context.ptr,
+        codec_context,
         AVCODEC_CONTEXT_PKT_TIMEBASE_OFFSET,
         video_time_base,
     );
     write_field(
-        codec_context.ptr,
+        codec_context,
         AVCODEC_CONTEXT_FRAMERATE_OFFSET,
-        get_nominal_frame_rate(&symbols, format_context.ptr, video_stream),
+        get_nominal_frame_rate(symbols, format_context, video_stream),
     );
+}
 
-    let open_decoder_result =
-        (symbols.avcodec_open2)(codec_context.ptr, decoder, std::ptr::null_mut());
+unsafe fn open_index_decoder(
+    symbols: &Symbols,
+    codec_context: *mut c_void,
+    decoder: *mut c_void,
+    result: *mut FramePlayerRustFfmpegGlobalIndexResult,
+) -> Result<(), c_int> {
+    let open_decoder_result = (symbols.avcodec_open2)(codec_context, decoder, std::ptr::null_mut());
     if open_decoder_result < 0 {
         write_message(
             result,
@@ -435,7 +600,13 @@ unsafe fn build_global_frame_index(
         );
         return Err(STATUS_CODEC_CONTEXT_FAILED);
     }
+    Ok(())
+}
 
+unsafe fn allocate_index_packet(
+    symbols: &Symbols,
+    result: *mut FramePlayerRustFfmpegGlobalIndexResult,
+) -> Result<PacketGuard, c_int> {
     let raw_packet = (symbols.av_packet_alloc)();
     if raw_packet.is_null() {
         write_message(
@@ -448,7 +619,13 @@ unsafe fn build_global_frame_index(
         ptr: raw_packet,
         free: symbols.av_packet_free,
     };
+    Ok(packet)
+}
 
+unsafe fn allocate_index_frame(
+    symbols: &Symbols,
+    result: *mut FramePlayerRustFfmpegGlobalIndexResult,
+) -> Result<FrameGuard, c_int> {
     let raw_frame = (symbols.av_frame_alloc)();
     if raw_frame.is_null() {
         write_message(
@@ -461,33 +638,7 @@ unsafe fn build_global_frame_index(
         ptr: raw_frame,
         free: symbols.av_frame_free,
     };
-
-    let entries = decode_index_entries(
-        &symbols,
-        format_context.ptr,
-        video_stream,
-        codec_context.ptr,
-        packet.ptr,
-        frame.ptr,
-        video_stream_index,
-        cancel_flag,
-        result,
-    )?;
-
-    (*result).entry_count = entries.len() as u64;
-    if entries.is_empty() {
-        (*result).entries = std::ptr::null_mut();
-    } else {
-        let mut boxed = entries.into_boxed_slice();
-        (*result).entries = boxed.as_mut_ptr();
-        std::mem::forget(boxed);
-    }
-
-    write_message(
-        result,
-        "Rust exact frame index decoded display-order frames.",
-    );
-    Ok(())
+    Ok(frame)
 }
 
 unsafe fn load_symbols(runtime: &crate::RuntimeLibraries) -> Result<Symbols, c_int> {
@@ -547,7 +698,6 @@ unsafe fn load_symbols(runtime: &crate::RuntimeLibraries) -> Result<Symbols, c_i
 unsafe fn decode_index_entries(
     symbols: &Symbols,
     format_context: *mut c_void,
-    video_stream: *mut c_void,
     codec_context: *mut c_void,
     packet: *mut c_void,
     decoded_frame: *mut c_void,
@@ -563,10 +713,7 @@ unsafe fn decode_index_entries(
     let mut flush_packet_sent = false;
 
     loop {
-        if cancellation_requested(cancel_flag) {
-            write_message(result, "Exact frame index build was cancelled.");
-            return Err(STATUS_CANCELLED);
-        }
+        ensure_index_not_cancelled(cancel_flag, result)?;
 
         match try_receive_indexed_frame(
             symbols,
@@ -583,88 +730,162 @@ unsafe fn decode_index_entries(
             None => {}
         }
 
-        if has_pending_video_packet {
-            let send_pending_result = (symbols.avcodec_send_packet)(codec_context, packet);
-            if send_pending_result == AVERROR_EAGAIN {
-                continue;
-            }
-
-            if send_pending_result < 0 {
-                write_message(
-                    result,
-                    &format!(
-                        "Could not submit packet for Rust exact frame index: {}",
-                        ffmpeg_error(symbols.av_strerror, send_pending_result)
-                    ),
-                );
-                return Err(STATUS_PACKET_SEND_FAILED);
-            }
-
-            has_pending_video_packet = false;
-            (symbols.av_packet_unref)(packet);
+        if submit_pending_index_packet(
+            symbols,
+            codec_context,
+            packet,
+            &mut has_pending_video_packet,
+            result,
+        )? {
             continue;
         }
 
-        if input_exhausted {
-            if flush_packet_sent {
-                break;
-            }
-
-            let flush_result = (symbols.avcodec_send_packet)(codec_context, std::ptr::null());
-            if flush_result == AVERROR_EAGAIN {
-                continue;
-            }
-
-            if flush_result == AVERROR_EOF {
-                break;
-            }
-
-            if flush_result < 0 {
-                write_message(
-                    result,
-                    &format!(
-                        "Could not flush decoder for Rust exact frame index: {}",
-                        ffmpeg_error(symbols.av_strerror, flush_result)
-                    ),
-                );
-                return Err(STATUS_PACKET_SEND_FAILED);
-            }
-
-            flush_packet_sent = true;
-            continue;
+        match flush_index_decoder(
+            symbols,
+            codec_context,
+            &mut input_exhausted,
+            &mut flush_packet_sent,
+            result,
+        )? {
+            IndexLoopAction::Continue => continue,
+            IndexLoopAction::End => break,
+            IndexLoopAction::ReadPacket => {}
         }
 
-        let read_result = (symbols.av_read_frame)(format_context, packet);
-        if read_result == AVERROR_EOF {
-            input_exhausted = true;
-            continue;
-        }
-
-        if read_result < 0 {
-            write_message(
-                result,
-                &format!(
-                    "Could not read packet for Rust exact frame index: {}",
-                    ffmpeg_error(symbols.av_strerror, read_result)
-                ),
-            );
-            return Err(STATUS_PACKET_READ_FAILED);
-        }
-
-        if read_field::<c_int>(packet, AVPACKET_STREAM_INDEX_OFFSET) != video_stream_index {
-            (symbols.av_packet_unref)(packet);
-            continue;
-        }
-
-        has_pending_video_packet = true;
+        read_index_packet(
+            symbols,
+            format_context,
+            packet,
+            video_stream_index,
+            &mut input_exhausted,
+            &mut has_pending_video_packet,
+            result,
+        )?;
     }
 
     if has_pending_video_packet {
         (symbols.av_packet_unref)(packet);
     }
 
-    let _ = video_stream;
     Ok(entries)
+}
+
+unsafe fn ensure_index_not_cancelled(
+    cancel_flag: *const c_int,
+    result: *mut FramePlayerRustFfmpegGlobalIndexResult,
+) -> Result<(), c_int> {
+    if cancellation_requested(cancel_flag) {
+        write_message(result, "Exact frame index build was cancelled.");
+        return Err(STATUS_CANCELLED);
+    }
+
+    Ok(())
+}
+
+unsafe fn submit_pending_index_packet(
+    symbols: &Symbols,
+    codec_context: *mut c_void,
+    packet: *mut c_void,
+    has_pending_video_packet: &mut bool,
+    result: *mut FramePlayerRustFfmpegGlobalIndexResult,
+) -> Result<bool, c_int> {
+    if !*has_pending_video_packet {
+        return Ok(false);
+    }
+
+    let send_pending_result = (symbols.avcodec_send_packet)(codec_context, packet);
+    if send_pending_result == AVERROR_EAGAIN {
+        return Ok(true);
+    }
+
+    if send_pending_result < 0 {
+        write_message(
+            result,
+            &format!(
+                "Could not submit packet for Rust exact frame index: {}",
+                ffmpeg_error(symbols.av_strerror, send_pending_result)
+            ),
+        );
+        return Err(STATUS_PACKET_SEND_FAILED);
+    }
+
+    *has_pending_video_packet = false;
+    (symbols.av_packet_unref)(packet);
+    Ok(true)
+}
+
+unsafe fn flush_index_decoder(
+    symbols: &Symbols,
+    codec_context: *mut c_void,
+    input_exhausted: &mut bool,
+    flush_packet_sent: &mut bool,
+    result: *mut FramePlayerRustFfmpegGlobalIndexResult,
+) -> Result<IndexLoopAction, c_int> {
+    if !*input_exhausted {
+        return Ok(IndexLoopAction::ReadPacket);
+    }
+
+    if *flush_packet_sent {
+        return Ok(IndexLoopAction::End);
+    }
+
+    let flush_result = (symbols.avcodec_send_packet)(codec_context, std::ptr::null());
+    if flush_result == AVERROR_EAGAIN {
+        return Ok(IndexLoopAction::Continue);
+    }
+
+    if flush_result == AVERROR_EOF {
+        return Ok(IndexLoopAction::End);
+    }
+
+    if flush_result < 0 {
+        write_message(
+            result,
+            &format!(
+                "Could not flush decoder for Rust exact frame index: {}",
+                ffmpeg_error(symbols.av_strerror, flush_result)
+            ),
+        );
+        return Err(STATUS_PACKET_SEND_FAILED);
+    }
+
+    *flush_packet_sent = true;
+    Ok(IndexLoopAction::Continue)
+}
+
+unsafe fn read_index_packet(
+    symbols: &Symbols,
+    format_context: *mut c_void,
+    packet: *mut c_void,
+    video_stream_index: c_int,
+    input_exhausted: &mut bool,
+    has_pending_video_packet: &mut bool,
+    result: *mut FramePlayerRustFfmpegGlobalIndexResult,
+) -> Result<(), c_int> {
+    let read_result = (symbols.av_read_frame)(format_context, packet);
+    if read_result == AVERROR_EOF {
+        *input_exhausted = true;
+        return Ok(());
+    }
+
+    if read_result < 0 {
+        write_message(
+            result,
+            &format!(
+                "Could not read packet for Rust exact frame index: {}",
+                ffmpeg_error(symbols.av_strerror, read_result)
+            ),
+        );
+        return Err(STATUS_PACKET_READ_FAILED);
+    }
+
+    if read_field::<c_int>(packet, AVPACKET_STREAM_INDEX_OFFSET) != video_stream_index {
+        (symbols.av_packet_unref)(packet);
+        return Ok(());
+    }
+
+    *has_pending_video_packet = true;
+    Ok(())
 }
 
 unsafe fn try_receive_indexed_frame(

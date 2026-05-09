@@ -12,16 +12,16 @@ Unified Avalonia Preview:
 
 macOS:
 
-1. Download `FramePlayer-macOS-arm64-unified-preview-0.2.0.zip` and its SHA256 file from the [Frame Player Unified Preview 0.2.0 release page](https://github.com/jfleezy23/frame-player/releases/tag/unified-preview-0.2.0).
+1. Download `FramePlayer-macOS-arm64-unified-preview-0.3.0.zip` and its SHA256 file from the [Frame Player Unified Preview 0.3.0 release page](https://github.com/jfleezy23/frame-player/releases/tag/unified-preview-0.3.0).
 2. Verify the ZIP hash if you are validating the release candidate.
 3. Unzip the app and move `Frame Player.app` to `/Applications`.
 4. Launch `Frame Player.app`.
 
-The unified macOS preview is Developer ID signed, notarized, stapled, and built for Apple Silicon. Intel and universal macOS builds are not part of `0.2.0`.
+The unified macOS preview is Developer ID signed, notarized, stapled, and built for Apple Silicon. Intel and universal macOS builds are not part of `0.3.0`.
 
 Windows:
 
-1. Download `FramePlayer-Windows-x64-unified-preview-0.2.0.zip` and its SHA256 file from the [Frame Player Unified Preview 0.2.0 release page](https://github.com/jfleezy23/frame-player/releases/tag/unified-preview-0.2.0).
+1. Download `FramePlayer-Windows-x64-unified-preview-0.3.0.zip` and its SHA256 file from the [Frame Player Unified Preview 0.3.0 release page](https://github.com/jfleezy23/frame-player/releases/tag/unified-preview-0.3.0).
 2. Verify the ZIP hash if you are validating the preview candidate.
 3. Extract the ZIP to a local folder.
 4. Run `FramePlayer.Avalonia.exe`.

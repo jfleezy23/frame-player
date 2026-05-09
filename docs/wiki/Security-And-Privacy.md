@@ -14,7 +14,7 @@ Expected network activity is limited to developer/build tooling such as NuGet re
 
 ## Signing And Notarization
 
-Windows stable and Unified Avalonia Preview have separate release paths. Unified Avalonia Preview `0.2.0` ships synchronized Windows x64 and Apple Silicon macOS ZIPs from the same prerelease. The macOS artifact is Developer ID signed, notarized, stapled, and verified with Gatekeeper. The Windows artifact is a self-contained Windows x64 ZIP and is separate from the stable Windows WPF ZIP/release path.
+Windows stable and Unified Avalonia Preview have separate release paths. Unified Avalonia Preview `0.3.0` ships synchronized Windows x64 and Apple Silicon macOS ZIPs from the same prerelease. The macOS artifact is Developer ID signed, notarized, stapled, and verified with Gatekeeper. The Windows artifact is a self-contained Windows x64 ZIP and is separate from the stable Windows WPF ZIP/release path.
 
 For a notarized macOS release:
 

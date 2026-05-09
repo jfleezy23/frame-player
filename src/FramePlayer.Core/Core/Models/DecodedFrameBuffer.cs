@@ -28,10 +28,7 @@ namespace FramePlayer.Core.Models
             int stride,
             string pixelFormatName)
         {
-            if (pixelBufferLength < 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(pixelBufferLength));
-            }
+            ArgumentOutOfRangeException.ThrowIfNegative(pixelBufferLength);
 
             Descriptor = descriptor ?? throw new ArgumentNullException(nameof(descriptor));
             _nativePixelBuffer = new NativePixelBufferReference(
@@ -181,10 +178,7 @@ namespace FramePlayer.Core.Models
                 while (true)
                 {
                     var current = Volatile.Read(ref _referenceCount);
-                    if (current <= 0)
-                    {
-                        throw new ObjectDisposedException(nameof(DecodedFrameBuffer));
-                    }
+                    ObjectDisposedException.ThrowIf(current <= 0, typeof(DecodedFrameBuffer));
 
                     if (Interlocked.CompareExchange(ref _referenceCount, current + 1, current) == current)
                     {
@@ -202,10 +196,7 @@ namespace FramePlayer.Core.Models
                     return;
                 }
 
-                if (remaining < 0)
-                {
-                    throw new ObjectDisposedException(nameof(DecodedFrameBuffer));
-                }
+                ObjectDisposedException.ThrowIf(remaining < 0, typeof(DecodedFrameBuffer));
             }
         }
     }

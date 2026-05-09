@@ -16,7 +16,7 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
-        public void UnifiedProject_UsesPreview020AssemblyAndRuntimeIdentity()
+        public void UnifiedProject_UsesPreview030AssemblyAndRuntimeIdentity()
         {
             var root = FindRepositoryRoot();
             var project = File.ReadAllText(Path.Combine(root, "src", "FramePlayer.Avalonia", "FramePlayer.Avalonia.csproj"));
@@ -90,15 +90,15 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
-        public void UnifiedReleaseNaming_UsesSynchronizedPreview020()
+        public void UnifiedReleaseNaming_UsesSynchronizedPreview030()
         {
-            const string tag = "unified-preview-0.2.0";
-            const string windowsAsset = "FramePlayer-Windows-x64-unified-preview-0.2.0.zip";
-            const string macAsset = "FramePlayer-macOS-arm64-unified-preview-0.2.0.zip";
+            const string tag = "unified-preview-0.3.0";
+            const string windowsAsset = "FramePlayer-Windows-x64-unified-preview-0.3.0.zip";
+            const string macAsset = "FramePlayer-macOS-arm64-unified-preview-0.3.0.zip";
 
-            Assert.EndsWith("0.2.0", tag, StringComparison.Ordinal);
-            Assert.Contains("unified-preview-0.2.0", windowsAsset, StringComparison.Ordinal);
-            Assert.Contains("unified-preview-0.2.0", macAsset, StringComparison.Ordinal);
+            Assert.EndsWith("0.3.0", tag, StringComparison.Ordinal);
+            Assert.Contains("unified-preview-0.3.0", windowsAsset, StringComparison.Ordinal);
+            Assert.Contains("unified-preview-0.3.0", macAsset, StringComparison.Ordinal);
         }
 
         private static T RequireControl<T>(Window window, string name)
