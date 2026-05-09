@@ -2,28 +2,30 @@
 
 ## Unified Avalonia Preview 0.3.0
 
-Unified Avalonia Preview `0.3.0` is the next combined Windows/macOS preview release candidate.
-It is the first combined preview planned to ship the Rust FFmpeg native pipeline in both platform packages.
+Unified Avalonia Preview `0.3.0` was published on 2026-05-09 as the current combined Windows/macOS preview release.
+It is the first combined preview to ship the Rust FFmpeg native pipeline in both platform packages.
 
-Release-candidate baseline:
+Recorded validation evidence:
 
 - Rust pipeline merge PR: [#69](https://github.com/jfleezy23/frame-player/pull/69), merged as `3902a121f634e80dd7058ca547f1eb36736e9950`.
 - `@codex review`: completed with no major issues reported.
 - GitHub checks on PR #69 passed: Windows CI, macOS Avalonia, SonarQube/SonarCloud, CodeQL, dependency review, and dependency submission.
-- Final release target, artifact SHA256 values, and notarization evidence must be filled from the merged release-prep head and final packaged artifacts.
+- Release-prep and package-cleanup PR checks passed before publication.
+- Release target: `bdd9829e08fad1deed94b687405494a14e84e90c`.
+- Windows ZIP was rebuilt with the Rust DLL and pinned FFmpeg runtime files, inventoried for required package contents, and validated by SHA256.
+- macOS ZIP was Developer ID signed, notarized, stapled, extracted, and accepted by Gatekeeper.
+- Uploaded GitHub release assets were downloaded and revalidated by SHA256; the downloaded macOS ZIP was extracted and accepted by Gatekeeper.
 
-Required release-candidate evidence:
+Published Unified Preview details:
 
 - Windows ZIP: `FramePlayer-Windows-x64-unified-preview-0.3.0.zip`, including `frameplayer_ffmpeg_probe.dll` beside `FramePlayer.Avalonia.exe`.
+- Windows SHA256: `9df3e95afee515832902c5f1e26ba752879080a42ad2d38c0d579b3e16c39b2b`
 - macOS ZIP: `FramePlayer-macOS-arm64-unified-preview-0.3.0.zip`, including `libframeplayer_ffmpeg_probe.dylib` beside the app executable.
-- Forced Rust validation on both platforms with `FRAMEPLAYER_FFMPEG_INDEX_BUILDER=rust`, `FRAMEPLAYER_FFMPEG_DECODE_CORE=rust`, and `FRAMEPLAYER_FFMPEG_FRAME_CONVERTER=rust` so fallback cannot hide native-path failures.
-- macOS Developer ID signing, notarization, stapling, extraction, and Gatekeeper verification before public publication.
-
-Planned Unified Preview details:
-
 - Release: [Frame Player Unified Preview 0.3.0](https://github.com/jfleezy23/frame-player/releases/tag/unified-preview-0.3.0)
-- Windows artifact: `FramePlayer-Windows-x64-unified-preview-0.3.0.zip`
-- macOS artifact: `FramePlayer-macOS-arm64-unified-preview-0.3.0.zip`
+- macOS SHA256: `29ed24b269889987a9641952d0a5e0b8746a38b157db7b82c43d0042b319b97e`
+- Apple notarization submission: `421c32c3-f0da-4436-9ef1-7ac2b4e22237`
+
+Additional Rust-path validation should force all three modes with `FRAMEPLAYER_FFMPEG_INDEX_BUILDER=rust`, `FRAMEPLAYER_FFMPEG_DECODE_CORE=rust`, and `FRAMEPLAYER_FFMPEG_FRAME_CONVERTER=rust` so fallback cannot hide native-path failures.
 
 ## Unified Avalonia Preview 0.2.0
 

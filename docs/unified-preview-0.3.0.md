@@ -1,16 +1,16 @@
 # Unified Preview 0.3.0
 
-This note prepares the next synchronized Windows/macOS Avalonia preview. Unified Preview `0.3.0` is the first combined preview planned to ship the Rust FFmpeg native pipeline in both platform packages.
+This note records the synchronized Windows/macOS Avalonia preview. Unified Preview `0.3.0` is the first combined preview to ship the Rust FFmpeg native pipeline in both platform packages.
 
-- Planned release: [Frame Player Unified Preview 0.3.0](https://github.com/jfleezy23/frame-player/releases/tag/unified-preview-0.3.0)
+- Published release: [Frame Player Unified Preview 0.3.0](https://github.com/jfleezy23/frame-player/releases/tag/unified-preview-0.3.0)
 - Tag: `unified-preview-0.3.0`
 - Rust pipeline merge target: `3902a121f634e80dd7058ca547f1eb36736e9950`
-- Final release target: pending release-prep merge
+- Final release target: `bdd9829e08fad1deed94b687405494a14e84e90c`
 - Windows artifact: `FramePlayer-Windows-x64-unified-preview-0.3.0.zip`
-- Windows SHA256: pending final Windows package
+- Windows SHA256: `9df3e95afee515832902c5f1e26ba752879080a42ad2d38c0d579b3e16c39b2b`
 - macOS artifact: `FramePlayer-macOS-arm64-unified-preview-0.3.0.zip`
-- macOS SHA256: pending final signed/notarized macOS package
-- Apple notarization submission: pending final signed package
+- macOS SHA256: `29ed24b269889987a9641952d0a5e0b8746a38b157db7b82c43d0042b319b97e`
+- Apple notarization submission: `421c32c3-f0da-4436-9ef1-7ac2b4e22237`
 
 ## What Changed
 
@@ -87,10 +87,11 @@ Windows package smoke must confirm:
 
 ## Release Gate
 
-- Final release-prep PR checks pass on the branch that carries the `0.3.0` release metadata.
-- Windows ZIP is rebuilt from the final release target and validated by SHA256.
-- macOS ZIP is rebuilt from the final release target, Developer ID signed, notarized, stapled, extracted, and accepted by Gatekeeper.
-- SHA256 sidecars are generated for both artifacts.
+- Final release-prep and package-cleanup PR checks passed on the branches that carried the `0.3.0` release metadata.
+- Windows ZIP was rebuilt from the final release target, inventoried for required runtime files, and validated by SHA256.
+- macOS ZIP was rebuilt from the final release target, Developer ID signed, notarized, stapled, extracted, and accepted by Gatekeeper.
+- SHA256 sidecars were generated and uploaded for both artifacts.
+- Uploaded release assets were downloaded from GitHub and revalidated by SHA256; the downloaded macOS ZIP was extracted and accepted by Gatekeeper.
 - Release notes, README, wiki links, package scripts, and CI package smoke checks all use `0.3.0`.
 
 ## Superseded Previews
