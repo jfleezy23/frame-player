@@ -196,12 +196,12 @@ impl Drop for FrameGuard {
 }
 
 struct IndexSession {
-    _runtime: crate::RuntimeLibraries,
     symbols: Symbols,
     format_context: FormatContextGuard,
     codec_context: CodecContextGuard,
     packet: PacketGuard,
     frame: FrameGuard,
+    _runtime: crate::RuntimeLibraries,
 }
 
 enum IndexLoopAction {
@@ -358,12 +358,12 @@ unsafe fn create_index_session(
     let frame = allocate_index_frame(&symbols, result)?;
 
     Ok(IndexSession {
-        _runtime: runtime,
         symbols,
         format_context,
         codec_context,
         packet,
         frame,
+        _runtime: runtime,
     })
 }
 
