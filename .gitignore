@@ -22,4 +22,6 @@ Runtime/ffmpeg-export/
 Runtime/ffmpeg-export-8.1-candidate/
 Runtime/macos/**/*.dylib
 Runtime/macos/**/*.dSYM/
+Runtime/rust/
+native/**/target/
 Video Test Files/

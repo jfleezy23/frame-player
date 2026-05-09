@@ -11,6 +11,20 @@ This note documents the first synchronized Windows/macOS Avalonia preview.
 - macOS SHA256: `9dd253ffd1e18bceb7432230100bfbc5d7cd7cb4975c5458f1357317d72afb87`
 - Apple notarization submission: `cd7a2d35-df28-4170-bd31-3ca49e4acebd`
 
+## Rust FFmpeg Integration
+
+The next unified preview packaging path now builds and ships a small Rust native library alongside the Avalonia executable:
+
+- macOS: `libframeplayer_ffmpeg_probe.dylib`
+- Windows: `frameplayer_ffmpeg_probe.dll`
+
+The library still keeps C# `FFmpeg.AutoGen` playback as the fallback path. It now contains these first-party Rust paths:
+
+- Runtime probe: loads the bundled FFmpeg libraries and reads their version symbols.
+- Exact global frame index builder: decodes video frames through FFmpeg, returns display-order frame-index entries, and falls back to the managed builder unless `FRAMEPLAYER_FFMPEG_INDEX_BUILDER=rust` is set for validation.
+- Indexed decode-window helper: materializes global-index-backed seek, backward reconstruction, and cache-prime windows; force it with `FRAMEPLAYER_FFMPEG_DECODE_CORE=rust`.
+- BGRA frame converter: converts decoded `AVFrame` data into Rust-owned native BGRA buffers that the Avalonia presenters copy from directly; force it with `FRAMEPLAYER_FFMPEG_FRAME_CONVERTER=rust`.
+
 ## Branch Discipline
 
 - Implementation PR: #65, merged into `main`.
@@ -32,9 +46,32 @@ dotnet test tests/FramePlayer.Desktop.Tests/FramePlayer.Desktop.Tests.csproj -c 
 dotnet test tests/FramePlayer.Mac.Tests/FramePlayer.Mac.Tests.csproj -c Release --filter "Category!=ReleaseCandidate"
 ```
 
+For Rust exact-index parity on macOS after staging `Runtime/rust/osx-arm64/libframeplayer_ffmpeg_probe.dylib`:
+
+```bash
+FRAMEPLAYER_ENABLE_RUST_INDEX_PARITY_TESTS=1 \
+FRAMEPLAYER_ENABLE_RUST_DECODE_CORE_TESTS=1 \
+FRAMEPLAYER_FFMPEG_RUNTIME_DIR="$PWD/Runtime/macos/osx-arm64/ffmpeg" \
+DYLD_LIBRARY_PATH="$PWD/Runtime/rust/osx-arm64" \
+dotnet test tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj -c Release --filter RustFfmpegProbeTests
+```
+
+For macOS corpus validation with the Rust paths forced:
+
+```bash
+FRAMEPLAYER_MAC_CORPUS="$PWD/Video Test Files" \
+FRAMEPLAYER_MAC_REQUIRE_CORPUS=1 \
+FRAMEPLAYER_FFMPEG_INDEX_BUILDER=rust \
+FRAMEPLAYER_FFMPEG_DECODE_CORE=rust \
+FRAMEPLAYER_FFMPEG_FRAME_CONVERTER=rust \
+DYLD_LIBRARY_PATH="$PWD/Runtime/rust/osx-arm64" \
+dotnet test tests/FramePlayer.Mac.Tests/FramePlayer.Mac.Tests.csproj -c Release --filter "FullyQualifiedName~MacCorpusReleaseCandidateTests.ReleaseCandidate_OpensSeeksAndStepsThroughProvidedCorpus"
+```
+
 For macOS package smoke validation:
 
 ```bash
+export PATH="$HOME/.cargo/bin:$HOME/.dotnet:$PATH"
 PACKAGE_VERSION=unified-preview-0.2.0 script/package_unified_macos_release.sh --unsigned
 ```
 

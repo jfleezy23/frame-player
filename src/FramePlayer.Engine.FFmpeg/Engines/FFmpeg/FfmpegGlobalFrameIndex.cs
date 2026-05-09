@@ -51,6 +51,27 @@ namespace FramePlayer.Engines.FFmpeg
                 throw new FileNotFoundException("The requested media file was not found.", filePath);
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
+            var buildMode = RustFfmpegGlobalFrameIndexBuilder.ResolveBuildMode();
+            if (buildMode != RustFfmpegGlobalFrameIndexBuildMode.Managed)
+            {
+                var rustIndex = RustFfmpegGlobalFrameIndexBuilder.TryBuild(
+                    ffmpeg.RootPath,
+                    filePath,
+                    videoStreamIndex,
+                    cancellationToken);
+                if (rustIndex.Succeeded)
+                {
+                    return FromRustIndex(rustIndex);
+                }
+
+                if (buildMode == RustFfmpegGlobalFrameIndexBuildMode.Rust)
+                {
+                    throw new InvalidOperationException("Rust FFmpeg exact frame index failed: " +
+                        rustIndex.StatusName + ": " + rustIndex.Message);
+                }
+            }
+
             AVFormatContext* formatContext = null;
             AVCodecContext* codecContext = null;
             AVPacket* packet = null;
@@ -214,6 +235,42 @@ namespace FramePlayer.Engines.FFmpeg
                     ffmpeg.avformat_close_input(&formatContextToClose);
                 }
             }
+        }
+
+        private static FfmpegGlobalFrameIndex FromRustIndex(RustFfmpegGlobalFrameIndexResult rustIndex)
+        {
+            if (rustIndex == null)
+            {
+                throw new ArgumentNullException(nameof(rustIndex));
+            }
+
+            var timeBase = new AVRational
+            {
+                num = rustIndex.TimeBaseNumerator,
+                den = rustIndex.TimeBaseDenominator
+            };
+            var entries = new List<FfmpegGlobalFrameIndexEntry>(rustIndex.Entries.Length);
+            foreach (var rustEntry in rustIndex.Entries)
+            {
+                var presentationTime = rustEntry.SearchTimestamp.HasValue
+                    ? FfmpegNativeHelpers.ToTimeSpan(rustEntry.SearchTimestamp.Value, timeBase)
+                    : TimeSpan.Zero;
+                var seekAnchorStrategy = rustEntry.SeekAnchorTimestamp > 0L
+                    ? "global-index-keyframe"
+                    : "stream-start";
+                entries.Add(new FfmpegGlobalFrameIndexEntry(
+                    rustEntry.AbsoluteFrameIndex,
+                    presentationTime,
+                    rustEntry.PresentationTimestamp,
+                    rustEntry.DecodeTimestamp,
+                    rustEntry.SearchTimestamp,
+                    rustEntry.IsKeyFrame,
+                    rustEntry.SeekAnchorFrameIndex,
+                    rustEntry.SeekAnchorTimestamp,
+                    seekAnchorStrategy));
+            }
+
+            return new FfmpegGlobalFrameIndex(entries);
         }
 
         public bool TryGetByAbsoluteFrameIndex(long frameIndex, out FfmpegGlobalFrameIndexEntry entry)

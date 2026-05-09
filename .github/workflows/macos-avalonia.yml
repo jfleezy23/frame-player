@@ -26,6 +26,11 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Setup Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          cargo --version
+
       - name: Restore
         run: |
           dotnet restore src/FramePlayer.Mac/FramePlayer.Mac.csproj
@@ -79,6 +84,7 @@ jobs:
           fi
 
           for required_path in \
+            "$app_path/Contents/MacOS/libframeplayer_ffmpeg_probe.dylib" \
             "$app_path/Contents/MacOS/Runtime/runtime-manifest.json" \
             "$app_path/Contents/MacOS/Runtime/export-runtime-manifest.json" \
             "$app_path/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/SHA256SUMS.txt" \

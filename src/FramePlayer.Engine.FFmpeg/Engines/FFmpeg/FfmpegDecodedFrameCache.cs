@@ -88,7 +88,7 @@ namespace FramePlayer.Engines.FFmpeg
                             continue;
                         }
 
-                        totalBytes += pixelBuffer.LongLength;
+                        totalBytes += _frames[index].ApproximateByteCount;
                     }
 
                     return totalBytes;
@@ -111,7 +111,7 @@ namespace FramePlayer.Engines.FFmpeg
         {
             lock (_sync)
             {
-                _frames.Clear();
+                ClearFrames();
                 _currentIndex = -1;
             }
         }
@@ -122,7 +122,7 @@ namespace FramePlayer.Engines.FFmpeg
 
             lock (_sync)
             {
-                _frames.Clear();
+                ClearFrames();
                 _frames.Add(currentFrame);
                 _currentIndex = 0;
             }
@@ -144,7 +144,7 @@ namespace FramePlayer.Engines.FFmpeg
 
             lock (_sync)
             {
-                _frames.Clear();
+                ClearFrames();
                 _frames.AddRange(frames);
                 _currentIndex = currentIndex;
             }
@@ -289,6 +289,7 @@ namespace FramePlayer.Engines.FFmpeg
                     if (!ReferenceEquals(existingFrame, replacementFrame))
                     {
                         _frames[index] = replacementFrame;
+                        existingFrame?.Dispose();
                         changed = true;
                     }
                 }
@@ -301,7 +302,7 @@ namespace FramePlayer.Engines.FFmpeg
         {
             while (_currentIndex > _maxPreviousFrames)
             {
-                _frames.RemoveAt(0);
+                RemoveFrameAt(0);
                 _currentIndex--;
             }
         }
@@ -310,8 +311,25 @@ namespace FramePlayer.Engines.FFmpeg
         {
             while (HasCurrent && ForwardCount > _maxForwardFrames)
             {
-                _frames.RemoveAt(_frames.Count - 1);
+                RemoveFrameAt(_frames.Count - 1);
             }
+        }
+
+        private void ClearFrames()
+        {
+            for (var index = 0; index < _frames.Count; index++)
+            {
+                _frames[index]?.Dispose();
+            }
+
+            _frames.Clear();
+        }
+
+        private void RemoveFrameAt(int index)
+        {
+            var frame = _frames[index];
+            _frames.RemoveAt(index);
+            frame?.Dispose();
         }
     }
 }

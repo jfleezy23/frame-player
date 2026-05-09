@@ -76,6 +76,8 @@ Package layout checks passed:
 - No macOS dylibs, `.app` bundle contents, `__MACOSX`, `.DS_Store`, or other macOS artifacts were found.
 - The shipped output remains DLL-only for export runtime; no `ffmpeg.exe`, `ffprobe.exe`, or `ffmpeg-tools` directory was present.
 
+Rust note: this Windows validation record predates the Rust FFmpeg native library. Any rebuilt unified-preview Windows ZIP should also include `frameplayer_ffmpeg_probe.dll` beside `FramePlayer.Avalonia.exe`; force `FRAMEPLAYER_FFMPEG_INDEX_BUILDER=rust`, `FRAMEPLAYER_FFMPEG_DECODE_CORE=rust`, and `FRAMEPLAYER_FFMPEG_FRAME_CONVERTER=rust` during Windows validation so fallback cannot hide a native-path failure.
+
 ## Smoke Validation
 
 The extracted package was launched directly from `extracted-clean\FramePlayer.Avalonia.exe`.

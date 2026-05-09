@@ -1,5 +1,4 @@
 using System;
-using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
@@ -36,18 +35,40 @@ namespace FramePlayer.Avalonia.Services
 
             using (var locked = bitmap.Lock())
             {
-                var sourceStride = frameBuffer.Stride;
-                const int bytesPerPixel = 4;
-                var copyBytesPerRow = Math.Min(crop.Width * bytesPerPixel, locked.RowBytes);
-                for (var y = 0; y < crop.Height; y++)
+                unsafe
                 {
-                    var sourceOffset = ((crop.Y + y) * sourceStride) + (crop.X * bytesPerPixel);
-                    var destinationRow = IntPtr.Add(locked.Address, y * locked.RowBytes);
-                    Marshal.Copy(frameBuffer.PixelBuffer, sourceOffset, destinationRow, copyBytesPerRow);
+                    if (frameBuffer.TryGetPixelBufferPointer(out var nativePixelBufferPointer))
+                    {
+                        CopyRows((byte*)nativePixelBufferPointer, frameBuffer.Stride, crop, locked.Address, locked.RowBytes);
+                    }
+                    else
+                    {
+                        fixed (byte* sourceStart = frameBuffer.PixelBuffer)
+                        {
+                            CopyRows(sourceStart, frameBuffer.Stride, crop, locked.Address, locked.RowBytes);
+                        }
+                    }
                 }
             }
 
             return bitmap;
+        }
+
+        private static unsafe void CopyRows(
+            byte* sourceStart,
+            int sourceStride,
+            PixelRect crop,
+            IntPtr destinationStart,
+            int destinationStride)
+        {
+            const int bytesPerPixel = 4;
+            var copyBytesPerRow = Math.Min(crop.Width * bytesPerPixel, destinationStride);
+            for (var y = 0; y < crop.Height; y++)
+            {
+                var sourceRow = sourceStart + ((crop.Y + y) * sourceStride) + (crop.X * bytesPerPixel);
+                var destinationRow = (byte*)destinationStart + (y * destinationStride);
+                Buffer.MemoryCopy(sourceRow, destinationRow, destinationStride, copyBytesPerRow);
+            }
         }
 
         private static PixelRect ResolveCrop(int sourceWidth, int sourceHeight, PaneViewportSnapshot? viewportSnapshot)

@@ -212,6 +212,7 @@ jobs:
             "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/IAudioOutput.cs"
             "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/MacAudioQueueOutput.cs"
             "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/ManagedAudioClockOutput.cs"
+            "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/RustFfmpeg*.cs"
             "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/WinMmAudioOutput.cs"
             "src/FramePlayer.Engine.FFmpeg/Services/AppPreferences.cs"
             "src/FramePlayer.Engine.FFmpeg/Services/AppPreferencesService.cs"
@@ -223,12 +224,12 @@ jobs:
             "scripts/ui_loop_visible_test.py"
           ) -join ","
 
-          # The DLL-only export host and native FFmpeg interop layer are exercised
-          # through dedicated host integration tests and app-driven regression
-          # suites rather than imported Sonar line coverage, and they necessarily
-          # use unsafe/native patterns that would otherwise dominate PR hotspot
-          # review. Keep the gate focused on the app surface that Sonar can
-          # evaluate directly from this workflow.
+          # The DLL-only export host, native FFmpeg interop layer, and Rust
+          # preview bridge are exercised through dedicated host integration tests
+          # and app-driven regression suites rather than imported Sonar line
+          # coverage, and they necessarily use unsafe/native patterns that would
+          # otherwise dominate PR hotspot review. Keep the gate focused on the
+          # app surface that Sonar can evaluate directly from this workflow.
           $analysisExclusions = @(
             "Core/Models/ExportHost*.cs"
             "Diagnostics/ExportHostCli.cs"
@@ -245,7 +246,12 @@ jobs:
             "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/FfmpegHardwareDeviceCache.cs"
             "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/FfmpegNativeHelpers.cs"
             "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/FfmpegReviewEngine.cs"
+            "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/RustFfmpegBgraFrameConverter.cs"
+            "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/RustFfmpegDecodeCore.cs"
+            "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/RustFfmpegGlobalFrameIndexBuilder.cs"
+            "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/RustFfmpegProbe.cs"
             "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/WinMmAudioOutput.cs"
+            "src/FramePlayer.Avalonia/Services/AvaloniaFrameBufferPresenter.cs"
             "src/FramePlayer.Mac/Services/AvaloniaFrameBufferPresenter.cs"
           ) -join ","
 
@@ -256,6 +262,7 @@ jobs:
             "Diagnostics/ReviewEngineManualTestCli.cs"
             "Services/ExportToolsManifestService.cs"
             "Services/RuntimeManifestService.cs"
+            "native/frameplayer_ffmpeg_probe/src/**"
             "src/FramePlayer.Core/Core/**"
             "src/FramePlayer.Engine.FFmpeg/**"
             "src/FramePlayer.Mac/Core/Models/**"

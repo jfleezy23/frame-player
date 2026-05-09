@@ -99,6 +99,9 @@ sign_app_bundle() {
 }
 
 env -u VERSION \
+  "$ROOT_DIR/scripts/Build-RustFfmpegProbe.sh" osx-arm64
+
+env -u VERSION \
   CONFIGURATION=Release \
   APP_NAME=FramePlayer.Avalonia \
   APP_VERSION=0.2.0 \
@@ -113,6 +116,7 @@ env -u VERSION \
 /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP_BUNDLE/Contents/Info.plist" >/dev/null
 [[ -f "$APP_BUNDLE/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/libavformat.62.dylib" ]]
 [[ -f "$APP_BUNDLE/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/libavfilter.11.dylib" ]]
+[[ -f "$APP_BUNDLE/Contents/MacOS/libframeplayer_ffmpeg_probe.dylib" ]]
 
 if [[ "$SIGN_MODE" != "none" ]]; then
   resolved_identity="$(resolve_signing_identity)" || {

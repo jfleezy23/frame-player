@@ -61,6 +61,13 @@ Important note:
 - Because the macOS FFmpeg build enables GPL components and x264, redistribution of the macOS preview runtime has GPL implications.
 - The published `macos-preview-0.1.0` Apple Silicon artifact redistributes this staged runtime, so release and distribution work must continue to preserve the applicable FFmpeg/x264 license notices, source-offer posture, provenance, and hash records.
 
+### Rust Standard Library
+
+- Project: <https://www.rust-lang.org/>
+- Role in this repo: linked into the first-party `frameplayer_ffmpeg_probe` native library shipped with the unified Avalonia preview
+- License: MIT OR Apache-2.0
+- License policy source: <https://www.rust-lang.org/policies/licenses>
+
 ## Attribution
 
 Frame Player itself is authored and released separately from the components above. Review the individual upstream projects and license texts before redistributing modified builds.

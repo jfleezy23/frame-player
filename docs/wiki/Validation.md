@@ -3,6 +3,8 @@
 ## Unified Avalonia Preview 0.2.0
 
 Unified Avalonia Preview `0.2.0` was validated as the first synchronized Windows/macOS preview on 2026-05-04.
+The Rust FFmpeg integration was added after the original published artifact validation; rebuilt unified-preview artifacts must also include `frameplayer_ffmpeg_probe.dll` on Windows or `libframeplayer_ffmpeg_probe.dylib` on macOS.
+The native library contains the runtime probe, exact decoded-frame global index builder, indexed decode-window helper, and BGRA frame converter. Use `FRAMEPLAYER_FFMPEG_INDEX_BUILDER=managed|rust|auto`, `FRAMEPLAYER_FFMPEG_DECODE_CORE=managed|rust|auto`, and `FRAMEPLAYER_FFMPEG_FRAME_CONVERTER=managed|rust|auto` to force parity checks; `auto` uses Rust when available and falls back to the managed path.
 
 Recorded validation evidence:
 

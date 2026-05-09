@@ -18,6 +18,8 @@ if (Test-Path $publishDir) {
     Remove-Item -Recurse -Force $publishDir
 }
 
+& (Join-Path $repoRoot "scripts\Build-RustFfmpegProbe.ps1") -RuntimeIdentifier $RuntimeIdentifier
+
 dotnet publish $project `
     -c $Configuration `
     -r $RuntimeIdentifier `
@@ -27,6 +29,7 @@ dotnet publish $project `
 
 $requiredFiles = @(
     "FramePlayer.Avalonia.exe",
+    "frameplayer_ffmpeg_probe.dll",
     "avcodec-62.dll",
     "avformat-62.dll",
     "avutil-60.dll",
