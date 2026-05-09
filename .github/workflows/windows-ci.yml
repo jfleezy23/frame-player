@@ -25,6 +25,12 @@ jobs:
         with:
           global-json-file: .\global.json
 
+      - name: Setup Rust toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal
+          cargo --version
+
       - name: Enforce workflow action pinning
         shell: pwsh
         run: .\scripts\Test-WorkflowActionPinning.ps1
@@ -81,6 +87,7 @@ jobs:
 
           $requiredFiles = @(
               "FramePlayer.Avalonia.exe",
+              "frameplayer_ffmpeg_probe.dll",
               "avcodec-62.dll",
               "avformat-62.dll",
               "avutil-60.dll",

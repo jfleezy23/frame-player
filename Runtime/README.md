@@ -18,6 +18,7 @@ The active runtime is the self-built FFmpeg 8.1 line staged locally by `scripts\
 Packaged builds must include `libwinpthread-1.dll` beside the FFmpeg DLLs and `FramePlayer.exe`.
 The separate export runtime is pinned through `Runtime\export-runtime-manifest.json` and restored to `Runtime\ffmpeg-export\`.
 The local/dev-only CLI tool bundle remains pinned through `Runtime\export-tools-manifest.json` and restored to `Runtime\ffmpeg-tools\`, but it is not expected in shipped app output.
+The unified Avalonia preview also builds a first-party Rust FFmpeg native library into `Runtime\rust\<rid>\` before packaging. That generated native library is ignored by git and is not part of the FFmpeg restore manifests. It contains the runtime probe, exact decoded-frame global index builder, indexed decode-window helper, and BGRA frame converter. Use `FRAMEPLAYER_FFMPEG_INDEX_BUILDER=managed|rust|auto`, `FRAMEPLAYER_FFMPEG_DECODE_CORE=managed|rust|auto`, and `FRAMEPLAYER_FFMPEG_FRAME_CONVERTER=managed|rust|auto` to force or bypass the Rust paths during validation.
 
 Current pinned FFmpeg runtime version: `n8.1-frameplayer-source`.
 Current pinned FFmpeg export runtime version: `n8.1-frameplayer-export-runtime`.
@@ -29,3 +30,4 @@ This runtime also requires `libwinpthread-1.dll`, which is staged beside the FFm
 The export runtime is staged separately so export/probe work can run in a secondary headless host without touching the primary playback DLL set.
 The current restore path can seed `ffmpeg-export` from the local export-tools bundle for dev/test convenience, but shipped output is expected to carry only the DLL-based export runtime.
 The dedicated `Build-FFmpeg-ExportRuntime-8.1.ps1` script stages a lean local candidate under `Runtime\ffmpeg-export-8.1-candidate\` when you want to validate the smaller no-program runtime directly.
+Use `scripts\Build-RustFfmpegProbe.ps1` on Windows or `scripts/Build-RustFfmpegProbe.sh` on macOS to stage the Rust FFmpeg native library for unified-preview packaging.

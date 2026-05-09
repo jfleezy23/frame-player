@@ -7,7 +7,11 @@ namespace FramePlayer.Engines.FFmpeg
     internal unsafe sealed class FfmpegFrameConverter : IDisposable
     {
         private const AVPixelFormat OutputPixelFormat = AVPixelFormat.AV_PIX_FMT_BGRA;
+        private const string ConverterModeEnvironmentVariable = "FRAMEPLAYER_FFMPEG_FRAME_CONVERTER";
         private SwsContext* _scaleContext;
+        private RustFfmpegBgraFrameConverter _rustConverter;
+        private bool _rustConverterUnavailable;
+        private string _rustConverterErrorMessage = string.Empty;
 
         public DecodedFrameBuffer Convert(AVFrame* sourceFrame, FrameDescriptor descriptor)
         {
@@ -16,6 +20,32 @@ namespace FramePlayer.Engines.FFmpeg
                 throw new ArgumentNullException(nameof(sourceFrame));
             }
 
+            var converterMode = ResolveConverterMode();
+            if (converterMode != FfmpegFrameConverterMode.Managed)
+            {
+                if (TryConvertWithRust(sourceFrame, descriptor, converterMode, out var frameBuffer))
+                {
+                    return frameBuffer;
+                }
+            }
+
+            return ConvertManaged(sourceFrame, descriptor);
+        }
+
+        public void Dispose()
+        {
+            if (_scaleContext != null)
+            {
+                ffmpeg.sws_freeContext(_scaleContext);
+                _scaleContext = null;
+            }
+
+            _rustConverter?.Dispose();
+            _rustConverter = null;
+        }
+
+        private DecodedFrameBuffer ConvertManaged(AVFrame* sourceFrame, FrameDescriptor descriptor)
+        {
             EnsureScaleContext(sourceFrame);
 
             var width = sourceFrame->width;
@@ -64,15 +94,46 @@ namespace FramePlayer.Engines.FFmpeg
                 "bgra");
         }
 
-        public void Dispose()
+        private bool TryConvertWithRust(
+            AVFrame* sourceFrame,
+            FrameDescriptor descriptor,
+            FfmpegFrameConverterMode converterMode,
+            out DecodedFrameBuffer frameBuffer)
         {
-            if (_scaleContext == null)
+            frameBuffer = null;
+            if (_rustConverterUnavailable)
             {
-                return;
+                if (converterMode == FfmpegFrameConverterMode.Rust)
+                {
+                    throw new InvalidOperationException("Rust FFmpeg frame converter is unavailable: " + _rustConverterErrorMessage);
+                }
+
+                return false;
             }
 
-            ffmpeg.sws_freeContext(_scaleContext);
-            _scaleContext = null;
+            if (_rustConverter == null &&
+                !RustFfmpegBgraFrameConverter.TryCreate(ffmpeg.RootPath, out _rustConverter, out _rustConverterErrorMessage))
+            {
+                _rustConverterUnavailable = true;
+                if (converterMode == FfmpegFrameConverterMode.Rust)
+                {
+                    throw new InvalidOperationException("Rust FFmpeg frame converter is unavailable: " + _rustConverterErrorMessage);
+                }
+
+                return false;
+            }
+
+            if (_rustConverter.TryConvert(sourceFrame, descriptor, out frameBuffer, out _rustConverterErrorMessage))
+            {
+                return true;
+            }
+
+            if (converterMode == FfmpegFrameConverterMode.Rust)
+            {
+                throw new InvalidOperationException("Rust FFmpeg frame converter failed: " + _rustConverterErrorMessage);
+            }
+
+            return false;
         }
 
         private void EnsureScaleContext(AVFrame* sourceFrame)
@@ -95,5 +156,33 @@ namespace FramePlayer.Engines.FFmpeg
                 throw new InvalidOperationException("Create swscale BGRA conversion context");
             }
         }
+
+        private static FfmpegFrameConverterMode ResolveConverterMode()
+        {
+            var configuredValue = Environment.GetEnvironmentVariable(ConverterModeEnvironmentVariable);
+            if (string.IsNullOrWhiteSpace(configuredValue))
+            {
+                return FfmpegFrameConverterMode.Auto;
+            }
+
+            switch (configuredValue.Trim().ToLowerInvariant())
+            {
+                case "managed":
+                case "csharp":
+                case "c#":
+                    return FfmpegFrameConverterMode.Managed;
+                case "rust":
+                    return FfmpegFrameConverterMode.Rust;
+                default:
+                    return FfmpegFrameConverterMode.Auto;
+            }
+        }
+    }
+
+    internal enum FfmpegFrameConverterMode
+    {
+        Auto,
+        Managed,
+        Rust
     }
 }

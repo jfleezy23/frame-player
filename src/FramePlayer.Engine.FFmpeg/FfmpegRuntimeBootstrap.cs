@@ -8,6 +8,9 @@ namespace FramePlayer.Engines.FFmpeg
 {
     public static class FfmpegRuntimeBootstrap
     {
+        public static RustFfmpegProbeResult LastRustProbeResult { get; private set; } =
+            RustFfmpegProbeResult.NotRun();
+
         public static string ConfigureForCurrentPlatform(string baseDirectory)
         {
             if (string.IsNullOrWhiteSpace(baseDirectory))
@@ -26,6 +29,8 @@ namespace FramePlayer.Engines.FFmpeg
 
                 DynamicallyLoadedBindings.Initialize();
             }
+
+            LastRustProbeResult = RustFfmpegProbe.TryProbe(runtimeDirectory);
 
             return runtimeDirectory;
         }

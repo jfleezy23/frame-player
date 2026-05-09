@@ -758,6 +758,7 @@ namespace FramePlayer.Engines.FFmpeg
                     {
                         _frameCache.LoadWindow(indexedWindow.WindowFrames, indexedWindow.CurrentIndex);
                         SetCurrentFrame(_frameCache.Current);
+                        _playbackStartNeedsDecoderRealignment = indexedWindow.RequiresDecoderRealignment;
                         LastFrameAdvanceWasCacheHit = false;
                         IsPlaying = false;
                         RecordNoCacheRefill("step-backward-indexed-window", afterLanding: true);
@@ -880,7 +881,7 @@ namespace FramePlayer.Engines.FFmpeg
                 {
                     _frameCache.LoadWindow(indexedWindow.WindowFrames, indexedWindow.CurrentIndex);
                     SetCurrentFrame(_frameCache.Current);
-                    _playbackStartNeedsDecoderRealignment = false;
+                    _playbackStartNeedsDecoderRealignment = indexedWindow.RequiresDecoderRealignment;
                     LastSeekLandedAtOrAfterTarget = landedAtOrAfterTarget;
                     LastFrameAdvanceWasCacheHit = false;
                     LastFrameSeekWasCacheHit = false;
@@ -1008,7 +1009,7 @@ namespace FramePlayer.Engines.FFmpeg
 
             _frameCache.LoadWindow(reconstruction.WindowFrames, reconstruction.CurrentIndex);
             SetCurrentFrame(_frameCache.Current);
-            _playbackStartNeedsDecoderRealignment = false;
+            _playbackStartNeedsDecoderRealignment = reconstruction.RequiresDecoderRealignment;
             LastFrameSeekWasCacheHit = false;
             LastFrameAdvanceWasCacheHit = false;
             IsPlaying = false;
@@ -1528,12 +1529,15 @@ namespace FramePlayer.Engines.FFmpeg
                 FfmpegGlobalFrameIndexEntry indexedEntry;
                 if (_globalFrameIndex.TryGetByAbsoluteFrameIndex(currentFrame.Descriptor.FrameIndex.Value, out indexedEntry))
                 {
-                    var indexedWindow = MaterializeIndexedFrameWindow(indexedEntry, cancellationToken);
+                    var indexedWindow = MaterializeIndexedFrameWindow(
+                        indexedEntry,
+                        cancellationToken,
+                        allowRust: false);
                     if (indexedWindow != null)
                     {
                         _frameCache.LoadWindow(indexedWindow.WindowFrames, indexedWindow.CurrentIndex);
                         SetCurrentFrame(_frameCache.Current);
-                        _playbackStartNeedsDecoderRealignment = false;
+                        _playbackStartNeedsDecoderRealignment = indexedWindow.RequiresDecoderRealignment;
                         return;
                     }
                 }
@@ -2133,7 +2137,7 @@ namespace FramePlayer.Engines.FFmpeg
             _frameCache.Clear();
             _completeDecodedCacheLoaded = false;
             _completeDecodedCacheFrameCount = 0;
-            _currentFrame = null;
+            ClearCurrentFrame();
             ResetDecodeReadState();
         }
 
@@ -2192,7 +2196,9 @@ namespace FramePlayer.Engines.FFmpeg
                     return fallbackFrame;
                 }
 
+                var previousFallbackFrame = fallbackFrame;
                 fallbackFrame = frame;
+                previousFallbackFrame?.Dispose();
                 if (IsAtOrAfterRequestedTarget(frame, requestedPosition, requestedTimestamp))
                 {
                     landedAtOrAfterTarget = true;
@@ -2285,11 +2291,24 @@ namespace FramePlayer.Engines.FFmpeg
         private FrameSeekWindowResult MaterializeIndexedFrameWindow(
             FfmpegGlobalFrameIndexEntry targetEntry,
             CancellationToken cancellationToken,
-            bool primeForwardFrames = true)
+            bool primeForwardFrames = true,
+            bool allowRust = true)
         {
             if (targetEntry == null)
             {
                 throw new ArgumentNullException(nameof(targetEntry));
+            }
+
+            if (allowRust)
+            {
+                var rustWindow = TryMaterializeIndexedFrameWindowWithRust(
+                    targetEntry,
+                    cancellationToken,
+                    primeForwardFrames);
+                if (rustWindow != null)
+                {
+                    return rustWindow;
+                }
             }
 
             var anchorEntry = ResolveIndexedAnchorEntry(targetEntry);
@@ -2310,6 +2329,7 @@ namespace FramePlayer.Engines.FFmpeg
                 var decodedFrame = ReadNextDisplayableFrame(cancellationToken);
                 if (decodedFrame == null)
                 {
+                    DisposeDecodedFrames(framesBeforeTarget);
                     return null;
                 }
 
@@ -2317,6 +2337,7 @@ namespace FramePlayer.Engines.FFmpeg
                 {
                     if (anchorEntry == null || !FrameMatchesIndexEntry(decodedFrame, anchorEntry))
                     {
+                        decodedFrame.Dispose();
                         continue;
                     }
 
@@ -2327,6 +2348,8 @@ namespace FramePlayer.Engines.FFmpeg
                 FfmpegGlobalFrameIndexEntry currentEntry;
                 if (!_globalFrameIndex.TryGetByAbsoluteFrameIndex(nextAbsoluteFrameIndex, out currentEntry))
                 {
+                    decodedFrame.Dispose();
+                    DisposeDecodedFrames(framesBeforeTarget);
                     return null;
                 }
 
@@ -2339,11 +2362,51 @@ namespace FramePlayer.Engines.FFmpeg
                 framesBeforeTarget.Add(normalizedFrame);
                 while (framesBeforeTarget.Count > _maxPreviousCachedFrameCount)
                 {
+                    var removedFrame = framesBeforeTarget[0];
                     framesBeforeTarget.RemoveAt(0);
+                    removedFrame.Dispose();
                 }
 
                 nextAbsoluteFrameIndex++;
             }
+        }
+
+        private FrameSeekWindowResult TryMaterializeIndexedFrameWindowWithRust(
+            FfmpegGlobalFrameIndexEntry targetEntry,
+            CancellationToken cancellationToken,
+            bool primeForwardFrames)
+        {
+            var decodeMode = RustFfmpegDecodeCore.ResolveMode();
+            if (decodeMode == RustFfmpegDecodeCoreMode.Managed)
+            {
+                return null;
+            }
+
+            var anchorEntry = ResolveIndexedAnchorEntry(targetEntry);
+            if (anchorEntry == null)
+            {
+                return null;
+            }
+
+            if (TryDecodeIndexedWindowWithRust(
+                anchorEntry,
+                targetEntry,
+                _maxPreviousCachedFrameCount,
+                primeForwardFrames ? _maxForwardCachedFrameCount : 0,
+                cancellationToken,
+                out var frames,
+                out var currentIndex,
+                out var errorMessage))
+            {
+                return new FrameSeekWindowResult(frames, currentIndex, requiresDecoderRealignment: true);
+            }
+
+            if (decodeMode == RustFfmpegDecodeCoreMode.Rust)
+            {
+                throw new InvalidOperationException("Rust FFmpeg decode core failed to materialize the indexed frame window: " + errorMessage);
+            }
+
+            return null;
         }
 
         private bool TryEnsureCompleteDecodedCacheLoaded(
@@ -2369,6 +2432,43 @@ namespace FramePlayer.Engines.FFmpeg
 
             var startingForwardCount = _frameCache.ForwardCount;
             var stopwatch = Stopwatch.StartNew();
+            FfmpegGlobalFrameIndexEntry firstEntry;
+            var decodeMode = RustFfmpegDecodeCore.ResolveMode();
+            if (decodeMode != RustFfmpegDecodeCoreMode.Managed &&
+                _globalFrameIndex.TryGetByAbsoluteFrameIndex(0L, out firstEntry))
+            {
+                if (TryDecodeIndexedWindowWithRust(
+                    firstEntry,
+                    targetEntry,
+                    (int)targetEntry.AbsoluteFrameIndex,
+                    (int)(indexedFrameCount - targetEntry.AbsoluteFrameIndex - 1L),
+                    cancellationToken,
+                    out var rustFrames,
+                    out var rustCurrentIndex,
+                    out var errorMessage))
+                {
+                    _frameCache.LoadWindow(rustFrames, rustCurrentIndex);
+                    _completeDecodedCacheLoaded = true;
+                    _completeDecodedCacheFrameCount = rustFrames.Count;
+
+                    stopwatch.Stop();
+                    LastCacheRefillMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
+                    LastCacheRefillReason = "complete-decoded-cache-rust";
+                    LastCacheRefillMode = LastCacheRefillMilliseconds > 0d ? "sync" : "none";
+                    LastCacheRefillWasSynchronous = LastCacheRefillMilliseconds > 0d;
+                    LastCacheRefillAfterLanding = true;
+                    LastCacheRefillStartingForwardCount = startingForwardCount;
+                    LastCacheRefillCompletedForwardCount = _frameCache.ForwardCount;
+                    LastCacheRefillCompletedPreviousCount = _frameCache.PreviousCount;
+                    return true;
+                }
+
+                if (decodeMode == RustFfmpegDecodeCoreMode.Rust)
+                {
+                    throw new InvalidOperationException("Rust FFmpeg decode core failed to load the complete decoded cache: " + errorMessage);
+                }
+            }
+
             SeekToStreamTimestamp(0L, frameIndexAbsolute: true);
 
             var completeFrames = new List<DecodedFrameBuffer>((int)indexedFrameCount);
@@ -2380,6 +2480,7 @@ namespace FramePlayer.Engines.FFmpeg
                 if (decodedFrame == null)
                 {
                     stopwatch.Stop();
+                    DisposeDecodedFrames(completeFrames);
                     _completeDecodedCacheLoaded = false;
                     _completeDecodedCacheFrameCount = 0;
                     return false;
@@ -2389,6 +2490,8 @@ namespace FramePlayer.Engines.FFmpeg
                 if (!_globalFrameIndex.TryGetByAbsoluteFrameIndex(absoluteFrameIndex, out currentEntry))
                 {
                     stopwatch.Stop();
+                    decodedFrame.Dispose();
+                    DisposeDecodedFrames(completeFrames);
                     _completeDecodedCacheLoaded = false;
                     _completeDecodedCacheFrameCount = 0;
                     return false;
@@ -2413,6 +2516,73 @@ namespace FramePlayer.Engines.FFmpeg
             return true;
         }
 
+        private bool TryDecodeIndexedWindowWithRust(
+            FfmpegGlobalFrameIndexEntry anchorEntry,
+            FfmpegGlobalFrameIndexEntry targetEntry,
+            int previousFrameLimit,
+            int forwardFrameLimit,
+            CancellationToken cancellationToken,
+            out List<DecodedFrameBuffer> frames,
+            out int currentIndex,
+            out string errorMessage)
+        {
+            if (!RustFfmpegDecodeCore.TryDecodeIndexedWindow(
+                ffmpeg.RootPath,
+                _currentFilePath,
+                _videoStreamIndex,
+                anchorEntry,
+                targetEntry,
+                previousFrameLimit,
+                forwardFrameLimit,
+                _videoStreamTimeBase,
+                cancellationToken,
+                out frames,
+                out currentIndex,
+                out errorMessage))
+            {
+                return false;
+            }
+
+            if (frames == null || currentIndex < 0 || currentIndex >= frames.Count)
+            {
+                DisposeDecodedFrames(frames);
+                errorMessage = "Rust decode core returned an invalid frame window.";
+                return false;
+            }
+
+            for (var index = 0; index < frames.Count; index++)
+            {
+                var frame = frames[index];
+                if (frame == null ||
+                    !frame.Descriptor.IsFrameIndexAbsolute ||
+                    !frame.Descriptor.FrameIndex.HasValue)
+                {
+                    continue;
+                }
+
+                FfmpegGlobalFrameIndexEntry indexedEntry;
+                if (_globalFrameIndex.TryGetByAbsoluteFrameIndex(frame.Descriptor.FrameIndex.Value, out indexedEntry))
+                {
+                    frames[index] = NormalizeFrameToIndexedEntry(frame, indexedEntry);
+                }
+            }
+
+            return true;
+        }
+
+        private static void DisposeDecodedFrames(IEnumerable<DecodedFrameBuffer> frames)
+        {
+            if (frames == null)
+            {
+                return;
+            }
+
+            foreach (var frame in frames)
+            {
+                frame?.Dispose();
+            }
+        }
+
         private BackwardReconstructionResult ReconstructPreviousFrameWindow(
             DecodedFrameBuffer originalCurrentFrame,
             long seekTimestamp,
@@ -2428,6 +2598,7 @@ namespace FramePlayer.Engines.FFmpeg
                 var frame = ReadNextDisplayableFrame(cancellationToken);
                 if (frame == null)
                 {
+                    DisposeDecodedFrames(framesBeforeOriginal);
                     return null;
                 }
 
@@ -2442,7 +2613,9 @@ namespace FramePlayer.Engines.FFmpeg
                 framesBeforeOriginal.Add(frame);
                 while (framesBeforeOriginal.Count > _maxPreviousCachedFrameCount + 1)
                 {
+                    var removedFrame = framesBeforeOriginal[0];
                     framesBeforeOriginal.RemoveAt(0);
+                    removedFrame.Dispose();
                 }
             }
         }
@@ -2459,6 +2632,7 @@ namespace FramePlayer.Engines.FFmpeg
                 var frame = ReadNextDisplayableFrame(cancellationToken);
                 if (frame == null)
                 {
+                    DisposeDecodedFrames(framesBeforeTarget);
                     return null;
                 }
 
@@ -2472,7 +2646,9 @@ namespace FramePlayer.Engines.FFmpeg
                 framesBeforeTarget.Add(frame);
                 while (framesBeforeTarget.Count > _maxPreviousCachedFrameCount)
                 {
+                    var removedFrame = framesBeforeTarget[0];
                     framesBeforeTarget.RemoveAt(0);
+                    removedFrame.Dispose();
                 }
             }
         }
@@ -2617,7 +2793,9 @@ namespace FramePlayer.Engines.FFmpeg
                 frame.Descriptor.DisplayWidth,
                 frame.Descriptor.DisplayHeight);
 
-            return frame.WithDescriptor(descriptor);
+            var normalizedFrame = frame.WithDescriptor(descriptor);
+            frame.Dispose();
+            return normalizedFrame;
         }
 
         private DecodedFrameBuffer ReadNextDisplayableFrame(CancellationToken cancellationToken)
@@ -2802,9 +2980,21 @@ namespace FramePlayer.Engines.FFmpeg
 
         private void SetCurrentFrame(DecodedFrameBuffer frame)
         {
-            _currentFrame = frame ?? throw new ArgumentNullException(nameof(frame));
-            _mediaInfo = BuildMediaInfo(frame.Descriptor);
-            _position = BuildReviewPosition(frame.Descriptor);
+            ArgumentNullException.ThrowIfNull(frame);
+
+            var retainedFrame = frame.Retain();
+            var previousFrame = _currentFrame;
+            _currentFrame = retainedFrame;
+            _mediaInfo = BuildMediaInfo(retainedFrame.Descriptor);
+            _position = BuildReviewPosition(retainedFrame.Descriptor);
+            previousFrame?.Dispose();
+        }
+
+        private void ClearCurrentFrame()
+        {
+            var previousFrame = _currentFrame;
+            _currentFrame = null;
+            previousFrame?.Dispose();
         }
 
         private VideoMediaInfo BuildMediaInfo(FrameDescriptor descriptor)
@@ -3084,7 +3274,7 @@ namespace FramePlayer.Engines.FFmpeg
             LastAnchorStrategy = string.Empty;
             _mediaInfo = VideoMediaInfo.Empty;
             _position = ReviewPosition.Empty;
-            _currentFrame = null;
+            ClearCurrentFrame();
             _globalFrameIndex = null;
             _audioStreamInfo = FfmpegAudioStreamInfo.None;
             _decodedSegmentFrameCount = 0L;
@@ -3226,14 +3416,25 @@ namespace FramePlayer.Engines.FFmpeg
         private sealed class FrameSeekWindowResult
         {
             public FrameSeekWindowResult(List<DecodedFrameBuffer> windowFrames, int currentIndex)
+                : this(windowFrames, currentIndex, requiresDecoderRealignment: false)
+            {
+            }
+
+            public FrameSeekWindowResult(
+                List<DecodedFrameBuffer> windowFrames,
+                int currentIndex,
+                bool requiresDecoderRealignment)
             {
                 WindowFrames = windowFrames ?? throw new ArgumentNullException(nameof(windowFrames));
                 CurrentIndex = currentIndex;
+                RequiresDecoderRealignment = requiresDecoderRealignment;
             }
 
             public List<DecodedFrameBuffer> WindowFrames { get; }
 
             public int CurrentIndex { get; }
+
+            public bool RequiresDecoderRealignment { get; }
         }
     }
 }

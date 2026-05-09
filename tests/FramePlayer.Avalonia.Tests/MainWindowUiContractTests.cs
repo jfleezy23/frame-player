@@ -1,7 +1,10 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -9,6 +12,8 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.VisualTree;
+using FramePlayer.Core.Abstractions;
+using FramePlayer.Core.Events;
 using FramePlayer.Core.Models;
 using FramePlayer.Avalonia.Views;
 using Xunit;
@@ -248,6 +253,240 @@ namespace FramePlayer.Avalonia.Tests
                     window.Close();
                 }
             });
+        }
+
+        [Fact]
+        public void CompareMode_DisablePausesHiddenComparePlayback()
+        {
+            _fixture.Run(() =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var compareMode = RequireControl<CheckBox>(window, "CompareModeCheckBox");
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true
+                    };
+
+                    compareMode.IsChecked = true;
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+
+                    compareMode.IsChecked = false;
+
+                    Assert.False(compareEngine.IsPlaying);
+                    Assert.Equal(1, compareEngine.PauseCallCount);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public void CompareFramePresented_WhenCompareHidden_DoesNotReplaceCompareBitmap()
+        {
+            MainWindow? window = null;
+            try
+            {
+                _fixture.Run(() =>
+                {
+                    window = new MainWindow();
+                    RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+                    InvokePrivate(
+                        window,
+                        "CompareEngine_FramePresented",
+                        null!,
+                        new FramePresentedEventArgs(CreateFrameBuffer(8, 4)));
+                });
+
+                _fixture.Run(() =>
+                {
+                    var compareSurface = RequireControl<Image>(window!, "CompareVideoSurface");
+                    Assert.Equal(new PixelSize(8, 4), RequireBitmap(compareSurface).PixelSize);
+                    RequireControl<CheckBox>(window!, "CompareModeCheckBox").IsChecked = false;
+                    InvokePrivate(
+                        window!,
+                        "CompareEngine_FramePresented",
+                        null!,
+                        new FramePresentedEventArgs(CreateFrameBuffer(4, 4)));
+                });
+
+                _fixture.Run(() =>
+                {
+                    var compareSurface = RequireControl<Image>(window!, "CompareVideoSurface");
+                    Assert.Equal(new PixelSize(8, 4), RequireBitmap(compareSurface).PixelSize);
+                });
+            }
+            finally
+            {
+                if (window != null)
+                {
+                    _fixture.Run(() => window.Close());
+                }
+            }
+        }
+
+        [Fact]
+        public void MainSharedTransport_StartsBothPanePlaybackOperationsBeforeAwaiting()
+        {
+            var mainWindowSource = ReadRepositoryFile(
+                "src",
+                "FramePlayer.Avalonia",
+                "Views",
+                "MainWindow.axaml.cs");
+            var startAllPaneMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private async Task StartAllPanePlaybackAsync()",
+                "private async Task PauseAllPanePlaybackAsync()");
+
+            Assert.Contains("await Task.WhenAll(", startAllPaneMethod, StringComparison.Ordinal);
+            Assert.Contains("Task.Run(() => _primaryEngine.PlayAsync())", startAllPaneMethod, StringComparison.Ordinal);
+            Assert.Contains("Task.Run(() => compareEngine.PlayAsync())", startAllPaneMethod, StringComparison.Ordinal);
+            Assert.DoesNotContain("if (!_primaryEngine.IsPlaying)", startAllPaneMethod, StringComparison.Ordinal);
+            Assert.DoesNotContain("if (!compareEngine.IsPlaying)", startAllPaneMethod, StringComparison.Ordinal);
+            Assert.DoesNotContain("await _primaryEngine.PlayAsync();", startAllPaneMethod, StringComparison.Ordinal);
+            Assert.Contains("await StartPlaybackAsync(null, null);", mainWindowSource, StringComparison.Ordinal);
+        }
+
+        [Theory]
+        [InlineData(false, false, false)]
+        [InlineData(true, false, false)]
+        [InlineData(false, true, false)]
+        [InlineData(true, true, true)]
+        public void MainSharedTransport_PausesOnlyWhenBothPanesArePlaying(
+            bool primaryPlaying,
+            bool comparePlaying,
+            bool expectedShouldPause)
+        {
+            var primaryEngine = new TestVideoReviewEngine
+            {
+                IsMediaOpen = true,
+                IsPlaying = primaryPlaying
+            };
+            var compareEngine = new TestVideoReviewEngine
+            {
+                IsMediaOpen = true,
+                IsPlaying = comparePlaying
+            };
+
+            var shouldPause = InvokePrivateStatic<bool>(
+                "ShouldPauseAllPanePlayback",
+                primaryEngine,
+                compareEngine);
+
+            Assert.Equal(expectedShouldPause, shouldPause);
+        }
+
+        [Fact]
+        public void MainSharedTransport_RetriesPartialPlaybackInsteadOfPausing()
+        {
+            var mainWindowSource = ReadRepositoryFile(
+                "src",
+                "FramePlayer.Avalonia",
+                "Views",
+                "MainWindow.axaml.cs");
+            var toggleAllPaneMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private async Task ToggleAllPanePlaybackAsync()",
+                "private async Task ToggleFocusedPanePlaybackAsync()");
+
+            Assert.Contains("if (ShouldPauseAllPanePlayback())", toggleAllPaneMethod, StringComparison.Ordinal);
+            Assert.DoesNotContain("_primaryEngine.IsPlaying ||", toggleAllPaneMethod, StringComparison.Ordinal);
+            Assert.Contains("await StartAllPanePlaybackAsync();", toggleAllPaneMethod, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void MainSharedTransport_MasterVisualTracksAllPanePauseRule()
+        {
+            var mainWindowSource = ReadRepositoryFile(
+                "src",
+                "FramePlayer.Avalonia",
+                "Views",
+                "MainWindow.axaml.cs");
+            var applyPrimaryMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private void ApplyPrimaryState(",
+                "private void ApplyCompareState(");
+            var visualMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private void UpdateMainPlayPauseVisual()",
+                "private bool ShouldShowMainPauseAction()");
+            var visualRuleMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private bool ShouldShowMainPauseAction()",
+                "private static string FormatFrameNumberEntry(");
+
+            Assert.Contains("UpdateMainPlayPauseVisual();", applyPrimaryMethod, StringComparison.Ordinal);
+            Assert.DoesNotContain("\n            PlayPausePlayIcon.IsVisible = !state.IsPlaying;", applyPrimaryMethod, StringComparison.Ordinal);
+            Assert.Contains("ShouldShowMainPauseAction()", visualMethod, StringComparison.Ordinal);
+            Assert.Contains("return ShouldPauseAllPanePlayback();", visualRuleMethod, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void MainSharedTransport_MasterTimelineSeeksBothPanesBeforeResuming()
+        {
+            var mainWindowSource = ReadRepositoryFile(
+                "src",
+                "FramePlayer.Avalonia",
+                "Views",
+                "MainWindow.axaml.cs");
+            var masterSliderMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private async void PositionSlider_ValueChanged(",
+                "private async void PanePositionSlider_ValueChanged(");
+            var commitSliderMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private async Task CommitSliderSeekAsync(",
+                "private async void PositionSlider_ValueChanged(");
+            var masterSeekMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private async Task SeekMasterTimelineAsync(",
+                "private async Task SeekAllPaneRelativePreservingPlaybackAsync(");
+            var allPaneSeekMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private async Task SeekAllPaneToTimesPreservingPlaybackAsync(",
+                "private static TimeSpan ClampSeekTarget(");
+
+            Assert.Contains("await SeekMasterTimelineAsync(", masterSliderMethod, StringComparison.Ordinal);
+            Assert.Contains("await SeekMasterTimelineAsync(target);", commitSliderMethod, StringComparison.Ordinal);
+            Assert.Contains("if (IsAllPaneTransportEnabled)", masterSeekMethod, StringComparison.Ordinal);
+            Assert.Contains("await SeekAllPaneToTimePreservingPlaybackAsync(target);", masterSeekMethod, StringComparison.Ordinal);
+            Assert.Contains("await Task.WhenAll(", allPaneSeekMethod, StringComparison.Ordinal);
+            Assert.Contains("Task.Run(() => _primaryEngine.SeekToTimeAsync(primaryTarget))", allPaneSeekMethod, StringComparison.Ordinal);
+            Assert.Contains("Task.Run(() => compareEngine.SeekToTimeAsync(compareTarget))", allPaneSeekMethod, StringComparison.Ordinal);
+            Assert.True(
+                allPaneSeekMethod.IndexOf("await Task.WhenAll(", StringComparison.Ordinal) <
+                allPaneSeekMethod.IndexOf("var resumeTasks", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void MainSharedTransport_MasterFrameEntrySeeksBothPanes()
+        {
+            var mainWindowSource = ReadRepositoryFile(
+                "src",
+                "FramePlayer.Avalonia",
+                "Views",
+                "MainWindow.axaml.cs");
+            var frameEntryMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private async void FrameNumberTextBox_KeyDown(",
+                "private async Task SeekAllPaneToFramePreservingPlaybackAsync(");
+            var allPaneFrameSeekMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private async Task SeekAllPaneToFramePreservingPlaybackAsync(",
+                "private void SetLoopMarker(");
+
+            Assert.Contains("textBox == FrameNumberTextBox && IsAllPaneTransportEnabled", frameEntryMethod, StringComparison.Ordinal);
+            Assert.Contains("await SeekAllPaneToFramePreservingPlaybackAsync(oneBasedFrame - 1);", frameEntryMethod, StringComparison.Ordinal);
+            Assert.Contains("await Task.WhenAll(", allPaneFrameSeekMethod, StringComparison.Ordinal);
+            Assert.Contains("Task.Run(() => _primaryEngine.SeekToFrameAsync(targetFrameIndex))", allPaneFrameSeekMethod, StringComparison.Ordinal);
+            Assert.Contains("Task.Run(() => compareEngine.SeekToFrameAsync(targetFrameIndex))", allPaneFrameSeekMethod, StringComparison.Ordinal);
+            Assert.True(
+                allPaneFrameSeekMethod.IndexOf("await Task.WhenAll(", StringComparison.Ordinal) <
+                allPaneFrameSeekMethod.IndexOf("var resumeTasks", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -1054,10 +1293,141 @@ namespace FramePlayer.Avalonia.Tests
             return method.Invoke(window, args) ?? new object();
         }
 
+        private static T InvokePrivateStatic<T>(string methodName, params object[] args)
+        {
+            var method = typeof(MainWindow)
+                .GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
+                .FirstOrDefault(candidate =>
+                    string.Equals(candidate.Name, methodName, StringComparison.Ordinal) &&
+                    candidate.GetParameters().Length == args.Length)
+                ?? throw new MissingMethodException(typeof(MainWindow).FullName, methodName);
+            return (T)(method.Invoke(null, args) ?? throw new InvalidOperationException("Missing result for " + methodName + "."));
+        }
+
+        private static void SetPrivateField(MainWindow window, string fieldName, object value)
+        {
+            var field = typeof(MainWindow).GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic)
+                ?? throw new MissingFieldException(typeof(MainWindow).FullName, fieldName);
+            field.SetValue(window, value);
+        }
+
+        private sealed class TestVideoReviewEngine : IVideoReviewEngine
+        {
+            public bool IsMediaOpen { get; set; }
+
+            public bool IsPlaying { get; set; }
+
+            public string CurrentFilePath { get; set; } = string.Empty;
+
+            public string LastErrorMessage { get; set; } = string.Empty;
+
+            public VideoMediaInfo MediaInfo { get; set; } = VideoMediaInfo.Empty;
+
+            public ReviewPosition Position { get; set; } = ReviewPosition.Empty;
+
+            public int PauseCallCount { get; private set; }
+
+            public event EventHandler<VideoReviewEngineStateChangedEventArgs> StateChanged
+            {
+                add { }
+                remove { }
+            }
+
+            public event EventHandler<FramePresentedEventArgs> FramePresented
+            {
+                add { }
+                remove { }
+            }
+
+            public Task OpenAsync(string filePath, CancellationToken cancellationToken = default(CancellationToken))
+            {
+                CurrentFilePath = filePath;
+                IsMediaOpen = true;
+                return Task.CompletedTask;
+            }
+
+            public Task CloseAsync()
+            {
+                IsMediaOpen = false;
+                IsPlaying = false;
+                return Task.CompletedTask;
+            }
+
+            public Task PlayAsync()
+            {
+                IsPlaying = true;
+                return Task.CompletedTask;
+            }
+
+            public Task PauseAsync()
+            {
+                PauseCallCount++;
+                IsPlaying = false;
+                return Task.CompletedTask;
+            }
+
+            public Task<FrameStepResult> StepForwardAsync(CancellationToken cancellationToken = default(CancellationToken))
+            {
+                return Task.FromResult(FrameStepResult.Failed(1, Position, "Not implemented.", false));
+            }
+
+            public Task<FrameStepResult> StepBackwardAsync(CancellationToken cancellationToken = default(CancellationToken))
+            {
+                return Task.FromResult(FrameStepResult.Failed(-1, Position, "Not implemented.", false, false));
+            }
+
+            public Task SeekToTimeAsync(TimeSpan position, CancellationToken cancellationToken = default(CancellationToken))
+            {
+                return Task.CompletedTask;
+            }
+
+            public Task SeekToFrameAsync(long frameIndex, CancellationToken cancellationToken = default(CancellationToken))
+            {
+                return Task.CompletedTask;
+            }
+
+            public void Dispose()
+            {
+            }
+        }
+
         private static void AssertBrushColor(string expectedColor, IBrush? brush)
         {
             var solid = Assert.IsAssignableFrom<ISolidColorBrush>(brush);
             Assert.Equal(Color.Parse(expectedColor), solid.Color);
+        }
+
+        private static string ReadRepositoryFile(params string[] pathParts)
+        {
+            var fullPath = Path.Combine(FindRepositoryRoot(AppContext.BaseDirectory), Path.Combine(pathParts));
+            return File.ReadAllText(fullPath);
+        }
+
+        private static string ExtractMethodBody(string source, string methodStart, string nextMethodStart)
+        {
+            var start = source.IndexOf(methodStart, StringComparison.Ordinal);
+            Assert.True(start >= 0, "Missing method: " + methodStart);
+
+            var end = source.IndexOf(nextMethodStart, start, StringComparison.Ordinal);
+            Assert.True(end > start, "Missing next method: " + nextMethodStart);
+
+            return source.Substring(start, end - start);
+        }
+
+        private static string FindRepositoryRoot(string startDirectory)
+        {
+            var directory = new DirectoryInfo(startDirectory);
+            while (directory != null)
+            {
+                if (File.Exists(Path.Combine(directory.FullName, "FramePlayer.csproj")))
+                {
+                    return directory.FullName;
+                }
+
+                directory = directory.Parent;
+            }
+
+            throw new DirectoryNotFoundException("Could not find the frame-player repository root.");
         }
 
         private static IQueryable<NativeMenuItem> EnumerateMenuItems(NativeMenu menu)

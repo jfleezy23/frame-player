@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
@@ -522,15 +523,20 @@ namespace FramePlayer.Avalonia.Views
         {
             var viewport = BuildPaneViewport(pane, frameBuffer);
             var bitmap = AvaloniaFrameBufferPresenter.CreateBitmap(frameBuffer, viewport);
+            var retainedFrameBuffer = frameBuffer.Retain();
             if (pane == Pane.Compare)
             {
-                _compareFrameBuffer = frameBuffer;
+                var previousFrameBuffer = _compareFrameBuffer;
+                _compareFrameBuffer = retainedFrameBuffer;
+                previousFrameBuffer?.Dispose();
                 CompareVideoSurface.Source = bitmap;
                 CompareEmptyStateOverlay.IsVisible = false;
             }
             else
             {
-                _primaryFrameBuffer = frameBuffer;
+                var previousFrameBuffer = _primaryFrameBuffer;
+                _primaryFrameBuffer = retainedFrameBuffer;
+                previousFrameBuffer?.Dispose();
                 CustomVideoSurface.Source = bitmap;
                 PrimaryEmptyStateOverlay.IsVisible = false;
             }
@@ -613,6 +619,8 @@ namespace FramePlayer.Avalonia.Views
             CurrentFileTextBlock.Text = "No file loaded";
             PrimaryPaneFileTextBlock.Text = "No video loaded";
             ComparePaneFileTextBlock.Text = "No video loaded";
+            _primaryFrameBuffer?.Dispose();
+            _compareFrameBuffer?.Dispose();
             _primaryFrameBuffer = null;
             _compareFrameBuffer = null;
             CustomVideoSurface.Source = null;
@@ -645,14 +653,14 @@ namespace FramePlayer.Avalonia.Views
 
         private async Task ToggleAllPanePlaybackAsync()
         {
-            if (_primaryEngine.IsPlaying || (_compareEngine != null && _compareEngine.IsPlaying))
+            if (!CanStartAllPanePlayback())
             {
-                await PauseAllPanePlaybackAsync();
                 return;
             }
 
-            if (!CanStartAllPanePlayback())
+            if (ShouldPauseAllPanePlayback())
             {
+                await PauseAllPanePlaybackAsync();
                 return;
             }
 
@@ -678,7 +686,7 @@ namespace FramePlayer.Avalonia.Views
 
         private async void PlayButton_Click(object? sender, RoutedEventArgs e)
         {
-            await StartPlaybackAsync(SynchronizedOperationScope.FocusedPane, ResolvePaneId(GetFocusedPane()));
+            await StartPlaybackAsync(null, null);
         }
 
         private async void PauseButton_Click(object? sender, RoutedEventArgs e)
@@ -827,7 +835,8 @@ namespace FramePlayer.Avalonia.Views
 
         private async Task StartAllPanePlaybackAsync()
         {
-            if (!_primaryEngine.IsMediaOpen || _compareEngine == null || !_compareEngine.IsMediaOpen)
+            var compareEngine = _compareEngine;
+            if (!_primaryEngine.IsMediaOpen || compareEngine == null || !compareEngine.IsMediaOpen)
             {
                 return;
             }
@@ -837,20 +846,29 @@ namespace FramePlayer.Avalonia.Views
                 return;
             }
 
-            await _primaryEngine.PlayAsync();
-            await _compareEngine.PlayAsync();
+            await Task.WhenAll(
+                Task.Run(() => _primaryEngine.PlayAsync()),
+                Task.Run(() => compareEngine.PlayAsync()));
+
+            UpdateCommandStates();
         }
 
         private async Task PauseAllPanePlaybackAsync()
         {
+            var pauseTasks = new List<Task>(2);
             if (_primaryEngine.IsMediaOpen)
             {
-                await _primaryEngine.PauseAsync();
+                pauseTasks.Add(Task.Run(() => _primaryEngine.PauseAsync()));
             }
 
             if (_compareEngine != null && _compareEngine.IsMediaOpen)
             {
-                await _compareEngine.PauseAsync();
+                pauseTasks.Add(Task.Run(() => _compareEngine.PauseAsync()));
+            }
+
+            if (pauseTasks.Count > 0)
+            {
+                await Task.WhenAll(pauseTasks);
             }
         }
 
@@ -858,8 +876,7 @@ namespace FramePlayer.Avalonia.Views
         {
             if (IsAllPaneTransportEnabled)
             {
-                await SeekRelativeAsync(Pane.Primary, offset);
-                await SeekRelativeAsync(Pane.Compare, offset);
+                await SeekAllPaneRelativePreservingPlaybackAsync(offset);
                 return;
             }
 
@@ -1191,7 +1208,7 @@ namespace FramePlayer.Avalonia.Views
         private async Task CommitSliderSeekAsync(string interactionName, TimeSpan target)
         {
             _ = interactionName;
-            await SeekToTimePreservingPlaybackAsync(_primaryEngine, target);
+            await SeekMasterTimelineAsync(target);
         }
 
         private async void PositionSlider_ValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
@@ -1201,7 +1218,7 @@ namespace FramePlayer.Avalonia.Views
                 return;
             }
 
-            await SeekToTimePreservingPlaybackAsync(_primaryEngine, TimeSpan.FromSeconds(PositionSlider.Value));
+            await SeekMasterTimelineAsync(TimeSpan.FromSeconds(PositionSlider.Value));
         }
 
         private async void PanePositionSlider_ValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
@@ -1233,6 +1250,78 @@ namespace FramePlayer.Avalonia.Views
             }
         }
 
+        private async Task SeekMasterTimelineAsync(TimeSpan target)
+        {
+            if (IsAllPaneTransportEnabled)
+            {
+                await SeekAllPaneToTimePreservingPlaybackAsync(target);
+                return;
+            }
+
+            await SeekToTimePreservingPlaybackAsync(_primaryEngine, target);
+        }
+
+        private async Task SeekAllPaneRelativePreservingPlaybackAsync(TimeSpan offset)
+        {
+            var compareEngine = _compareEngine;
+            if (!_primaryEngine.IsMediaOpen || compareEngine == null || !compareEngine.IsMediaOpen)
+            {
+                return;
+            }
+
+            var primaryTarget = ClampSeekTarget(_primaryEngine.Position.PresentationTime + offset);
+            var compareTarget = ClampSeekTarget(compareEngine.Position.PresentationTime + offset);
+            await SeekAllPaneToTimesPreservingPlaybackAsync(primaryTarget, compareTarget);
+        }
+
+        private async Task SeekAllPaneToTimePreservingPlaybackAsync(TimeSpan target)
+        {
+            await SeekAllPaneToTimesPreservingPlaybackAsync(target, target);
+        }
+
+        private async Task SeekAllPaneToTimesPreservingPlaybackAsync(TimeSpan primaryTarget, TimeSpan compareTarget)
+        {
+            var compareEngine = _compareEngine;
+            if (!_primaryEngine.IsMediaOpen || compareEngine == null || !compareEngine.IsMediaOpen)
+            {
+                return;
+            }
+
+            var resumePrimaryPlayback = _primaryEngine.IsPlaying;
+            var resumeComparePlayback = compareEngine.IsPlaying;
+            if (resumePrimaryPlayback || resumeComparePlayback)
+            {
+                await PauseAllPanePlaybackAsync();
+            }
+
+            await Task.WhenAll(
+                Task.Run(() => _primaryEngine.SeekToTimeAsync(primaryTarget)),
+                Task.Run(() => compareEngine.SeekToTimeAsync(compareTarget)));
+
+            var resumeTasks = new List<Task>(2);
+            if (resumePrimaryPlayback && CanStartPlayback(_primaryEngine))
+            {
+                resumeTasks.Add(Task.Run(() => _primaryEngine.PlayAsync()));
+            }
+
+            if (resumeComparePlayback && CanStartPlayback(compareEngine))
+            {
+                resumeTasks.Add(Task.Run(() => compareEngine.PlayAsync()));
+            }
+
+            if (resumeTasks.Count > 0)
+            {
+                await Task.WhenAll(resumeTasks);
+            }
+
+            UpdateCommandStates();
+        }
+
+        private static TimeSpan ClampSeekTarget(TimeSpan target)
+        {
+            return target < TimeSpan.Zero ? TimeSpan.Zero : target;
+        }
+
         private async void FrameNumberTextBox_KeyDown(object? sender, KeyEventArgs e)
         {
             if (e.Key != Key.Enter || sender is not TextBox textBox)
@@ -1246,9 +1335,54 @@ namespace FramePlayer.Avalonia.Views
                 return;
             }
 
+            if (textBox == FrameNumberTextBox && IsAllPaneTransportEnabled)
+            {
+                await SeekAllPaneToFramePreservingPlaybackAsync(oneBasedFrame - 1);
+                return;
+            }
+
             var pane = textBox == ComparePaneFrameNumberTextBox ? Pane.Compare : Pane.Primary;
             SelectPane(pane);
             await GetEngine(pane).SeekToFrameAsync(oneBasedFrame - 1);
+        }
+
+        private async Task SeekAllPaneToFramePreservingPlaybackAsync(long frameIndex)
+        {
+            var compareEngine = _compareEngine;
+            if (!_primaryEngine.IsMediaOpen || compareEngine == null || !compareEngine.IsMediaOpen)
+            {
+                return;
+            }
+
+            var targetFrameIndex = Math.Max(0L, frameIndex);
+            var resumePrimaryPlayback = _primaryEngine.IsPlaying;
+            var resumeComparePlayback = compareEngine.IsPlaying;
+            if (resumePrimaryPlayback || resumeComparePlayback)
+            {
+                await PauseAllPanePlaybackAsync();
+            }
+
+            await Task.WhenAll(
+                Task.Run(() => _primaryEngine.SeekToFrameAsync(targetFrameIndex)),
+                Task.Run(() => compareEngine.SeekToFrameAsync(targetFrameIndex)));
+
+            var resumeTasks = new List<Task>(2);
+            if (resumePrimaryPlayback && CanStartPlayback(_primaryEngine))
+            {
+                resumeTasks.Add(Task.Run(() => _primaryEngine.PlayAsync()));
+            }
+
+            if (resumeComparePlayback && CanStartPlayback(compareEngine))
+            {
+                resumeTasks.Add(Task.Run(() => compareEngine.PlayAsync()));
+            }
+
+            if (resumeTasks.Count > 0)
+            {
+                await Task.WhenAll(resumeTasks);
+            }
+
+            UpdateCommandStates();
         }
 
         private void SetLoopMarker(LoopPlaybackMarkerEndpoint endpoint)
@@ -1348,6 +1482,7 @@ namespace FramePlayer.Avalonia.Views
         private void HideCompareMode()
         {
             _focusedPane = Pane.Primary;
+            PauseHiddenComparePlayback();
             VideoPaneGrid.ColumnDefinitions[1].Width = new GridLength(0);
             VideoPaneGrid.ColumnSpacing = 0;
             SetPrimaryPaneLocalChromeVisible(false);
@@ -1356,6 +1491,35 @@ namespace FramePlayer.Avalonia.Views
             CompareToolbarBorder.IsVisible = false;
             UpdatePaneSelectionVisuals();
             UpdateCompareOptionState();
+        }
+
+        private void PauseHiddenComparePlayback()
+        {
+            if (_compareEngine == null ||
+                !_compareEngine.IsMediaOpen ||
+                !_compareEngine.IsPlaying)
+            {
+                return;
+            }
+
+            _ = PauseHiddenComparePlaybackAsync();
+        }
+
+        private async Task PauseHiddenComparePlaybackAsync()
+        {
+            try
+            {
+                if (_compareEngine != null &&
+                    _compareEngine.IsMediaOpen &&
+                    _compareEngine.IsPlaying)
+                {
+                    await _compareEngine.PauseAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                CacheStatusTextBlock.Text = "Compare playback pause failed: " + ex.Message;
+            }
         }
 
         private void SetPrimaryPaneLocalChromeVisible(bool isVisible)
@@ -1455,6 +1619,7 @@ namespace FramePlayer.Avalonia.Views
             SetControlEnabled(ToggleFullScreenButton, anyMediaLoaded);
             SetPaneTransportEnabled(Pane.Primary, primaryLoaded, CanTogglePlayback(_primaryEngine));
             SetPaneTransportEnabled(Pane.Compare, compareLoaded, CanTogglePlayback(_compareEngine));
+            UpdateMainPlayPauseVisual();
             AlignRightToLeftButton.IsEnabled = primaryLoaded && compareLoaded;
             AlignLeftToRightButton.IsEnabled = primaryLoaded && compareLoaded;
             ToolTip.SetTip(
@@ -1528,6 +1693,20 @@ namespace FramePlayer.Avalonia.Views
                 CanStartPlayback(_compareEngine);
         }
 
+        private bool ShouldPauseAllPanePlayback()
+        {
+            return ShouldPauseAllPanePlayback(_primaryEngine, _compareEngine);
+        }
+
+        private static bool ShouldPauseAllPanePlayback(IVideoReviewEngine primaryEngine, IVideoReviewEngine? compareEngine)
+        {
+            return primaryEngine.IsMediaOpen &&
+                compareEngine != null &&
+                compareEngine.IsMediaOpen &&
+                primaryEngine.IsPlaying &&
+                compareEngine.IsPlaying;
+        }
+
         private bool CanToggleAllPanePlayback()
         {
             return _primaryEngine.IsMediaOpen &&
@@ -1539,8 +1718,9 @@ namespace FramePlayer.Avalonia.Views
         private void UpdatePlaybackAvailabilityToolTips(IVideoReviewEngine? focusedEngine)
         {
             _ = focusedEngine;
-            ToolTip.SetTip(PlayPauseButton, "Play");
-            ToolTip.SetTip(PlayPauseMenuItem, "Play");
+            var mainPlaybackAction = ShouldShowMainPauseAction() ? "Pause" : "Play";
+            ToolTip.SetTip(PlayPauseButton, mainPlaybackAction);
+            ToolTip.SetTip(PlayPauseMenuItem, mainPlaybackAction);
             ToolTip.SetTip(PrimaryPanePlayPauseButton, "Play");
             ToolTip.SetTip(ComparePanePlayPauseButton, "Play");
         }
@@ -1627,17 +1807,46 @@ namespace FramePlayer.Avalonia.Views
 
         private void PrimaryEngine_FramePresented(object? sender, FramePresentedEventArgs e)
         {
+            var frameBuffer = e.FrameBuffer.Retain();
             Dispatcher.UIThread.Post(() =>
             {
-                SetPaneBitmap(Pane.Primary, e.FrameBuffer);
+                try
+                {
+                    SetPaneBitmap(Pane.Primary, frameBuffer);
+                }
+                catch (Exception ex)
+                {
+                    CacheStatusTextBlock.Text = "Frame presentation failed: " + ex.Message;
+                }
+                finally
+                {
+                    frameBuffer.Dispose();
+                }
             });
         }
 
         private void CompareEngine_FramePresented(object? sender, FramePresentedEventArgs e)
         {
+            var frameBuffer = e.FrameBuffer.Retain();
             Dispatcher.UIThread.Post(() =>
             {
-                SetPaneBitmap(Pane.Compare, e.FrameBuffer);
+                try
+                {
+                    if (!IsCompareModeEnabled)
+                    {
+                        return;
+                    }
+
+                    SetPaneBitmap(Pane.Compare, frameBuffer);
+                }
+                catch (Exception ex)
+                {
+                    CacheStatusTextBlock.Text = "Compare frame presentation failed: " + ex.Message;
+                }
+                finally
+                {
+                    frameBuffer.Dispose();
+                }
             });
         }
 
@@ -1696,16 +1905,9 @@ namespace FramePlayer.Avalonia.Views
             TimecodeTextBlock.Text = positionText + " / " + durationText;
             FrameNumberTextBox.Text = FormatFrameNumberEntry(state.Position);
             PrimaryPaneFrameNumberTextBox.Text = FrameNumberTextBox.Text;
-            PlayPausePlayIcon.IsVisible = !state.IsPlaying;
-            PlayPausePauseIcon.IsVisible = state.IsPlaying;
             PrimaryPanePlayPausePlayIcon.IsVisible = !state.IsPlaying;
             PrimaryPanePlayPausePauseIcon.IsVisible = state.IsPlaying;
-            if (_nativePlayPauseMenuItem != null)
-            {
-                _nativePlayPauseMenuItem.Header = state.IsPlaying ? "Pause" : "Play";
-            }
-
-            PlayPauseMenuItem.Header = state.IsPlaying ? "Pause" : "Play";
+            UpdateMainPlayPauseVisual();
             PlaybackStateTextBlock.Text = FormatPlaybackState(state);
         }
 
@@ -1723,6 +1925,31 @@ namespace FramePlayer.Avalonia.Views
             ComparePaneFrameNumberTextBox.Text = FormatFrameNumberEntry(state.Position);
             ComparePanePlayPausePlayIcon.IsVisible = !state.IsPlaying;
             ComparePanePlayPausePauseIcon.IsVisible = state.IsPlaying;
+            UpdateMainPlayPauseVisual();
+        }
+
+        private void UpdateMainPlayPauseVisual()
+        {
+            var shouldShowPauseAction = ShouldShowMainPauseAction();
+            PlayPausePlayIcon.IsVisible = !shouldShowPauseAction;
+            PlayPausePauseIcon.IsVisible = shouldShowPauseAction;
+            if (_nativePlayPauseMenuItem != null)
+            {
+                _nativePlayPauseMenuItem.Header = shouldShowPauseAction ? "Pause" : "Play";
+            }
+
+            PlayPauseMenuItem.Header = shouldShowPauseAction ? "Pause" : "Play";
+        }
+
+        private bool ShouldShowMainPauseAction()
+        {
+            if (IsAllPaneTransportEnabled)
+            {
+                return ShouldPauseAllPanePlayback();
+            }
+
+            var focusedEngine = TryGetExistingEngine(GetFocusedPane());
+            return focusedEngine != null && focusedEngine.IsPlaying;
         }
 
         private static string FormatFrameNumberEntry(ReviewPosition position)

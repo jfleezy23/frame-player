@@ -1,0 +1,345 @@
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
+using FFmpeg.AutoGen;
+
+namespace FramePlayer.Engines.FFmpeg
+{
+    internal static unsafe class RustFfmpegGlobalFrameIndexBuilder
+    {
+        private const int MessageCapacity = 256;
+        private const long NoTimestamp = long.MinValue;
+        private const string BuilderModeEnvironmentVariable = "FRAMEPLAYER_FFMPEG_INDEX_BUILDER";
+
+        public static RustFfmpegGlobalFrameIndexBuildMode ResolveBuildMode()
+        {
+            var configuredValue = Environment.GetEnvironmentVariable(BuilderModeEnvironmentVariable);
+            if (string.IsNullOrWhiteSpace(configuredValue))
+            {
+                return RustFfmpegGlobalFrameIndexBuildMode.Auto;
+            }
+
+            switch (configuredValue.Trim().ToLowerInvariant())
+            {
+                case "managed":
+                case "csharp":
+                case "c#":
+                    return RustFfmpegGlobalFrameIndexBuildMode.Managed;
+                case "rust":
+                    return RustFfmpegGlobalFrameIndexBuildMode.Rust;
+                default:
+                    return RustFfmpegGlobalFrameIndexBuildMode.Auto;
+            }
+        }
+
+        public static RustFfmpegGlobalFrameIndexResult TryBuild(
+            string runtimeDirectory,
+            string filePath,
+            int videoStreamIndex,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (string.IsNullOrWhiteSpace(runtimeDirectory))
+            {
+                return RustFfmpegGlobalFrameIndexResult.Unavailable(
+                    "runtime-directory-missing",
+                    "FFmpeg runtime directory is not configured.");
+            }
+
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                return RustFfmpegGlobalFrameIndexResult.Unavailable(
+                    "file-missing",
+                    "Media file path is not configured.");
+            }
+
+            if (videoStreamIndex < 0)
+            {
+                return RustFfmpegGlobalFrameIndexResult.Unavailable(
+                    "stream-missing",
+                    "Video stream index is not configured.");
+            }
+
+            var cancellationFlag = Marshal.AllocHGlobal(sizeof(int));
+            Marshal.WriteInt32(cancellationFlag, 0);
+            try
+            {
+                using (cancellationToken.Register(state => Marshal.WriteInt32((IntPtr)state, 1), cancellationFlag))
+                {
+                    NativeGlobalFrameIndexResult nativeResult;
+                    var returnStatus = frameplayer_rust_ffmpeg_global_frame_index(
+                        runtimeDirectory,
+                        filePath,
+                        videoStreamIndex,
+                        cancellationFlag,
+                        out nativeResult);
+                    var nativeStatus = nativeResult.Status == 0 ? returnStatus : nativeResult.Status;
+
+                    try
+                    {
+                        if (nativeStatus == 15 || cancellationToken.IsCancellationRequested)
+                        {
+                            throw new OperationCanceledException(cancellationToken);
+                        }
+
+                        var entries = nativeStatus == 0
+                            ? CopyEntries(nativeResult)
+                            : Array.Empty<RustFfmpegGlobalFrameIndexEntry>();
+                        return new RustFfmpegGlobalFrameIndexResult(
+                            nativeStatus == 0,
+                            ResolveStatusName(nativeStatus),
+                            ReadMessage(nativeResult),
+                            nativeResult.TimeBaseNumerator,
+                            nativeResult.TimeBaseDenominator,
+                            entries);
+                    }
+                    finally
+                    {
+                        if (nativeResult.Entries != IntPtr.Zero)
+                        {
+                            frameplayer_rust_ffmpeg_global_frame_index_free(
+                                nativeResult.Entries,
+                                new UIntPtr(nativeResult.EntryCount));
+                        }
+                    }
+                }
+            }
+            catch (DllNotFoundException ex)
+            {
+                return RustFfmpegGlobalFrameIndexResult.Unavailable(
+                    "native-library-missing",
+                    "Rust FFmpeg exact frame index library was not found: " + ex.Message);
+            }
+            catch (EntryPointNotFoundException ex)
+            {
+                return RustFfmpegGlobalFrameIndexResult.Unavailable(
+                    "native-entrypoint-missing",
+                    "Rust FFmpeg exact frame index entrypoint was not found: " + ex.Message);
+            }
+            catch (BadImageFormatException ex)
+            {
+                return RustFfmpegGlobalFrameIndexResult.Unavailable(
+                    "native-library-invalid",
+                    "Rust FFmpeg exact frame index library could not be loaded by this process: " + ex.Message);
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(cancellationFlag);
+            }
+        }
+
+        private static RustFfmpegGlobalFrameIndexEntry[] CopyEntries(NativeGlobalFrameIndexResult nativeResult)
+        {
+            if (nativeResult.EntryCount == 0 || nativeResult.Entries == IntPtr.Zero)
+            {
+                return Array.Empty<RustFfmpegGlobalFrameIndexEntry>();
+            }
+
+            if (nativeResult.EntryCount > int.MaxValue)
+            {
+                throw new InvalidOperationException("Rust FFmpeg exact frame index returned too many entries to marshal.");
+            }
+
+            var nativeEntries = (NativeGlobalFrameIndexEntry*)nativeResult.Entries;
+            var entries = new List<RustFfmpegGlobalFrameIndexEntry>((int)nativeResult.EntryCount);
+            for (var index = 0; index < (int)nativeResult.EntryCount; index++)
+            {
+                entries.Add(ToManaged(nativeEntries[index]));
+            }
+
+            return entries.ToArray();
+        }
+
+        private static RustFfmpegGlobalFrameIndexEntry ToManaged(NativeGlobalFrameIndexEntry entry)
+        {
+            return new RustFfmpegGlobalFrameIndexEntry(
+                entry.AbsoluteFrameIndex,
+                ToNullableTimestamp(entry.PresentationTimestamp),
+                ToNullableTimestamp(entry.DecodeTimestamp),
+                ToNullableTimestamp(entry.SearchTimestamp),
+                entry.IsKeyFrame != 0,
+                entry.SeekAnchorFrameIndex,
+                entry.SeekAnchorTimestamp);
+        }
+
+        private static long? ToNullableTimestamp(long timestamp)
+        {
+            return timestamp == NoTimestamp ? (long?)null : timestamp;
+        }
+
+        private static string ResolveStatusName(int nativeStatus)
+        {
+            switch (nativeStatus)
+            {
+                case 0:
+                    return "ok";
+                case 1:
+                    return "invalid-argument";
+                case 2:
+                    return "runtime-directory-missing";
+                case 3:
+                    return "library-load-failed";
+                case 4:
+                    return "symbol-load-failed";
+                case 5:
+                    return "file-open-failed";
+                case 6:
+                    return "stream-unavailable";
+                case 7:
+                    return "decoder-unavailable";
+                case 8:
+                    return "codec-context-alloc-failed";
+                case 9:
+                    return "codec-context-failed";
+                case 10:
+                    return "packet-alloc-failed";
+                case 11:
+                    return "frame-alloc-failed";
+                case 12:
+                    return "packet-read-failed";
+                case 13:
+                    return "packet-send-failed";
+                case 14:
+                    return "frame-receive-failed";
+                case 15:
+                    return "cancelled";
+                default:
+                    return "native-error";
+            }
+        }
+
+        private static string ReadMessage(NativeGlobalFrameIndexResult nativeResult)
+        {
+            var message = nativeResult.Message;
+            var length = 0;
+            while (length < MessageCapacity && message[length] != 0)
+            {
+                length++;
+            }
+
+            return Encoding.UTF8.GetString(message, length);
+        }
+
+        [DllImport("frameplayer_ffmpeg_probe", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int frameplayer_rust_ffmpeg_global_frame_index(
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string runtimeDirectory,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string filePath,
+            int videoStreamIndex,
+            IntPtr cancellationFlag,
+            out NativeGlobalFrameIndexResult result);
+
+        [DllImport("frameplayer_ffmpeg_probe", CallingConvention = CallingConvention.Cdecl)]
+        private static extern void frameplayer_rust_ffmpeg_global_frame_index_free(
+            IntPtr entries,
+            UIntPtr entryCount);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private unsafe struct NativeGlobalFrameIndexResult
+        {
+            public int Status;
+            public IntPtr Entries;
+            public ulong EntryCount;
+            public int TimeBaseNumerator;
+            public int TimeBaseDenominator;
+            public fixed byte Message[MessageCapacity];
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct NativeGlobalFrameIndexEntry
+        {
+            public long AbsoluteFrameIndex;
+            public long PresentationTimestamp;
+            public long DecodeTimestamp;
+            public long SearchTimestamp;
+            public int IsKeyFrame;
+            public long SeekAnchorFrameIndex;
+            public long SeekAnchorTimestamp;
+        }
+    }
+
+    internal enum RustFfmpegGlobalFrameIndexBuildMode
+    {
+        Auto,
+        Managed,
+        Rust
+    }
+
+    internal sealed class RustFfmpegGlobalFrameIndexResult
+    {
+        public RustFfmpegGlobalFrameIndexResult(
+            bool succeeded,
+            string statusName,
+            string message,
+            int timeBaseNumerator,
+            int timeBaseDenominator,
+            RustFfmpegGlobalFrameIndexEntry[] entries)
+        {
+            Succeeded = succeeded;
+            StatusName = statusName ?? string.Empty;
+            Message = message ?? string.Empty;
+            TimeBaseNumerator = timeBaseNumerator;
+            TimeBaseDenominator = timeBaseDenominator;
+            Entries = entries ?? Array.Empty<RustFfmpegGlobalFrameIndexEntry>();
+        }
+
+        public bool Succeeded { get; }
+
+        public string StatusName { get; }
+
+        public string Message { get; }
+
+        public int TimeBaseNumerator { get; }
+
+        public int TimeBaseDenominator { get; }
+
+        public RustFfmpegGlobalFrameIndexEntry[] Entries { get; }
+
+        public static RustFfmpegGlobalFrameIndexResult Unavailable(string statusName, string message)
+        {
+            return new RustFfmpegGlobalFrameIndexResult(
+                false,
+                statusName,
+                message,
+                0,
+                0,
+                Array.Empty<RustFfmpegGlobalFrameIndexEntry>());
+        }
+    }
+
+    internal sealed class RustFfmpegGlobalFrameIndexEntry
+    {
+        public RustFfmpegGlobalFrameIndexEntry(
+            long absoluteFrameIndex,
+            long? presentationTimestamp,
+            long? decodeTimestamp,
+            long? searchTimestamp,
+            bool isKeyFrame,
+            long seekAnchorFrameIndex,
+            long seekAnchorTimestamp)
+        {
+            AbsoluteFrameIndex = absoluteFrameIndex;
+            PresentationTimestamp = presentationTimestamp;
+            DecodeTimestamp = decodeTimestamp;
+            SearchTimestamp = searchTimestamp;
+            IsKeyFrame = isKeyFrame;
+            SeekAnchorFrameIndex = seekAnchorFrameIndex;
+            SeekAnchorTimestamp = seekAnchorTimestamp > 0L ? seekAnchorTimestamp : 0L;
+        }
+
+        public long AbsoluteFrameIndex { get; }
+
+        public long? PresentationTimestamp { get; }
+
+        public long? DecodeTimestamp { get; }
+
+        public long? SearchTimestamp { get; }
+
+        public bool IsKeyFrame { get; }
+
+        public long SeekAnchorFrameIndex { get; }
+
+        public long SeekAnchorTimestamp { get; }
+    }
+}
