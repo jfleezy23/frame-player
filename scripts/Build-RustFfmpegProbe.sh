@@ -7,6 +7,7 @@ HOST_RUNTIME_IDENTIFIER=""
 case "$(uname -s)-$(uname -m)" in
   Darwin-arm64) HOST_RUNTIME_IDENTIFIER="osx-arm64" ;;
   Darwin-x86_64) HOST_RUNTIME_IDENTIFIER="osx-x64" ;;
+  *) HOST_RUNTIME_IDENTIFIER="" ;;
 esac
 
 if [[ -z "$RUNTIME_IDENTIFIER" ]]; then
