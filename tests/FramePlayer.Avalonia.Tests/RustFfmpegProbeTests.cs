@@ -1,9 +1,10 @@
 using Avalonia.Controls;
+using FramePlayer.Core.Abstractions;
+using FramePlayer.Core.Models;
 using FramePlayer.Avalonia.Views;
 using FramePlayer.Engines.FFmpeg;
 using FramePlayer.Services;
 using FFmpeg.AutoGen;
-using FramePlayer.Core.Models;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -231,32 +232,34 @@ namespace FramePlayer.Avalonia.Tests
                 Environment.SetEnvironmentVariable("FRAMEPLAYER_FFMPEG_DECODE_CORE", "rust");
                 Environment.SetEnvironmentVariable("FRAMEPLAYER_FFMPEG_FRAME_CONVERTER", "rust");
 
-                _fixture.Run(() =>
+                await _fixture.RunAsync(async () =>
                 {
                     window = new MainWindow();
-                    InvokePrivateTask(window, "OpenMediaAsync", mediaPath, "pane-primary").GetAwaiter().GetResult();
+                    await InvokePrivateTask(window, "OpenMediaAsync", mediaPath, "pane-primary");
                     primaryEngine = RequirePrivateField<FfmpegReviewEngine>(window, "_primaryEngine");
                     Assert.True(primaryEngine.IsMediaOpen, primaryEngine.LastErrorMessage);
-                    primaryEngine.PlayAsync().GetAwaiter().GetResult();
-                });
+                    await primaryEngine.PlayAsync();
+                },
+                TimeSpan.FromSeconds(20d),
+                "Open and play forced-Rust media: " + mediaPath);
 
-                PumpPlaybackFrames();
+                await WaitForPlaybackHealthyAsync(primaryEngine!, mediaPath, "initial playback");
 
                 _fixture.Run(() =>
                 {
                     RequireControl<CheckBox>(window!, "CompareModeCheckBox").IsChecked = true;
                 });
-                PumpPlaybackFrames();
+                await WaitForPlaybackHealthyAsync(primaryEngine!, mediaPath, "compare mode enabled");
 
                 _fixture.Run(() =>
                 {
                     RequireControl<CheckBox>(window!, "CompareModeCheckBox").IsChecked = false;
                 });
-                PumpPlaybackFrames();
+                await WaitForPlaybackHealthyAsync(primaryEngine!, mediaPath, "compare mode disabled");
 
                 await primaryEngine!.PauseAsync();
                 await primaryEngine.PlayAsync();
-                PumpPlaybackFrames();
+                await WaitForPlaybackHealthyAsync(primaryEngine, mediaPath, "resume after compare mode");
 
                 Assert.True(primaryEngine.IsMediaOpen);
                 Assert.True(primaryEngine.IsPlaying, primaryEngine.LastErrorMessage);
@@ -267,11 +270,13 @@ namespace FramePlayer.Avalonia.Tests
                 if (primaryEngine != null)
                 {
                     await primaryEngine.PauseAsync();
+                    await primaryEngine.CloseAsync();
+                    primaryEngine.Dispose();
                 }
 
                 if (window != null)
                 {
-                    _fixture.Run(() => window.Close());
+                    await CloseAndDisposeCompareEngineAsync(window);
                 }
 
                 Environment.SetEnvironmentVariable("FRAMEPLAYER_FFMPEG_INDEX_BUILDER", previousBuilderMode);
@@ -445,10 +450,17 @@ namespace FramePlayer.Avalonia.Tests
             throw new DirectoryNotFoundException("Could not locate the frame-player repository root.");
         }
 
-        private void PumpPlaybackFrames()
+        private static async Task WaitForPlaybackHealthyAsync(
+            FfmpegReviewEngine engine,
+            string mediaPath,
+            string phase)
         {
-            Thread.Sleep(250);
-            _fixture.Run(() => { });
+            await Task.Delay(250);
+
+            Assert.True(engine.IsPlaying, "Playback stopped during " + phase + " for " + mediaPath + ".");
+            Assert.True(
+                string.IsNullOrWhiteSpace(engine.LastErrorMessage),
+                "Playback reported an error during " + phase + " for " + mediaPath + ": " + engine.LastErrorMessage);
         }
 
         private static Task InvokePrivateTask(MainWindow window, string methodName, params object[] args)
@@ -478,6 +490,17 @@ namespace FramePlayer.Avalonia.Tests
             var field = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic)
                 ?? throw new MissingFieldException(target.GetType().FullName, fieldName);
             return (T)(field.GetValue(target) ?? throw new InvalidOperationException("Missing field value: " + fieldName + "."));
+        }
+
+        private static async Task CloseAndDisposeCompareEngineAsync(MainWindow window)
+        {
+            var field = typeof(MainWindow).GetField("_compareEngine", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?? throw new MissingFieldException(typeof(MainWindow).FullName, "_compareEngine");
+            if (field.GetValue(window) is IVideoReviewEngine engine)
+            {
+                await engine.CloseAsync();
+                engine.Dispose();
+            }
         }
 
         private static async Task WaitForIndexAsync(FfmpegReviewEngine engine)

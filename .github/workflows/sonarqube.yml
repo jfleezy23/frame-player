@@ -116,6 +116,7 @@ jobs:
             "Core/Models/AudioInsertion*.cs"
             "Core/Models/ClipExport*.cs"
             "Core/Models/CompareSideBySideExport*.cs"
+            "Core/Models/DecodedFrameBuffer.cs"
             "Core/Models/ExportHost*.cs"
             "Core/Models/LoopPlaybackRangeSnapshot.cs"
             "Core/Models/PaneViewportSnapshot.cs"
@@ -222,6 +223,9 @@ jobs:
             "src/FramePlayer.Engine.FFmpeg/FfmpegRuntimeBootstrap.cs"
             "src/FramePlayer.Engine.FFmpeg/Properties/AssemblyInfo.cs"
             "scripts/ui_loop_visible_test.py"
+            "scripts/Build-RustFfmpegProbe.ps1"
+            "scripts/Run-UnifiedWindowsRustCorpus.ps1"
+            "scripts/Test-RepoHarnessScripts.ps1"
           ) -join ","
 
           # The DLL-only export host, native FFmpeg interop layer, and Rust
