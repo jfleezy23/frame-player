@@ -1,5 +1,7 @@
 # Unified Preview 0.3.0
 
+> Superseded: use [Frame Player Unified Preview 0.3.1](https://github.com/jfleezy23/frame-player/releases/tag/unified-preview-0.3.1) for the current combined Windows/macOS Avalonia preview. This note remains as historical validation evidence for the first Rust-enabled synchronized preview.
+
 This note records the synchronized Windows/macOS Avalonia preview. Unified Preview `0.3.0` is the first combined preview to ship the Rust FFmpeg native pipeline in both platform packages.
 
 - Published release: [Frame Player Unified Preview 0.3.0](https://github.com/jfleezy23/frame-player/releases/tag/unified-preview-0.3.0)

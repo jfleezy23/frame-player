@@ -1,6 +1,6 @@
 # Unified Preview 0.2.0
 
-> Superseded: use [Frame Player Unified Preview 0.3.0](https://github.com/jfleezy23/frame-player/releases/tag/unified-preview-0.3.0) for the current combined Windows/macOS Avalonia preview once the release is published. This note remains as historical validation evidence for the first synchronized preview.
+> Superseded: use [Frame Player Unified Preview 0.3.1](https://github.com/jfleezy23/frame-player/releases/tag/unified-preview-0.3.1) for the current combined Windows/macOS Avalonia preview once the release is published. This note remains as historical validation evidence for the first synchronized preview.
 
 This note documents the first synchronized Windows/macOS Avalonia preview.
 
