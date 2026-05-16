@@ -206,17 +206,31 @@ function Invoke-DotnetWithTimeout {
     $startInfo.FileName = "dotnet"
     $startInfo.WorkingDirectory = $WorkingDirectory
     $startInfo.UseShellExecute = $false
-    $startInfo.RedirectStandardOutput = $false
-    $startInfo.RedirectStandardError = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
     foreach ($argument in $Arguments) {
         [void]$startInfo.ArgumentList.Add($argument)
     }
 
     $process = [Diagnostics.Process]::new()
     $process.StartInfo = $startInfo
+    $stdoutFile = [IO.File]::Open(
+        $StandardOutputPath,
+        [IO.FileMode]::Create,
+        [IO.FileAccess]::Write,
+        [IO.FileShare]::Read)
+    $stderrFile = [IO.File]::Open(
+        $StandardErrorPath,
+        [IO.FileMode]::Create,
+        [IO.FileAccess]::Write,
+        [IO.FileShare]::Read)
+    $stdoutTask = $null
+    $stderrTask = $null
 
     try {
         [void]$process.Start()
+        $stdoutTask = $process.StandardOutput.BaseStream.CopyToAsync($stdoutFile)
+        $stderrTask = $process.StandardError.BaseStream.CopyToAsync($stderrFile)
 
         $timeoutMilliseconds = [Math]::Max(1, $TimeoutSeconds) * 1000
         $timedOut = -not $process.WaitForExit($timeoutMilliseconds)
@@ -225,20 +239,27 @@ function Invoke-DotnetWithTimeout {
         }
 
         $process.WaitForExit()
-        [IO.File]::WriteAllText(
-            $StandardOutputPath,
-            "Standard output was inherited by the harness process instead of redirected.",
-            [Text.UTF8Encoding]::new($false))
-        [IO.File]::WriteAllText(
-            $StandardErrorPath,
-            "Standard error was inherited by the harness process instead of redirected.",
-            [Text.UTF8Encoding]::new($false))
+        if ($null -ne $stdoutTask -and $null -ne $stderrTask) {
+            [Threading.Tasks.Task]::WaitAll(
+                [Threading.Tasks.Task[]]@($stdoutTask, $stderrTask))
+        }
+        if ($timedOut) {
+            $timeoutText = "Timed out after {0} seconds.{1}" -f $TimeoutSeconds, [Environment]::NewLine
+            $timeoutBytes = [Text.UTF8Encoding]::new($false).GetBytes($timeoutText)
+            $stderrFile.Write($timeoutBytes, 0, $timeoutBytes.Length)
+        }
         return [pscustomobject]@{
             ExitCode = if ($timedOut) { 124 } else { $process.ExitCode }
             TimedOut = $timedOut
         }
     }
     finally {
+        if ($null -ne $stdoutFile) {
+            $stdoutFile.Dispose()
+        }
+        if ($null -ne $stderrFile) {
+            $stderrFile.Dispose()
+        }
         $process.Dispose()
     }
 }
