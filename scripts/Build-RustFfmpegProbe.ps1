@@ -16,8 +16,20 @@ if (-not $IsWindows) {
     throw "Building the win-x64 Rust FFmpeg probe must run on a Windows host."
 }
 
-$cargo = Get-Command cargo -ErrorAction Stop
-& $cargo.Source build --manifest-path (Join-Path $crateDir "Cargo.toml") --release
+$cargoCommand = Get-Command cargo -ErrorAction SilentlyContinue
+$cargoPath = if ($null -ne $cargoCommand) { $cargoCommand.Source } else { $null }
+if ([string]::IsNullOrWhiteSpace($cargoPath)) {
+    $rustupCargoPath = Join-Path $env:USERPROFILE ".cargo\bin\cargo.exe"
+    if (Test-Path -LiteralPath $rustupCargoPath) {
+        $cargoPath = $rustupCargoPath
+    }
+}
+
+if ([string]::IsNullOrWhiteSpace($cargoPath)) {
+    throw "Cargo was not found on PATH or at the default rustup location. Install Rust with rustup and rerun this script."
+}
+
+& $cargoPath build --manifest-path (Join-Path $crateDir "Cargo.toml") --release
 
 New-Item -ItemType Directory -Force -Path $destDir | Out-Null
 $sourceLib = Join-Path $crateDir "target\release\frameplayer_ffmpeg_probe.dll"
