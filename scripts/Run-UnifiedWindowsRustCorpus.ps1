@@ -91,7 +91,7 @@ function Invoke-ExternalStep {
         [scriptblock]$Command
     )
 
-    Write-Host ("== {0} ==" -f $Name)
+    Write-Output ("== {0} ==" -f $Name)
     & $Command
     if ($LASTEXITCODE -ne 0) {
         throw ("{0} failed with exit code {1}." -f $Name, $LASTEXITCODE)

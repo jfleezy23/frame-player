@@ -1825,68 +1825,82 @@ namespace FramePlayer.Avalonia.Views
         private void QueueFramePresentation(Pane pane, DecodedFrameBuffer sourceFrameBuffer)
         {
             var retainedFrameBuffer = sourceFrameBuffer.Retain();
-            DecodedFrameBuffer? replacedFrameBuffer = null;
-            var shouldPost = false;
-            var gate = pane == Pane.Compare ? _compareFramePresentationLock : _primaryFramePresentationLock;
-
-            lock (gate)
-            {
-                if (pane == Pane.Compare)
-                {
-                    replacedFrameBuffer = _pendingCompareFrameBuffer;
-                    _pendingCompareFrameBuffer = retainedFrameBuffer;
-                    if (!_compareFramePresentationQueued)
-                    {
-                        _compareFramePresentationQueued = true;
-                        shouldPost = true;
-                    }
-                }
-                else
-                {
-                    replacedFrameBuffer = _pendingPrimaryFrameBuffer;
-                    _pendingPrimaryFrameBuffer = retainedFrameBuffer;
-                    if (!_primaryFramePresentationQueued)
-                    {
-                        _primaryFramePresentationQueued = true;
-                        shouldPost = true;
-                    }
-                }
-            }
-
-            replacedFrameBuffer?.Dispose();
+            var shouldPost = pane == Pane.Compare
+                ? StorePendingCompareFrame(retainedFrameBuffer)
+                : StorePendingPrimaryFrame(retainedFrameBuffer);
             if (!shouldPost)
             {
                 return;
             }
 
-            Dispatcher.UIThread.Post(() =>
+            Dispatcher.UIThread.Post(() => PresentPendingFrame(pane));
+        }
+
+        private bool StorePendingPrimaryFrame(DecodedFrameBuffer retainedFrameBuffer)
+        {
+            DecodedFrameBuffer? replacedFrameBuffer;
+            var shouldPost = false;
+            lock (_primaryFramePresentationLock)
             {
-                var frameBuffer = TakePendingFramePresentation(pane);
-                if (frameBuffer == null)
+                replacedFrameBuffer = _pendingPrimaryFrameBuffer;
+                _pendingPrimaryFrameBuffer = retainedFrameBuffer;
+                if (!_primaryFramePresentationQueued)
+                {
+                    _primaryFramePresentationQueued = true;
+                    shouldPost = true;
+                }
+            }
+
+            replacedFrameBuffer?.Dispose();
+            return shouldPost;
+        }
+
+        private bool StorePendingCompareFrame(DecodedFrameBuffer retainedFrameBuffer)
+        {
+            DecodedFrameBuffer? replacedFrameBuffer;
+            var shouldPost = false;
+            lock (_compareFramePresentationLock)
+            {
+                replacedFrameBuffer = _pendingCompareFrameBuffer;
+                _pendingCompareFrameBuffer = retainedFrameBuffer;
+                if (!_compareFramePresentationQueued)
+                {
+                    _compareFramePresentationQueued = true;
+                    shouldPost = true;
+                }
+            }
+
+            replacedFrameBuffer?.Dispose();
+            return shouldPost;
+        }
+
+        private void PresentPendingFrame(Pane pane)
+        {
+            var frameBuffer = TakePendingFramePresentation(pane);
+            if (frameBuffer == null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (pane == Pane.Compare && !IsCompareModeEnabled)
                 {
                     return;
                 }
 
-                try
-                {
-                    if (pane == Pane.Compare && !IsCompareModeEnabled)
-                    {
-                        return;
-                    }
-
-                    SetPaneBitmap(pane, frameBuffer);
-                }
-                catch (Exception ex)
-                {
-                    CacheStatusTextBlock.Text = pane == Pane.Compare
-                        ? "Compare frame presentation failed: " + ex.Message
-                        : "Frame presentation failed: " + ex.Message;
-                }
-                finally
-                {
-                    frameBuffer.Dispose();
-                }
-            });
+                SetPaneBitmap(pane, frameBuffer);
+            }
+            catch (Exception ex)
+            {
+                CacheStatusTextBlock.Text = pane == Pane.Compare
+                    ? "Compare frame presentation failed: " + ex.Message
+                    : "Frame presentation failed: " + ex.Message;
+            }
+            finally
+            {
+                frameBuffer.Dispose();
+            }
         }
 
         private DecodedFrameBuffer? TakePendingFramePresentation(Pane pane)
