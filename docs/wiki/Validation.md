@@ -10,7 +10,7 @@ Recorded validation evidence:
 - Windows forced-Rust corpus stability PR: [#74](https://github.com/jfleezy23/frame-player/pull/74), merged as `05550fe3817a8186b45aac3ceb82bcf94110e1f0`.
 - GitHub checks on PR #74 and the merged `main` commit passed: Windows CI, macOS Avalonia, SonarQube/SonarCloud, CodeQL, dependency review, and dependency submission.
 - Local macOS regression review after PR #74 passed the unified Avalonia build and tests, forced-Rust playback tests, the split Mac build/tests, package smoke validation, and the Mac corpus release-candidate validator.
-- Release target: pending final release commit.
+- Release target: `5e96c8cc1ae58b5f8edf28b30e4776ea99b6fa05`.
 - Windows ZIP: `FramePlayer-Windows-x64-unified-preview-0.3.1.zip`, including `frameplayer_ffmpeg_probe.dll` beside `FramePlayer.Avalonia.exe`.
 - Windows SHA256: `439b6ac5f90d5c5e84ce4a4c4374b670e06e9447643e292551bba319e5fb652f`.
 - macOS ZIP: `FramePlayer-macOS-arm64-unified-preview-0.3.1.zip`, including `libframeplayer_ffmpeg_probe.dylib` beside the app executable.
