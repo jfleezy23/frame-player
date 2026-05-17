@@ -5,7 +5,7 @@ This note records the synchronized Windows/macOS Avalonia preview patch after th
 - Published release: [Frame Player Unified Preview 0.3.1](https://github.com/jfleezy23/frame-player/releases/tag/unified-preview-0.3.1)
 - Tag: `unified-preview-0.3.1`
 - Windows stability merge target: `05550fe3817a8186b45aac3ceb82bcf94110e1f0`
-- Final release target: pending final release commit
+- Final release target: `5e96c8cc1ae58b5f8edf28b30e4776ea99b6fa05`
 - Windows artifact: `FramePlayer-Windows-x64-unified-preview-0.3.1.zip`
 - Windows SHA256: `439b6ac5f90d5c5e84ce4a4c4374b670e06e9447643e292551bba319e5fb652f`
 - macOS artifact: `FramePlayer-macOS-arm64-unified-preview-0.3.1.zip`
@@ -87,7 +87,7 @@ Windows package smoke must confirm:
 
 - GitHub checks on the merged Windows fix target passed before this release-prep pass.
 - Local macOS review after PR #74 passed the unified build, full unified test suite, forced-Rust playback tests, split Mac build/tests, and the broader Mac corpus release-candidate validator.
-- Final release publication must replace the pending target above with the shipped release target.
+- Final release publication completed against target `5e96c8cc1ae58b5f8edf28b30e4776ea99b6fa05`.
 
 ## Superseded Previews
 
