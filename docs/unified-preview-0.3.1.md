@@ -9,8 +9,8 @@ This note records the synchronized Windows/macOS Avalonia preview patch after th
 - Windows artifact: `FramePlayer-Windows-x64-unified-preview-0.3.1.zip`
 - Windows SHA256: `439b6ac5f90d5c5e84ce4a4c4374b670e06e9447643e292551bba319e5fb652f`
 - macOS artifact: `FramePlayer-macOS-arm64-unified-preview-0.3.1.zip`
-- macOS SHA256: pending final notarized artifact
-- Apple notarization submission: pending final notarized artifact
+- macOS SHA256: `e3776ea9a7f2643d7c77e18b3d7207d0cd721f6af439a2998ecf9d382fda1f29`
+- Apple notarization submission: `cdf36d19-1c75-4d34-8144-b6522cef0d87`
 
 ## What Changed
 
@@ -87,7 +87,7 @@ Windows package smoke must confirm:
 
 - GitHub checks on the merged Windows fix target passed before this release-prep pass.
 - Local macOS review after PR #74 passed the unified build, full unified test suite, forced-Rust playback tests, split Mac build/tests, and the broader Mac corpus release-candidate validator.
-- Final release publication must replace the pending target, SHA256, and notarization fields above with the shipped artifact evidence.
+- Final release publication must replace the pending target above with the shipped release target.
 
 ## Superseded Previews
 

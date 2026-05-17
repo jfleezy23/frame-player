@@ -14,9 +14,9 @@ Recorded validation evidence:
 - Windows ZIP: `FramePlayer-Windows-x64-unified-preview-0.3.1.zip`, including `frameplayer_ffmpeg_probe.dll` beside `FramePlayer.Avalonia.exe`.
 - Windows SHA256: `439b6ac5f90d5c5e84ce4a4c4374b670e06e9447643e292551bba319e5fb652f`.
 - macOS ZIP: `FramePlayer-macOS-arm64-unified-preview-0.3.1.zip`, including `libframeplayer_ffmpeg_probe.dylib` beside the app executable.
-- macOS SHA256: pending final notarized artifact.
+- macOS SHA256: `e3776ea9a7f2643d7c77e18b3d7207d0cd721f6af439a2998ecf9d382fda1f29`.
 - Release: [Frame Player Unified Preview 0.3.1](https://github.com/jfleezy23/frame-player/releases/tag/unified-preview-0.3.1)
-- Apple notarization submission: pending final notarized artifact.
+- Apple notarization submission: `cdf36d19-1c75-4d34-8144-b6522cef0d87`.
 
 Additional Rust-path validation should force all three modes with `FRAMEPLAYER_FFMPEG_INDEX_BUILDER=rust`, `FRAMEPLAYER_FFMPEG_DECODE_CORE=rust`, and `FRAMEPLAYER_FFMPEG_FRAME_CONVERTER=rust` so fallback cannot hide native-path failures.
 
