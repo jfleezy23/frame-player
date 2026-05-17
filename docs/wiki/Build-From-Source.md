@@ -44,7 +44,7 @@ FRAMEPLAYER_MAC_CORPUS="Video Test Files" script/validate_macos_release_candidat
 Package a local signed release candidate:
 
 ```bash
-PACKAGE_VERSION=unified-preview-0.3.0 script/package_unified_macos_release.sh --sign
+PACKAGE_VERSION=unified-preview-0.3.1 script/package_unified_macos_release.sh --sign
 codesign --verify --deep --verbose=2 "dist/Frame Player.app"
 ```
 

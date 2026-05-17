@@ -1,8 +1,28 @@
 # Validation
 
+## Unified Avalonia Preview 0.3.1
+
+Unified Avalonia Preview `0.3.1` is the current combined Windows/macOS preview release.
+It is a patch release for the Rust-enabled unified preview line after the forced-Rust Windows corpus stability pass.
+
+Recorded validation evidence:
+
+- Windows forced-Rust corpus stability PR: [#74](https://github.com/jfleezy23/frame-player/pull/74), merged as `05550fe3817a8186b45aac3ceb82bcf94110e1f0`.
+- GitHub checks on PR #74 and the merged `main` commit passed: Windows CI, macOS Avalonia, SonarQube/SonarCloud, CodeQL, dependency review, and dependency submission.
+- Local macOS regression review after PR #74 passed the unified Avalonia build and tests, forced-Rust playback tests, the split Mac build/tests, package smoke validation, and the Mac corpus release-candidate validator.
+- Release target: pending final release commit.
+- Windows ZIP: `FramePlayer-Windows-x64-unified-preview-0.3.1.zip`, including `frameplayer_ffmpeg_probe.dll` beside `FramePlayer.Avalonia.exe`.
+- Windows SHA256: `439b6ac5f90d5c5e84ce4a4c4374b670e06e9447643e292551bba319e5fb652f`.
+- macOS ZIP: `FramePlayer-macOS-arm64-unified-preview-0.3.1.zip`, including `libframeplayer_ffmpeg_probe.dylib` beside the app executable.
+- macOS SHA256: `e3776ea9a7f2643d7c77e18b3d7207d0cd721f6af439a2998ecf9d382fda1f29`.
+- Release: [Frame Player Unified Preview 0.3.1](https://github.com/jfleezy23/frame-player/releases/tag/unified-preview-0.3.1)
+- Apple notarization submission: `cdf36d19-1c75-4d34-8144-b6522cef0d87`.
+
+Additional Rust-path validation should force all three modes with `FRAMEPLAYER_FFMPEG_INDEX_BUILDER=rust`, `FRAMEPLAYER_FFMPEG_DECODE_CORE=rust`, and `FRAMEPLAYER_FFMPEG_FRAME_CONVERTER=rust` so fallback cannot hide native-path failures.
+
 ## Unified Avalonia Preview 0.3.0
 
-Unified Avalonia Preview `0.3.0` was published on 2026-05-09 as the current combined Windows/macOS preview release.
+Unified Avalonia Preview `0.3.0` was published on 2026-05-09 as the first Rust-enabled combined Windows/macOS preview release.
 It is the first combined preview to ship the Rust FFmpeg native pipeline in both platform packages.
 
 Recorded validation evidence:
@@ -53,7 +73,7 @@ Published Unified Preview details:
 
 ## Superseded Split Previews
 
-The split macOS Preview `0.1.1` and Windows Avalonia Preview `0.1.0` releases are superseded by Unified Avalonia Preview `0.3.0`. They remain available only as historical validation and provenance records.
+The split macOS Preview `0.1.1` and Windows Avalonia Preview `0.1.0` releases are superseded by Unified Avalonia Preview `0.3.1`. They remain available only as historical validation and provenance records.
 
 ## Windows Stable
 
