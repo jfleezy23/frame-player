@@ -82,15 +82,38 @@ namespace FramePlayer.Services
 
                 // Drain both redirected streams concurrently so FFmpeg failures
                 // cannot block on a full output buffer during export/probe work.
-                var standardOutputTask = process.StandardOutput.ReadToEndAsync();
-                var standardErrorTask = process.StandardError.ReadToEndAsync();
-                Task.WaitAll(standardOutputTask, standardErrorTask);
+                // Using a dedicated background reader thread avoids sync-over-async Task.WaitAll hazards.
+                string standardError = null;
+                var stdErrReaderThread = new System.Threading.Thread(() =>
+                {
+                    try
+                    {
+                        standardError = process.StandardError.ReadToEnd();
+                    }
+                    catch
+                    {
+                        standardError = string.Empty;
+                    }
+                }) { IsBackground = true, Name = "FFmpegStderrReader" };
+                stdErrReaderThread.Start();
+
+                string standardOutput;
+                try
+                {
+                    standardOutput = process.StandardOutput.ReadToEnd();
+                }
+                catch
+                {
+                    standardOutput = string.Empty;
+                }
+
+                stdErrReaderThread.Join();
                 process.WaitForExit();
 
                 return new FfmpegProcessResult(
                     process.ExitCode,
-                    standardOutputTask.Result,
-                    standardErrorTask.Result);
+                    standardOutput ?? string.Empty,
+                    standardError ?? string.Empty);
             }
         }
 

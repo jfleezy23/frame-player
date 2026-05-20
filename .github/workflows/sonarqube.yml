@@ -142,6 +142,7 @@ jobs:
             "Services/NativeClipExportService.cs"
             "Services/NativeCompareSideBySideExportService.cs"
             "Services/NativeExportSupport.cs"
+            "Services/ManifestValidationHelper.cs"
             "Services/RuntimeManifestService.cs"
             "Services/AppInstanceLauncher.cs"
             "Engines/FFmpeg/FfmpegReviewEngine.cs"

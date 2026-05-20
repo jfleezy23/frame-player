@@ -51,6 +51,7 @@
     <Compile Include="..\..\Services\NativeClipExportService.cs" Link="Services\NativeClipExportService.cs" />
     <Compile Include="..\..\Services\NativeCompareSideBySideExportService.cs" Link="Services\NativeCompareSideBySideExportService.cs" />
     <Compile Include="..\..\Services\NativeExportSupport.cs" Link="Services\NativeExportSupport.cs" />
+    <Compile Include="..\..\Services\ManifestValidationHelper.cs" Link="Services\ManifestValidationHelper.cs" />
     <Compile Include="..\..\Services\RuntimeManifestService.cs" Link="Services\RuntimeManifestService.cs" />
     <EmbeddedResource Include="..\..\Runtime\runtime-manifest.json" LogicalName="FramePlayer.Runtime.runtime-manifest.json" />
     <EmbeddedResource Include="..\..\Runtime\export-runtime-manifest.json" LogicalName="FramePlayer.Runtime.export-runtime-manifest.json" />
