@@ -97,6 +97,267 @@ namespace FramePlayer.Core.Tests
             Assert.Contains("missing", errorMessage, StringComparison.OrdinalIgnoreCase);
         }
 
+        [Theory]
+        [InlineData(null, false)]
+        [InlineData("", false)]
+        [InlineData("   ", false)]
+        [InlineData("/absolute/path/file.dll", false)]
+        [InlineData("nested/directory/file.dll", false)]
+        [InlineData("file.dll", true)]
+        [InlineData("ffmpeg.exe", true)]
+        public void ManifestValidationHelper_IsSafeLeafFileName_WorksCorrectly(string? fileName, bool expected)
+        {
+            var result = ManifestValidationHelper.IsSafeLeafFileName(fileName);
+            Assert.Equal(expected, result);
+        }
+
+        [Fact]
+        public void ManifestValidationHelper_ComputeSha256_CalculatesCorrectHash()
+        {
+            var tempFile = Path.GetTempFileName();
+            try
+            {
+                File.WriteAllText(tempFile, "hello world");
+                // SHA256 of "hello world" text is b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9
+                var hash = ManifestValidationHelper.ComputeSha256(tempFile);
+                Assert.Equal("b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9", hash, ignoreCase: true);
+            }
+            finally
+            {
+                if (File.Exists(tempFile))
+                {
+                    File.Delete(tempFile);
+                }
+            }
+        }
+
+        [Fact]
+        public void ManifestValidationHelper_LoadManifest_ReturnsNull_ForInvalidResource()
+        {
+            var manifest = ManifestValidationHelper.LoadManifest("NonExistentResourceName");
+            Assert.Null(manifest);
+        }
+
+        [Fact]
+        public void ManifestValidationHelper_LoadManifest_Succeeds_ForValidResource()
+        {
+            var manifest = ManifestValidationHelper.LoadManifest("FramePlayer.Runtime.runtime-manifest.json");
+            Assert.NotNull(manifest);
+            Assert.NotNull(manifest.Files);
+            Assert.True(manifest.Files.Count > 0);
+        }
+
+        [Fact]
+        public void ManifestValidationHelper_TryValidateDirectory_Fails_WhenDirectoryIsMissing()
+        {
+            var manifestLazy = new Lazy<ManifestData>(() => new ManifestData());
+            var valid = ManifestValidationHelper.TryValidateDirectory(
+                "non-existent-directory",
+                manifestLazy,
+                "dir-missing",
+                "manifest-missing",
+                "invalid-entry",
+                "missing-file:",
+                ":suffix",
+                "integrity-fail:",
+                ":suffix",
+                out var errorMessage);
+
+            Assert.False(valid);
+            Assert.Equal("dir-missing", errorMessage);
+        }
+
+        [Fact]
+        public void ManifestValidationHelper_TryValidateDirectory_Fails_WhenManifestIsEmpty()
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                var manifestLazy = new Lazy<ManifestData>(() => null);
+                var valid = ManifestValidationHelper.TryValidateDirectory(
+                    tempDir,
+                    manifestLazy,
+                    "dir-missing",
+                    "manifest-missing",
+                    "invalid-entry",
+                    "missing-file:",
+                    ":suffix",
+                    "integrity-fail:",
+                    ":suffix",
+                    out var errorMessage);
+
+                Assert.False(valid);
+                Assert.Equal("manifest-missing", errorMessage);
+            }
+            finally
+            {
+                if (Directory.Exists(tempDir))
+                {
+                    Directory.Delete(tempDir, recursive: true);
+                }
+            }
+        }
+
+        [Fact]
+        public void ManifestValidationHelper_TryValidateDirectory_Fails_WhenManifestHasInvalidFileEntry()
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                var manifestLazy = new Lazy<ManifestData>(() => new ManifestData
+                {
+                    Files = new System.Collections.Generic.Dictionary<string, string>
+                    {
+                        { "nested/invalid.dll", "somehash" }
+                    }
+                });
+                var valid = ManifestValidationHelper.TryValidateDirectory(
+                    tempDir,
+                    manifestLazy,
+                    "dir-missing",
+                    "manifest-missing",
+                    "invalid-entry",
+                    "missing-file:",
+                    ":suffix",
+                    "integrity-fail:",
+                    ":suffix",
+                    out var errorMessage);
+
+                Assert.False(valid);
+                Assert.Equal("invalid-entry", errorMessage);
+            }
+            finally
+            {
+                if (Directory.Exists(tempDir))
+                {
+                    Directory.Delete(tempDir, recursive: true);
+                }
+            }
+        }
+
+        [Fact]
+        public void ManifestValidationHelper_TryValidateDirectory_Fails_WhenFileIsMissing()
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                var manifestLazy = new Lazy<ManifestData>(() => new ManifestData
+                {
+                    Files = new System.Collections.Generic.Dictionary<string, string>
+                    {
+                        { "avcodec.dll", "somehash" }
+                    }
+                });
+                var valid = ManifestValidationHelper.TryValidateDirectory(
+                    tempDir,
+                    manifestLazy,
+                    "dir-missing",
+                    "manifest-missing",
+                    "invalid-entry",
+                    "missing-file:",
+                    ":suffix",
+                    "integrity-fail:",
+                    ":suffix",
+                    out var errorMessage);
+
+                Assert.False(valid);
+                Assert.Equal("missing-file:avcodec.dll:suffix", errorMessage);
+            }
+            finally
+            {
+                if (Directory.Exists(tempDir))
+                {
+                    Directory.Delete(tempDir, recursive: true);
+                }
+            }
+        }
+
+        [Fact]
+        public void ManifestValidationHelper_TryValidateDirectory_Fails_WhenIntegrityCheckFails()
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                var filePath = Path.Combine(tempDir, "avcodec.dll");
+                File.WriteAllText(filePath, "wrong content");
+
+                var manifestLazy = new Lazy<ManifestData>(() => new ManifestData
+                {
+                    Files = new System.Collections.Generic.Dictionary<string, string>
+                    {
+                        { "avcodec.dll", "correcthash" }
+                    }
+                });
+                var valid = ManifestValidationHelper.TryValidateDirectory(
+                    tempDir,
+                    manifestLazy,
+                    "dir-missing",
+                    "manifest-missing",
+                    "invalid-entry",
+                    "missing-file:",
+                    ":suffix",
+                    "integrity-fail:",
+                    ":suffix",
+                    out var errorMessage);
+
+                Assert.False(valid);
+                Assert.Equal("integrity-fail:avcodec.dll:suffix", errorMessage);
+            }
+            finally
+            {
+                if (Directory.Exists(tempDir))
+                {
+                    Directory.Delete(tempDir, recursive: true);
+                }
+            }
+        }
+
+        [Fact]
+        public void ManifestValidationHelper_TryValidateDirectory_Succeeds_WhenAllFilesValid()
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                var filePath = Path.Combine(tempDir, "avcodec.dll");
+                File.WriteAllText(filePath, "hello world");
+                var expectedHash = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
+
+                var manifestLazy = new Lazy<ManifestData>(() => new ManifestData
+                {
+                    Files = new System.Collections.Generic.Dictionary<string, string>
+                    {
+                        { "avcodec.dll", expectedHash }
+                    }
+                });
+                var valid = ManifestValidationHelper.TryValidateDirectory(
+                    tempDir,
+                    manifestLazy,
+                    "dir-missing",
+                    "manifest-missing",
+                    "invalid-entry",
+                    "missing-file:",
+                    ":suffix",
+                    "integrity-fail:",
+                    ":suffix",
+                    out var errorMessage);
+
+                Assert.True(valid, errorMessage);
+                Assert.Equal(string.Empty, errorMessage);
+            }
+            finally
+            {
+                if (Directory.Exists(tempDir))
+                {
+                    Directory.Delete(tempDir, recursive: true);
+                }
+            }
+        }
+
         [Fact]
         public void MediaProbeService_ReportsVideoMetadata_ForSampleClip()
         {
