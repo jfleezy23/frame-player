@@ -12,6 +12,7 @@ namespace FramePlayer.Services
         private const string StoragePrefix = "DPAPIv1:";
         private static readonly byte[] StorageEntropy = Encoding.UTF8.GetBytes("FramePlayer.DiagnosticLog");
         private readonly List<string> _entries = new List<string>();
+        private readonly object _lock = new object();
         private readonly string _latestLogPath;
 
         public DiagnosticLogService()
@@ -95,24 +96,38 @@ namespace FramePlayer.Services
                 level,
                 sanitizedMessage);
 
-            _entries.Add(entry);
+            lock (_lock)
+            {
+                _entries.Add(entry);
 
-            try
-            {
-                PersistEntries();
-            }
-            catch
-            {
-                // Keep diagnostics best-effort.
+                try
+                {
+                    PersistEntriesLocked();
+                }
+                catch
+                {
+                    // Keep diagnostics best-effort.
+                }
             }
         }
 
         private IReadOnlyList<string> Snapshot()
         {
-            return _entries.ToList();
+            lock (_lock)
+            {
+                return _entries.ToList();
+            }
         }
 
         private void PersistEntries()
+        {
+            lock (_lock)
+            {
+                PersistEntriesLocked();
+            }
+        }
+
+        private void PersistEntriesLocked()
         {
             var serializedEntries = string.Join(Environment.NewLine, _entries);
             var protectedBytes = ProtectedData.Protect(
