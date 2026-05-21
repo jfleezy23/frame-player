@@ -426,7 +426,7 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
-        public void MainSharedTransport_MasterTimelineSeeksBothPanesBeforeResuming()
+        public void MainSharedTransport_MasterTimelineQueuesThrottledSeekBeforeResuming()
         {
             var mainWindowSource = ReadRepositoryFile(
                 "src",
@@ -435,12 +435,20 @@ namespace FramePlayer.Avalonia.Tests
                 "MainWindow.axaml.cs");
             var masterSliderMethod = ExtractMethodBody(
                 mainWindowSource,
-                "private async void PositionSlider_ValueChanged(",
-                "private async void PanePositionSlider_ValueChanged(");
+                "private void PositionSlider_ValueChanged(",
+                "private void QueueSliderScrub(");
+            var scrubTimerMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private async void SliderScrubTimer_Tick(",
+                "private void PanePositionSlider_ValueChanged(");
             var commitSliderMethod = ExtractMethodBody(
                 mainWindowSource,
                 "private async Task CommitSliderSeekAsync(",
-                "private async void PositionSlider_ValueChanged(");
+                "private void PositionSlider_ValueChanged(");
+            var cancelQueuedScrubsMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private void CancelQueuedSliderScrubs(",
+                "private async void PaneSliderScrubTimer_Tick(");
             var masterSeekMethod = ExtractMethodBody(
                 mainWindowSource,
                 "private async Task SeekMasterTimelineAsync(",
@@ -450,8 +458,14 @@ namespace FramePlayer.Avalonia.Tests
                 "private async Task SeekAllPaneToTimesPreservingPlaybackAsync(",
                 "private static TimeSpan ClampSeekTarget(");
 
-            Assert.Contains("await SeekMasterTimelineAsync(", masterSliderMethod, StringComparison.Ordinal);
+            Assert.Contains("QueueSliderScrub(TimeSpan.FromSeconds(PositionSlider.Value));", masterSliderMethod, StringComparison.Ordinal);
+            Assert.Contains("await SeekMasterTimelineAsync(_pendingSliderScrubTarget);", scrubTimerMethod, StringComparison.Ordinal);
+            Assert.Contains("CancelQueuedSliderScrubs();", commitSliderMethod, StringComparison.Ordinal);
             Assert.Contains("await SeekMasterTimelineAsync(target);", commitSliderMethod, StringComparison.Ordinal);
+            Assert.Contains("_hasPendingSliderScrubTarget = false;", cancelQueuedScrubsMethod, StringComparison.Ordinal);
+            Assert.Contains("_hasPendingPaneSliderScrubTarget = false;", cancelQueuedScrubsMethod, StringComparison.Ordinal);
+            Assert.Contains("_sliderScrubTimer.Stop();", cancelQueuedScrubsMethod, StringComparison.Ordinal);
+            Assert.Contains("_paneSliderScrubTimer.Stop();", cancelQueuedScrubsMethod, StringComparison.Ordinal);
             Assert.Contains("if (IsAllPaneTransportEnabled)", masterSeekMethod, StringComparison.Ordinal);
             Assert.Contains("await SeekAllPaneToTimePreservingPlaybackAsync(target);", masterSeekMethod, StringComparison.Ordinal);
             Assert.Contains("await Task.WhenAll(", allPaneSeekMethod, StringComparison.Ordinal);
@@ -1063,6 +1077,39 @@ namespace FramePlayer.Avalonia.Tests
             });
         }
 
+        [Fact]
+        public async Task CloseVideosAsync_ReleasesReusablePaneBitmaps()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var primarySurface = RequireControl<Image>(window, "CustomVideoSurface");
+                    var compareSurface = RequireControl<Image>(window, "CompareVideoSurface");
+                    using var primaryFrame = CreateFrameBuffer(8, 4);
+                    using var compareFrame = CreateFrameBuffer(8, 4);
+
+                    InvokePrivate(window, "SetPaneBitmap", ParsePane("Primary"), primaryFrame);
+                    InvokePrivate(window, "SetPaneBitmap", ParsePane("Compare"), compareFrame);
+
+                    Assert.NotNull(GetPrivateField<WriteableBitmap?>(window, "_primaryReusableBitmap"));
+                    Assert.NotNull(GetPrivateField<WriteableBitmap?>(window, "_compareReusableBitmap"));
+
+                    await (Task)InvokePrivate(window, "CloseVideosAsync");
+
+                    Assert.Null(primarySurface.Source);
+                    Assert.Null(compareSurface.Source);
+                    Assert.Null(GetPrivateField<WriteableBitmap?>(window, "_primaryReusableBitmap"));
+                    Assert.Null(GetPrivateField<WriteableBitmap?>(window, "_compareReusableBitmap"));
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
         private static PointerWheelEventArgs CreatePointerWheelChangedEvent(Control source, double deltaY)
         {
             return new PointerWheelEventArgs(
@@ -1309,6 +1356,13 @@ namespace FramePlayer.Avalonia.Tests
             var field = typeof(MainWindow).GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic)
                 ?? throw new MissingFieldException(typeof(MainWindow).FullName, fieldName);
             field.SetValue(window, value);
+        }
+
+        private static T? GetPrivateField<T>(MainWindow window, string fieldName)
+        {
+            var field = typeof(MainWindow).GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic)
+                ?? throw new MissingFieldException(typeof(MainWindow).FullName, fieldName);
+            return (T?)field.GetValue(window);
         }
 
         private sealed class TestVideoReviewEngine : IVideoReviewEngine

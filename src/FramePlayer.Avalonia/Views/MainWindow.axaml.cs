@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -14,6 +16,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
@@ -32,10 +35,13 @@ namespace FramePlayer.Avalonia.Views
         private readonly VideoReviewEngineFactory _engineFactory;
         private readonly UnifiedRecentFilesService _recentFilesService;
         private readonly FfmpegReviewEngineOptionsProvider _optionsProvider;
+        private readonly DiagnosticLogService _diagnosticLogService;
         private readonly IVideoReviewEngine _primaryEngine;
         private IVideoReviewEngine? _compareEngine;
         private DecodedFrameBuffer? _primaryFrameBuffer;
         private DecodedFrameBuffer? _compareFrameBuffer;
+        private WriteableBitmap? _primaryReusableBitmap;
+        private WriteableBitmap? _compareReusableBitmap;
         private readonly object _primaryFramePresentationLock = new();
         private readonly object _compareFramePresentationLock = new();
         private DecodedFrameBuffer? _pendingPrimaryFrameBuffer;
@@ -60,6 +66,7 @@ namespace FramePlayer.Avalonia.Views
         private const string PaneCompareLabel = "Compare";
         private const string Mp4Pattern = "*.mp4";
         private const string Mp4Extension = ".mp4";
+        private const string UnknownRawValue = "unknown";
         private const string CompareExportSecondaryTextColor = "#B7BDC6";
         private static readonly string[] VideoFilePatterns = new[] { "*.avi", "*.m4v", Mp4Pattern, "*.mkv", "*.wmv", "*.mov" };
         private NativeMenuItem? _nativeRecentFilesMenuItem;
@@ -92,6 +99,16 @@ namespace FramePlayer.Avalonia.Views
         private TimeSpan _compareTimelineContextTarget = TimeSpan.Zero;
         private double _primaryZoomFactor = MinimumPaneZoomFactor;
         private double _compareZoomFactor = MinimumPaneZoomFactor;
+        private static readonly TimeSpan SliderScrubThrottleInterval = TimeSpan.FromMilliseconds(75);
+        private readonly DispatcherTimer _sliderScrubTimer;
+        private readonly DispatcherTimer _paneSliderScrubTimer;
+        private bool _isSliderScrubSeekInFlight;
+        private bool _hasPendingSliderScrubTarget;
+        private TimeSpan _pendingSliderScrubTarget;
+        private bool _isPaneSliderScrubSeekInFlight;
+        private bool _hasPendingPaneSliderScrubTarget;
+        private TimeSpan _pendingPaneSliderScrubTarget;
+        private Pane _pendingPaneSliderScrubPane;
         private static readonly IBrush PaneChromeBrush = Brush.Parse("#171C22");
         private static readonly IBrush PaneChromeBorderBrush = Brush.Parse("#28313B");
         private static readonly IBrush PaneSelectedBrush = Brush.Parse("#1D2934");
@@ -149,6 +166,7 @@ namespace FramePlayer.Avalonia.Views
             _recentFilesService = new UnifiedRecentFilesService();
             _optionsProvider = new FfmpegReviewEngineOptionsProvider(new AppPreferencesService());
             _engineFactory = new VideoReviewEngineFactory(_optionsProvider);
+            _diagnosticLogService = new DiagnosticLogService();
             _primaryEngine = _engineFactory.Create(PanePrimaryKey);
             _primaryEngine.StateChanged += PrimaryEngine_StateChanged;
             _primaryEngine.FramePresented += PrimaryEngine_FramePresented;
@@ -168,6 +186,12 @@ namespace FramePlayer.Avalonia.Views
             KeyDown += Window_KeyDown;
             AllPanesCheckBox.IsCheckedChanged += AllPanesCheckBox_IsCheckedChanged;
             LinkPaneZoomCheckBox.IsCheckedChanged += LinkPaneZoomCheckBox_IsCheckedChanged;
+            _sliderScrubTimer = new DispatcherTimer { Interval = SliderScrubThrottleInterval };
+            _sliderScrubTimer.Tick += SliderScrubTimer_Tick;
+            _paneSliderScrubTimer = new DispatcherTimer { Interval = SliderScrubThrottleInterval };
+            _paneSliderScrubTimer.Tick += PaneSliderScrubTimer_Tick;
+
+            _diagnosticLogService.Info("Application started");
         }
 
         private void ConfigurePlatformChrome()
@@ -292,6 +316,7 @@ namespace FramePlayer.Avalonia.Views
             try
             {
                 await engine.OpenAsync(filePath);
+                _diagnosticLogService.Info("File opened: " + BuildDiagnosticFileIdentifier(filePath));
                 _recentFilesService.Add(filePath);
                 UpdateRecentFilesMenu();
                 ApplyFileLabels(pane, filePath);
@@ -528,13 +553,13 @@ namespace FramePlayer.Avalonia.Views
         private void SetPaneBitmap(Pane pane, DecodedFrameBuffer frameBuffer)
         {
             var viewport = BuildPaneViewport(pane, frameBuffer);
-            var bitmap = AvaloniaFrameBufferPresenter.CreateBitmap(frameBuffer, viewport);
             var retainedFrameBuffer = frameBuffer.Retain();
             if (pane == Pane.Compare)
             {
                 var previousFrameBuffer = _compareFrameBuffer;
                 _compareFrameBuffer = retainedFrameBuffer;
                 previousFrameBuffer?.Dispose();
+                var bitmap = AvaloniaFrameBufferPresenter.PresentBitmap(frameBuffer, viewport, ref _compareReusableBitmap);
                 CompareVideoSurface.Source = bitmap;
                 CompareEmptyStateOverlay.IsVisible = false;
             }
@@ -543,6 +568,7 @@ namespace FramePlayer.Avalonia.Views
                 var previousFrameBuffer = _primaryFrameBuffer;
                 _primaryFrameBuffer = retainedFrameBuffer;
                 previousFrameBuffer?.Dispose();
+                var bitmap = AvaloniaFrameBufferPresenter.PresentBitmap(frameBuffer, viewport, ref _primaryReusableBitmap);
                 CustomVideoSurface.Source = bitmap;
                 PrimaryEmptyStateOverlay.IsVisible = false;
             }
@@ -564,6 +590,7 @@ namespace FramePlayer.Avalonia.Views
                 ? Pane.Compare
                 : Pane.Primary;
             UpdatePaneSelectionVisuals();
+            UpdateCacheStatusFromEngine();
         }
 
         private void UpdatePaneSelectionVisuals()
@@ -632,6 +659,7 @@ namespace FramePlayer.Avalonia.Views
             _compareFrameBuffer = null;
             CustomVideoSurface.Source = null;
             CompareVideoSurface.Source = null;
+            DisposeReusablePaneBitmaps();
             SetPaneZoomFactor(Pane.Primary, MinimumPaneZoomFactor, synchronizeLinkedPane: false);
             SetPaneZoomFactor(Pane.Compare, MinimumPaneZoomFactor, synchronizeLinkedPane: false);
             PrimaryEmptyStateOverlay.IsVisible = true;
@@ -802,6 +830,7 @@ namespace FramePlayer.Avalonia.Views
 
         private async Task StepFrameAsync(int delta)
         {
+            CancelQueuedSliderScrubs();
             if (IsAllPaneTransportEnabled)
             {
                 await StepFrameAsync(delta, Pane.Primary);
@@ -881,6 +910,7 @@ namespace FramePlayer.Avalonia.Views
 
         private async Task SeekRelativeAsync(TimeSpan offset)
         {
+            CancelQueuedSliderScrubs();
             if (IsAllPaneTransportEnabled)
             {
                 await SeekAllPaneRelativePreservingPlaybackAsync(offset);
@@ -1215,20 +1245,55 @@ namespace FramePlayer.Avalonia.Views
         private async Task CommitSliderSeekAsync(string interactionName, TimeSpan target)
         {
             _ = interactionName;
+            CancelQueuedSliderScrubs();
             await SeekMasterTimelineAsync(target);
         }
 
-        private async void PositionSlider_ValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
+        private void PositionSlider_ValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
         {
             if (_isUpdatingSliders || sender != PositionSlider || !_primaryEngine.IsMediaOpen)
             {
                 return;
             }
 
-            await SeekMasterTimelineAsync(TimeSpan.FromSeconds(PositionSlider.Value));
+            QueueSliderScrub(TimeSpan.FromSeconds(PositionSlider.Value));
         }
 
-        private async void PanePositionSlider_ValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
+        private void QueueSliderScrub(TimeSpan target)
+        {
+            _pendingSliderScrubTarget = target;
+            _hasPendingSliderScrubTarget = true;
+            if (!_isSliderScrubSeekInFlight)
+            {
+                _sliderScrubTimer.Start();
+            }
+        }
+
+        private async void SliderScrubTimer_Tick(object? sender, EventArgs e)
+        {
+            _sliderScrubTimer.Stop();
+            if (!_hasPendingSliderScrubTarget)
+            {
+                return;
+            }
+
+            _hasPendingSliderScrubTarget = false;
+            _isSliderScrubSeekInFlight = true;
+            try
+            {
+                await SeekMasterTimelineAsync(_pendingSliderScrubTarget);
+            }
+            finally
+            {
+                _isSliderScrubSeekInFlight = false;
+                if (_hasPendingSliderScrubTarget)
+                {
+                    _sliderScrubTimer.Start();
+                }
+            }
+        }
+
+        private void PanePositionSlider_ValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
         {
             if (_isUpdatingSliders)
             {
@@ -1238,12 +1303,61 @@ namespace FramePlayer.Avalonia.Views
             if (sender == PrimaryPanePositionSlider && _primaryEngine.IsMediaOpen)
             {
                 SelectPane(Pane.Primary);
-                await SeekToTimePreservingPlaybackAsync(_primaryEngine, TimeSpan.FromSeconds(PrimaryPanePositionSlider.Value));
+                QueuePaneSliderScrub(Pane.Primary, TimeSpan.FromSeconds(PrimaryPanePositionSlider.Value));
             }
             else if (sender == ComparePanePositionSlider && _compareEngine != null && _compareEngine.IsMediaOpen)
             {
                 SelectPane(Pane.Compare);
-                await SeekToTimePreservingPlaybackAsync(_compareEngine, TimeSpan.FromSeconds(ComparePanePositionSlider.Value));
+                QueuePaneSliderScrub(Pane.Compare, TimeSpan.FromSeconds(ComparePanePositionSlider.Value));
+            }
+        }
+
+        private void QueuePaneSliderScrub(Pane pane, TimeSpan target)
+        {
+            _pendingPaneSliderScrubTarget = target;
+            _pendingPaneSliderScrubPane = pane;
+            _hasPendingPaneSliderScrubTarget = true;
+            if (!_isPaneSliderScrubSeekInFlight)
+            {
+                _paneSliderScrubTimer.Start();
+            }
+        }
+
+        private void CancelQueuedSliderScrubs()
+        {
+            _hasPendingSliderScrubTarget = false;
+            _hasPendingPaneSliderScrubTarget = false;
+            _sliderScrubTimer.Stop();
+            _paneSliderScrubTimer.Stop();
+        }
+
+        private async void PaneSliderScrubTimer_Tick(object? sender, EventArgs e)
+        {
+            _paneSliderScrubTimer.Stop();
+            if (!_hasPendingPaneSliderScrubTarget)
+            {
+                return;
+            }
+
+            _hasPendingPaneSliderScrubTarget = false;
+            _isPaneSliderScrubSeekInFlight = true;
+            var pane = _pendingPaneSliderScrubPane;
+            var target = _pendingPaneSliderScrubTarget;
+            try
+            {
+                var engine = TryGetExistingEngine(pane);
+                if (engine != null && engine.IsMediaOpen)
+                {
+                    await SeekToTimePreservingPlaybackAsync(engine, target);
+                }
+            }
+            finally
+            {
+                _isPaneSliderScrubSeekInFlight = false;
+                if (_hasPendingPaneSliderScrubTarget)
+                {
+                    _paneSliderScrubTimer.Start();
+                }
             }
         }
 
@@ -1342,6 +1456,7 @@ namespace FramePlayer.Avalonia.Views
                 return;
             }
 
+            CancelQueuedSliderScrubs();
             if (textBox == FrameNumberTextBox && IsAllPaneTransportEnabled)
             {
                 await SeekAllPaneToFramePreservingPlaybackAsync(oneBasedFrame - 1);
@@ -1351,6 +1466,14 @@ namespace FramePlayer.Avalonia.Views
             var pane = textBox == ComparePaneFrameNumberTextBox ? Pane.Compare : Pane.Primary;
             SelectPane(pane);
             await GetEngine(pane).SeekToFrameAsync(oneBasedFrame - 1);
+        }
+
+        private static void FrameNumberTextBox_GotFocus(object? sender, RoutedEventArgs e)
+        {
+            if (sender is TextBox textBox && !string.IsNullOrEmpty(textBox.Text))
+            {
+                textBox.SelectAll();
+            }
         }
 
         private async Task SeekAllPaneToFramePreservingPlaybackAsync(long frameIndex)
@@ -1429,6 +1552,7 @@ namespace FramePlayer.Avalonia.Views
                 return false;
             }
 
+            CancelQueuedSliderScrubs();
             await engine.SeekToTimeAsync(target);
             var anchor = CreateLoopAnchor(engine, pane);
             if (anchor == null)
@@ -1462,7 +1586,7 @@ namespace FramePlayer.Avalonia.Views
             UpdateLoopUi();
         }
 
-        private void CompareModeCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)
+        private async void CompareModeCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)
         {
             if (CompareModeCheckBox.IsChecked == true)
             {
@@ -1470,7 +1594,7 @@ namespace FramePlayer.Avalonia.Views
             }
             else
             {
-                HideCompareMode();
+                await HideCompareModeAsync();
             }
         }
 
@@ -1484,12 +1608,13 @@ namespace FramePlayer.Avalonia.Views
             CompareToolbarBorder.IsVisible = true;
             UpdatePaneSelectionVisuals();
             UpdateCompareOptionState();
+            UpdateCacheStatusFromEngine();
         }
 
-        private void HideCompareMode()
+        private async Task HideCompareModeAsync()
         {
             _focusedPane = Pane.Primary;
-            PauseHiddenComparePlayback();
+            await PauseHiddenComparePlaybackAsync();
             VideoPaneGrid.ColumnDefinitions[1].Width = new GridLength(0);
             VideoPaneGrid.ColumnSpacing = 0;
             SetPrimaryPaneLocalChromeVisible(false);
@@ -1498,29 +1623,24 @@ namespace FramePlayer.Avalonia.Views
             CompareToolbarBorder.IsVisible = false;
             UpdatePaneSelectionVisuals();
             UpdateCompareOptionState();
-        }
-
-        private void PauseHiddenComparePlayback()
-        {
-            if (_compareEngine == null ||
-                !_compareEngine.IsMediaOpen ||
-                !_compareEngine.IsPlaying)
-            {
-                return;
-            }
-
-            _ = PauseHiddenComparePlaybackAsync();
+            UpdateCacheStatusFromEngine();
         }
 
         private async Task PauseHiddenComparePlaybackAsync()
         {
+            var compareEngine = _compareEngine;
+            if (compareEngine == null ||
+                !compareEngine.IsMediaOpen ||
+                !compareEngine.IsPlaying)
+            {
+                return;
+            }
+
             try
             {
-                if (_compareEngine != null &&
-                    _compareEngine.IsMediaOpen &&
-                    _compareEngine.IsPlaying)
+                if (compareEngine.IsMediaOpen && compareEngine.IsPlaying)
                 {
-                    await _compareEngine.PauseAsync();
+                    await compareEngine.PauseAsync();
                 }
             }
             catch (Exception ex)
@@ -1769,6 +1889,7 @@ namespace FramePlayer.Avalonia.Views
                 return;
             }
 
+            CancelQueuedSliderScrubs();
             if (_primaryEngine.Position.FrameIndex.HasValue && _primaryEngine.Position.IsFrameIndexAbsolute)
             {
                 await _compareEngine.SeekToFrameAsync(_primaryEngine.Position.FrameIndex.Value);
@@ -1788,6 +1909,7 @@ namespace FramePlayer.Avalonia.Views
                 return;
             }
 
+            CancelQueuedSliderScrubs();
             if (_compareEngine.Position.FrameIndex.HasValue && _compareEngine.Position.IsFrameIndexAbsolute)
             {
                 await _primaryEngine.SeekToFrameAsync(_compareEngine.Position.FrameIndex.Value);
@@ -1803,23 +1925,33 @@ namespace FramePlayer.Avalonia.Views
         private void PrimaryEngine_StateChanged(object? sender, VideoReviewEngineStateChangedEventArgs e)
         {
             RestartLoopPlaybackIfNeeded(Pane.Primary, e);
-            Dispatcher.UIThread.Post(() => ApplyState(Pane.Primary, e));
+            Dispatcher.UIThread.Post(() =>
+            {
+                ApplyState(Pane.Primary, e);
+                UpdateCacheStatusFromEngine();
+            });
         }
 
         private void CompareEngine_StateChanged(object? sender, VideoReviewEngineStateChangedEventArgs e)
         {
             RestartLoopPlaybackIfNeeded(Pane.Compare, e);
-            Dispatcher.UIThread.Post(() => ApplyState(Pane.Compare, e));
+            Dispatcher.UIThread.Post(() =>
+            {
+                ApplyState(Pane.Compare, e);
+                UpdateCacheStatusFromEngine();
+            });
         }
 
         private void PrimaryEngine_FramePresented(object? sender, FramePresentedEventArgs e)
         {
             QueueFramePresentation(Pane.Primary, e.FrameBuffer);
+            Dispatcher.UIThread.Post(UpdateCacheStatusFromEngine);
         }
 
         private void CompareEngine_FramePresented(object? sender, FramePresentedEventArgs e)
         {
             QueueFramePresentation(Pane.Compare, e.FrameBuffer);
+            Dispatcher.UIThread.Post(UpdateCacheStatusFromEngine);
         }
 
         private void QueueFramePresentation(Pane pane, DecodedFrameBuffer sourceFrameBuffer)
@@ -2148,16 +2280,22 @@ namespace FramePlayer.Avalonia.Views
                 return;
             }
 
-            _ = Task.Run(async () => await RestartLoopPlaybackAsync(pane, range ?? CreateLoopRange(pane, null, null)));
+            var engine = TryGetExistingEngine(pane);
+            if (engine == null)
+            {
+                return;
+            }
+
+            var restartRange = range ?? CreateLoopRange(pane, null, null);
+            _isLoopRestartInFlight = true;
+            _ = Task.Run(() => RestartLoopPlaybackAsync(engine, restartRange));
         }
 
-        private async Task RestartLoopPlaybackAsync(Pane pane, LoopPlaybackPaneRangeSnapshot range)
+        private async Task RestartLoopPlaybackAsync(IVideoReviewEngine engine, LoopPlaybackPaneRangeSnapshot range)
         {
-            _isLoopRestartInFlight = true;
             try
             {
                 var restartTime = range != null && range.HasLoopIn ? range.EffectiveStartTime : TimeSpan.Zero;
-                var engine = GetEngine(pane);
                 await engine.PauseAsync();
                 await engine.SeekToTimeAsync(restartTime);
                 await engine.PlayAsync();
@@ -2596,14 +2734,16 @@ namespace FramePlayer.Avalonia.Views
         private void ShowVideoInfo(Pane pane)
         {
             var engine = TryGetExistingEngine(pane);
-            var info = engine?.MediaInfo;
-            if (info == null || string.IsNullOrWhiteSpace(info.FilePath))
+            if (engine == null || string.IsNullOrWhiteSpace(engine.MediaInfo.FilePath))
             {
                 ShowTextDialog("Video Info", "Video info is unavailable until media is loaded in the selected pane.");
                 return;
             }
 
-            ShowTextDialog("Video Info - " + ResolvePaneLabel(pane), BuildVideoInfoText(pane, info, engine!));
+            var info = engine.MediaInfo;
+            var snapshot = BuildVideoInfoSnapshot(ResolvePaneLabel(pane), info, engine.Position);
+            var infoWindow = new VideoInfoWindow(snapshot);
+            infoWindow.Show(this);
         }
 
         private async void ExportDiagnosticsMenuItem_Click(object? sender, RoutedEventArgs e)
@@ -3165,10 +3305,126 @@ namespace FramePlayer.Avalonia.Views
                 }
             }
 
-            var report = BuildDiagnosticsReport();
+            var report = _diagnosticLogService.BuildReport(BuildDiagnosticsHeader());
             await File.WriteAllTextAsync(resolvedOutputPath, report, new UTF8Encoding(false)).ConfigureAwait(false);
             await SetStatusMessageAsync("Diagnostic report exported: " + Path.GetFileName(resolvedOutputPath)).ConfigureAwait(false);
             return resolvedOutputPath;
+        }
+
+        private void UpdateCacheStatusFromEngine()
+        {
+            var focusedEngine = TryGetExistingEngine(GetFocusedPane());
+            if (focusedEngine == null || !focusedEngine.IsMediaOpen)
+            {
+                SetCacheStatus("Cache: idle", "Open media to populate the decoded-frame cache.");
+                return;
+            }
+
+            var ffmpegEngine = focusedEngine as FfmpegReviewEngine;
+            if (ffmpegEngine == null)
+            {
+                SetCacheStatus("Cache: unavailable", "Cache details are not available for this engine.");
+                return;
+            }
+
+            var forwardCount = Math.Max(0, ffmpegEngine.ForwardCachedFrameCount);
+            var previousCount = Math.Max(0, ffmpegEngine.PreviousCachedFrameCount);
+            var approximateCacheMegabytes = ffmpegEngine.ApproximateCachedFrameBytes / 1048576d;
+            var cacheBudgetMegabytes = ffmpegEngine.DecodedFrameCacheBudgetBytes / 1048576d;
+            var positionIdentity = focusedEngine.Position != null &&
+                                   focusedEngine.Position.IsFrameIndexAbsolute
+                ? "absolute frame ready"
+                : "frame number pending index";
+            var cacheModeLabel = ffmpegEngine.IsGpuActive ? "GPU" : "CPU";
+            var completeCacheFrameCount = Math.Max(0, ffmpegEngine.CompleteDecodedCacheFrameCount);
+            var completeCacheStatus = FormatCompleteDecodedCacheStatus(ffmpegEngine, completeCacheFrameCount);
+            var message = FormatCacheStatusMessage(
+                ffmpegEngine,
+                previousCount,
+                forwardCount,
+                completeCacheFrameCount,
+                cacheModeLabel);
+            var tooltip = string.Format(
+                CultureInfo.InvariantCulture,
+                "Backend: {0}. GPU status: {1}. Fallback: {2}. Queue depth: {3}. Index: {4}. Frame identity: {5}. Complete cache: {6}. Review cache budget is {7:0.0} MiB and currently uses about {8:0.0} MiB with {9} prior and {10} forward decoded frames at the current position, up to {11} prior and {12} forward. Last refill: {13} ({14:0.0} ms, {15}). Timeline seeks show the landed frame first.",
+                string.IsNullOrWhiteSpace(ffmpegEngine.ActiveDecodeBackend) ? "(unknown)" : ffmpegEngine.ActiveDecodeBackend,
+                string.IsNullOrWhiteSpace(ffmpegEngine.GpuCapabilityStatus) ? "none" : ffmpegEngine.GpuCapabilityStatus,
+                string.IsNullOrWhiteSpace(ffmpegEngine.GpuFallbackReason) ? "none" : ffmpegEngine.GpuFallbackReason,
+                ffmpegEngine.OperationalQueueDepth,
+                ffmpegEngine.GlobalFrameIndexStatus,
+                positionIdentity,
+                completeCacheStatus,
+                cacheBudgetMegabytes,
+                approximateCacheMegabytes,
+                previousCount,
+                forwardCount,
+                ffmpegEngine.MaxPreviousCachedFrameCount,
+                ffmpegEngine.MaxForwardCachedFrameCount,
+                string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillReason) ? "none" : ffmpegEngine.LastCacheRefillReason,
+                ffmpegEngine.LastCacheRefillMilliseconds,
+                string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillMode) ? "none" : ffmpegEngine.LastCacheRefillMode);
+            SetCacheStatus(message, tooltip);
+        }
+
+        private static string FormatCompleteDecodedCacheStatus(
+            FfmpegReviewEngine ffmpegEngine,
+            int completeCacheFrameCount)
+        {
+            if (ffmpegEngine.IsCompleteDecodedCacheLoaded)
+            {
+                return string.Format(
+                    CultureInfo.InvariantCulture,
+                    "complete decoded cache loaded for {0} frames",
+                    completeCacheFrameCount);
+            }
+
+            if (ffmpegEngine.IsCompleteDecodedCacheEligible)
+            {
+                return "complete decoded cache eligible; loads on the next indexed seek";
+            }
+
+            return "complete decoded cache not eligible";
+        }
+
+        private static string FormatCacheStatusMessage(
+            FfmpegReviewEngine ffmpegEngine,
+            int previousCount,
+            int forwardCount,
+            int completeCacheFrameCount,
+            string cacheModeLabel)
+        {
+            if (ffmpegEngine.IsCompleteDecodedCacheLoaded)
+            {
+                return string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Cache: complete ({0} frames, {1})",
+                    completeCacheFrameCount,
+                    cacheModeLabel);
+            }
+
+            var statusFormat = ffmpegEngine.IsGlobalFrameIndexBuildInProgress
+                ? "Cache: indexing ({0} back / {1} ahead, {2})"
+                : "Cache: ready ({0} back / {1} ahead, {2})";
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                statusFormat,
+                previousCount,
+                forwardCount,
+                cacheModeLabel);
+        }
+
+        private void SetCacheStatus(string message, string tooltip)
+        {
+            var dispatcher = CacheStatusTextBlock.Dispatcher;
+            if (dispatcher.CheckAccess())
+            {
+                ToolTip.SetTip(CacheStatusTextBlock, tooltip);
+            }
+            else
+            {
+                dispatcher.Post(() => ToolTip.SetTip(CacheStatusTextBlock, tooltip));
+            }
+            _ = SetStatusMessageAsync(message);
         }
 
         private Task SetStatusMessageAsync(string message)
@@ -3182,9 +3438,10 @@ namespace FramePlayer.Avalonia.Views
                     return Task.CompletedTask;
                 }
             }
-            catch
+            catch (Exception dispatcherEx)
             {
                 // In headless tests the global dispatcher and control owner can disagree briefly.
+                Trace.TraceWarning("SetStatusMessageAsync dispatcher check failed: " + dispatcherEx.Message);
             }
 
             dispatcher.Post(() =>
@@ -3193,22 +3450,27 @@ namespace FramePlayer.Avalonia.Views
                 {
                     CacheStatusTextBlock.Text = message;
                 }
-                catch
+                catch (Exception postEx)
                 {
                     // Status text is informational; export/test completion must not depend on it.
+                    Trace.TraceWarning("SetStatusMessageAsync post failed: " + postEx.Message);
                 }
             });
             return Task.CompletedTask;
         }
 
-        private string BuildDiagnosticsReport()
+        private List<string> BuildDiagnosticsHeader()
         {
+            var header = new List<string>
+            {
+                "Frame Player desktop preview diagnostics",
+                "Generated: " + DateTimeOffset.Now.ToString("O", CultureInfo.InvariantCulture),
+                "Version: " + (typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? UnknownRawValue),
+                "OS: " + RuntimeInformation.OSDescription,
+                ".NET: " + RuntimeInformation.FrameworkDescription
+            };
+
             var builder = new StringBuilder();
-            builder.AppendLine("Frame Player desktop preview diagnostics");
-            builder.AppendLine("Generated: " + DateTimeOffset.Now.ToString("O", CultureInfo.InvariantCulture));
-            builder.AppendLine("Version: " + (typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? "unknown"));
-            builder.AppendLine("OS: " + RuntimeInformation.OSDescription);
-            builder.AppendLine(".NET: " + RuntimeInformation.FrameworkDescription);
             AppendEngineDiagnostics(builder, PanePrimaryLabel, _primaryEngine);
             if (_compareEngine != null)
             {
@@ -3221,7 +3483,9 @@ namespace FramePlayer.Avalonia.Views
             builder.AppendLine("Export runtime: " + (ExportHostClient.IsBundledRuntimeAvailable
                 ? "available"
                 : ExportHostClient.GetRuntimeAvailabilityMessage()));
-            return builder.ToString();
+
+            header.AddRange(builder.ToString().Split(new[] { Environment.NewLine }, StringSplitOptions.None));
+            return header;
         }
 
         private static void AppendEngineDiagnostics(StringBuilder builder, string label, IVideoReviewEngine engine)
@@ -3420,38 +3684,227 @@ namespace FramePlayer.Avalonia.Views
             dialog.Show(this);
         }
 
-        private static string BuildVideoInfoText(Pane pane, VideoMediaInfo info, IVideoReviewEngine engine)
+        private const string UnknownDisplayLabel = "—";
+
+        private static VideoInfoSnapshot BuildVideoInfoSnapshot(
+            string paneLabel,
+            VideoMediaInfo mediaInfo,
+            ReviewPosition position)
         {
-            var builder = new StringBuilder();
-            builder.AppendLine(ResolvePaneLabel(pane));
-            builder.AppendLine();
-            builder.AppendLine("File: " + info.FilePath);
-            builder.AppendLine("Duration: " + FormatTime(info.Duration));
-            builder.AppendLine("Position: " + FormatTime(engine.Position.PresentationTime));
-            builder.AppendLine(string.Format(CultureInfo.InvariantCulture, "Resolution: {0} x {1}", info.PixelWidth, info.PixelHeight));
-            builder.AppendLine(string.Format(CultureInfo.InvariantCulture, "Frame rate: {0:0.###} fps", info.FramesPerSecond));
-            builder.AppendLine("Video codec: " + FormatDialogValue(info.VideoCodecName));
-            builder.AppendLine("Pixel format: " + FormatDialogValue(info.SourcePixelFormatName));
-            builder.AppendLine("Audio: " + (info.HasAudioStream ? FormatDialogValue(info.AudioCodecName) : "none"));
-            if (info.HasAudioStream)
+            var filePath = string.IsNullOrWhiteSpace(mediaInfo.FilePath)
+                ? string.Empty
+                : mediaInfo.FilePath;
+            var fileName = Path.GetFileName(filePath);
+            if (string.IsNullOrWhiteSpace(fileName))
             {
-                builder.AppendLine(string.Format(CultureInfo.InvariantCulture, "Audio sample rate: {0} Hz", info.AudioSampleRate));
-                builder.AppendLine(string.Format(CultureInfo.InvariantCulture, "Audio channels: {0}", info.AudioChannelCount));
-                builder.AppendLine("Audio playback: " + (info.IsAudioPlaybackAvailable ? "available" : "unavailable"));
+                fileName = paneLabel + " Video";
             }
 
-            builder.AppendLine("Video stream index: " + info.VideoStreamIndex.ToString(CultureInfo.InvariantCulture));
-            builder.AppendLine(string.Format(
+            var summaryFields = new List<VideoInfoField>
+            {
+                new VideoInfoField("Duration", FormatInspectorDuration(mediaInfo.Duration)),
+                new VideoInfoField("Current position", FormatInspectorDuration(position.PresentationTime)),
+                new VideoInfoField("Frame rate", FormatInspectorFrameRate(mediaInfo.FramesPerSecond)),
+                new VideoInfoField("Display resolution", FormatInspectorResolution(mediaInfo.DisplayWidth, mediaInfo.DisplayHeight)),
+                new VideoInfoField(
+                    "Display aspect",
+                    FormatInspectorRatio(
+                        mediaInfo.DisplayAspectRatioNumerator,
+                        mediaInfo.DisplayAspectRatioDenominator))
+            };
+
+            var videoFields = new List<VideoInfoField>
+            {
+                new VideoInfoField("Codec", FormatInspectorText(mediaInfo.VideoCodecName)),
+                new VideoInfoField("Coded resolution", FormatInspectorResolution(mediaInfo.PixelWidth, mediaInfo.PixelHeight)),
+                new VideoInfoField("Display resolution", FormatInspectorResolution(mediaInfo.DisplayWidth, mediaInfo.DisplayHeight)),
+                new VideoInfoField(
+                    "Display aspect",
+                    FormatInspectorRatio(
+                        mediaInfo.DisplayAspectRatioNumerator,
+                        mediaInfo.DisplayAspectRatioDenominator)),
+                new VideoInfoField("Source pixel format", FormatInspectorText(mediaInfo.SourcePixelFormatName)),
+                new VideoInfoField("Bit depth", FormatInspectorBitDepth(mediaInfo.VideoBitDepth)),
+                new VideoInfoField("Bitrate", FormatInspectorBitRate(mediaInfo.VideoBitRate))
+            };
+            AddInspectorFieldIfKnown(videoFields, "Color space", mediaInfo.VideoColorSpace);
+            AddInspectorFieldIfKnown(videoFields, "Color range", mediaInfo.VideoColorRange);
+            AddInspectorFieldIfKnown(videoFields, "Primaries", mediaInfo.VideoColorPrimaries);
+            AddInspectorFieldIfKnown(videoFields, "Transfer", mediaInfo.VideoColorTransfer);
+
+            VideoInfoSection audioSection;
+            if (!mediaInfo.HasAudioStream)
+            {
+                audioSection = new VideoInfoSection(
+                    Array.Empty<VideoInfoField>(),
+                    "No audio stream detected.");
+            }
+            else
+            {
+                audioSection = new VideoInfoSection(new[]
+                {
+                    new VideoInfoField("Codec", FormatInspectorText(mediaInfo.AudioCodecName)),
+                    new VideoInfoField("Sample rate", FormatInspectorSampleRate(mediaInfo.AudioSampleRate)),
+                    new VideoInfoField("Channels", FormatInspectorChannelCount(mediaInfo.AudioChannelCount)),
+                    new VideoInfoField("Bit depth", FormatInspectorBitDepth(mediaInfo.AudioBitDepth)),
+                    new VideoInfoField("Bitrate", FormatInspectorBitRate(mediaInfo.AudioBitRate)),
+                    new VideoInfoField("Playback", mediaInfo.IsAudioPlaybackAvailable ? "available" : "unavailable")
+                });
+            }
+
+            var advancedFields = new List<VideoInfoField>
+            {
+                new VideoInfoField("Video stream index", FormatInspectorIndex(mediaInfo.VideoStreamIndex)),
+                new VideoInfoField(
+                    "Nominal frame rate",
+                    FormatInspectorFraction(
+                        mediaInfo.NominalFrameRateNumerator,
+                        mediaInfo.NominalFrameRateDenominator)),
+                new VideoInfoField(
+                    "Stream time base",
+                    FormatInspectorFraction(
+                        mediaInfo.StreamTimeBaseNumerator,
+                        mediaInfo.StreamTimeBaseDenominator))
+            };
+            if (mediaInfo.HasAudioStream && mediaInfo.AudioStreamIndex >= 0)
+            {
+                advancedFields.Add(new VideoInfoField("Audio stream index", FormatInspectorIndex(mediaInfo.AudioStreamIndex)));
+            }
+
+            return new VideoInfoSnapshot
+            {
+                WindowTitle = "Video Info - " + paneLabel,
+                PaneLabel = paneLabel,
+                FileName = fileName,
+                FilePath = filePath,
+                SummarySection = new VideoInfoSection(summaryFields),
+                VideoSection = new VideoInfoSection(videoFields),
+                AudioSection = audioSection,
+                AdvancedSection = new VideoInfoSection(advancedFields)
+            };
+        }
+
+        private static string FormatInspectorDuration(TimeSpan duration)
+        {
+            return duration >= TimeSpan.Zero
+                ? FormatTime(duration)
+                : UnknownDisplayLabel;
+        }
+
+        private static void AddInspectorFieldIfKnown(List<VideoInfoField> fields, string label, string? value)
+        {
+            if (fields == null || string.IsNullOrWhiteSpace(label) || string.IsNullOrWhiteSpace(value))
+            {
+                return;
+            }
+
+            fields.Add(new VideoInfoField(label, value));
+        }
+
+        private static string FormatInspectorFrameRate(double framesPerSecond)
+        {
+            return framesPerSecond > 0d
+                ? string.Format(CultureInfo.InvariantCulture, "{0:0.###} fps", framesPerSecond)
+                : UnknownDisplayLabel;
+        }
+
+        private static string FormatInspectorResolution(int width, int height)
+        {
+            return width > 0 && height > 0
+                ? string.Format(CultureInfo.InvariantCulture, "{0} x {1}", width, height)
+                : UnknownDisplayLabel;
+        }
+
+        private static string FormatInspectorResolution(int? width, int? height)
+        {
+            return width.HasValue && height.HasValue
+                ? FormatInspectorResolution(width.Value, height.Value)
+                : UnknownDisplayLabel;
+        }
+
+        private static string FormatInspectorRatio(int? numerator, int? denominator)
+        {
+            return numerator.HasValue &&
+                   denominator.HasValue &&
+                   numerator.Value > 0 &&
+                   denominator.Value > 0
+                ? string.Format(CultureInfo.InvariantCulture, "{0}:{1}", numerator.Value, denominator.Value)
+                : UnknownDisplayLabel;
+        }
+
+        private static string FormatInspectorText(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return UnknownDisplayLabel;
+            }
+
+            var trimmedValue = value.Trim();
+            return trimmedValue.Equals(UnknownRawValue, StringComparison.OrdinalIgnoreCase) ||
+                   trimmedValue.Equals("unspecified", StringComparison.OrdinalIgnoreCase) ||
+                   trimmedValue.StartsWith("reserved", StringComparison.OrdinalIgnoreCase)
+                ? UnknownDisplayLabel
+                : trimmedValue;
+        }
+
+        private static string FormatInspectorBitDepth(int? bitDepth)
+        {
+            return bitDepth.HasValue && bitDepth.Value > 0
+                ? string.Format(CultureInfo.InvariantCulture, "{0}-bit", bitDepth.Value)
+                : UnknownDisplayLabel;
+        }
+
+        private static string FormatInspectorBitRate(long? bitsPerSecond)
+        {
+            if (!bitsPerSecond.HasValue || bitsPerSecond.Value <= 0L)
+            {
+                return UnknownDisplayLabel;
+            }
+
+            var units = new[] { "bit/s", "Kbit/s", "Mbit/s", "Gbit/s" };
+            var displayValue = (double)bitsPerSecond.Value;
+            var unitIndex = 0;
+            while (displayValue >= 1000d && unitIndex < units.Length - 1)
+            {
+                displayValue /= 1000d;
+                unitIndex++;
+            }
+
+            var kibibytesPerSecond = bitsPerSecond.Value / 8d / 1024d;
+            return string.Format(
                 CultureInfo.InvariantCulture,
-                "Nominal frame rate: {0}/{1}",
-                info.NominalFrameRateNumerator,
-                info.NominalFrameRateDenominator));
-            builder.AppendLine(string.Format(
-                CultureInfo.InvariantCulture,
-                "Stream time base: {0}/{1}",
-                info.StreamTimeBaseNumerator,
-                info.StreamTimeBaseDenominator));
-            return builder.ToString();
+                "{0:0.###} {1} ({2:0.###} KiB/s)",
+                displayValue,
+                units[unitIndex],
+                kibibytesPerSecond);
+        }
+
+        private static string FormatInspectorSampleRate(int sampleRate)
+        {
+            return sampleRate > 0
+                ? string.Format(CultureInfo.InvariantCulture, "{0:N0} Hz", sampleRate)
+                : UnknownDisplayLabel;
+        }
+
+        private static string FormatInspectorChannelCount(int channelCount)
+        {
+            return channelCount > 0
+                ? string.Format(CultureInfo.InvariantCulture, "{0} channel(s)", channelCount)
+                : UnknownDisplayLabel;
+        }
+
+        private static string FormatInspectorIndex(int streamIndex)
+        {
+            return streamIndex >= 0
+                ? streamIndex.ToString(CultureInfo.InvariantCulture)
+                : UnknownDisplayLabel;
+        }
+
+        private static string FormatInspectorFraction(int numerator, int denominator)
+        {
+            return numerator > 0 && denominator > 0
+                ? string.Format(CultureInfo.InvariantCulture, "{0}/{1}", numerator, denominator)
+                : UnknownDisplayLabel;
         }
 
         private static string BuildHelpText()
@@ -3479,19 +3932,28 @@ namespace FramePlayer.Avalonia.Views
 
         private static string BuildAboutText()
         {
-            var version = typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? "unknown";
+            var version = typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? UnknownRawValue;
             return string.Join(
                 Environment.NewLine,
                 "Frame Player",
-                "Avalonia Desktop Preview",
                 "Version: " + version,
                 "",
-                "Windows WPF v1.8.4 and macOS Preview 0.1.0 remain the protected release tracks. This build is a separate Avalonia desktop preview.");
+                "A/V playback and frame-accurate review for Windows and macOS.",
+                "Built with Avalonia UI.");
         }
 
         private static string FormatDialogValue(string? value)
         {
-            return string.IsNullOrWhiteSpace(value) ? "unknown" : value.Trim();
+            return string.IsNullOrWhiteSpace(value) ? UnknownRawValue : value.Trim();
+        }
+
+        private static string BuildDiagnosticFileIdentifier(string filePath)
+        {
+            var normalizedPath = string.IsNullOrWhiteSpace(filePath)
+                ? string.Empty
+                : filePath.Trim();
+            var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(normalizedPath));
+            return "path-hash:" + Convert.ToHexString(hashBytes.AsSpan(0, 6));
         }
 
         private NativeMenu BuildNativeMenu(bool useGpuAcceleration)
@@ -3717,14 +4179,25 @@ namespace FramePlayer.Avalonia.Views
 
         protected override void OnClosed(EventArgs e)
         {
+            _sliderScrubTimer.Stop();
+            _paneSliderScrubTimer.Stop();
             ClearPendingFramePresentations();
             _primaryFrameBuffer?.Dispose();
             _compareFrameBuffer?.Dispose();
             _primaryFrameBuffer = null;
             _compareFrameBuffer = null;
+            DisposeReusablePaneBitmaps();
             _primaryEngine.Dispose();
             _compareEngine?.Dispose();
             base.OnClosed(e);
+        }
+
+        private void DisposeReusablePaneBitmaps()
+        {
+            _primaryReusableBitmap?.Dispose();
+            _compareReusableBitmap?.Dispose();
+            _primaryReusableBitmap = null;
+            _compareReusableBitmap = null;
         }
 
         private enum Pane
