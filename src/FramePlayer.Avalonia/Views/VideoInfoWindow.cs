@@ -130,7 +130,7 @@ namespace FramePlayer.Avalonia.Views
             Content = rootGrid;
         }
 
-        private static Control BuildSection(string title, VideoInfoSection section)
+        private static StackPanel BuildSection(string title, VideoInfoSection section)
         {
             var stack = new StackPanel { Spacing = 10 };
             var header = new TextBlock

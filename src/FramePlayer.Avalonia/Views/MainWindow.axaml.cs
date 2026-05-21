@@ -65,6 +65,7 @@ namespace FramePlayer.Avalonia.Views
         private const string PaneCompareLabel = "Compare";
         private const string Mp4Pattern = "*.mp4";
         private const string Mp4Extension = ".mp4";
+        private const string UnknownRawValue = "unknown";
         private const string CompareExportSecondaryTextColor = "#B7BDC6";
         private static readonly string[] VideoFilePatterns = new[] { "*.avi", "*.m4v", Mp4Pattern, "*.mkv", "*.wmv", "*.mov" };
         private NativeMenuItem? _nativeRecentFilesMenuItem;
@@ -1453,7 +1454,7 @@ namespace FramePlayer.Avalonia.Views
             await GetEngine(pane).SeekToFrameAsync(oneBasedFrame - 1);
         }
 
-        private void FrameNumberTextBox_GotFocus(object? sender, RoutedEventArgs e)
+        private static void FrameNumberTextBox_GotFocus(object? sender, RoutedEventArgs e)
         {
             if (sender is TextBox textBox && !string.IsNullOrEmpty(textBox.Text))
             {
@@ -1570,7 +1571,7 @@ namespace FramePlayer.Avalonia.Views
             UpdateLoopUi();
         }
 
-        private void CompareModeCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)
+        private async void CompareModeCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)
         {
             if (CompareModeCheckBox.IsChecked == true)
             {
@@ -1578,7 +1579,7 @@ namespace FramePlayer.Avalonia.Views
             }
             else
             {
-                HideCompareMode();
+                await HideCompareModeAsync();
             }
         }
 
@@ -1595,10 +1596,10 @@ namespace FramePlayer.Avalonia.Views
             UpdateCacheStatusFromEngine();
         }
 
-        private void HideCompareMode()
+        private async Task HideCompareModeAsync()
         {
             _focusedPane = Pane.Primary;
-            PauseHiddenComparePlayback();
+            await PauseHiddenComparePlaybackAsync();
             VideoPaneGrid.ColumnDefinitions[1].Width = new GridLength(0);
             VideoPaneGrid.ColumnSpacing = 0;
             SetPrimaryPaneLocalChromeVisible(false);
@@ -1610,7 +1611,7 @@ namespace FramePlayer.Avalonia.Views
             UpdateCacheStatusFromEngine();
         }
 
-        private async void PauseHiddenComparePlayback()
+        private async Task PauseHiddenComparePlaybackAsync()
         {
             var compareEngine = _compareEngine;
             if (compareEngine == null ||
@@ -3440,13 +3441,13 @@ namespace FramePlayer.Avalonia.Views
             return Task.CompletedTask;
         }
 
-        private IEnumerable<string> BuildDiagnosticsHeader()
+        private List<string> BuildDiagnosticsHeader()
         {
             var header = new List<string>
             {
                 "Frame Player desktop preview diagnostics",
                 "Generated: " + DateTimeOffset.Now.ToString("O", CultureInfo.InvariantCulture),
-                "Version: " + (typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? "unknown"),
+                "Version: " + (typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? UnknownRawValue),
                 "OS: " + RuntimeInformation.OSDescription,
                 ".NET: " + RuntimeInformation.FrameworkDescription
             };
@@ -3821,7 +3822,7 @@ namespace FramePlayer.Avalonia.Views
             }
 
             var trimmedValue = value.Trim();
-            return trimmedValue.Equals("unknown", StringComparison.OrdinalIgnoreCase) ||
+            return trimmedValue.Equals(UnknownRawValue, StringComparison.OrdinalIgnoreCase) ||
                    trimmedValue.Equals("unspecified", StringComparison.OrdinalIgnoreCase) ||
                    trimmedValue.StartsWith("reserved", StringComparison.OrdinalIgnoreCase)
                 ? UnknownDisplayLabel
@@ -3913,7 +3914,7 @@ namespace FramePlayer.Avalonia.Views
 
         private static string BuildAboutText()
         {
-            var version = typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? "unknown";
+            var version = typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? UnknownRawValue;
             return string.Join(
                 Environment.NewLine,
                 "Frame Player",
@@ -3925,7 +3926,7 @@ namespace FramePlayer.Avalonia.Views
 
         private static string FormatDialogValue(string? value)
         {
-            return string.IsNullOrWhiteSpace(value) ? "unknown" : value.Trim();
+            return string.IsNullOrWhiteSpace(value) ? UnknownRawValue : value.Trim();
         }
 
         private NativeMenu BuildNativeMenu(bool useGpuAcceleration)

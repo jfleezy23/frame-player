@@ -112,7 +112,12 @@ namespace FramePlayer.Avalonia.Services
                 var logRoot = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
                 if (string.IsNullOrWhiteSpace(logRoot))
                 {
-                    logRoot = Path.GetTempPath();
+                    logRoot = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+                }
+
+                if (string.IsNullOrWhiteSpace(logRoot))
+                {
+                    logRoot = AppContext.BaseDirectory;
                 }
 
                 var logDirectory = Path.Combine(logRoot, "FramePlayer", "Logs");
@@ -122,11 +127,11 @@ namespace FramePlayer.Avalonia.Services
             catch (Exception ex)
             {
                 Trace.TraceWarning("Diagnostic log directory unavailable: " + ex.Message);
-                return Path.Combine(Path.GetTempPath(), "FramePlayer-latest-session.log");
+                return Path.Combine(AppContext.BaseDirectory, "FramePlayer-latest-session.log");
             }
         }
 
-        private IReadOnlyList<string> Snapshot()
+        private List<string> Snapshot()
         {
             lock (_lock)
             {

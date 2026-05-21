@@ -122,10 +122,9 @@ namespace FramePlayer.Avalonia.Tests
             Assert.Contains("UpdateCacheStatusFromEngine()", source, StringComparison.Ordinal);
             Assert.Contains("ffmpegEngine.ApproximateCachedFrameBytes", source, StringComparison.Ordinal);
             Assert.Contains("ffmpegEngine.LastCacheRefillMilliseconds", source, StringComparison.Ordinal);
-            Assert.Contains("private async void PauseHiddenComparePlayback()", source, StringComparison.Ordinal);
+            Assert.Contains("private async Task PauseHiddenComparePlaybackAsync()", source, StringComparison.Ordinal);
             Assert.Contains("private async void RestartLoopPlaybackIfNeeded(", source, StringComparison.Ordinal);
             Assert.Contains("var engine = TryGetExistingEngine(pane);", source, StringComparison.Ordinal);
-            Assert.DoesNotContain("PauseHiddenComparePlaybackAsync", source, StringComparison.Ordinal);
             Assert.DoesNotContain("Task.Run(async () => await RestartLoopPlaybackAsync", source, StringComparison.Ordinal);
             Assert.DoesNotContain("This build is a separate Avalonia desktop preview.", source, StringComparison.Ordinal);
             Assert.DoesNotContain("Windows WPF v1.8.4 and macOS Preview 0.1.0 remain the protected release tracks.", source, StringComparison.Ordinal);
