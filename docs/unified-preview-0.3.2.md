@@ -8,8 +8,8 @@ This note records the synchronized Windows/macOS Avalonia preview patch that res
 - macOS artifact: `FramePlayer-macOS-arm64-unified-preview-0.3.2.zip`
 - macOS SHA256: `837622cc50f3ad9ebd054698fc2c9913193848e4768da5690879c52f8fa55b31`
 - Apple notarization submission: `8cae3d39-4b18-49c6-b89c-5e831fc7f405`
-- Windows artifact: (Pending Windows run)
-- Windows SHA256: (Pending Windows run)
+- Windows artifact: `FramePlayer-Windows-x64-unified-preview-0.3.2.zip`
+- Windows SHA256: `8726f7b840556b65006801bff9c4b68422ea9af35047da82f32b4b8981fb4713`
 
 ## What Changed
 
