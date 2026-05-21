@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "unified-preview-0.3.1",
+    [string]$Version = "unified-preview-0.3.2",
     [string]$Configuration = "Release",
     [string]$RuntimeIdentifier = "win-x64",
     [string]$OutputRoot = "artifacts\$Version"

@@ -68,8 +68,8 @@ jobs:
         run: |
           .\scripts\Package-UnifiedWindowsPreview.ps1
 
-          $artifactRoot = "artifacts\unified-preview-0.3.1"
-          $zipPath = Join-Path $artifactRoot "FramePlayer-Windows-x64-unified-preview-0.3.1.zip"
+          $artifactRoot = "artifacts\unified-preview-0.3.2"
+          $zipPath = Join-Path $artifactRoot "FramePlayer-Windows-x64-unified-preview-0.3.2.zip"
           $shaPath = "$zipPath.sha256"
           if (-not (Test-Path $zipPath)) { throw "Missing unified Windows ZIP: $zipPath" }
           if (-not (Test-Path $shaPath)) { throw "Missing unified Windows SHA256 sidecar: $shaPath" }

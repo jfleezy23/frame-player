@@ -92,13 +92,13 @@ namespace FramePlayer.Avalonia.Tests
         [Fact]
         public void UnifiedReleaseNaming_UsesSynchronizedPreview031()
         {
-            const string tag = "unified-preview-0.3.1";
-            const string windowsAsset = "FramePlayer-Windows-x64-unified-preview-0.3.1.zip";
-            const string macAsset = "FramePlayer-macOS-arm64-unified-preview-0.3.1.zip";
+            const string tag = "unified-preview-0.3.2";
+            const string windowsAsset = "FramePlayer-Windows-x64-unified-preview-0.3.2.zip";
+            const string macAsset = "FramePlayer-macOS-arm64-unified-preview-0.3.2.zip";
 
-            Assert.EndsWith("0.3.1", tag, StringComparison.Ordinal);
-            Assert.Contains("unified-preview-0.3.1", windowsAsset, StringComparison.Ordinal);
-            Assert.Contains("unified-preview-0.3.1", macAsset, StringComparison.Ordinal);
+            Assert.EndsWith("0.3.2", tag, StringComparison.Ordinal);
+            Assert.Contains("unified-preview-0.3.2", windowsAsset, StringComparison.Ordinal);
+            Assert.Contains("unified-preview-0.3.2", macAsset, StringComparison.Ordinal);
         }
 
         private static T RequireControl<T>(Window window, string name)

@@ -17,7 +17,7 @@ usage() {
 usage: $0 [--unsigned|--sign [identity]]
 
 Environment:
-  PACKAGE_VERSION=<label>      Artifact version label. Default: unified-preview-0.3.1
+  PACKAGE_VERSION=<label>      Artifact version label. Default: unified-preview-0.3.2
   SIGNING_IDENTITY=<identity>  codesign identity name/hash
 
 Signing notes:

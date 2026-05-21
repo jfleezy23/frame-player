@@ -54,8 +54,8 @@ jobs:
           test -x "dist/Frame Player.app/Contents/MacOS/FramePlayer.Mac"
           /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "dist/Frame Player.app/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "dist/Frame Player.app/Contents/Info.plist"
-          PACKAGE_VERSION=unified-preview-0.3.1 script/package_unified_macos_release.sh --unsigned
-          zip_path="artifacts/unified-preview-0.3.1/FramePlayer-macOS-arm64-unified-preview-0.3.1.zip"
+          PACKAGE_VERSION=unified-preview-0.3.2 script/package_unified_macos_release.sh --unsigned
+          zip_path="artifacts/unified-preview-0.3.2/FramePlayer-macOS-arm64-unified-preview-0.3.2.zip"
           sha_path="$zip_path.sha256"
           test -f "$zip_path"
           test -f "$sha_path"
@@ -98,8 +98,8 @@ jobs:
 
           bundle_version="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app_path/Contents/Info.plist")"
           bundle_id="$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$app_path/Contents/Info.plist")"
-          if [[ "$bundle_version" != "0.3.1" ]]; then
-            echo "Expected CFBundleShortVersionString 0.3.1 but found $bundle_version" >&2
+          if [[ "$bundle_version" != "0.3.2" ]]; then
+            echo "Expected CFBundleShortVersionString 0.3.2 but found $bundle_version" >&2
             exit 1
           fi
           if [[ "$bundle_id" != "com.frameplayer.unified-preview" ]]; then
