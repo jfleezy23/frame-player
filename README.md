@@ -7,9 +7,9 @@ Frame Player is a frame-first desktop video review tool for exact stepping, seek
 | Release track | Platform | Current release | Download |
 | --- | --- | --- | --- |
 | Windows stable | Windows 10 or later | `v1.8.4` | [Frame Player v1.8.4](https://github.com/jfleezy23/frame-player/releases/tag/v1.8.4) |
-| Unified Avalonia Preview | Windows x64 and Apple Silicon macOS | `0.3.1` | [Frame Player Unified Preview 0.3.1](https://github.com/jfleezy23/frame-player/releases/tag/unified-preview-0.3.1) |
+| Unified Avalonia Preview | Windows x64 and Apple Silicon macOS | `0.3.2` | [Frame Player Unified Preview 0.3.2](https://github.com/jfleezy23/frame-player/releases/tag/unified-preview-0.3.2) |
 
-The Windows WPF app remains the stable release line. Unified Avalonia Preview `0.3.1` is the current synchronized Windows/macOS preview. The earlier split macOS Preview `0.1.1` and Windows Avalonia Preview `0.1.0` releases are superseded and kept only for historical validation.
+The Windows WPF app remains the stable release line. Unified Avalonia Preview `0.3.2` is the current synchronized Windows/macOS preview. The earlier split macOS Preview `0.1.1` and Windows Avalonia Preview `0.1.0` releases are superseded and kept only for historical validation.
 
 ## Highlights
 
@@ -34,7 +34,7 @@ These screenshots are captured from the actual Windows stable app and the Avalon
 
 - [Wiki](https://github.com/jfleezy23/frame-player/wiki): user guide, screenshots, shortcuts, troubleshooting, build notes, validation, and security notes.
 - [All releases](https://github.com/jfleezy23/frame-player/releases): Windows stable and current Unified Avalonia Preview downloads.
-- [Unified Preview 0.3.1 release note](docs/unified-preview-0.3.1.md): synchronized Windows/macOS artifacts, validation evidence, and release gates.
+- [Unified Preview 0.3.2 release note](docs/unified-preview-0.3.2.md): synchronized Windows/macOS artifacts, validation evidence, and release gates.
 - [macOS Preview 0.1.1 release note](docs/release-macos-preview-0.1.1.md): historical split-preview notarization and validation evidence.
 - [Windows Avalonia Preview 0.1.0 release note](docs/release-avalonia-windows-preview-0.1.0.md): historical split-preview validation evidence.
 - [Release checklist](docs/release-checklist.md): release validation steps.
@@ -61,9 +61,9 @@ See the [Wiki build guide](https://github.com/jfleezy23/frame-player/wiki/Build-
 ## Release Tracks
 
 - Windows stable remains `v1.8.4` and keeps the existing WPF source path, build path, runtime bootstrap, tests, and release process.
-- Unified Avalonia Preview `0.3.1` is the current synchronized Windows/macOS app path under `src/FramePlayer.Avalonia`.
-- The old macOS Preview `0.1.1` and Windows Avalonia Preview `0.1.0` tracks are superseded by Unified Avalonia Preview `0.3.1`.
-- Current preview downloads are linked from the unified [Frame Player Unified Preview 0.3.1 release page](https://github.com/jfleezy23/frame-player/releases/tag/unified-preview-0.3.1).
+- Unified Avalonia Preview `0.3.2` is the current synchronized Windows/macOS app path under `src/FramePlayer.Avalonia`.
+- The old macOS Preview `0.1.1` and Windows Avalonia Preview `0.1.0` tracks are superseded by Unified Avalonia Preview `0.3.2`.
+- Current preview downloads are linked from the unified [Frame Player Unified Preview 0.3.2 release page](https://github.com/jfleezy23/frame-player/releases/tag/unified-preview-0.3.2).
 
 ## License
 
