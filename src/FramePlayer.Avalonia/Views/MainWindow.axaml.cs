@@ -828,6 +828,7 @@ namespace FramePlayer.Avalonia.Views
 
         private async Task StepFrameAsync(int delta)
         {
+            CancelQueuedSliderScrubs();
             if (IsAllPaneTransportEnabled)
             {
                 await StepFrameAsync(delta, Pane.Primary);
@@ -907,6 +908,7 @@ namespace FramePlayer.Avalonia.Views
 
         private async Task SeekRelativeAsync(TimeSpan offset)
         {
+            CancelQueuedSliderScrubs();
             if (IsAllPaneTransportEnabled)
             {
                 await SeekAllPaneRelativePreservingPlaybackAsync(offset);
@@ -1241,6 +1243,7 @@ namespace FramePlayer.Avalonia.Views
         private async Task CommitSliderSeekAsync(string interactionName, TimeSpan target)
         {
             _ = interactionName;
+            CancelQueuedSliderScrubs();
             await SeekMasterTimelineAsync(target);
         }
 
@@ -1316,6 +1319,14 @@ namespace FramePlayer.Avalonia.Views
             {
                 _paneSliderScrubTimer.Start();
             }
+        }
+
+        private void CancelQueuedSliderScrubs()
+        {
+            _hasPendingSliderScrubTarget = false;
+            _hasPendingPaneSliderScrubTarget = false;
+            _sliderScrubTimer.Stop();
+            _paneSliderScrubTimer.Stop();
         }
 
         private async void PaneSliderScrubTimer_Tick(object? sender, EventArgs e)
@@ -1443,6 +1454,7 @@ namespace FramePlayer.Avalonia.Views
                 return;
             }
 
+            CancelQueuedSliderScrubs();
             if (textBox == FrameNumberTextBox && IsAllPaneTransportEnabled)
             {
                 await SeekAllPaneToFramePreservingPlaybackAsync(oneBasedFrame - 1);
@@ -1538,6 +1550,7 @@ namespace FramePlayer.Avalonia.Views
                 return false;
             }
 
+            CancelQueuedSliderScrubs();
             await engine.SeekToTimeAsync(target);
             var anchor = CreateLoopAnchor(engine, pane);
             if (anchor == null)
@@ -1874,6 +1887,7 @@ namespace FramePlayer.Avalonia.Views
                 return;
             }
 
+            CancelQueuedSliderScrubs();
             if (_primaryEngine.Position.FrameIndex.HasValue && _primaryEngine.Position.IsFrameIndexAbsolute)
             {
                 await _compareEngine.SeekToFrameAsync(_primaryEngine.Position.FrameIndex.Value);
@@ -1893,6 +1907,7 @@ namespace FramePlayer.Avalonia.Views
                 return;
             }
 
+            CancelQueuedSliderScrubs();
             if (_compareEngine.Position.FrameIndex.HasValue && _compareEngine.Position.IsFrameIndexAbsolute)
             {
                 await _primaryEngine.SeekToFrameAsync(_compareEngine.Position.FrameIndex.Value);
@@ -3768,7 +3783,7 @@ namespace FramePlayer.Avalonia.Views
 
         private static string FormatInspectorDuration(TimeSpan duration)
         {
-            return duration > TimeSpan.Zero
+            return duration >= TimeSpan.Zero
                 ? FormatTime(duration)
                 : UnknownDisplayLabel;
         }

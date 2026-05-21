@@ -68,6 +68,12 @@ namespace FramePlayer.Avalonia.Tests
             AssertField(snapshot.AudioSection, "Playback", "available");
             AssertField(snapshot.AudioSection, "Sample rate", "48,000 Hz");
             AssertField(snapshot.AdvancedSection, "Audio stream index", "1");
+
+            var zeroPositionSnapshot = BuildVideoInfoSnapshot(
+                "Primary",
+                mediaInfo,
+                new ReviewPosition(TimeSpan.Zero, 0, true, true, null, null));
+            AssertField(zeroPositionSnapshot.SummarySection, "Current position", "00:00:00.000");
         }
 
         [Fact]
@@ -125,6 +131,9 @@ namespace FramePlayer.Avalonia.Tests
             Assert.Contains("private async Task PauseHiddenComparePlaybackAsync()", source, StringComparison.Ordinal);
             Assert.Contains("private async void RestartLoopPlaybackIfNeeded(", source, StringComparison.Ordinal);
             Assert.Contains("var engine = TryGetExistingEngine(pane);", source, StringComparison.Ordinal);
+            Assert.Contains("private void CancelQueuedSliderScrubs()", source, StringComparison.Ordinal);
+            Assert.Contains("_hasPendingSliderScrubTarget = false;", source, StringComparison.Ordinal);
+            Assert.Contains("_hasPendingPaneSliderScrubTarget = false;", source, StringComparison.Ordinal);
             Assert.DoesNotContain("Task.Run(async () => await RestartLoopPlaybackAsync", source, StringComparison.Ordinal);
             Assert.DoesNotContain("This build is a separate Avalonia desktop preview.", source, StringComparison.Ordinal);
             Assert.DoesNotContain("Windows WPF v1.8.4 and macOS Preview 0.1.0 remain the protected release tracks.", source, StringComparison.Ordinal);
