@@ -1077,6 +1077,39 @@ namespace FramePlayer.Avalonia.Tests
             });
         }
 
+        [Fact]
+        public async Task CloseVideosAsync_ReleasesReusablePaneBitmaps()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var primarySurface = RequireControl<Image>(window, "CustomVideoSurface");
+                    var compareSurface = RequireControl<Image>(window, "CompareVideoSurface");
+                    using var primaryFrame = CreateFrameBuffer(8, 4);
+                    using var compareFrame = CreateFrameBuffer(8, 4);
+
+                    InvokePrivate(window, "SetPaneBitmap", ParsePane("Primary"), primaryFrame);
+                    InvokePrivate(window, "SetPaneBitmap", ParsePane("Compare"), compareFrame);
+
+                    Assert.NotNull(GetPrivateField<WriteableBitmap?>(window, "_primaryReusableBitmap"));
+                    Assert.NotNull(GetPrivateField<WriteableBitmap?>(window, "_compareReusableBitmap"));
+
+                    await (Task)InvokePrivate(window, "CloseVideosAsync");
+
+                    Assert.Null(primarySurface.Source);
+                    Assert.Null(compareSurface.Source);
+                    Assert.Null(GetPrivateField<WriteableBitmap?>(window, "_primaryReusableBitmap"));
+                    Assert.Null(GetPrivateField<WriteableBitmap?>(window, "_compareReusableBitmap"));
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
         private static PointerWheelEventArgs CreatePointerWheelChangedEvent(Control source, double deltaY)
         {
             return new PointerWheelEventArgs(
@@ -1323,6 +1356,13 @@ namespace FramePlayer.Avalonia.Tests
             var field = typeof(MainWindow).GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic)
                 ?? throw new MissingFieldException(typeof(MainWindow).FullName, fieldName);
             field.SetValue(window, value);
+        }
+
+        private static T? GetPrivateField<T>(MainWindow window, string fieldName)
+        {
+            var field = typeof(MainWindow).GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic)
+                ?? throw new MissingFieldException(typeof(MainWindow).FullName, fieldName);
+            return (T?)field.GetValue(window);
         }
 
         private sealed class TestVideoReviewEngine : IVideoReviewEngine

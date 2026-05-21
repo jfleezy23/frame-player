@@ -659,6 +659,7 @@ namespace FramePlayer.Avalonia.Views
             _compareFrameBuffer = null;
             CustomVideoSurface.Source = null;
             CompareVideoSurface.Source = null;
+            DisposeReusablePaneBitmaps();
             SetPaneZoomFactor(Pane.Primary, MinimumPaneZoomFactor, synchronizeLinkedPane: false);
             SetPaneZoomFactor(Pane.Compare, MinimumPaneZoomFactor, synchronizeLinkedPane: false);
             PrimaryEmptyStateOverlay.IsVisible = true;
@@ -3952,7 +3953,7 @@ namespace FramePlayer.Avalonia.Views
                 ? string.Empty
                 : filePath.Trim();
             var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(normalizedPath));
-            return "path-hash:" + Convert.ToHexString(hashBytes).Substring(0, 12);
+            return "path-hash:" + Convert.ToHexString(hashBytes.AsSpan(0, 6));
         }
 
         private NativeMenu BuildNativeMenu(bool useGpuAcceleration)
@@ -4185,13 +4186,18 @@ namespace FramePlayer.Avalonia.Views
             _compareFrameBuffer?.Dispose();
             _primaryFrameBuffer = null;
             _compareFrameBuffer = null;
+            DisposeReusablePaneBitmaps();
+            _primaryEngine.Dispose();
+            _compareEngine?.Dispose();
+            base.OnClosed(e);
+        }
+
+        private void DisposeReusablePaneBitmaps()
+        {
             _primaryReusableBitmap?.Dispose();
             _compareReusableBitmap?.Dispose();
             _primaryReusableBitmap = null;
             _compareReusableBitmap = null;
-            _primaryEngine.Dispose();
-            _compareEngine?.Dispose();
-            base.OnClosed(e);
         }
 
         private enum Pane
