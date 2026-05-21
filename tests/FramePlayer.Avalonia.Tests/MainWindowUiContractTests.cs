@@ -426,7 +426,7 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
-        public void MainSharedTransport_MasterTimelineSeeksBothPanesBeforeResuming()
+        public void MainSharedTransport_MasterTimelineQueuesThrottledSeekBeforeResuming()
         {
             var mainWindowSource = ReadRepositoryFile(
                 "src",
@@ -435,12 +435,16 @@ namespace FramePlayer.Avalonia.Tests
                 "MainWindow.axaml.cs");
             var masterSliderMethod = ExtractMethodBody(
                 mainWindowSource,
-                "private async void PositionSlider_ValueChanged(",
-                "private async void PanePositionSlider_ValueChanged(");
+                "private void PositionSlider_ValueChanged(",
+                "private void QueueSliderScrub(");
+            var scrubTimerMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private async void SliderScrubTimer_Tick(",
+                "private void PanePositionSlider_ValueChanged(");
             var commitSliderMethod = ExtractMethodBody(
                 mainWindowSource,
                 "private async Task CommitSliderSeekAsync(",
-                "private async void PositionSlider_ValueChanged(");
+                "private void PositionSlider_ValueChanged(");
             var masterSeekMethod = ExtractMethodBody(
                 mainWindowSource,
                 "private async Task SeekMasterTimelineAsync(",
@@ -450,7 +454,8 @@ namespace FramePlayer.Avalonia.Tests
                 "private async Task SeekAllPaneToTimesPreservingPlaybackAsync(",
                 "private static TimeSpan ClampSeekTarget(");
 
-            Assert.Contains("await SeekMasterTimelineAsync(", masterSliderMethod, StringComparison.Ordinal);
+            Assert.Contains("QueueSliderScrub(TimeSpan.FromSeconds(PositionSlider.Value));", masterSliderMethod, StringComparison.Ordinal);
+            Assert.Contains("await SeekMasterTimelineAsync(_pendingSliderScrubTarget);", scrubTimerMethod, StringComparison.Ordinal);
             Assert.Contains("await SeekMasterTimelineAsync(target);", commitSliderMethod, StringComparison.Ordinal);
             Assert.Contains("if (IsAllPaneTransportEnabled)", masterSeekMethod, StringComparison.Ordinal);
             Assert.Contains("await SeekAllPaneToTimePreservingPlaybackAsync(target);", masterSeekMethod, StringComparison.Ordinal);
