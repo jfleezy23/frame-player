@@ -6,6 +6,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -315,7 +316,7 @@ namespace FramePlayer.Avalonia.Views
             try
             {
                 await engine.OpenAsync(filePath);
-                _diagnosticLogService.Info($"File opened: {filePath}");
+                _diagnosticLogService.Info("File opened: " + BuildDiagnosticFileIdentifier(filePath));
                 _recentFilesService.Add(filePath);
                 UpdateRecentFilesMenu();
                 ApplyFileLabels(pane, filePath);
@@ -2245,7 +2246,7 @@ namespace FramePlayer.Avalonia.Views
             return _isLoopPlaybackEnabled ? "Loop: " + rangeText : "Loop: off (" + rangeText + ")";
         }
 
-        private async void RestartLoopPlaybackIfNeeded(Pane pane, VideoReviewEngineStateChangedEventArgs state)
+        private void RestartLoopPlaybackIfNeeded(Pane pane, VideoReviewEngineStateChangedEventArgs state)
         {
             if (!_isLoopPlaybackEnabled ||
                 _isLoopRestartInFlight ||
@@ -2284,12 +2285,13 @@ namespace FramePlayer.Avalonia.Views
                 return;
             }
 
-            await RestartLoopPlaybackAsync(engine, range ?? CreateLoopRange(pane, null, null));
+            var restartRange = range ?? CreateLoopRange(pane, null, null);
+            _isLoopRestartInFlight = true;
+            _ = Task.Run(() => RestartLoopPlaybackAsync(engine, restartRange));
         }
 
         private async Task RestartLoopPlaybackAsync(IVideoReviewEngine engine, LoopPlaybackPaneRangeSnapshot range)
         {
-            _isLoopRestartInFlight = true;
             try
             {
                 var restartTime = range != null && range.HasLoopIn ? range.EffectiveStartTime : TimeSpan.Zero;
@@ -3942,6 +3944,15 @@ namespace FramePlayer.Avalonia.Views
         private static string FormatDialogValue(string? value)
         {
             return string.IsNullOrWhiteSpace(value) ? UnknownRawValue : value.Trim();
+        }
+
+        private static string BuildDiagnosticFileIdentifier(string filePath)
+        {
+            var normalizedPath = string.IsNullOrWhiteSpace(filePath)
+                ? string.Empty
+                : filePath.Trim();
+            var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(normalizedPath));
+            return "path-hash:" + Convert.ToHexString(hashBytes).Substring(0, 12);
         }
 
         private NativeMenu BuildNativeMenu(bool useGpuAcceleration)

@@ -92,6 +92,18 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
+        public void DiagnosticFileIdentifier_DoesNotExposePathOrFileName()
+        {
+            const string sensitivePath = "/Users/example/Client Project/private-cut.mov";
+
+            var identifier = BuildDiagnosticFileIdentifier(sensitivePath);
+
+            Assert.StartsWith("path-hash:", identifier, StringComparison.Ordinal);
+            Assert.DoesNotContain("/Users/example/Client Project", identifier, StringComparison.Ordinal);
+            Assert.DoesNotContain("private-cut.mov", identifier, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public void AvaloniaFrameBufferPresenter_ReusesBitmapUntilDimensionsChange()
         {
             _fixture.Run(() =>
@@ -129,12 +141,15 @@ namespace FramePlayer.Avalonia.Tests
             Assert.Contains("ffmpegEngine.ApproximateCachedFrameBytes", source, StringComparison.Ordinal);
             Assert.Contains("ffmpegEngine.LastCacheRefillMilliseconds", source, StringComparison.Ordinal);
             Assert.Contains("private async Task PauseHiddenComparePlaybackAsync()", source, StringComparison.Ordinal);
-            Assert.Contains("private async void RestartLoopPlaybackIfNeeded(", source, StringComparison.Ordinal);
+            Assert.Contains("private void RestartLoopPlaybackIfNeeded(", source, StringComparison.Ordinal);
             Assert.Contains("var engine = TryGetExistingEngine(pane);", source, StringComparison.Ordinal);
+            Assert.Contains("Task.Run(() => RestartLoopPlaybackAsync(engine, restartRange));", source, StringComparison.Ordinal);
+            Assert.Contains("_diagnosticLogService.Info(\"File opened: \" + BuildDiagnosticFileIdentifier(filePath));", source, StringComparison.Ordinal);
             Assert.Contains("private void CancelQueuedSliderScrubs()", source, StringComparison.Ordinal);
             Assert.Contains("_hasPendingSliderScrubTarget = false;", source, StringComparison.Ordinal);
             Assert.Contains("_hasPendingPaneSliderScrubTarget = false;", source, StringComparison.Ordinal);
             Assert.DoesNotContain("Task.Run(async () => await RestartLoopPlaybackAsync", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("_diagnosticLogService.Info($\"File opened: {filePath}\")", source, StringComparison.Ordinal);
             Assert.DoesNotContain("This build is a separate Avalonia desktop preview.", source, StringComparison.Ordinal);
             Assert.DoesNotContain("Windows WPF v1.8.4 and macOS Preview 0.1.0 remain the protected release tracks.", source, StringComparison.Ordinal);
         }
@@ -150,6 +165,16 @@ namespace FramePlayer.Avalonia.Tests
                 ?? throw new MissingMethodException(typeof(MainWindow).FullName, "BuildVideoInfoSnapshot");
             return (VideoInfoSnapshot)(method.Invoke(null, new object[] { paneLabel, mediaInfo, position })
                 ?? throw new InvalidOperationException("BuildVideoInfoSnapshot returned null."));
+        }
+
+        private static string BuildDiagnosticFileIdentifier(string filePath)
+        {
+            var method = typeof(MainWindow).GetMethod(
+                "BuildDiagnosticFileIdentifier",
+                BindingFlags.Static | BindingFlags.NonPublic)
+                ?? throw new MissingMethodException(typeof(MainWindow).FullName, "BuildDiagnosticFileIdentifier");
+            return (string)(method.Invoke(null, new object[] { filePath })
+                ?? throw new InvalidOperationException("BuildDiagnosticFileIdentifier returned null."));
         }
 
         private static void AssertField(VideoInfoSection section, string label, string expectedValue)
