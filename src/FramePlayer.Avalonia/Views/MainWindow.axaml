@@ -314,7 +314,7 @@
                   </StackPanel>
                   <StackPanel Grid.Row="2" Grid.Column="2" Classes="frame-entry pane-frame-entry">
                     <TextBlock Classes="frame-entry-label" Text="Frame" />
-                    <TextBox x:Name="PrimaryPaneFrameNumberTextBox" Classes="frame-number-box pane-frame-number-box" Tag="pane-primary" KeyDown="FrameNumberTextBox_KeyDown" />
+                    <TextBox x:Name="PrimaryPaneFrameNumberTextBox" Classes="frame-number-box pane-frame-number-box" Tag="pane-primary" KeyDown="FrameNumberTextBox_KeyDown" GotFocus="FrameNumberTextBox_GotFocus" />
                   </StackPanel>
                 </Grid>
               </Border>
@@ -399,7 +399,7 @@
                   </StackPanel>
                   <StackPanel Grid.Row="2" Grid.Column="2" Classes="frame-entry pane-frame-entry">
                     <TextBlock Classes="frame-entry-label" Text="Frame" />
-                    <TextBox x:Name="ComparePaneFrameNumberTextBox" Classes="frame-number-box pane-frame-number-box" Tag="pane-compare" KeyDown="FrameNumberTextBox_KeyDown" />
+                    <TextBox x:Name="ComparePaneFrameNumberTextBox" Classes="frame-number-box pane-frame-number-box" Tag="pane-compare" KeyDown="FrameNumberTextBox_KeyDown" GotFocus="FrameNumberTextBox_GotFocus" />
                   </StackPanel>
                 </Grid>
               </Border>
@@ -474,7 +474,7 @@
           </StackPanel>
           <StackPanel Grid.Row="2" Grid.Column="1" Classes="frame-entry">
             <TextBlock Classes="frame-entry-label" Text="Frame" />
-            <TextBox x:Name="FrameNumberTextBox" Classes="frame-number-box" KeyDown="FrameNumberTextBox_KeyDown" />
+            <TextBox x:Name="FrameNumberTextBox" Classes="frame-number-box" KeyDown="FrameNumberTextBox_KeyDown" GotFocus="FrameNumberTextBox_GotFocus" />
           </StackPanel>
         </Grid>
       </Border>

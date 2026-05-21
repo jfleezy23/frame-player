@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
@@ -14,6 +15,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
@@ -36,6 +38,8 @@ namespace FramePlayer.Avalonia.Views
         private IVideoReviewEngine? _compareEngine;
         private DecodedFrameBuffer? _primaryFrameBuffer;
         private DecodedFrameBuffer? _compareFrameBuffer;
+        private WriteableBitmap? _primaryReusableBitmap;
+        private WriteableBitmap? _compareReusableBitmap;
         private readonly object _primaryFramePresentationLock = new();
         private readonly object _compareFramePresentationLock = new();
         private DecodedFrameBuffer? _pendingPrimaryFrameBuffer;
@@ -92,6 +96,16 @@ namespace FramePlayer.Avalonia.Views
         private TimeSpan _compareTimelineContextTarget = TimeSpan.Zero;
         private double _primaryZoomFactor = MinimumPaneZoomFactor;
         private double _compareZoomFactor = MinimumPaneZoomFactor;
+        private static readonly TimeSpan SliderScrubThrottleInterval = TimeSpan.FromMilliseconds(75);
+        private readonly DispatcherTimer _sliderScrubTimer;
+        private readonly DispatcherTimer _paneSliderScrubTimer;
+        private bool _isSliderScrubSeekInFlight;
+        private bool _hasPendingSliderScrubTarget;
+        private TimeSpan _pendingSliderScrubTarget;
+        private bool _isPaneSliderScrubSeekInFlight;
+        private bool _hasPendingPaneSliderScrubTarget;
+        private TimeSpan _pendingPaneSliderScrubTarget;
+        private Pane _pendingPaneSliderScrubPane;
         private static readonly IBrush PaneChromeBrush = Brush.Parse("#171C22");
         private static readonly IBrush PaneChromeBorderBrush = Brush.Parse("#28313B");
         private static readonly IBrush PaneSelectedBrush = Brush.Parse("#1D2934");
@@ -168,6 +182,10 @@ namespace FramePlayer.Avalonia.Views
             KeyDown += Window_KeyDown;
             AllPanesCheckBox.IsCheckedChanged += AllPanesCheckBox_IsCheckedChanged;
             LinkPaneZoomCheckBox.IsCheckedChanged += LinkPaneZoomCheckBox_IsCheckedChanged;
+            _sliderScrubTimer = new DispatcherTimer { Interval = SliderScrubThrottleInterval };
+            _sliderScrubTimer.Tick += SliderScrubTimer_Tick;
+            _paneSliderScrubTimer = new DispatcherTimer { Interval = SliderScrubThrottleInterval };
+            _paneSliderScrubTimer.Tick += PaneSliderScrubTimer_Tick;
         }
 
         private void ConfigurePlatformChrome()
@@ -528,13 +546,13 @@ namespace FramePlayer.Avalonia.Views
         private void SetPaneBitmap(Pane pane, DecodedFrameBuffer frameBuffer)
         {
             var viewport = BuildPaneViewport(pane, frameBuffer);
-            var bitmap = AvaloniaFrameBufferPresenter.CreateBitmap(frameBuffer, viewport);
             var retainedFrameBuffer = frameBuffer.Retain();
             if (pane == Pane.Compare)
             {
                 var previousFrameBuffer = _compareFrameBuffer;
                 _compareFrameBuffer = retainedFrameBuffer;
                 previousFrameBuffer?.Dispose();
+                var bitmap = AvaloniaFrameBufferPresenter.PresentBitmap(frameBuffer, viewport, ref _compareReusableBitmap);
                 CompareVideoSurface.Source = bitmap;
                 CompareEmptyStateOverlay.IsVisible = false;
             }
@@ -543,6 +561,7 @@ namespace FramePlayer.Avalonia.Views
                 var previousFrameBuffer = _primaryFrameBuffer;
                 _primaryFrameBuffer = retainedFrameBuffer;
                 previousFrameBuffer?.Dispose();
+                var bitmap = AvaloniaFrameBufferPresenter.PresentBitmap(frameBuffer, viewport, ref _primaryReusableBitmap);
                 CustomVideoSurface.Source = bitmap;
                 PrimaryEmptyStateOverlay.IsVisible = false;
             }
@@ -1218,17 +1237,51 @@ namespace FramePlayer.Avalonia.Views
             await SeekMasterTimelineAsync(target);
         }
 
-        private async void PositionSlider_ValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
+        private void PositionSlider_ValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
         {
             if (_isUpdatingSliders || sender != PositionSlider || !_primaryEngine.IsMediaOpen)
             {
                 return;
             }
 
-            await SeekMasterTimelineAsync(TimeSpan.FromSeconds(PositionSlider.Value));
+            QueueSliderScrub(TimeSpan.FromSeconds(PositionSlider.Value));
         }
 
-        private async void PanePositionSlider_ValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
+        private void QueueSliderScrub(TimeSpan target)
+        {
+            _pendingSliderScrubTarget = target;
+            _hasPendingSliderScrubTarget = true;
+            if (!_isSliderScrubSeekInFlight)
+            {
+                _sliderScrubTimer.Start();
+            }
+        }
+
+        private async void SliderScrubTimer_Tick(object? sender, EventArgs e)
+        {
+            _sliderScrubTimer.Stop();
+            if (!_hasPendingSliderScrubTarget)
+            {
+                return;
+            }
+
+            _hasPendingSliderScrubTarget = false;
+            _isSliderScrubSeekInFlight = true;
+            try
+            {
+                await SeekMasterTimelineAsync(_pendingSliderScrubTarget);
+            }
+            finally
+            {
+                _isSliderScrubSeekInFlight = false;
+                if (_hasPendingSliderScrubTarget)
+                {
+                    _sliderScrubTimer.Start();
+                }
+            }
+        }
+
+        private void PanePositionSlider_ValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
         {
             if (_isUpdatingSliders)
             {
@@ -1238,12 +1291,53 @@ namespace FramePlayer.Avalonia.Views
             if (sender == PrimaryPanePositionSlider && _primaryEngine.IsMediaOpen)
             {
                 SelectPane(Pane.Primary);
-                await SeekToTimePreservingPlaybackAsync(_primaryEngine, TimeSpan.FromSeconds(PrimaryPanePositionSlider.Value));
+                QueuePaneSliderScrub(Pane.Primary, TimeSpan.FromSeconds(PrimaryPanePositionSlider.Value));
             }
             else if (sender == ComparePanePositionSlider && _compareEngine != null && _compareEngine.IsMediaOpen)
             {
                 SelectPane(Pane.Compare);
-                await SeekToTimePreservingPlaybackAsync(_compareEngine, TimeSpan.FromSeconds(ComparePanePositionSlider.Value));
+                QueuePaneSliderScrub(Pane.Compare, TimeSpan.FromSeconds(ComparePanePositionSlider.Value));
+            }
+        }
+
+        private void QueuePaneSliderScrub(Pane pane, TimeSpan target)
+        {
+            _pendingPaneSliderScrubTarget = target;
+            _pendingPaneSliderScrubPane = pane;
+            _hasPendingPaneSliderScrubTarget = true;
+            if (!_isPaneSliderScrubSeekInFlight)
+            {
+                _paneSliderScrubTimer.Start();
+            }
+        }
+
+        private async void PaneSliderScrubTimer_Tick(object? sender, EventArgs e)
+        {
+            _paneSliderScrubTimer.Stop();
+            if (!_hasPendingPaneSliderScrubTarget)
+            {
+                return;
+            }
+
+            _hasPendingPaneSliderScrubTarget = false;
+            _isPaneSliderScrubSeekInFlight = true;
+            var pane = _pendingPaneSliderScrubPane;
+            var target = _pendingPaneSliderScrubTarget;
+            try
+            {
+                var engine = TryGetExistingEngine(pane);
+                if (engine != null && engine.IsMediaOpen)
+                {
+                    await SeekToTimePreservingPlaybackAsync(engine, target);
+                }
+            }
+            finally
+            {
+                _isPaneSliderScrubSeekInFlight = false;
+                if (_hasPendingPaneSliderScrubTarget)
+                {
+                    _paneSliderScrubTimer.Start();
+                }
             }
         }
 
@@ -1351,6 +1445,14 @@ namespace FramePlayer.Avalonia.Views
             var pane = textBox == ComparePaneFrameNumberTextBox ? Pane.Compare : Pane.Primary;
             SelectPane(pane);
             await GetEngine(pane).SeekToFrameAsync(oneBasedFrame - 1);
+        }
+
+        private void FrameNumberTextBox_GotFocus(object? sender, GotFocusEventArgs e)
+        {
+            if (sender is TextBox textBox && !string.IsNullOrEmpty(textBox.Text))
+            {
+                textBox.SelectAll();
+            }
         }
 
         private async Task SeekAllPaneToFramePreservingPlaybackAsync(long frameIndex)
@@ -3182,9 +3284,10 @@ namespace FramePlayer.Avalonia.Views
                     return Task.CompletedTask;
                 }
             }
-            catch
+            catch (Exception dispatcherEx)
             {
                 // In headless tests the global dispatcher and control owner can disagree briefly.
+                Trace.TraceWarning("SetStatusMessageAsync dispatcher check failed: " + dispatcherEx.Message);
             }
 
             dispatcher.Post(() =>
@@ -3193,9 +3296,10 @@ namespace FramePlayer.Avalonia.Views
                 {
                     CacheStatusTextBlock.Text = message;
                 }
-                catch
+                catch (Exception postEx)
                 {
                     // Status text is informational; export/test completion must not depend on it.
+                    Trace.TraceWarning("SetStatusMessageAsync post failed: " + postEx.Message);
                 }
             });
             return Task.CompletedTask;
@@ -3483,10 +3587,10 @@ namespace FramePlayer.Avalonia.Views
             return string.Join(
                 Environment.NewLine,
                 "Frame Player",
-                "Avalonia Desktop Preview",
                 "Version: " + version,
                 "",
-                "Windows WPF v1.8.4 and macOS Preview 0.1.0 remain the protected release tracks. This build is a separate Avalonia desktop preview.");
+                "A/V playback and frame-accurate review for Windows and macOS.",
+                "Built with Avalonia UI.");
         }
 
         private static string FormatDialogValue(string? value)
@@ -3717,11 +3821,17 @@ namespace FramePlayer.Avalonia.Views
 
         protected override void OnClosed(EventArgs e)
         {
+            _sliderScrubTimer.Stop();
+            _paneSliderScrubTimer.Stop();
             ClearPendingFramePresentations();
             _primaryFrameBuffer?.Dispose();
             _compareFrameBuffer?.Dispose();
             _primaryFrameBuffer = null;
             _compareFrameBuffer = null;
+            _primaryReusableBitmap?.Dispose();
+            _compareReusableBitmap?.Dispose();
+            _primaryReusableBitmap = null;
+            _compareReusableBitmap = null;
             _primaryEngine.Dispose();
             _compareEngine?.Dispose();
             base.OnClosed(e);
