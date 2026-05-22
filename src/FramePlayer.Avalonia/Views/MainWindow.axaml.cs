@@ -1444,12 +1444,12 @@ namespace FramePlayer.Avalonia.Views
             var resumeTasks = new List<Task>(2);
             if (resumePrimaryPlayback && CanStartPlayback(_primaryEngine))
             {
-                resumeTasks.Add(Task.Run(() => _primaryEngine.PlayAsync()));
+                resumeTasks.Add(Task.Run(() => _primaryEngine.PlayAsync(), cancellationToken));
             }
 
             if (resumeComparePlayback && CanStartPlayback(compareEngine))
             {
-                resumeTasks.Add(Task.Run(() => compareEngine.PlayAsync()));
+                resumeTasks.Add(Task.Run(() => compareEngine.PlayAsync(), cancellationToken));
             }
 
             if (resumeTasks.Count > 0)
