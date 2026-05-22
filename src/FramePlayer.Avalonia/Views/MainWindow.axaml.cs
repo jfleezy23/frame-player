@@ -1340,7 +1340,11 @@ namespace FramePlayer.Avalonia.Views
             _sliderScrubTimer.Stop();
             _paneSliderScrubTimer.Stop();
             _sliderScrubCts?.Cancel();
+            _sliderScrubCts?.Dispose();
+            _sliderScrubCts = null;
             _paneSliderScrubCts?.Cancel();
+            _paneSliderScrubCts?.Dispose();
+            _paneSliderScrubCts = null;
         }
 
         private async void PaneSliderScrubTimer_Tick(object? sender, EventArgs e)
@@ -1434,8 +1438,8 @@ namespace FramePlayer.Avalonia.Views
             }
 
             await Task.WhenAll(
-                Task.Run(() => _primaryEngine.SeekToTimeAsync(primaryTarget, cancellationToken)),
-                Task.Run(() => compareEngine.SeekToTimeAsync(compareTarget, cancellationToken)));
+                Task.Run(() => _primaryEngine.SeekToTimeAsync(primaryTarget, cancellationToken), cancellationToken),
+                Task.Run(() => compareEngine.SeekToTimeAsync(compareTarget, cancellationToken), cancellationToken));
 
             var resumeTasks = new List<Task>(2);
             if (resumePrimaryPlayback && CanStartPlayback(_primaryEngine))
