@@ -501,7 +501,7 @@ namespace FramePlayer.Avalonia.Tests
                 "private static TimeSpan ClampSeekTarget(");
 
             Assert.Contains("QueueSliderScrub(TimeSpan.FromSeconds(PositionSlider.Value));", masterSliderMethod, StringComparison.Ordinal);
-            Assert.Contains("await SeekMasterTimelineAsync(_pendingSliderScrubTarget);", scrubTimerMethod, StringComparison.Ordinal);
+            Assert.Contains("await SeekMasterTimelineAsync(_pendingSliderScrubTarget, _sliderScrubCts.Token);", scrubTimerMethod, StringComparison.Ordinal);
             Assert.Contains("CancelQueuedSliderScrubs();", commitSliderMethod, StringComparison.Ordinal);
             Assert.Contains("await SeekMasterTimelineAsync(target);", commitSliderMethod, StringComparison.Ordinal);
             Assert.Contains("_hasPendingSliderScrubTarget = false;", cancelQueuedScrubsMethod, StringComparison.Ordinal);
@@ -509,7 +509,7 @@ namespace FramePlayer.Avalonia.Tests
             Assert.Contains("_sliderScrubTimer.Stop();", cancelQueuedScrubsMethod, StringComparison.Ordinal);
             Assert.Contains("_paneSliderScrubTimer.Stop();", cancelQueuedScrubsMethod, StringComparison.Ordinal);
             Assert.Contains("if (IsAllPaneTransportEnabled)", masterSeekMethod, StringComparison.Ordinal);
-            Assert.Contains("await SeekAllPaneToTimePreservingPlaybackAsync(target);", masterSeekMethod, StringComparison.Ordinal);
+            Assert.Contains("await SeekAllPaneToTimePreservingPlaybackAsync(target, cancellationToken);", masterSeekMethod, StringComparison.Ordinal);
             Assert.Contains("await Task.WhenAll(", allPaneSeekMethod, StringComparison.Ordinal);
             Assert.Contains("Task.Run(() => _primaryEngine.SeekToTimeAsync(primaryTarget))", allPaneSeekMethod, StringComparison.Ordinal);
             Assert.Contains("Task.Run(() => compareEngine.SeekToTimeAsync(compareTarget))", allPaneSeekMethod, StringComparison.Ordinal);
