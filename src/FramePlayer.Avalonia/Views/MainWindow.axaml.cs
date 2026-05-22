@@ -4180,8 +4180,7 @@ namespace FramePlayer.Avalonia.Views
 
         protected override void OnClosed(EventArgs e)
         {
-            _sliderScrubTimer.Stop();
-            _paneSliderScrubTimer.Stop();
+            CancelQueuedSliderScrubs();
             ClearPendingFramePresentations();
             _primaryFrameBuffer?.Dispose();
             _compareFrameBuffer?.Dispose();
