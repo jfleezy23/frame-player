@@ -256,19 +256,19 @@ namespace FramePlayer.Avalonia.Views
             }
         }
 
-        [SuppressMessage("Major Code Smell", "S1144:Unused private types or members", Justification = "Invoked by the desktop preview parity harness through reflection.")]
+        [SuppressMessage("Major Code Smell", "S1144:Unused private types or members", Justification = "Invoked by the desktop parity harness through reflection.")]
         private Task OpenMediaAsync(string filePath)
         {
             return OpenMediaAsync(filePath, PanePrimaryId);
         }
 
-        [SuppressMessage("Major Code Smell", "S1144:Unused private types or members", Justification = "Invoked by the desktop preview parity harness through reflection.")]
+        [SuppressMessage("Major Code Smell", "S1144:Unused private types or members", Justification = "Invoked by the desktop parity harness through reflection.")]
         private Task OpenMediaAsync(string filePath, string paneId)
         {
             return OpenPathAsync(filePath, ResolvePane(paneId));
         }
 
-        [SuppressMessage("Major Code Smell", "S1144:Unused private types or members", Justification = "Invoked by the desktop preview parity harness through reflection.")]
+        [SuppressMessage("Major Code Smell", "S1144:Unused private types or members", Justification = "Invoked by the desktop parity harness through reflection.")]
         private Task CloseMediaAsync()
         {
             return CloseVideosAsync();
@@ -1245,7 +1245,7 @@ namespace FramePlayer.Avalonia.Views
             return pane == Pane.Primary ? _primaryEngine : _compareEngine;
         }
 
-        [SuppressMessage("Major Code Smell", "S1144:Unused private types or members", Justification = "Invoked by the desktop preview parity harness through reflection.")]
+        [SuppressMessage("Major Code Smell", "S1144:Unused private types or members", Justification = "Invoked by the desktop parity harness through reflection.")]
         private async Task CommitSliderSeekAsync(string interactionName, TimeSpan target)
         {
             _ = interactionName;
@@ -1667,6 +1667,7 @@ namespace FramePlayer.Avalonia.Views
             }
             catch (Exception ex)
             {
+                Trace.TraceWarning("Compare playback pause failed: " + ex.Message);
                 CacheStatusTextBlock.Text = "Compare playback pause failed: " + ex.Message;
             }
         }
@@ -1967,13 +1968,11 @@ namespace FramePlayer.Avalonia.Views
         private void PrimaryEngine_FramePresented(object? sender, FramePresentedEventArgs e)
         {
             QueueFramePresentation(Pane.Primary, e.FrameBuffer);
-            Dispatcher.UIThread.Post(UpdateCacheStatusFromEngine);
         }
 
         private void CompareEngine_FramePresented(object? sender, FramePresentedEventArgs e)
         {
             QueueFramePresentation(Pane.Compare, e.FrameBuffer);
-            Dispatcher.UIThread.Post(UpdateCacheStatusFromEngine);
         }
 
         private void QueueFramePresentation(Pane pane, DecodedFrameBuffer sourceFrameBuffer)
@@ -2327,6 +2326,7 @@ namespace FramePlayer.Avalonia.Views
             }
             catch (Exception ex)
             {
+                Trace.TraceWarning("Loop playback restart failed: " + ex.Message);
                 await SetStatusMessageAsync("Loop playback restart failed: " + ex.Message).ConfigureAwait(false);
             }
             finally
@@ -3489,7 +3489,7 @@ namespace FramePlayer.Avalonia.Views
         {
             var header = new List<string>
             {
-                "Frame Player desktop preview diagnostics",
+                "Frame Player desktop diagnostics",
                 "Generated: " + DateTimeOffset.Now.ToString("O", CultureInfo.InvariantCulture),
                 "Version: " + (typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? UnknownRawValue),
                 "OS: " + RuntimeInformation.OSDescription,

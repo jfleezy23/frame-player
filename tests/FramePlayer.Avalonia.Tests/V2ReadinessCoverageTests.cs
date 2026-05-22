@@ -148,10 +148,15 @@ namespace FramePlayer.Avalonia.Tests
             Assert.Contains("private void CancelQueuedSliderScrubs()", source, StringComparison.Ordinal);
             Assert.Contains("_hasPendingSliderScrubTarget = false;", source, StringComparison.Ordinal);
             Assert.Contains("_hasPendingPaneSliderScrubTarget = false;", source, StringComparison.Ordinal);
+            Assert.Contains("Trace.TraceWarning(\"Compare playback pause failed: \" + ex.Message);", source, StringComparison.Ordinal);
+            Assert.Contains("Trace.TraceWarning(\"Loop playback restart failed: \" + ex.Message);", source, StringComparison.Ordinal);
+            Assert.Contains("\"Frame Player desktop diagnostics\"", source, StringComparison.Ordinal);
             Assert.DoesNotContain("Task.Run(async () => await RestartLoopPlaybackAsync", source, StringComparison.Ordinal);
             Assert.DoesNotContain("_diagnosticLogService.Info($\"File opened: {filePath}\")", source, StringComparison.Ordinal);
             Assert.DoesNotContain("This build is a separate Avalonia desktop preview.", source, StringComparison.Ordinal);
             Assert.DoesNotContain("Windows WPF v1.8.4 and macOS Preview 0.1.0 remain the protected release tracks.", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("Frame Player desktop preview diagnostics", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("desktop preview parity harness", source, StringComparison.Ordinal);
         }
 
         private static VideoInfoSnapshot BuildVideoInfoSnapshot(
