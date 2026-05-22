@@ -395,6 +395,34 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
+        public void PlaybackStateChanged_QueuesCacheStatusRefreshWithoutImmediateUpdate()
+        {
+            var mainWindowSource = ReadRepositoryFile(
+                "src",
+                "FramePlayer.Avalonia",
+                "Views",
+                "MainWindow.axaml.cs");
+            var primaryStateChangedMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private void PrimaryEngine_StateChanged(",
+                "private void CompareEngine_StateChanged(");
+            var compareStateChangedMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private void CompareEngine_StateChanged(",
+                "private void PrimaryEngine_FramePresented(");
+            var queueRefreshMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private void QueueCacheStatusRefresh()",
+                "private void CacheStatusRefreshTimer_Tick(");
+
+            Assert.Contains("QueueCacheStatusRefresh();", primaryStateChangedMethod, StringComparison.Ordinal);
+            Assert.Contains("QueueCacheStatusRefresh();", compareStateChangedMethod, StringComparison.Ordinal);
+            Assert.DoesNotContain("UpdateCacheStatusFromEngine", primaryStateChangedMethod, StringComparison.Ordinal);
+            Assert.DoesNotContain("UpdateCacheStatusFromEngine", compareStateChangedMethod, StringComparison.Ordinal);
+            Assert.Contains("_cacheStatusRefreshTimer.Start();", queueRefreshMethod, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public void MainSharedTransport_StartsBothPanePlaybackOperationsBeforeAwaiting()
         {
             var mainWindowSource = ReadRepositoryFile(

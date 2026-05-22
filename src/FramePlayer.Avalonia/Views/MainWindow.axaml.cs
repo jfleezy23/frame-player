@@ -101,8 +101,10 @@ namespace FramePlayer.Avalonia.Views
         private double _primaryZoomFactor = MinimumPaneZoomFactor;
         private double _compareZoomFactor = MinimumPaneZoomFactor;
         private static readonly TimeSpan SliderScrubThrottleInterval = TimeSpan.FromMilliseconds(75);
+        private static readonly TimeSpan CacheStatusRefreshInterval = TimeSpan.FromMilliseconds(250);
         private readonly DispatcherTimer _sliderScrubTimer;
         private readonly DispatcherTimer _paneSliderScrubTimer;
+        private readonly DispatcherTimer _cacheStatusRefreshTimer;
         private bool _isSliderScrubSeekInFlight;
         private bool _hasPendingSliderScrubTarget;
         private TimeSpan _pendingSliderScrubTarget;
@@ -110,6 +112,7 @@ namespace FramePlayer.Avalonia.Views
         private bool _hasPendingPaneSliderScrubTarget;
         private TimeSpan _pendingPaneSliderScrubTarget;
         private Pane _pendingPaneSliderScrubPane;
+        private bool _hasPendingCacheStatusRefresh;
         private CancellationTokenSource? _sliderScrubCts;
         private CancellationTokenSource? _paneSliderScrubCts;
         private static readonly IBrush PaneChromeBrush = Brush.Parse("#171C22");
@@ -193,6 +196,8 @@ namespace FramePlayer.Avalonia.Views
             _sliderScrubTimer.Tick += SliderScrubTimer_Tick;
             _paneSliderScrubTimer = new DispatcherTimer { Interval = SliderScrubThrottleInterval };
             _paneSliderScrubTimer.Tick += PaneSliderScrubTimer_Tick;
+            _cacheStatusRefreshTimer = new DispatcherTimer { Interval = CacheStatusRefreshInterval };
+            _cacheStatusRefreshTimer.Tick += CacheStatusRefreshTimer_Tick;
 
             _diagnosticLogService.Info("Application started");
         }
@@ -1952,7 +1957,7 @@ namespace FramePlayer.Avalonia.Views
             Dispatcher.UIThread.Post(() =>
             {
                 ApplyState(Pane.Primary, e);
-                UpdateCacheStatusFromEngine();
+                QueueCacheStatusRefresh();
             });
         }
 
@@ -1962,7 +1967,7 @@ namespace FramePlayer.Avalonia.Views
             Dispatcher.UIThread.Post(() =>
             {
                 ApplyState(Pane.Compare, e);
-                UpdateCacheStatusFromEngine();
+                QueueCacheStatusRefresh();
             });
         }
 
@@ -3389,6 +3394,27 @@ namespace FramePlayer.Avalonia.Views
             SetCacheStatus(message, tooltip);
         }
 
+        private void QueueCacheStatusRefresh()
+        {
+            _hasPendingCacheStatusRefresh = true;
+            if (!_cacheStatusRefreshTimer.IsEnabled)
+            {
+                _cacheStatusRefreshTimer.Start();
+            }
+        }
+
+        private void CacheStatusRefreshTimer_Tick(object? sender, EventArgs e)
+        {
+            _cacheStatusRefreshTimer.Stop();
+            if (!_hasPendingCacheStatusRefresh)
+            {
+                return;
+            }
+
+            _hasPendingCacheStatusRefresh = false;
+            UpdateCacheStatusFromEngine();
+        }
+
         private static string FormatCompleteDecodedCacheStatus(
             FfmpegReviewEngine ffmpegEngine,
             int completeCacheFrameCount)
@@ -4207,6 +4233,8 @@ namespace FramePlayer.Avalonia.Views
         protected override void OnClosed(EventArgs e)
         {
             CancelQueuedSliderScrubs();
+            _hasPendingCacheStatusRefresh = false;
+            _cacheStatusRefreshTimer.Stop();
             ClearPendingFramePresentations();
             _primaryFrameBuffer?.Dispose();
             _compareFrameBuffer?.Dispose();
