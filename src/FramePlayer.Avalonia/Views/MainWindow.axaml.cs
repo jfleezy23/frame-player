@@ -646,6 +646,7 @@ namespace FramePlayer.Avalonia.Views
 
         private async Task CloseVideosAsync()
         {
+            CancelQueuedSliderScrubs();
             await _primaryEngine.CloseAsync();
             if (_compareEngine != null)
             {

@@ -542,6 +542,25 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
+        public void CloseVideosAsync_CancelsQueuedSliderScrubsBeforeClosingEngines()
+        {
+            var mainWindowSource = ReadRepositoryFile(
+                "src",
+                "FramePlayer.Avalonia",
+                "Views",
+                "MainWindow.axaml.cs");
+            var closeVideosMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private async Task CloseVideosAsync()",
+                "private async void PlayPauseButton_Click(");
+
+            Assert.Contains("CancelQueuedSliderScrubs();", closeVideosMethod, StringComparison.Ordinal);
+            Assert.True(
+                closeVideosMethod.IndexOf("CancelQueuedSliderScrubs();", StringComparison.Ordinal) <
+                closeVideosMethod.IndexOf("await _primaryEngine.CloseAsync();", StringComparison.Ordinal));
+        }
+
+        [Fact]
         public void MainSharedTransport_MasterFrameEntrySeeksBothPanes()
         {
             var mainWindowSource = ReadRepositoryFile(
