@@ -109,6 +109,8 @@ namespace FramePlayer.Avalonia.Views
         private bool _hasPendingPaneSliderScrubTarget;
         private TimeSpan _pendingPaneSliderScrubTarget;
         private Pane _pendingPaneSliderScrubPane;
+        private CancellationTokenSource? _sliderScrubCts;
+        private CancellationTokenSource? _paneSliderScrubCts;
         private static readonly IBrush PaneChromeBrush = Brush.Parse("#171C22");
         private static readonly IBrush PaneChromeBorderBrush = Brush.Parse("#28313B");
         private static readonly IBrush PaneSelectedBrush = Brush.Parse("#1D2934");
@@ -1280,9 +1282,15 @@ namespace FramePlayer.Avalonia.Views
 
             _hasPendingSliderScrubTarget = false;
             _isSliderScrubSeekInFlight = true;
+            _sliderScrubCts?.Dispose();
+            _sliderScrubCts = new CancellationTokenSource();
             try
             {
-                await SeekMasterTimelineAsync(_pendingSliderScrubTarget);
+                await SeekMasterTimelineAsync(_pendingSliderScrubTarget, _sliderScrubCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                // Ignored
             }
             finally
             {
@@ -1330,6 +1338,8 @@ namespace FramePlayer.Avalonia.Views
             _hasPendingPaneSliderScrubTarget = false;
             _sliderScrubTimer.Stop();
             _paneSliderScrubTimer.Stop();
+            _sliderScrubCts?.Cancel();
+            _paneSliderScrubCts?.Cancel();
         }
 
         private async void PaneSliderScrubTimer_Tick(object? sender, EventArgs e)
@@ -1344,13 +1354,19 @@ namespace FramePlayer.Avalonia.Views
             _isPaneSliderScrubSeekInFlight = true;
             var pane = _pendingPaneSliderScrubPane;
             var target = _pendingPaneSliderScrubTarget;
+            _paneSliderScrubCts?.Dispose();
+            _paneSliderScrubCts = new CancellationTokenSource();
             try
             {
                 var engine = TryGetExistingEngine(pane);
                 if (engine != null && engine.IsMediaOpen)
                 {
-                    await SeekToTimePreservingPlaybackAsync(engine, target);
+                    await SeekToTimePreservingPlaybackAsync(engine, target, _paneSliderScrubCts.Token);
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                // Ignored
             }
             finally
             {
@@ -1362,25 +1378,25 @@ namespace FramePlayer.Avalonia.Views
             }
         }
 
-        private static async Task SeekToTimePreservingPlaybackAsync(IVideoReviewEngine engine, TimeSpan target)
+        private static async Task SeekToTimePreservingPlaybackAsync(IVideoReviewEngine engine, TimeSpan target, CancellationToken cancellationToken = default)
         {
             var resumePlayback = engine.IsPlaying;
-            await engine.SeekToTimeAsync(target);
+            await engine.SeekToTimeAsync(target, cancellationToken);
             if (resumePlayback && CanStartPlayback(engine))
             {
                 await engine.PlayAsync();
             }
         }
 
-        private async Task SeekMasterTimelineAsync(TimeSpan target)
+        private async Task SeekMasterTimelineAsync(TimeSpan target, CancellationToken cancellationToken = default)
         {
             if (IsAllPaneTransportEnabled)
             {
-                await SeekAllPaneToTimePreservingPlaybackAsync(target);
+                await SeekAllPaneToTimePreservingPlaybackAsync(target, cancellationToken);
                 return;
             }
 
-            await SeekToTimePreservingPlaybackAsync(_primaryEngine, target);
+            await SeekToTimePreservingPlaybackAsync(_primaryEngine, target, cancellationToken);
         }
 
         private async Task SeekAllPaneRelativePreservingPlaybackAsync(TimeSpan offset)
@@ -1396,12 +1412,12 @@ namespace FramePlayer.Avalonia.Views
             await SeekAllPaneToTimesPreservingPlaybackAsync(primaryTarget, compareTarget);
         }
 
-        private async Task SeekAllPaneToTimePreservingPlaybackAsync(TimeSpan target)
+        private async Task SeekAllPaneToTimePreservingPlaybackAsync(TimeSpan target, CancellationToken cancellationToken = default)
         {
-            await SeekAllPaneToTimesPreservingPlaybackAsync(target, target);
+            await SeekAllPaneToTimesPreservingPlaybackAsync(target, target, cancellationToken);
         }
 
-        private async Task SeekAllPaneToTimesPreservingPlaybackAsync(TimeSpan primaryTarget, TimeSpan compareTarget)
+        private async Task SeekAllPaneToTimesPreservingPlaybackAsync(TimeSpan primaryTarget, TimeSpan compareTarget, CancellationToken cancellationToken = default)
         {
             var compareEngine = _compareEngine;
             if (!_primaryEngine.IsMediaOpen || compareEngine == null || !compareEngine.IsMediaOpen)
@@ -1417,8 +1433,8 @@ namespace FramePlayer.Avalonia.Views
             }
 
             await Task.WhenAll(
-                Task.Run(() => _primaryEngine.SeekToTimeAsync(primaryTarget)),
-                Task.Run(() => compareEngine.SeekToTimeAsync(compareTarget)));
+                Task.Run(() => _primaryEngine.SeekToTimeAsync(primaryTarget, cancellationToken)),
+                Task.Run(() => compareEngine.SeekToTimeAsync(compareTarget, cancellationToken)));
 
             var resumeTasks = new List<Task>(2);
             if (resumePrimaryPlayback && CanStartPlayback(_primaryEngine))
@@ -3420,12 +3436,16 @@ namespace FramePlayer.Avalonia.Views
             if (dispatcher.CheckAccess())
             {
                 ToolTip.SetTip(CacheStatusTextBlock, tooltip);
+                CacheStatusTextBlock.Text = message;
             }
             else
             {
-                dispatcher.Post(() => ToolTip.SetTip(CacheStatusTextBlock, tooltip));
+                dispatcher.Post(() =>
+                {
+                    ToolTip.SetTip(CacheStatusTextBlock, tooltip);
+                    CacheStatusTextBlock.Text = message;
+                });
             }
-            _ = SetStatusMessageAsync(message);
         }
 
         private Task SetStatusMessageAsync(string message)
