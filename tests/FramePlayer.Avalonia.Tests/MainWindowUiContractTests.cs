@@ -286,6 +286,48 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
+        public async Task CompareMode_DisableHidesPaneBeforePauseCompletes()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var compareMode = RequireControl<CheckBox>(window, "CompareModeCheckBox");
+                    var comparePaneBorder = RequireControl<Border>(window, "ComparePaneBorder");
+                    var primaryPaneHeader = RequireControl<Border>(window, "PrimaryPaneHeaderBorder");
+                    var pauseCompletion = new TaskCompletionSource<bool>();
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        PauseCompletion = pauseCompletion
+                    };
+
+                    compareMode.IsChecked = true;
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+
+                    compareMode.IsChecked = false;
+
+                    Assert.False(comparePaneBorder.IsVisible);
+                    Assert.False(primaryPaneHeader.IsVisible);
+                    Assert.Equal(1, compareEngine.PauseCallCount);
+
+                    compareMode.IsChecked = true;
+                    pauseCompletion.SetResult(true);
+                    await Task.Yield();
+
+                    Assert.True(comparePaneBorder.IsVisible);
+                    Assert.True(primaryPaneHeader.IsVisible);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
         public void CompareFramePresented_WhenCompareHidden_DoesNotReplaceCompareBitmap()
         {
             MainWindow? window = null;
@@ -501,6 +543,25 @@ namespace FramePlayer.Avalonia.Tests
             Assert.True(
                 allPaneFrameSeekMethod.IndexOf("await Task.WhenAll(", StringComparison.Ordinal) <
                 allPaneFrameSeekMethod.IndexOf("var resumeTasks", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void PaneFrameStep_CancelsQueuedSliderScrubsBeforeStepping()
+        {
+            var mainWindowSource = ReadRepositoryFile(
+                "src",
+                "FramePlayer.Avalonia",
+                "Views",
+                "MainWindow.axaml.cs");
+            var paneStepMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private async Task StepFrameAsync(int delta, Pane pane)",
+                "private Pane ResolvePaneFromSender(");
+
+            Assert.Contains("CancelQueuedSliderScrubs();", paneStepMethod, StringComparison.Ordinal);
+            Assert.True(
+                paneStepMethod.IndexOf("CancelQueuedSliderScrubs();", StringComparison.Ordinal) <
+                paneStepMethod.IndexOf("var engine = GetEngine(pane);", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -1373,6 +1434,8 @@ namespace FramePlayer.Avalonia.Tests
 
             public string CurrentFilePath { get; set; } = string.Empty;
 
+            public TaskCompletionSource<bool>? PauseCompletion { get; set; }
+
             public string LastErrorMessage { get; set; } = string.Empty;
 
             public VideoMediaInfo MediaInfo { get; set; } = VideoMediaInfo.Empty;
@@ -1417,7 +1480,7 @@ namespace FramePlayer.Avalonia.Tests
             {
                 PauseCallCount++;
                 IsPlaying = false;
-                return Task.CompletedTask;
+                return PauseCompletion == null ? Task.CompletedTask : PauseCompletion.Task;
             }
 
             public Task<FrameStepResult> StepForwardAsync(CancellationToken cancellationToken = default(CancellationToken))

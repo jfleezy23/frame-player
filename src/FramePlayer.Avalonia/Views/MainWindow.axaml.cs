@@ -848,6 +848,7 @@ namespace FramePlayer.Avalonia.Views
                 return;
             }
 
+            CancelQueuedSliderScrubs();
             var engine = GetEngine(pane);
             var steps = Math.Abs(delta);
             for (var index = 0; index < steps; index++)
@@ -1586,7 +1587,7 @@ namespace FramePlayer.Avalonia.Views
             UpdateLoopUi();
         }
 
-        private async void CompareModeCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)
+        private void CompareModeCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)
         {
             if (CompareModeCheckBox.IsChecked == true)
             {
@@ -1594,7 +1595,7 @@ namespace FramePlayer.Avalonia.Views
             }
             else
             {
-                await HideCompareModeAsync();
+                HideCompareMode();
             }
         }
 
@@ -1611,10 +1612,9 @@ namespace FramePlayer.Avalonia.Views
             UpdateCacheStatusFromEngine();
         }
 
-        private async Task HideCompareModeAsync()
+        private void HideCompareMode()
         {
             _focusedPane = Pane.Primary;
-            await PauseHiddenComparePlaybackAsync();
             VideoPaneGrid.ColumnDefinitions[1].Width = new GridLength(0);
             VideoPaneGrid.ColumnSpacing = 0;
             SetPrimaryPaneLocalChromeVisible(false);
@@ -1624,6 +1624,7 @@ namespace FramePlayer.Avalonia.Views
             UpdatePaneSelectionVisuals();
             UpdateCompareOptionState();
             UpdateCacheStatusFromEngine();
+            _ = PauseHiddenComparePlaybackAsync();
         }
 
         private async Task PauseHiddenComparePlaybackAsync()
