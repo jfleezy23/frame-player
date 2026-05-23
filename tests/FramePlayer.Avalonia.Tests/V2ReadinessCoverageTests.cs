@@ -104,6 +104,18 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
+        public void AboutText_UsesAssemblyInformationalVersion()
+        {
+            var aboutText = BuildAboutText();
+            var informationalVersion = typeof(MainWindow).Assembly
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                ?.InformationalVersion;
+
+            Assert.False(string.IsNullOrWhiteSpace(informationalVersion));
+            Assert.Contains("Version: " + informationalVersion, aboutText, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public void AvaloniaFrameBufferPresenter_ReusesBitmapUntilDimensionsChange()
         {
             _fixture.Run(() =>
@@ -180,6 +192,16 @@ namespace FramePlayer.Avalonia.Tests
                 ?? throw new MissingMethodException(typeof(MainWindow).FullName, "BuildDiagnosticFileIdentifier");
             return (string)(method.Invoke(null, new object[] { filePath })
                 ?? throw new InvalidOperationException("BuildDiagnosticFileIdentifier returned null."));
+        }
+
+        private static string BuildAboutText()
+        {
+            var method = typeof(MainWindow).GetMethod(
+                "BuildAboutText",
+                BindingFlags.Static | BindingFlags.NonPublic)
+                ?? throw new MissingMethodException(typeof(MainWindow).FullName, "BuildAboutText");
+            return (string)(method.Invoke(null, Array.Empty<object>())
+                ?? throw new InvalidOperationException("BuildAboutText returned null."));
         }
 
         private static void AssertField(VideoInfoSection section, string label, string expectedValue)

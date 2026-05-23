@@ -325,9 +325,6 @@ Write-Host ("Corpus output: {0}" -f $outputDirectory)
 Invoke-ExternalStep -Name "Restore pinned playback runtime" -Command {
     & (Join-Path $PSScriptRoot "Ensure-DevRuntime.ps1")
 }
-Invoke-ExternalStep -Name "Restore pinned export tools" -Command {
-    & (Join-Path $PSScriptRoot "Ensure-DevExportTools.ps1") -Required
-}
 Invoke-ExternalStep -Name "Restore pinned export runtime" -Command {
     & (Join-Path $PSScriptRoot "Ensure-DevExportRuntime.ps1") -Required
 }

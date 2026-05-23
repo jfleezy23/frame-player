@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Headless;
+using Avalonia.Platform;
 using Avalonia.Skia;
 using FramePlayer.Avalonia;
 
@@ -147,7 +148,8 @@ namespace FramePlayer.Avalonia.Tests
                 .UseSkia()
                 .UseHeadless(new AvaloniaHeadlessPlatformOptions
                 {
-                    UseHeadlessDrawing = false
+                    UseHeadlessDrawing = false,
+                    FrameBufferFormat = PixelFormat.Bgra8888
                 })
                 .WithInterFont()
                 .LogToTrace();

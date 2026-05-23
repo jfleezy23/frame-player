@@ -5,6 +5,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -3520,7 +3521,7 @@ namespace FramePlayer.Avalonia.Views
             {
                 "Frame Player desktop diagnostics",
                 "Generated: " + DateTimeOffset.Now.ToString("O", CultureInfo.InvariantCulture),
-                "Version: " + (typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? UnknownRawValue),
+                "Version: " + GetDisplayVersion(),
                 "OS: " + RuntimeInformation.OSDescription,
                 ".NET: " + RuntimeInformation.FrameworkDescription
             };
@@ -3987,14 +3988,26 @@ namespace FramePlayer.Avalonia.Views
 
         private static string BuildAboutText()
         {
-            var version = typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? UnknownRawValue;
             return string.Join(
                 Environment.NewLine,
                 "Frame Player",
-                "Version: " + version,
+                "Version: " + GetDisplayVersion(),
                 "",
                 "A/V playback and frame-accurate review for Windows and macOS.",
                 "Built with Avalonia UI.");
+        }
+
+        private static string GetDisplayVersion()
+        {
+            var informationalVersion = typeof(MainWindow).Assembly
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                ?.InformationalVersion;
+            if (!string.IsNullOrWhiteSpace(informationalVersion))
+            {
+                return informationalVersion.Trim();
+            }
+
+            return typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? UnknownRawValue;
         }
 
         private static string FormatDialogValue(string? value)

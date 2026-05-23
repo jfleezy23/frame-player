@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ARTIFACT_VERSION="${PACKAGE_VERSION:-${VERSION:-unified-preview-0.3.2}}"
+ARTIFACT_VERSION="${PACKAGE_VERSION:-${VERSION:-2.0.0-rc.1}}"
 SIGN_MODE="${SIGN_MODE:-auto}"
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-}"
 DIST_DIR="$ROOT_DIR/dist"
@@ -17,7 +17,8 @@ usage() {
 usage: $0 [--unsigned|--sign [identity]]
 
 Environment:
-  PACKAGE_VERSION=<label>      Artifact version label. Default: unified-preview-0.3.2
+  PACKAGE_VERSION=<label>      Artifact version label. Default: 2.0.0-rc.1
+  APP_VERSION=<version>        Bundle short version. Default: numeric segment from PACKAGE_VERSION
   SIGNING_IDENTITY=<identity>  codesign identity name/hash
 
 Signing notes:
@@ -52,6 +53,22 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+bundle_short_version_from_artifact() {
+  local label="$1"
+  if [[ "$label" =~ ([0-9]+)(\.([0-9]+))?(\.([0-9]+))? ]]; then
+    local major="${BASH_REMATCH[1]}"
+    local minor="${BASH_REMATCH[3]:-0}"
+    local patch="${BASH_REMATCH[5]:-0}"
+    printf '%s.%s.%s\n' "$major" "$minor" "$patch"
+    return 0
+  fi
+
+  echo "Artifact version '$label' must contain a numeric version segment for the bundle short version." >&2
+  return 1
+}
+
+BUNDLE_SHORT_VERSION="${APP_VERSION:-$(bundle_short_version_from_artifact "$ARTIFACT_VERSION")}"
 
 resolve_signing_identity() {
   if [[ -n "$SIGNING_IDENTITY" ]]; then
@@ -104,7 +121,7 @@ env -u VERSION \
 env -u VERSION \
   CONFIGURATION=Release \
   APP_NAME=FramePlayer.Avalonia \
-  APP_VERSION=0.3.2 \
+  APP_VERSION="$BUNDLE_SHORT_VERSION" \
   BUNDLE_ID=com.frameplayer.unified-preview \
   PROJECT="$ROOT_DIR/src/FramePlayer.Avalonia/FramePlayer.Avalonia.csproj" \
   APP_ICON_SOURCE="$ROOT_DIR/src/FramePlayer.Avalonia/Assets/FramePlayer.icns" \

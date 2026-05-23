@@ -68,8 +68,9 @@ jobs:
         run: |
           .\scripts\Package-UnifiedWindowsPreview.ps1
 
-          $artifactRoot = "artifacts\unified-preview-0.3.2"
-          $zipPath = Join-Path $artifactRoot "FramePlayer-Windows-x64-unified-preview-0.3.2.zip"
+          $packageVersion = "2.0.0-rc.1"
+          $artifactRoot = "artifacts\$packageVersion"
+          $zipPath = Join-Path $artifactRoot "FramePlayer-Windows-x64-$packageVersion.zip"
           $shaPath = "$zipPath.sha256"
           if (-not (Test-Path $zipPath)) { throw "Missing unified Windows ZIP: $zipPath" }
           if (-not (Test-Path $shaPath)) { throw "Missing unified Windows SHA256 sidecar: $shaPath" }
@@ -104,4 +105,10 @@ jobs:
               if (-not (Test-Path $fullPath)) {
                   throw "Extracted unified Windows ZIP is missing: $relativePath"
               }
+          }
+
+          $exePath = Join-Path $extractDir "FramePlayer.Avalonia.exe"
+          $productVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exePath).ProductVersion
+          if ($productVersion -ne $packageVersion) {
+              throw "Extracted executable product version '$productVersion' did not match package version '$packageVersion'."
           }

@@ -16,7 +16,7 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
-        public void UnifiedProject_UsesPreview031AssemblyAndRuntimeIdentity()
+        public void UnifiedProject_UsesAvaloniaAssemblyAndRuntimeIdentity()
         {
             var root = FindRepositoryRoot();
             var project = File.ReadAllText(Path.Combine(root, "src", "FramePlayer.Avalonia", "FramePlayer.Avalonia.csproj"));
@@ -90,15 +90,57 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
-        public void UnifiedReleaseNaming_UsesSynchronizedPreview031()
+        public void UnifiedReleaseNaming_UsesV20ReleaseCandidate()
         {
-            const string tag = "unified-preview-0.3.2";
-            const string windowsAsset = "FramePlayer-Windows-x64-unified-preview-0.3.2.zip";
-            const string macAsset = "FramePlayer-macOS-arm64-unified-preview-0.3.2.zip";
+            const string version = "2.0.0-rc.1";
+            const string windowsAsset = "FramePlayer-Windows-x64-2.0.0-rc.1.zip";
+            const string macAsset = "FramePlayer-macOS-arm64-2.0.0-rc.1.zip";
 
-            Assert.EndsWith("0.3.2", tag, StringComparison.Ordinal);
-            Assert.Contains("unified-preview-0.3.2", windowsAsset, StringComparison.Ordinal);
-            Assert.Contains("unified-preview-0.3.2", macAsset, StringComparison.Ordinal);
+            Assert.StartsWith("2.0.0", version, StringComparison.Ordinal);
+            Assert.Contains(version, windowsAsset, StringComparison.Ordinal);
+            Assert.Contains(version, macAsset, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void UnifiedWindowsPackage_PassesPackageVersionIntoAssemblyMetadata()
+        {
+            var root = FindRepositoryRoot();
+            var script = File.ReadAllText(Path.Combine(root, "scripts", "Package-UnifiedWindowsPreview.ps1"));
+            var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "windows-ci.yml"));
+
+            Assert.Contains("[string]$Version = \"2.0.0-rc.1\"", script, StringComparison.Ordinal);
+            Assert.Contains("Get-AssemblyVersionFromPackageVersion", script, StringComparison.Ordinal);
+            Assert.Contains("-p:AssemblyVersion=$assemblyVersion", script, StringComparison.Ordinal);
+            Assert.Contains("-p:FileVersion=$assemblyVersion", script, StringComparison.Ordinal);
+            Assert.Contains("-p:InformationalVersion=$Version", script, StringComparison.Ordinal);
+            Assert.Contains("-p:IncludeSourceRevisionInInformationalVersion=false", script, StringComparison.Ordinal);
+            Assert.Contains("$productVersion -ne $Version", script, StringComparison.Ordinal);
+            Assert.Contains("$packageVersion = \"2.0.0-rc.1\"", workflow, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void UnifiedMacPackage_DerivesBundleVersionFromReleaseCandidateLabel()
+        {
+            var root = FindRepositoryRoot();
+            var script = File.ReadAllText(Path.Combine(root, "script", "package_unified_macos_release.sh"));
+            var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "macos-avalonia.yml"));
+
+            Assert.Contains("ARTIFACT_VERSION=\"${PACKAGE_VERSION:-${VERSION:-2.0.0-rc.1}}\"", script, StringComparison.Ordinal);
+            Assert.Contains("bundle_short_version_from_artifact", script, StringComparison.Ordinal);
+            Assert.Contains("APP_VERSION=\"$BUNDLE_SHORT_VERSION\"", script, StringComparison.Ordinal);
+            Assert.Contains("PACKAGE_VERSION=2.0.0-rc.1", workflow, StringComparison.Ordinal);
+            Assert.Contains("CFBundleShortVersionString 2.0.0", workflow, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void UnifiedWindowsRustCorpus_DoesNotRequireExportToolsForPlaybackSmoke()
+        {
+            var root = FindRepositoryRoot();
+            var script = File.ReadAllText(Path.Combine(root, "scripts", "Run-UnifiedWindowsRustCorpus.ps1"));
+
+            Assert.Contains("Runtime\\ffmpeg-tools\\ffprobe.exe", script, StringComparison.Ordinal);
+            Assert.Contains("return $null", script, StringComparison.Ordinal);
+            Assert.DoesNotContain("Ensure-DevExportTools.ps1\") -Required", script, StringComparison.Ordinal);
         }
 
         private static T RequireControl<T>(Window window, string name)

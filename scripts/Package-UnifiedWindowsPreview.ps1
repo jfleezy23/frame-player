@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "unified-preview-0.3.2",
+    [string]$Version = "2.0.0-rc.1",
     [string]$Configuration = "Release",
     [string]$RuntimeIdentifier = "win-x64",
     [string]$OutputRoot = "artifacts\$Version"
@@ -7,11 +7,33 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Get-AssemblyVersionFromPackageVersion {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PackageVersion
+    )
+
+    $versionMatch = [regex]::Match(
+        $PackageVersion,
+        "(?<!\d)(?<major>\d+)(?:\.(?<minor>\d+))?(?:\.(?<patch>\d+))?(?:\.(?<revision>\d+))?")
+    if (-not $versionMatch.Success) {
+        throw "Package version '$PackageVersion' must contain a numeric version segment for assembly metadata."
+    }
+
+    $major = [int]$versionMatch.Groups["major"].Value
+    $minor = if ($versionMatch.Groups["minor"].Success) { [int]$versionMatch.Groups["minor"].Value } else { 0 }
+    $patch = if ($versionMatch.Groups["patch"].Success) { [int]$versionMatch.Groups["patch"].Value } else { 0 }
+    $revision = if ($versionMatch.Groups["revision"].Success) { [int]$versionMatch.Groups["revision"].Value } else { 0 }
+
+    return "{0}.{1}.{2}.{3}" -f $major, $minor, $patch, $revision
+}
+
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $project = Join-Path $repoRoot "src\FramePlayer.Avalonia\FramePlayer.Avalonia.csproj"
 $publishDir = Join-Path $repoRoot "$OutputRoot\windows-publish"
 $zipPath = Join-Path $repoRoot "$OutputRoot\FramePlayer-Windows-x64-$Version.zip"
 $shaPath = "$zipPath.sha256"
+$assemblyVersion = Get-AssemblyVersionFromPackageVersion -PackageVersion $Version
 
 New-Item -ItemType Directory -Force -Path (Split-Path $publishDir) | Out-Null
 if (Test-Path $publishDir) {
@@ -25,6 +47,11 @@ dotnet publish $project `
     -r $RuntimeIdentifier `
     --self-contained true `
     -p:PublishSingleFile=false `
+    "-p:Version=$assemblyVersion" `
+    "-p:AssemblyVersion=$assemblyVersion" `
+    "-p:FileVersion=$assemblyVersion" `
+    "-p:InformationalVersion=$Version" `
+    -p:IncludeSourceRevisionInInformationalVersion=false `
     -o $publishDir
 
 $requiredFiles = @(
@@ -47,6 +74,12 @@ foreach ($relativePath in $requiredFiles) {
     if (-not (Test-Path $fullPath)) {
         throw "Expected packaged file missing: $relativePath"
     }
+}
+
+$exePath = Join-Path $publishDir "FramePlayer.Avalonia.exe"
+$productVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exePath).ProductVersion
+if ($productVersion -ne $Version) {
+    throw "Published executable product version '$productVersion' did not match package version '$Version'."
 }
 
 if (Test-Path $zipPath) {
