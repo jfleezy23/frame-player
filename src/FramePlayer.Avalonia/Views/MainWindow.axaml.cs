@@ -569,6 +569,7 @@ namespace FramePlayer.Avalonia.Views
                 previousFrameBuffer?.Dispose();
                 var bitmap = AvaloniaFrameBufferPresenter.PresentBitmap(frameBuffer, viewport, ref _compareReusableBitmap);
                 CompareVideoSurface.Source = bitmap;
+                CompareVideoSurface.InvalidateVisual();
                 CompareEmptyStateOverlay.IsVisible = false;
             }
             else
@@ -578,6 +579,7 @@ namespace FramePlayer.Avalonia.Views
                 previousFrameBuffer?.Dispose();
                 var bitmap = AvaloniaFrameBufferPresenter.PresentBitmap(frameBuffer, viewport, ref _primaryReusableBitmap);
                 CustomVideoSurface.Source = bitmap;
+                CustomVideoSurface.InvalidateVisual();
                 PrimaryEmptyStateOverlay.IsVisible = false;
             }
         }

@@ -1,7 +1,9 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Headless;
+using Avalonia.Skia;
 using FramePlayer.Avalonia;
 
 namespace FramePlayer.Avalonia.Tests
@@ -17,7 +19,7 @@ namespace FramePlayer.Avalonia.Tests
         {
             _previousSkipRuntimeBootstrap = Environment.GetEnvironmentVariable("FRAMEPLAYER_AVALONIA_SKIP_RUNTIME_BOOTSTRAP");
             Environment.SetEnvironmentVariable("FRAMEPLAYER_AVALONIA_SKIP_RUNTIME_BOOTSTRAP", "1");
-            _session = HeadlessUnitTestSession.StartNew(typeof(App));
+            _session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp));
         }
 
         public void Run(Action action)
@@ -134,6 +136,21 @@ namespace FramePlayer.Avalonia.Tests
             {
                 Environment.SetEnvironmentVariable("FRAMEPLAYER_AVALONIA_SKIP_RUNTIME_BOOTSTRAP", _previousSkipRuntimeBootstrap);
             }
+        }
+    }
+
+    public static class HeadlessTestApp
+    {
+        public static AppBuilder BuildAvaloniaApp()
+        {
+            return AppBuilder.Configure<App>()
+                .UseSkia()
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions
+                {
+                    UseHeadlessDrawing = false
+                })
+                .WithInterFont()
+                .LogToTrace();
         }
     }
 }

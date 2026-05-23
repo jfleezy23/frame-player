@@ -7,10 +7,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.VisualTree;
 using FramePlayer.Core.Abstractions;
 using FramePlayer.Core.Events;
@@ -369,6 +371,44 @@ namespace FramePlayer.Avalonia.Tests
                     _fixture.Run(() => window.Close());
                 }
             }
+        }
+
+        [Fact]
+        public void PrimaryVideoSurface_RenderedFrameChangesWhenSameSizedBitmapUpdates()
+        {
+            _fixture.Run(() =>
+            {
+                var window = new MainWindow
+                {
+                    Width = 960,
+                    Height = 720
+                };
+
+                try
+                {
+                    window.Show();
+                    var primarySurface = RequireControl<Image>(window, "CustomVideoSurface");
+                    using var firstFrame = CreateFrameBuffer(16, 16, red: 0xC0, green: 0x20, blue: 0x20);
+                    using var secondFrame = CreateFrameBuffer(16, 16, red: 0x20, green: 0xC0, blue: 0x20);
+
+                    InvokePrivate(window, "SetPaneBitmap", ParsePane("Primary"), firstFrame);
+                    var firstColor = SampleRenderedSurfaceColor(window, primarySurface);
+
+                    InvokePrivate(window, "SetPaneBitmap", ParsePane("Primary"), secondFrame);
+                    var secondColor = SampleRenderedSurfaceColor(window, primarySurface);
+
+                    Assert.True(
+                        secondColor.Green > firstColor.Green + 64,
+                        "The rendered video surface did not repaint after a same-sized playback bitmap update.");
+                    Assert.True(
+                        firstColor.Red > secondColor.Red + 64,
+                        "The rendered video surface did not replace the first frame's visible pixels.");
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
         }
 
         [Fact]
@@ -1278,14 +1318,58 @@ namespace FramePlayer.Avalonia.Tests
             return Assert.IsType<WriteableBitmap>(image.Source);
         }
 
+        private static RenderedColor SampleRenderedSurfaceColor(Window window, Control surface)
+        {
+            using var renderedFrame = window.CaptureRenderedFrame();
+            Assert.NotNull(renderedFrame);
+
+            var surfaceCenter = new Point(surface.Bounds.Width / 2d, surface.Bounds.Height / 2d);
+            var windowPoint = surface.TranslatePoint(surfaceCenter, window);
+            Assert.NotNull(windowPoint);
+
+            var x = Math.Clamp((int)Math.Round(windowPoint.Value.X), 0, renderedFrame.PixelSize.Width - 1);
+            var y = Math.Clamp((int)Math.Round(windowPoint.Value.Y), 0, renderedFrame.PixelSize.Height - 1);
+            return ReadBitmapPixel(renderedFrame, x, y);
+        }
+
+        private static RenderedColor ReadBitmapPixel(Bitmap bitmap, int x, int y)
+        {
+            var bytes = new byte[bitmap.PixelSize.Width * bitmap.PixelSize.Height * 4];
+            var handle = GCHandle.Alloc(bytes, GCHandleType.Pinned);
+            try
+            {
+                using var framebuffer = new ArrayLockedFramebuffer(
+                    handle.AddrOfPinnedObject(),
+                    bitmap.PixelSize,
+                    bitmap.PixelSize.Width * 4);
+                bitmap.CopyPixels(framebuffer);
+            }
+            finally
+            {
+                handle.Free();
+            }
+
+            var offset = (y * bitmap.PixelSize.Width * 4) + (x * 4);
+            return new RenderedColor(
+                bytes[offset + 2],
+                bytes[offset + 1],
+                bytes[offset],
+                bytes[offset + 3]);
+        }
+
         private static DecodedFrameBuffer CreateFrameBuffer(int width, int height)
+        {
+            return CreateFrameBuffer(width, height, red: 0xC0, green: 0x80, blue: 0x40);
+        }
+
+        private static DecodedFrameBuffer CreateFrameBuffer(int width, int height, byte red, byte green, byte blue)
         {
             var pixels = new byte[width * height * 4];
             for (var index = 0; index < pixels.Length; index += 4)
             {
-                pixels[index] = 0x40;
-                pixels[index + 1] = 0x80;
-                pixels[index + 2] = 0xC0;
+                pixels[index] = blue;
+                pixels[index + 1] = green;
+                pixels[index + 2] = red;
                 pixels[index + 3] = 0xFF;
             }
 
@@ -1582,6 +1666,60 @@ namespace FramePlayer.Avalonia.Tests
         {
             var solid = Assert.IsAssignableFrom<ISolidColorBrush>(brush);
             Assert.Equal(Color.Parse(expectedColor), solid.Color);
+        }
+
+        private readonly struct RenderedColor
+        {
+            public RenderedColor(byte red, byte green, byte blue, byte alpha)
+            {
+                Red = red;
+                Green = green;
+                Blue = blue;
+                Alpha = alpha;
+            }
+
+            public byte Red { get; }
+
+            public byte Green { get; }
+
+            public byte Blue { get; }
+
+            public byte Alpha { get; }
+        }
+
+        private sealed class ArrayLockedFramebuffer : ILockedFramebuffer
+        {
+            public ArrayLockedFramebuffer(IntPtr address, PixelSize size, int rowBytes)
+            {
+                Address = address;
+                Size = size;
+                RowBytes = rowBytes;
+            }
+
+            public IntPtr Address { get; }
+
+            public PixelSize Size { get; }
+
+            public int RowBytes { get; }
+
+            public Vector Dpi
+            {
+                get { return new Vector(96d, 96d); }
+            }
+
+            public PixelFormat Format
+            {
+                get { return PixelFormat.Bgra8888; }
+            }
+
+            public AlphaFormat AlphaFormat
+            {
+                get { return AlphaFormat.Premul; }
+            }
+
+            public void Dispose()
+            {
+            }
         }
 
         private static string ReadRepositoryFile(params string[] pathParts)
