@@ -129,3 +129,40 @@ Use this section only for the Windows Avalonia preview release line. Do not use 
 - Attach the Windows x64 preview ZIP and SHA256 file to the preview release and the unified current-download release page.
 - Confirm the stable `v*` release remains the latest release.
 - Do not rename, remove, or replace the stable Windows WPF artifact.
+### Unified Windows v2.0 Release Checklist
+
+Use this section to package, sign, and release the modern unified Avalonia application for Windows using a self-contained ZIP and Microsoft Trusted Signing.
+
+### Pre-Ship Repo Hygiene
+
+- Confirm the release branch was created from the current origin/main (which now represents the unified cross-platform path).
+- Ensure Azure CLI is authenticated (`az login`) with the identity that has access to the Microsoft Trusted Signing account (`frameplayersigningjflow`).
+- Ensure the `dotnet sign` global tool is installed: `dotnet tool install --global sign --prerelease`.
+
+### Validation Gate
+
+- Build the Windows Avalonia project and run tests:
+  - `dotnet build src\FramePlayer.Avalonia\FramePlayer.Avalonia.csproj -c Release`
+  - `dotnet test tests\FramePlayer.Avalonia.Tests\FramePlayer.Avalonia.Tests.csproj -c Release`
+
+### Distribution & Signing Gate
+
+- Build the self-contained Windows portable package (do not use MSIX):
+  - `pwsh -ExecutionPolicy Bypass -File scripts\Package-UnifiedWindowsPreview.ps1 -Version "2.0.0.0"`
+- Sign all payload binaries (`.exe` and `.dll`) inside the publish directory using the `dotnet sign code artifact-signing` provider before distributing the ZIP. Move into the publish directory to avoid pathing errors:
+  - `cd "artifacts\2.0.0\windows-publish"`
+  - `sign code artifact-signing "FramePlayer.Avalonia.exe" "*.dll" "ffmpeg-export\*.dll" --artifact-signing-endpoint "https://wus2.codesigning.azure.net/" --artifact-signing-account "frameplayersigningjflow" --artifact-signing-certificate-profile "frameplayerpublic"`
+- Verify the final production signature on the main executable:
+  - `Get-AuthenticodeSignature "FramePlayer.Avalonia.exe" | Format-List`
+  - Ensure the Status is Valid and the Issuer reflects the Microsoft Trusted Signing CA (e.g., Microsoft ID Verified CS AOC CA).
+- Re-zip the fully signed binaries and generate the SHA256 checksum:
+  - `cd ..\..\..`
+  - `Remove-Item -Force "artifacts\2.0.0\FramePlayer-Windows-x64-2.0.0.zip", "artifacts\2.0.0\FramePlayer-Windows-x64-2.0.0.zip.sha256" -ErrorAction SilentlyContinue`
+  - `Compress-Archive -Path "artifacts\2.0.0\windows-publish\*" -DestinationPath "artifacts\2.0.0\FramePlayer-Windows-x64-2.0.0.zip" -Force`
+  - `$hash = Get-FileHash -Algorithm SHA256 "artifacts\2.0.0\FramePlayer-Windows-x64-2.0.0.zip"`
+  - `"$($hash.Hash.ToLowerInvariant())  FramePlayer-Windows-x64-2.0.0.zip" | Set-Content -NoNewline -Encoding ascii "artifacts\2.0.0\FramePlayer-Windows-x64-2.0.0.zip.sha256"`
+
+### Publish Gate
+
+- Colocate the signed Windows `.zip` artifact and its `.sha256` with the macOS release artifacts on the existing unified GitHub release.
+  - `gh release upload v2.0.0 "artifacts\2.0.0\FramePlayer-Windows-x64-2.0.0.zip" "artifacts\2.0.0\FramePlayer-Windows-x64-2.0.0.zip.sha256"`
