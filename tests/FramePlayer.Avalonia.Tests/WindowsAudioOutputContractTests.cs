@@ -60,8 +60,9 @@ namespace FramePlayer.Avalonia.Tests
             Assert.Contains("var resumePlayback = engine.IsPlaying;", mainWindowSource, StringComparison.Ordinal);
             Assert.Contains("await engine.SeekToTimeAsync(target);", mainWindowSource, StringComparison.Ordinal);
             Assert.Contains("await engine.PlayAsync();", mainWindowSource, StringComparison.Ordinal);
-            Assert.Contains("await SeekMasterTimelineAsync(TimeSpan.FromSeconds(PositionSlider.Value));", mainWindowSource, StringComparison.Ordinal);
-            Assert.Contains("await SeekAllPaneToTimePreservingPlaybackAsync(target);", mainWindowSource, StringComparison.Ordinal);
+            Assert.Contains("QueueSliderScrub(TimeSpan.FromSeconds(PositionSlider.Value));", mainWindowSource, StringComparison.Ordinal);
+            Assert.Contains("await SeekMasterTimelineAsync(_pendingSliderScrubTarget, _sliderScrubCts.Token);", mainWindowSource, StringComparison.Ordinal);
+            Assert.Contains("await SeekAllPaneToTimePreservingPlaybackAsync(target, cancellationToken);", mainWindowSource, StringComparison.Ordinal);
         }
 
         private static string ReadRepositoryFile(params string[] pathParts)

@@ -8,12 +8,7 @@ namespace FramePlayer.Avalonia.Services
 {
     internal static class AvaloniaFrameBufferPresenter
     {
-        public static WriteableBitmap? CreateBitmap(DecodedFrameBuffer frameBuffer)
-        {
-            return CreateBitmap(frameBuffer, null);
-        }
-
-        public static WriteableBitmap? CreateBitmap(DecodedFrameBuffer frameBuffer, PaneViewportSnapshot? viewportSnapshot)
+        public static WriteableBitmap? PresentBitmap(DecodedFrameBuffer frameBuffer, PaneViewportSnapshot? viewportSnapshot, ref WriteableBitmap? reusableBitmap)
         {
             if (frameBuffer == null || !frameBuffer.HasPixelBuffer)
             {
@@ -27,11 +22,7 @@ namespace FramePlayer.Avalonia.Services
             }
 
             var crop = ResolveCrop(descriptor.PixelWidth, descriptor.PixelHeight, viewportSnapshot);
-            var bitmap = new WriteableBitmap(
-                new PixelSize(crop.Width, crop.Height),
-                new Vector(96d, 96d),
-                PixelFormat.Bgra8888,
-                AlphaFormat.Premul);
+            var bitmap = ResolveOrCreateBitmap(crop.Width, crop.Height, ref reusableBitmap);
 
             using (var locked = bitmap.Lock())
             {
@@ -51,7 +42,40 @@ namespace FramePlayer.Avalonia.Services
                 }
             }
 
+            reusableBitmap = bitmap;
             return bitmap;
+        }
+
+        public static WriteableBitmap? CreateBitmap(DecodedFrameBuffer frameBuffer)
+        {
+            WriteableBitmap? unused = null;
+            return PresentBitmap(frameBuffer, null, ref unused);
+        }
+
+        public static WriteableBitmap? CreateBitmap(DecodedFrameBuffer frameBuffer, PaneViewportSnapshot? viewportSnapshot)
+        {
+            WriteableBitmap? unused = null;
+            return PresentBitmap(frameBuffer, viewportSnapshot, ref unused);
+        }
+
+        private static WriteableBitmap ResolveOrCreateBitmap(int width, int height, ref WriteableBitmap? existing)
+        {
+            if (existing != null &&
+                existing.PixelSize.Width == width &&
+                existing.PixelSize.Height == height)
+            {
+                return existing;
+            }
+
+            var previous = existing;
+            existing = new WriteableBitmap(
+                new PixelSize(width, height),
+                new Vector(96d, 96d),
+                PixelFormat.Bgra8888,
+                AlphaFormat.Premul);
+
+            previous?.Dispose();
+            return existing;
         }
 
         private static unsafe void CopyRows(

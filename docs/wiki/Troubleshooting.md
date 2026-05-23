@@ -17,9 +17,8 @@
 
 Recent files are stored locally and protected at rest by platform storage:
 
-- Windows: user-profile DPAPI-backed storage.
-- Unified Preview on Windows: `%LOCALAPPDATA%\FramePlayer.AvaloniaPreview`, separate from Windows stable.
-- Unified Preview on macOS: macOS application support storage.
+- Windows: `%LOCALAPPDATA%\FramePlayer.AvaloniaPreview`.
+- macOS: macOS application support storage.
 
 If recent files do not appear, open a file successfully, close the app, relaunch, and check `File > Open Recent`.
 
@@ -29,4 +28,4 @@ Use `File > Export Diagnostics` when reporting a playback, seek, export, or runt
 
 ## macOS Gatekeeper
 
-The published Unified Preview macOS artifact is Developer ID signed, notarized, and stapled. If Gatekeeper blocks a locally rebuilt app, confirm whether it was signed with Developer ID or only Apple Development signing.
+The published macOS artifact is Developer ID signed, notarized, and stapled. If Gatekeeper blocks a locally rebuilt app, confirm whether it was signed with Developer ID or only Apple Development signing.

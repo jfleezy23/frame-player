@@ -7,10 +7,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Platform;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using FramePlayer.Core.Abstractions;
 using FramePlayer.Core.Events;
@@ -286,6 +289,48 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
+        public async Task CompareMode_DisableHidesPaneBeforePauseCompletes()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var compareMode = RequireControl<CheckBox>(window, "CompareModeCheckBox");
+                    var comparePaneBorder = RequireControl<Border>(window, "ComparePaneBorder");
+                    var primaryPaneHeader = RequireControl<Border>(window, "PrimaryPaneHeaderBorder");
+                    var pauseCompletion = new TaskCompletionSource<bool>();
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        PauseCompletion = pauseCompletion
+                    };
+
+                    compareMode.IsChecked = true;
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+
+                    compareMode.IsChecked = false;
+
+                    Assert.False(comparePaneBorder.IsVisible);
+                    Assert.False(primaryPaneHeader.IsVisible);
+                    Assert.Equal(1, compareEngine.PauseCallCount);
+
+                    compareMode.IsChecked = true;
+                    pauseCompletion.SetResult(true);
+                    await Task.Yield();
+
+                    Assert.True(comparePaneBorder.IsVisible);
+                    Assert.True(primaryPaneHeader.IsVisible);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
         public void CompareFramePresented_WhenCompareHidden_DoesNotReplaceCompareBitmap()
         {
             MainWindow? window = null;
@@ -327,6 +372,134 @@ namespace FramePlayer.Avalonia.Tests
                     _fixture.Run(() => window.Close());
                 }
             }
+        }
+
+        [Fact]
+        public void PrimaryVideoSurface_RenderedFrameChangesWhenSameSizedBitmapUpdates()
+        {
+            _fixture.Run(() =>
+            {
+                var window = new MainWindow
+                {
+                    Width = 960,
+                    Height = 720
+                };
+
+                try
+                {
+                    window.Show();
+                    var primarySurface = RequireControl<Image>(window, "CustomVideoSurface");
+                    using var firstFrame = CreateFrameBuffer(16, 16, red: 0xC0, green: 0x20, blue: 0x20);
+                    using var secondFrame = CreateFrameBuffer(16, 16, red: 0x20, green: 0xC0, blue: 0x20);
+
+                    InvokePrivate(window, "SetPaneBitmap", ParsePane("Primary"), firstFrame);
+                    var firstColor = SampleRenderedSurfaceColor(window, primarySurface);
+
+                    InvokePrivate(window, "SetPaneBitmap", ParsePane("Primary"), secondFrame);
+                    var secondColor = SampleRenderedSurfaceColor(window, primarySurface);
+
+                    Assert.True(
+                        secondColor.Green > firstColor.Green + 64,
+                        "The rendered video surface did not repaint after a same-sized playback bitmap update.");
+                    Assert.True(
+                        firstColor.Red > secondColor.Red + 64,
+                        "The rendered video surface did not replace the first frame's visible pixels.");
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public void FramePresented_DoesNotRefreshCacheStatusEveryFrame()
+        {
+            var mainWindowSource = ReadRepositoryFile(
+                "src",
+                "FramePlayer.Avalonia",
+                "Views",
+                "MainWindow.axaml.cs");
+            var primaryFramePresentedMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private void PrimaryEngine_FramePresented(",
+                "private void CompareEngine_FramePresented(");
+            var compareFramePresentedMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private void CompareEngine_FramePresented(",
+                "private void QueueFramePresentation(");
+
+            Assert.Contains("QueueFramePresentation(Pane.Primary, e.FrameBuffer);", primaryFramePresentedMethod, StringComparison.Ordinal);
+            Assert.Contains("QueueFramePresentation(Pane.Compare, e.FrameBuffer);", compareFramePresentedMethod, StringComparison.Ordinal);
+            Assert.DoesNotContain("UpdateCacheStatusFromEngine", primaryFramePresentedMethod, StringComparison.Ordinal);
+            Assert.DoesNotContain("UpdateCacheStatusFromEngine", compareFramePresentedMethod, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void PlaybackStateChanged_QueuesCacheStatusRefreshWithoutImmediateUpdate()
+        {
+            var mainWindowSource = ReadRepositoryFile(
+                "src",
+                "FramePlayer.Avalonia",
+                "Views",
+                "MainWindow.axaml.cs");
+            var primaryStateChangedMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private void PrimaryEngine_StateChanged(",
+                "private void CompareEngine_StateChanged(");
+            var compareStateChangedMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private void CompareEngine_StateChanged(",
+                "private void PrimaryEngine_FramePresented(");
+            var queueRefreshMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private void RefreshCacheStatusAfterState(",
+                "private void QueueCacheStatusRefresh()");
+            var queueTimerMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private void QueueCacheStatusRefresh()",
+                "private void CacheStatusRefreshTimer_Tick(");
+
+            Assert.Contains("RefreshCacheStatusAfterState(e);", primaryStateChangedMethod, StringComparison.Ordinal);
+            Assert.Contains("RefreshCacheStatusAfterState(e);", compareStateChangedMethod, StringComparison.Ordinal);
+            Assert.DoesNotContain("UpdateCacheStatusFromEngine", primaryStateChangedMethod, StringComparison.Ordinal);
+            Assert.DoesNotContain("UpdateCacheStatusFromEngine", compareStateChangedMethod, StringComparison.Ordinal);
+            Assert.Contains("QueueCacheStatusRefresh();", queueRefreshMethod, StringComparison.Ordinal);
+            Assert.Contains("_cacheStatusRefreshTimer.Start();", queueTimerMethod, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void PlaybackStateChanged_PreservesErrorStatusInsteadOfQueueingCacheRefresh()
+        {
+            _fixture.Run(() =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var cacheStatus = RequireControl<TextBlock>(window, "CacheStatusTextBlock");
+                    var state = new VideoReviewEngineStateChangedEventArgs(
+                        isMediaOpen: true,
+                        isPlaying: false,
+                        currentFilePath: string.Empty,
+                        lastErrorMessage: "Decoder failed",
+                        mediaInfo: VideoMediaInfo.Empty,
+                        position: ReviewPosition.Empty);
+
+                    InvokePrivate(window, "QueueCacheStatusRefresh");
+                    InvokePrivate(window, "ApplyState", ParsePane("Primary"), state);
+                    InvokePrivate(window, "RefreshCacheStatusAfterState", state);
+
+                    var cacheRefreshTimer = GetPrivateField<DispatcherTimer>(window, "_cacheStatusRefreshTimer")
+                        ?? throw new InvalidOperationException("Missing cache refresh timer.");
+                    Assert.Equal("Decoder failed", cacheStatus.Text);
+                    Assert.False(GetPrivateField<bool>(window, "_hasPendingCacheStatusRefresh"));
+                    Assert.False(cacheRefreshTimer.IsEnabled);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
         }
 
         [Fact]
@@ -426,7 +599,7 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
-        public void MainSharedTransport_MasterTimelineSeeksBothPanesBeforeResuming()
+        public void MainSharedTransport_MasterTimelineQueuesThrottledSeekBeforeResuming()
         {
             var mainWindowSource = ReadRepositoryFile(
                 "src",
@@ -435,12 +608,20 @@ namespace FramePlayer.Avalonia.Tests
                 "MainWindow.axaml.cs");
             var masterSliderMethod = ExtractMethodBody(
                 mainWindowSource,
-                "private async void PositionSlider_ValueChanged(",
-                "private async void PanePositionSlider_ValueChanged(");
+                "private void PositionSlider_ValueChanged(",
+                "private void QueueSliderScrub(");
+            var scrubTimerMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private async void SliderScrubTimer_Tick(",
+                "private void PanePositionSlider_ValueChanged(");
             var commitSliderMethod = ExtractMethodBody(
                 mainWindowSource,
                 "private async Task CommitSliderSeekAsync(",
-                "private async void PositionSlider_ValueChanged(");
+                "private void PositionSlider_ValueChanged(");
+            var cancelQueuedScrubsMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private void CancelQueuedSliderScrubs(",
+                "private async void PaneSliderScrubTimer_Tick(");
             var masterSeekMethod = ExtractMethodBody(
                 mainWindowSource,
                 "private async Task SeekMasterTimelineAsync(",
@@ -450,16 +631,98 @@ namespace FramePlayer.Avalonia.Tests
                 "private async Task SeekAllPaneToTimesPreservingPlaybackAsync(",
                 "private static TimeSpan ClampSeekTarget(");
 
-            Assert.Contains("await SeekMasterTimelineAsync(", masterSliderMethod, StringComparison.Ordinal);
+            Assert.Contains("QueueSliderScrub(TimeSpan.FromSeconds(PositionSlider.Value));", masterSliderMethod, StringComparison.Ordinal);
+            Assert.Contains("await SeekMasterTimelineAsync(_pendingSliderScrubTarget, _sliderScrubCts.Token);", scrubTimerMethod, StringComparison.Ordinal);
+            Assert.Contains("CancelQueuedSliderScrubs();", commitSliderMethod, StringComparison.Ordinal);
             Assert.Contains("await SeekMasterTimelineAsync(target);", commitSliderMethod, StringComparison.Ordinal);
+            Assert.Contains("_hasPendingSliderScrubTarget = false;", cancelQueuedScrubsMethod, StringComparison.Ordinal);
+            Assert.Contains("_hasPendingPaneSliderScrubTarget = false;", cancelQueuedScrubsMethod, StringComparison.Ordinal);
+            Assert.Contains("_sliderScrubTimer.Stop();", cancelQueuedScrubsMethod, StringComparison.Ordinal);
+            Assert.Contains("_paneSliderScrubTimer.Stop();", cancelQueuedScrubsMethod, StringComparison.Ordinal);
             Assert.Contains("if (IsAllPaneTransportEnabled)", masterSeekMethod, StringComparison.Ordinal);
-            Assert.Contains("await SeekAllPaneToTimePreservingPlaybackAsync(target);", masterSeekMethod, StringComparison.Ordinal);
-            Assert.Contains("await Task.WhenAll(", allPaneSeekMethod, StringComparison.Ordinal);
-            Assert.Contains("Task.Run(() => _primaryEngine.SeekToTimeAsync(primaryTarget))", allPaneSeekMethod, StringComparison.Ordinal);
-            Assert.Contains("Task.Run(() => compareEngine.SeekToTimeAsync(compareTarget))", allPaneSeekMethod, StringComparison.Ordinal);
+            Assert.Contains("await SeekAllPaneToTimePreservingPlaybackAsync(target, cancellationToken);", masterSeekMethod, StringComparison.Ordinal);
+            var tryIndex = allPaneSeekMethod.IndexOf("try", StringComparison.Ordinal);
+            var seekIndex = allPaneSeekMethod.IndexOf("await Task.WhenAll(", StringComparison.Ordinal);
+            var finallyIndex = allPaneSeekMethod.IndexOf("finally", StringComparison.Ordinal);
+            var resumeIndex = allPaneSeekMethod.IndexOf("var resumeTasks", StringComparison.Ordinal);
+            Assert.NotEqual(-1, tryIndex);
+            Assert.NotEqual(-1, seekIndex);
+            Assert.NotEqual(-1, finallyIndex);
+            Assert.NotEqual(-1, resumeIndex);
+            Assert.Contains("Task.Run(() => _primaryEngine.SeekToTimeAsync(primaryTarget, cancellationToken), cancellationToken)", allPaneSeekMethod, StringComparison.Ordinal);
+            Assert.Contains("Task.Run(() => compareEngine.SeekToTimeAsync(compareTarget, cancellationToken), cancellationToken)", allPaneSeekMethod, StringComparison.Ordinal);
+            Assert.Contains("Task.Run(() => _primaryEngine.PlayAsync(), CancellationToken.None)", allPaneSeekMethod, StringComparison.Ordinal);
+            Assert.Contains("Task.Run(() => compareEngine.PlayAsync(), CancellationToken.None)", allPaneSeekMethod, StringComparison.Ordinal);
+            Assert.DoesNotContain("Task.Run(() => _primaryEngine.PlayAsync(), cancellationToken)", allPaneSeekMethod, StringComparison.Ordinal);
+            Assert.DoesNotContain("Task.Run(() => compareEngine.PlayAsync(), cancellationToken)", allPaneSeekMethod, StringComparison.Ordinal);
+            Assert.True(tryIndex < seekIndex);
+            Assert.True(seekIndex < finallyIndex);
+            Assert.True(finallyIndex < resumeIndex);
+        }
+
+        [Fact]
+        public async Task MainSharedTransport_CanceledSharedSeekRestoresPlayingPanes()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true
+                    };
+                    using var seekCancellation = new CancellationTokenSource();
+
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    seekCancellation.Cancel();
+
+                    await Assert.ThrowsAsync<TaskCanceledException>(
+                        async () => await (Task)InvokePrivate(
+                            window,
+                            "SeekAllPaneToTimesPreservingPlaybackAsync",
+                            TimeSpan.FromSeconds(1),
+                            TimeSpan.FromSeconds(2),
+                            seekCancellation.Token));
+
+                    Assert.True(primaryEngine.IsPlaying);
+                    Assert.True(compareEngine.IsPlaying);
+                    Assert.Equal(1, primaryEngine.PauseCallCount);
+                    Assert.Equal(1, compareEngine.PauseCallCount);
+                    Assert.Equal(1, primaryEngine.PlayCallCount);
+                    Assert.Equal(1, compareEngine.PlayCallCount);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public void CloseVideosAsync_CancelsQueuedSliderScrubsBeforeClosingEngines()
+        {
+            var mainWindowSource = ReadRepositoryFile(
+                "src",
+                "FramePlayer.Avalonia",
+                "Views",
+                "MainWindow.axaml.cs");
+            var closeVideosMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private async Task CloseVideosAsync()",
+                "private async void PlayPauseButton_Click(");
+
+            Assert.Contains("CancelQueuedSliderScrubs();", closeVideosMethod, StringComparison.Ordinal);
             Assert.True(
-                allPaneSeekMethod.IndexOf("await Task.WhenAll(", StringComparison.Ordinal) <
-                allPaneSeekMethod.IndexOf("var resumeTasks", StringComparison.Ordinal));
+                closeVideosMethod.IndexOf("CancelQueuedSliderScrubs();", StringComparison.Ordinal) <
+                closeVideosMethod.IndexOf("await _primaryEngine.CloseAsync();", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -487,6 +750,25 @@ namespace FramePlayer.Avalonia.Tests
             Assert.True(
                 allPaneFrameSeekMethod.IndexOf("await Task.WhenAll(", StringComparison.Ordinal) <
                 allPaneFrameSeekMethod.IndexOf("var resumeTasks", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void PaneFrameStep_CancelsQueuedSliderScrubsBeforeStepping()
+        {
+            var mainWindowSource = ReadRepositoryFile(
+                "src",
+                "FramePlayer.Avalonia",
+                "Views",
+                "MainWindow.axaml.cs");
+            var paneStepMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private async Task StepFrameAsync(int delta, Pane pane)",
+                "private Pane ResolvePaneFromSender(");
+
+            Assert.Contains("CancelQueuedSliderScrubs();", paneStepMethod, StringComparison.Ordinal);
+            Assert.True(
+                paneStepMethod.IndexOf("CancelQueuedSliderScrubs();", StringComparison.Ordinal) <
+                paneStepMethod.IndexOf("var engine = GetEngine(pane);", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -1063,6 +1345,39 @@ namespace FramePlayer.Avalonia.Tests
             });
         }
 
+        [Fact]
+        public async Task CloseVideosAsync_ReleasesReusablePaneBitmaps()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var primarySurface = RequireControl<Image>(window, "CustomVideoSurface");
+                    var compareSurface = RequireControl<Image>(window, "CompareVideoSurface");
+                    using var primaryFrame = CreateFrameBuffer(8, 4);
+                    using var compareFrame = CreateFrameBuffer(8, 4);
+
+                    InvokePrivate(window, "SetPaneBitmap", ParsePane("Primary"), primaryFrame);
+                    InvokePrivate(window, "SetPaneBitmap", ParsePane("Compare"), compareFrame);
+
+                    Assert.NotNull(GetPrivateField<WriteableBitmap?>(window, "_primaryReusableBitmap"));
+                    Assert.NotNull(GetPrivateField<WriteableBitmap?>(window, "_compareReusableBitmap"));
+
+                    await (Task)InvokePrivate(window, "CloseVideosAsync");
+
+                    Assert.Null(primarySurface.Source);
+                    Assert.Null(compareSurface.Source);
+                    Assert.Null(GetPrivateField<WriteableBitmap?>(window, "_primaryReusableBitmap"));
+                    Assert.Null(GetPrivateField<WriteableBitmap?>(window, "_compareReusableBitmap"));
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
         private static PointerWheelEventArgs CreatePointerWheelChangedEvent(Control source, double deltaY)
         {
             return new PointerWheelEventArgs(
@@ -1100,14 +1415,58 @@ namespace FramePlayer.Avalonia.Tests
             return Assert.IsType<WriteableBitmap>(image.Source);
         }
 
+        private static RenderedColor SampleRenderedSurfaceColor(Window window, Control surface)
+        {
+            using var renderedFrame = window.CaptureRenderedFrame();
+            Assert.NotNull(renderedFrame);
+
+            var surfaceCenter = new Point(surface.Bounds.Width / 2d, surface.Bounds.Height / 2d);
+            var windowPoint = surface.TranslatePoint(surfaceCenter, window);
+            Assert.NotNull(windowPoint);
+
+            var x = Math.Clamp((int)Math.Round(windowPoint.Value.X), 0, renderedFrame.PixelSize.Width - 1);
+            var y = Math.Clamp((int)Math.Round(windowPoint.Value.Y), 0, renderedFrame.PixelSize.Height - 1);
+            return ReadBitmapPixel(renderedFrame, x, y);
+        }
+
+        private static RenderedColor ReadBitmapPixel(Bitmap bitmap, int x, int y)
+        {
+            var bytes = new byte[bitmap.PixelSize.Width * bitmap.PixelSize.Height * 4];
+            var handle = GCHandle.Alloc(bytes, GCHandleType.Pinned);
+            try
+            {
+                using var framebuffer = new ArrayLockedFramebuffer(
+                    handle.AddrOfPinnedObject(),
+                    bitmap.PixelSize,
+                    bitmap.PixelSize.Width * 4);
+                bitmap.CopyPixels(framebuffer);
+            }
+            finally
+            {
+                handle.Free();
+            }
+
+            var offset = (y * bitmap.PixelSize.Width * 4) + (x * 4);
+            return new RenderedColor(
+                bytes[offset + 2],
+                bytes[offset + 1],
+                bytes[offset],
+                bytes[offset + 3]);
+        }
+
         private static DecodedFrameBuffer CreateFrameBuffer(int width, int height)
+        {
+            return CreateFrameBuffer(width, height, red: 0xC0, green: 0x80, blue: 0x40);
+        }
+
+        private static DecodedFrameBuffer CreateFrameBuffer(int width, int height, byte red, byte green, byte blue)
         {
             var pixels = new byte[width * height * 4];
             for (var index = 0; index < pixels.Length; index += 4)
             {
-                pixels[index] = 0x40;
-                pixels[index + 1] = 0x80;
-                pixels[index + 2] = 0xC0;
+                pixels[index] = blue;
+                pixels[index + 1] = green;
+                pixels[index + 2] = red;
                 pixels[index + 3] = 0xFF;
             }
 
@@ -1311,6 +1670,13 @@ namespace FramePlayer.Avalonia.Tests
             field.SetValue(window, value);
         }
 
+        private static T? GetPrivateField<T>(MainWindow window, string fieldName)
+        {
+            var field = typeof(MainWindow).GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic)
+                ?? throw new MissingFieldException(typeof(MainWindow).FullName, fieldName);
+            return (T?)field.GetValue(window);
+        }
+
         private sealed class TestVideoReviewEngine : IVideoReviewEngine
         {
             public bool IsMediaOpen { get; set; }
@@ -1319,6 +1685,8 @@ namespace FramePlayer.Avalonia.Tests
 
             public string CurrentFilePath { get; set; } = string.Empty;
 
+            public TaskCompletionSource<bool>? PauseCompletion { get; set; }
+
             public string LastErrorMessage { get; set; } = string.Empty;
 
             public VideoMediaInfo MediaInfo { get; set; } = VideoMediaInfo.Empty;
@@ -1326,6 +1694,8 @@ namespace FramePlayer.Avalonia.Tests
             public ReviewPosition Position { get; set; } = ReviewPosition.Empty;
 
             public int PauseCallCount { get; private set; }
+
+            public int PlayCallCount { get; private set; }
 
             public event EventHandler<VideoReviewEngineStateChangedEventArgs> StateChanged
             {
@@ -1355,6 +1725,7 @@ namespace FramePlayer.Avalonia.Tests
 
             public Task PlayAsync()
             {
+                PlayCallCount++;
                 IsPlaying = true;
                 return Task.CompletedTask;
             }
@@ -1363,7 +1734,7 @@ namespace FramePlayer.Avalonia.Tests
             {
                 PauseCallCount++;
                 IsPlaying = false;
-                return Task.CompletedTask;
+                return PauseCompletion == null ? Task.CompletedTask : PauseCompletion.Task;
             }
 
             public Task<FrameStepResult> StepForwardAsync(CancellationToken cancellationToken = default(CancellationToken))
@@ -1395,6 +1766,60 @@ namespace FramePlayer.Avalonia.Tests
         {
             var solid = Assert.IsAssignableFrom<ISolidColorBrush>(brush);
             Assert.Equal(Color.Parse(expectedColor), solid.Color);
+        }
+
+        private readonly struct RenderedColor
+        {
+            public RenderedColor(byte red, byte green, byte blue, byte alpha)
+            {
+                Red = red;
+                Green = green;
+                Blue = blue;
+                Alpha = alpha;
+            }
+
+            public byte Red { get; }
+
+            public byte Green { get; }
+
+            public byte Blue { get; }
+
+            public byte Alpha { get; }
+        }
+
+        private sealed class ArrayLockedFramebuffer : ILockedFramebuffer
+        {
+            public ArrayLockedFramebuffer(IntPtr address, PixelSize size, int rowBytes)
+            {
+                Address = address;
+                Size = size;
+                RowBytes = rowBytes;
+            }
+
+            public IntPtr Address { get; }
+
+            public PixelSize Size { get; }
+
+            public int RowBytes { get; }
+
+            public Vector Dpi
+            {
+                get { return new Vector(96d, 96d); }
+            }
+
+            public PixelFormat Format
+            {
+                get { return PixelFormat.Bgra8888; }
+            }
+
+            public AlphaFormat AlphaFormat
+            {
+                get { return AlphaFormat.Premul; }
+            }
+
+            public void Dispose()
+            {
+            }
         }
 
         private static string ReadRepositoryFile(params string[] pathParts)
