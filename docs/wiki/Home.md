@@ -16,8 +16,8 @@ These are real app captures. The current checked-in shots show empty-state layou
 
 | Windows | macOS |
 | --- | --- |
-| ![Windows stable single-pane empty state](../assets/screenshots/windows-main.png) | ![Avalonia macOS preview single-pane empty state](../assets/screenshots/macos-main.png) |
-| ![Windows stable two-pane compare empty state](../assets/screenshots/windows-compare.png) | ![Avalonia macOS preview two-pane compare empty state](../assets/screenshots/macos-compare.png) |
+| ![Windows single-pane empty state](../assets/screenshots/windows-main.png) | ![macOS single-pane empty state](../assets/screenshots/macos-main.png) |
+| ![Windows two-pane compare empty state](../assets/screenshots/windows-compare.png) | ![macOS two-pane compare empty state](../assets/screenshots/macos-compare.png) |
 
 ## What To Read Next
 

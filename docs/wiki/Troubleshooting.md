@@ -17,7 +17,7 @@
 
 Recent files are stored locally and protected at rest by platform storage:
 
-- Windows: `%LOCALAPPDATA%\FramePlayer.AvaloniaPreview`.
+- Windows: `%LOCALAPPDATA%\FramePlayer.Avalonia`.
 - macOS: macOS application support storage.
 
 If recent files do not appear, open a file successfully, close the app, relaunch, and check `File > Open Recent`.
