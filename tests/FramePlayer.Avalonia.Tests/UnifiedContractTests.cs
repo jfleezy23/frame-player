@@ -105,7 +105,8 @@ namespace FramePlayer.Avalonia.Tests
         public void UnifiedWindowsPackage_PassesPackageVersionIntoAssemblyMetadata()
         {
             var root = FindRepositoryRoot();
-            var script = File.ReadAllText(Path.Combine(root, "scripts", "Package-UnifiedWindowsPreview.ps1"));
+            Assert.True(File.Exists(Path.Combine(root, "scripts", "Package-UnifiedWindows.ps1")));
+            var script = File.ReadAllText(Path.Combine(root, "scripts", "Package-UnifiedWindows.ps1"));
             var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "windows-ci.yml"));
 
             Assert.Contains("[string]$Version = \"2.0.0-rc.1\"", script, StringComparison.Ordinal);
