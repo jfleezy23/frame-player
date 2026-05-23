@@ -13,6 +13,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using FramePlayer.Core.Abstractions;
 using FramePlayer.Core.Events;
@@ -452,14 +453,53 @@ namespace FramePlayer.Avalonia.Tests
                 "private void PrimaryEngine_FramePresented(");
             var queueRefreshMethod = ExtractMethodBody(
                 mainWindowSource,
+                "private void RefreshCacheStatusAfterState(",
+                "private void QueueCacheStatusRefresh()");
+            var queueTimerMethod = ExtractMethodBody(
+                mainWindowSource,
                 "private void QueueCacheStatusRefresh()",
                 "private void CacheStatusRefreshTimer_Tick(");
 
-            Assert.Contains("QueueCacheStatusRefresh();", primaryStateChangedMethod, StringComparison.Ordinal);
-            Assert.Contains("QueueCacheStatusRefresh();", compareStateChangedMethod, StringComparison.Ordinal);
+            Assert.Contains("RefreshCacheStatusAfterState(e);", primaryStateChangedMethod, StringComparison.Ordinal);
+            Assert.Contains("RefreshCacheStatusAfterState(e);", compareStateChangedMethod, StringComparison.Ordinal);
             Assert.DoesNotContain("UpdateCacheStatusFromEngine", primaryStateChangedMethod, StringComparison.Ordinal);
             Assert.DoesNotContain("UpdateCacheStatusFromEngine", compareStateChangedMethod, StringComparison.Ordinal);
-            Assert.Contains("_cacheStatusRefreshTimer.Start();", queueRefreshMethod, StringComparison.Ordinal);
+            Assert.Contains("QueueCacheStatusRefresh();", queueRefreshMethod, StringComparison.Ordinal);
+            Assert.Contains("_cacheStatusRefreshTimer.Start();", queueTimerMethod, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void PlaybackStateChanged_PreservesErrorStatusInsteadOfQueueingCacheRefresh()
+        {
+            _fixture.Run(() =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var cacheStatus = RequireControl<TextBlock>(window, "CacheStatusTextBlock");
+                    var state = new VideoReviewEngineStateChangedEventArgs(
+                        isMediaOpen: true,
+                        isPlaying: false,
+                        currentFilePath: string.Empty,
+                        lastErrorMessage: "Decoder failed",
+                        mediaInfo: VideoMediaInfo.Empty,
+                        position: ReviewPosition.Empty);
+
+                    InvokePrivate(window, "QueueCacheStatusRefresh");
+                    InvokePrivate(window, "ApplyState", ParsePane("Primary"), state);
+                    InvokePrivate(window, "RefreshCacheStatusAfterState", state);
+
+                    var cacheRefreshTimer = GetPrivateField<DispatcherTimer>(window, "_cacheStatusRefreshTimer")
+                        ?? throw new InvalidOperationException("Missing cache refresh timer.");
+                    Assert.Equal("Decoder failed", cacheStatus.Text);
+                    Assert.False(GetPrivateField<bool>(window, "_hasPendingCacheStatusRefresh"));
+                    Assert.False(cacheRefreshTimer.IsEnabled);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
         }
 
         [Fact]
@@ -611,8 +651,8 @@ namespace FramePlayer.Avalonia.Tests
             Assert.NotEqual(-1, resumeIndex);
             Assert.Contains("Task.Run(() => _primaryEngine.SeekToTimeAsync(primaryTarget, cancellationToken), cancellationToken)", allPaneSeekMethod, StringComparison.Ordinal);
             Assert.Contains("Task.Run(() => compareEngine.SeekToTimeAsync(compareTarget, cancellationToken), cancellationToken)", allPaneSeekMethod, StringComparison.Ordinal);
-            Assert.Contains("Task.Run(() => _primaryEngine.PlayAsync())", allPaneSeekMethod, StringComparison.Ordinal);
-            Assert.Contains("Task.Run(() => compareEngine.PlayAsync())", allPaneSeekMethod, StringComparison.Ordinal);
+            Assert.Contains("Task.Run(() => _primaryEngine.PlayAsync(), CancellationToken.None)", allPaneSeekMethod, StringComparison.Ordinal);
+            Assert.Contains("Task.Run(() => compareEngine.PlayAsync(), CancellationToken.None)", allPaneSeekMethod, StringComparison.Ordinal);
             Assert.DoesNotContain("Task.Run(() => _primaryEngine.PlayAsync(), cancellationToken)", allPaneSeekMethod, StringComparison.Ordinal);
             Assert.DoesNotContain("Task.Run(() => compareEngine.PlayAsync(), cancellationToken)", allPaneSeekMethod, StringComparison.Ordinal);
             Assert.True(tryIndex < seekIndex);

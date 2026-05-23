@@ -1457,12 +1457,12 @@ namespace FramePlayer.Avalonia.Views
                 var resumeTasks = new List<Task>(2);
                 if (resumePrimaryPlayback && CanStartPlayback(_primaryEngine))
                 {
-                    resumeTasks.Add(Task.Run(() => _primaryEngine.PlayAsync()));
+                    resumeTasks.Add(Task.Run(() => _primaryEngine.PlayAsync(), CancellationToken.None));
                 }
 
                 if (resumeComparePlayback && CanStartPlayback(compareEngine))
                 {
-                    resumeTasks.Add(Task.Run(() => compareEngine.PlayAsync()));
+                    resumeTasks.Add(Task.Run(() => compareEngine.PlayAsync(), CancellationToken.None));
                 }
 
                 if (resumeTasks.Count > 0)
@@ -1965,7 +1965,7 @@ namespace FramePlayer.Avalonia.Views
             Dispatcher.UIThread.Post(() =>
             {
                 ApplyState(Pane.Primary, e);
-                QueueCacheStatusRefresh();
+                RefreshCacheStatusAfterState(e);
             });
         }
 
@@ -1975,7 +1975,7 @@ namespace FramePlayer.Avalonia.Views
             Dispatcher.UIThread.Post(() =>
             {
                 ApplyState(Pane.Compare, e);
-                QueueCacheStatusRefresh();
+                RefreshCacheStatusAfterState(e);
             });
         }
 
@@ -3400,6 +3400,18 @@ namespace FramePlayer.Avalonia.Views
                 ffmpegEngine.LastCacheRefillMilliseconds,
                 string.IsNullOrWhiteSpace(ffmpegEngine.LastCacheRefillMode) ? "none" : ffmpegEngine.LastCacheRefillMode);
             SetCacheStatus(message, tooltip);
+        }
+
+        private void RefreshCacheStatusAfterState(VideoReviewEngineStateChangedEventArgs state)
+        {
+            if (!string.IsNullOrWhiteSpace(state.LastErrorMessage))
+            {
+                _hasPendingCacheStatusRefresh = false;
+                _cacheStatusRefreshTimer.Stop();
+                return;
+            }
+
+            QueueCacheStatusRefresh();
         }
 
         private void QueueCacheStatusRefresh()
