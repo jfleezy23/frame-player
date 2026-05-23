@@ -22,20 +22,17 @@ Frame Player `v2.0` is the new unified, cross-platform release built on Avalonia
 
 ## Screenshots
 
-These screenshots are captured from the actual Windows stable app and the Avalonia macOS preview surface. They show the current empty-state layouts; loaded-video screenshots should replace or supplement them when clean corpus-backed captures are available.
+These screenshots are captured from the actual Windows app and the macOS app surface. They show the current empty-state layouts; loaded-video screenshots should replace or supplement them when clean corpus-backed captures are available.
 
-| Windows stable | Avalonia macOS preview |
+| Windows | macOS |
 | --- | --- |
-| ![Windows stable single-pane empty state](docs/assets/screenshots/windows-main.png) | ![Avalonia macOS preview single-pane empty state](docs/assets/screenshots/macos-main.png) |
-| ![Windows stable two-pane compare empty state](docs/assets/screenshots/windows-compare.png) | ![Avalonia macOS preview two-pane compare empty state](docs/assets/screenshots/macos-compare.png) |
+| ![Windows single-pane empty state](docs/assets/screenshots/windows-main.png) | ![macOS single-pane empty state](docs/assets/screenshots/macos-main.png) |
+| ![Windows two-pane compare empty state](docs/assets/screenshots/windows-compare.png) | ![macOS two-pane compare empty state](docs/assets/screenshots/macos-compare.png) |
 
 ## Documentation
 
 - [Wiki](https://github.com/jfleezy23/frame-player/wiki): user guide, screenshots, shortcuts, troubleshooting, build notes, validation, and security notes.
 - [All releases](https://github.com/jfleezy23/frame-player/releases): Current unified stable downloads and historical artifacts.
-- [Unified Preview 0.3.2 release note](docs/unified-preview-0.3.2.md): synchronized Windows/macOS artifacts, validation evidence, and release gates.
-- [macOS Preview 0.1.1 release note](docs/release-macos-preview-0.1.1.md): historical split-preview notarization and validation evidence.
-- [Windows Avalonia Preview 0.1.0 release note](docs/release-avalonia-windows-preview-0.1.0.md): historical split-preview validation evidence.
 - [Release checklist](docs/release-checklist.md): release validation steps.
 - [Security policy](SECURITY.md): supported versions and reporting process.
 - [Third-party notices](THIRD_PARTY_NOTICES.md): FFmpeg and runtime licensing notes.

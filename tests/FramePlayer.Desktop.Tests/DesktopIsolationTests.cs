@@ -9,7 +9,7 @@ using Xunit;
 
 namespace FramePlayer.Desktop.Tests
 {
-    public sealed class DesktopPreviewIsolationTests
+    public sealed class DesktopIsolationTests
     {
         [Fact]
         public void DesktopPreviewProject_IsSeparateFromShippingMacPreview()

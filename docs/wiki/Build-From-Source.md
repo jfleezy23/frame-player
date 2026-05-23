@@ -10,7 +10,7 @@ On Windows, restore the pinned playback and export runtimes before building or p
 .\scripts\Build-RustFfmpegProbe.ps1
 dotnet build .\src\FramePlayer.Avalonia\FramePlayer.Avalonia.csproj -c Release
 dotnet test .\tests\FramePlayer.Avalonia.Tests\FramePlayer.Avalonia.Tests.csproj -c Release
-.\scripts\Package-UnifiedWindowsPreview.ps1
+.\scripts\Package-UnifiedWindows.ps1
 ```
 
 On macOS, stage the pinned macOS FFmpeg runtime under `Runtime/macos/osx-arm64/ffmpeg`, make sure `cargo` is available, then run:
@@ -31,7 +31,7 @@ codesign --verify --deep --verbose=2 "dist/Frame Player.app"
 
 The package scripts build the first-party Rust FFmpeg native library and include it beside the Avalonia executable. Normal dev builds can run without the native library, but release packaging requires Rust/Cargo. The exact frame index builder, indexed decode-window helper, and BGRA frame converter can be forced with `FRAMEPLAYER_FFMPEG_INDEX_BUILDER=rust`, `FRAMEPLAYER_FFMPEG_DECODE_CORE=rust`, and `FRAMEPLAYER_FFMPEG_FRAME_CONVERTER=rust`; each can be bypassed with `managed` or left in fallback mode with `auto`.
 
-Developer ID notarization is documented in [docs/macos-preview-release.md](https://github.com/jfleezy23/frame-player/blob/main/docs/macos-preview-release.md).
+Developer ID notarization is documented in [docs/macos-release.md](https://github.com/jfleezy23/frame-player/blob/main/docs/macos-release.md).
 
 The legacy `src\FramePlayer.Mac`, `src\FramePlayer.Desktop`, and root WPF projects are officially superseded by the unified project.
 

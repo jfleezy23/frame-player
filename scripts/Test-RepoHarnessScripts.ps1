@@ -4,7 +4,7 @@ param(
         "scripts\Build-RustFfmpegProbe.ps1",
         "scripts\Ensure-DevRuntime.ps1",
         "scripts\Ensure-DevExportTools.ps1",
-        "scripts\Package-UnifiedWindowsPreview.ps1",
+        "scripts\Package-UnifiedWindows.ps1",
         "scripts\Run-RegressionSuite.ps1",
         "scripts\Run-UnifiedWindowsRustCorpus.ps1",
         "scripts\Run-ReviewEngine-ManualTests.ps1"
