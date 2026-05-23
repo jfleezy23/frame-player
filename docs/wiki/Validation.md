@@ -1,5 +1,12 @@
 # Validation
 
+## v2.0.0
+
+Unified Avalonia v2.0.0 is the first stable release built on the Avalonia cross-platform application.
+It officially deprecates the older Windows WPF application line (`v1.8.x` and prior) and the Avalonia Preview tracks.
+
+- Release: [Frame Player v2.0.0](https://github.com/jfleezy23/frame-player/releases/tag/v2.0.0)
+
 ## Unified Avalonia Preview 0.3.1
 
 Unified Avalonia Preview `0.3.1` is the current combined Windows/macOS preview release.

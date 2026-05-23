@@ -1,27 +1,8 @@
 # Build From Source
 
-## Windows Stable
+The unified cross-platform application builds from `src\FramePlayer.Avalonia`. It also requires Rust/Cargo for release packaging; the Rust toolchain is pinned by `rust-toolchain.toml`. 
 
-The Windows stable app remains the WPF release line. This Wiki does not change the Windows source path, build path, runtime bootstrap, tests, or release process.
-
-Recommended build:
-
-```powershell
-.\scripts\Build-FramePlayer.ps1
-```
-
-Direct build when the runtime is already staged:
-
-```powershell
-.\scripts\Ensure-DevRuntime.ps1
-.\scripts\Ensure-DevExportTools.ps1
-.\scripts\Ensure-DevExportRuntime.ps1
-dotnet build .\FramePlayer.csproj -c Release -p:Platform=x64
-```
-
-## Unified Avalonia Preview
-
-The current cross-platform preview builds from `src\FramePlayer.Avalonia`. It also requires Rust/Cargo for release packaging; the Rust toolchain is pinned by `rust-toolchain.toml`. On Windows, restore the pinned playback and export runtimes before building or packaging:
+On Windows, restore the pinned playback and export runtimes before building or packaging:
 
 ```powershell
 .\scripts\Ensure-DevRuntime.ps1
@@ -44,15 +25,15 @@ FRAMEPLAYER_MAC_CORPUS="Video Test Files" script/validate_macos_release_candidat
 Package a local signed release candidate:
 
 ```bash
-PACKAGE_VERSION=unified-preview-0.3.1 script/package_unified_macos_release.sh --sign
+PACKAGE_VERSION=2.0.0 script/package_unified_macos_release.sh --sign
 codesign --verify --deep --verbose=2 "dist/Frame Player.app"
 ```
 
-The unified preview package scripts build the first-party Rust FFmpeg native library and include it beside the Avalonia executable. Normal dev builds can run without the native library, but release packaging requires Rust/Cargo. The exact frame index builder, indexed decode-window helper, and BGRA frame converter can be forced with `FRAMEPLAYER_FFMPEG_INDEX_BUILDER=rust`, `FRAMEPLAYER_FFMPEG_DECODE_CORE=rust`, and `FRAMEPLAYER_FFMPEG_FRAME_CONVERTER=rust`; each can be bypassed with `managed` or left in fallback mode with `auto`.
+The package scripts build the first-party Rust FFmpeg native library and include it beside the Avalonia executable. Normal dev builds can run without the native library, but release packaging requires Rust/Cargo. The exact frame index builder, indexed decode-window helper, and BGRA frame converter can be forced with `FRAMEPLAYER_FFMPEG_INDEX_BUILDER=rust`, `FRAMEPLAYER_FFMPEG_DECODE_CORE=rust`, and `FRAMEPLAYER_FFMPEG_FRAME_CONVERTER=rust`; each can be bypassed with `managed` or left in fallback mode with `auto`.
 
 Developer ID notarization is documented in [docs/macos-preview-release.md](https://github.com/jfleezy23/frame-player/blob/main/docs/macos-preview-release.md).
 
-The old `src\FramePlayer.Mac` and `src\FramePlayer.Desktop` split-preview projects are superseded by the unified preview project.
+The legacy `src\FramePlayer.Mac`, `src\FramePlayer.Desktop`, and root WPF projects are officially superseded by the unified project.
 
 ## Runtime Notes
 

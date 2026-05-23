@@ -6,16 +6,15 @@ Frame Player is a frame-first video review tool for people who need to know exac
 
 | Release track | Platform | Current release | Download |
 | --- | --- | --- | --- |
-| Windows stable | Windows 10 or later | `v1.8.4` | [Frame Player v1.8.4](https://github.com/jfleezy23/frame-player/releases/tag/v1.8.4) |
-| Unified Avalonia Preview | Windows x64 and Apple Silicon macOS | `0.3.1` | [Frame Player Unified Preview 0.3.1](https://github.com/jfleezy23/frame-player/releases/tag/unified-preview-0.3.1) |
+| Stable (Unified) | Windows x64 and Apple Silicon macOS | `v2.0.0` | [Frame Player v2.0.0](https://github.com/jfleezy23/frame-player/releases/tag/v2.0.0) |
 
-The Windows release remains the stable WPF app. Unified Avalonia Preview `0.3.1` is the current synchronized Windows/macOS preview. The earlier split preview releases are superseded and kept only for historical validation.
+Frame Player `v2.0.0` is the new unified, cross-platform release built on Avalonia, fully superseding the legacy Windows WPF `v1.8.x` path.
 
 ## Screenshot Gallery
 
 These are real app captures. The current checked-in shots show empty-state layouts because clean loaded-video Windows screenshots were not available in this docs pass.
 
-| Windows stable | Avalonia macOS preview |
+| Windows | macOS |
 | --- | --- |
 | ![Windows stable single-pane empty state](../assets/screenshots/windows-main.png) | ![Avalonia macOS preview single-pane empty state](../assets/screenshots/macos-main.png) |
 | ![Windows stable two-pane compare empty state](../assets/screenshots/windows-compare.png) | ![Avalonia macOS preview two-pane compare empty state](../assets/screenshots/macos-compare.png) |
