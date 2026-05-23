@@ -1446,27 +1446,32 @@ namespace FramePlayer.Avalonia.Views
                 await PauseAllPanePlaybackAsync();
             }
 
-            await Task.WhenAll(
-                Task.Run(() => _primaryEngine.SeekToTimeAsync(primaryTarget, cancellationToken), cancellationToken),
-                Task.Run(() => compareEngine.SeekToTimeAsync(compareTarget, cancellationToken), cancellationToken));
-
-            var resumeTasks = new List<Task>(2);
-            if (resumePrimaryPlayback && CanStartPlayback(_primaryEngine))
+            try
             {
-                resumeTasks.Add(Task.Run(() => _primaryEngine.PlayAsync(), cancellationToken));
+                await Task.WhenAll(
+                    Task.Run(() => _primaryEngine.SeekToTimeAsync(primaryTarget, cancellationToken), cancellationToken),
+                    Task.Run(() => compareEngine.SeekToTimeAsync(compareTarget, cancellationToken), cancellationToken));
             }
-
-            if (resumeComparePlayback && CanStartPlayback(compareEngine))
+            finally
             {
-                resumeTasks.Add(Task.Run(() => compareEngine.PlayAsync(), cancellationToken));
-            }
+                var resumeTasks = new List<Task>(2);
+                if (resumePrimaryPlayback && CanStartPlayback(_primaryEngine))
+                {
+                    resumeTasks.Add(Task.Run(() => _primaryEngine.PlayAsync()));
+                }
 
-            if (resumeTasks.Count > 0)
-            {
-                await Task.WhenAll(resumeTasks);
-            }
+                if (resumeComparePlayback && CanStartPlayback(compareEngine))
+                {
+                    resumeTasks.Add(Task.Run(() => compareEngine.PlayAsync()));
+                }
 
-            UpdateCommandStates();
+                if (resumeTasks.Count > 0)
+                {
+                    await Task.WhenAll(resumeTasks);
+                }
+
+                UpdateCommandStates();
+            }
         }
 
         private static TimeSpan ClampSeekTarget(TimeSpan target)

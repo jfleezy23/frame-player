@@ -601,12 +601,69 @@ namespace FramePlayer.Avalonia.Tests
             Assert.Contains("_paneSliderScrubTimer.Stop();", cancelQueuedScrubsMethod, StringComparison.Ordinal);
             Assert.Contains("if (IsAllPaneTransportEnabled)", masterSeekMethod, StringComparison.Ordinal);
             Assert.Contains("await SeekAllPaneToTimePreservingPlaybackAsync(target, cancellationToken);", masterSeekMethod, StringComparison.Ordinal);
-            Assert.Contains("await Task.WhenAll(", allPaneSeekMethod, StringComparison.Ordinal);
+            var tryIndex = allPaneSeekMethod.IndexOf("try", StringComparison.Ordinal);
+            var seekIndex = allPaneSeekMethod.IndexOf("await Task.WhenAll(", StringComparison.Ordinal);
+            var finallyIndex = allPaneSeekMethod.IndexOf("finally", StringComparison.Ordinal);
+            var resumeIndex = allPaneSeekMethod.IndexOf("var resumeTasks", StringComparison.Ordinal);
+            Assert.NotEqual(-1, tryIndex);
+            Assert.NotEqual(-1, seekIndex);
+            Assert.NotEqual(-1, finallyIndex);
+            Assert.NotEqual(-1, resumeIndex);
             Assert.Contains("Task.Run(() => _primaryEngine.SeekToTimeAsync(primaryTarget, cancellationToken), cancellationToken)", allPaneSeekMethod, StringComparison.Ordinal);
             Assert.Contains("Task.Run(() => compareEngine.SeekToTimeAsync(compareTarget, cancellationToken), cancellationToken)", allPaneSeekMethod, StringComparison.Ordinal);
-            Assert.True(
-                allPaneSeekMethod.IndexOf("await Task.WhenAll(", StringComparison.Ordinal) <
-                allPaneSeekMethod.IndexOf("var resumeTasks", StringComparison.Ordinal));
+            Assert.Contains("Task.Run(() => _primaryEngine.PlayAsync())", allPaneSeekMethod, StringComparison.Ordinal);
+            Assert.Contains("Task.Run(() => compareEngine.PlayAsync())", allPaneSeekMethod, StringComparison.Ordinal);
+            Assert.DoesNotContain("Task.Run(() => _primaryEngine.PlayAsync(), cancellationToken)", allPaneSeekMethod, StringComparison.Ordinal);
+            Assert.DoesNotContain("Task.Run(() => compareEngine.PlayAsync(), cancellationToken)", allPaneSeekMethod, StringComparison.Ordinal);
+            Assert.True(tryIndex < seekIndex);
+            Assert.True(seekIndex < finallyIndex);
+            Assert.True(finallyIndex < resumeIndex);
+        }
+
+        [Fact]
+        public async Task MainSharedTransport_CanceledSharedSeekRestoresPlayingPanes()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true
+                    };
+                    using var seekCancellation = new CancellationTokenSource();
+
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    seekCancellation.Cancel();
+
+                    await Assert.ThrowsAsync<TaskCanceledException>(
+                        async () => await (Task)InvokePrivate(
+                            window,
+                            "SeekAllPaneToTimesPreservingPlaybackAsync",
+                            TimeSpan.FromSeconds(1),
+                            TimeSpan.FromSeconds(2),
+                            seekCancellation.Token));
+
+                    Assert.True(primaryEngine.IsPlaying);
+                    Assert.True(compareEngine.IsPlaying);
+                    Assert.Equal(1, primaryEngine.PauseCallCount);
+                    Assert.Equal(1, compareEngine.PauseCallCount);
+                    Assert.Equal(1, primaryEngine.PlayCallCount);
+                    Assert.Equal(1, compareEngine.PlayCallCount);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
         }
 
         [Fact]
@@ -1598,6 +1655,8 @@ namespace FramePlayer.Avalonia.Tests
 
             public int PauseCallCount { get; private set; }
 
+            public int PlayCallCount { get; private set; }
+
             public event EventHandler<VideoReviewEngineStateChangedEventArgs> StateChanged
             {
                 add { }
@@ -1626,6 +1685,7 @@ namespace FramePlayer.Avalonia.Tests
 
             public Task PlayAsync()
             {
+                PlayCallCount++;
                 IsPlaying = true;
                 return Task.CompletedTask;
             }
