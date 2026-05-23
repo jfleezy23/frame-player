@@ -64,7 +64,7 @@ jobs:
           dotnet test .\tests\FramePlayer.Avalonia.Tests\FramePlayer.Avalonia.Tests.csproj -c Release
 
       - name: Package unified Windows build
-        shell: powershell
+        shell: pwsh
         run: |
           .\scripts\Package-UnifiedWindows.ps1
 
