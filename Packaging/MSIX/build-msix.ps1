@@ -102,10 +102,10 @@ function New-PngFromIcon {
 }
 
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$projectPath = Join-Path $repoRoot "FramePlayer.csproj"
+$projectPath = Join-Path $repoRoot "src\FramePlayer.Avalonia\FramePlayer.Avalonia.csproj"
 $ensureRuntimeScript = Join-Path $repoRoot "scripts\Ensure-DevRuntime.ps1"
 $ensureExportRuntimeScript = Join-Path $repoRoot "scripts\Ensure-DevExportRuntime.ps1"
-$releaseDir = Join-Path $repoRoot ("bin\" + $Configuration)
+$releaseDir = Join-Path $repoRoot ("src\FramePlayer.Avalonia\bin\" + $Configuration + "\net10.0")
 $distDir = Join-Path $repoRoot "dist\MSIX"
 $buildRoot = Join-Path $distDir "_build"
 $packageRoot = Join-Path $buildRoot "PackageRoot"
@@ -120,18 +120,18 @@ $signtoolPath = Get-ToolPath -ToolName "signtool.exe"
 if (Test-Path -LiteralPath $ensureExportRuntimeScript) {
     & $ensureExportRuntimeScript -Required | Out-Host
 }
-& dotnet build $projectPath -c $Configuration -p:Platform=$Platform | Out-Host
+& dotnet publish $projectPath -c $Configuration -p:Platform=$Platform -o $releaseDir | Out-Host
 if ($LASTEXITCODE -ne 0) {
-    throw "dotnet build failed while producing the MSIX package."
+    throw "dotnet publish failed while producing the MSIX package."
 }
 
 if (-not (Test-Path $releaseDir)) {
     throw "Release output directory '$releaseDir' was not produced."
 }
 
-$exePath = Join-Path $releaseDir "FramePlayer.exe"
+$exePath = Join-Path $releaseDir "FramePlayer.Avalonia.exe"
 if (-not (Test-Path $exePath)) {
-    throw "FramePlayer.exe was not found in '$releaseDir'."
+    throw "FramePlayer.Avalonia.exe was not found in '$releaseDir'."
 }
 
 $resolvedVersion = if ([string]::IsNullOrWhiteSpace($PackageVersion)) {
@@ -196,7 +196,7 @@ $manifest = @"
   </Capabilities>
   <Applications>
     <Application Id="FramePlayer"
-                 Executable="FramePlayer.exe"
+                 Executable="FramePlayer.Avalonia.exe"
                  uap10:RuntimeBehavior="packagedClassicApp"
                  uap10:TrustLevel="mediumIL">
       <uap:VisualElements BackgroundColor="transparent"

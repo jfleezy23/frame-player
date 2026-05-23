@@ -129,3 +129,34 @@ Use this section only for the Windows Avalonia preview release line. Do not use 
 - Attach the Windows x64 preview ZIP and SHA256 file to the preview release and the unified current-download release page.
 - Confirm the stable `v*` release remains the latest release.
 - Do not rename, remove, or replace the stable Windows WPF artifact.
+## Unified Windows v2.0 Release Checklist
+
+Use this section to package, sign, and release the modern unified Avalonia application for Windows using MSIX and Microsoft Trusted Signing.
+
+### Pre-Ship Repo Hygiene
+
+- Confirm the release branch was created from the current origin/main (which now represents the unified cross-platform path).
+- Ensure Azure CLI is authenticated (z login) with the identity that has access to the Microsoft Trusted Signing account (rameplayersigningjflow).
+- Ensure the dotnet sign global tool is installed: dotnet tool install --global sign --prerelease.
+
+### Validation Gate
+
+- Build the Windows Avalonia project and run tests:
+  - dotnet build src\FramePlayer.Avalonia\FramePlayer.Avalonia.csproj -c Release
+  - dotnet test tests\FramePlayer.Avalonia.Tests\FramePlayer.Avalonia.Tests.csproj -c Release
+
+### Distribution & Signing Gate
+
+- Build the packaged .msix. **Crucial**: The -Publisher parameter MUST precisely match the Azure Trusted Signing Certificate Profile subject to satisfy the AppxManifest.xml validation requirement. Do not rely on local .pfx or default dev certificates for production releases.
+  - powershell -ExecutionPolicy Bypass -File Packaging\MSIX\build-msix.ps1 -UseDevCertificate -Publisher "CN=Jonathan Floyd, O=Jonathan Floyd, L=Beaverton, S=or, C=US, PostalCode=97007-6482" -PublisherDisplayName "Jonathan Floyd" -PackageVersion "2.0.0.0"
+- Override the temporary dev signature by signing all payload binaries and the .msix container using the dotnet sign code artifact-signing provider:
+  - sign code artifact-signing "dist\MSIX\FramePlayer_2.0.0.0_x64.msix" --artifact-signing-endpoint "https://wus2.codesigning.azure.net/" --artifact-signing-account "frameplayersigningjflow" --artifact-signing-certificate-profile "frameplayerpublic"
+- Verify the final production signature:
+  - Get-AuthenticodeSignature "dist\MSIX\FramePlayer_2.0.0.0_x64.msix" | Format-List
+  - Ensure the Status is Valid and the Issuer reflects the Microsoft Trusted Signing CA (e.g., Microsoft ID Verified CS AOC CA).
+
+### Publish Gate
+
+- Colocate the signed Windows .msix artifact with the macOS release artifacts on the existing unified GitHub release.
+  - gh release upload v2.0.0 "dist\MSIX\FramePlayer_2.0.0.0_x64.msix"
+- Do not attach any exported dev certificates (.cer). The Trusted Signing signature establishes public trust automatically on Windows systems.
