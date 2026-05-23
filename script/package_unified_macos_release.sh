@@ -122,7 +122,7 @@ env -u VERSION \
   CONFIGURATION=Release \
   APP_NAME=FramePlayer.Avalonia \
   APP_VERSION="$BUNDLE_SHORT_VERSION" \
-  BUNDLE_ID=com.frameplayer.unified-preview \
+  BUNDLE_ID=com.frameplayer \
   PROJECT="$ROOT_DIR/src/FramePlayer.Avalonia/FramePlayer.Avalonia.csproj" \
   APP_ICON_SOURCE="$ROOT_DIR/src/FramePlayer.Avalonia/Assets/FramePlayer.icns" \
   "$ROOT_DIR/script/build_and_run.sh" --build-only

@@ -102,7 +102,7 @@ jobs:
             echo "Expected CFBundleShortVersionString 2.0.0 but found $bundle_version" >&2
             exit 1
           fi
-          if [[ "$bundle_id" != "com.frameplayer.unified-preview" ]]; then
-            echo "Expected CFBundleIdentifier com.frameplayer.unified-preview but found $bundle_id" >&2
+          if [[ "$bundle_id" != "com.frameplayer" ]]; then
+            echo "Expected CFBundleIdentifier com.frameplayer but found $bundle_id" >&2
             exit 1
           fi

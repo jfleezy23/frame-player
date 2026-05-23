@@ -336,8 +336,8 @@ Invoke-ExternalStep -Name "Build Avalonia test project" -Command {
 }
 
 if (-not $SkipPackage.IsPresent) {
-    Invoke-ExternalStep -Name "Package unified Windows preview" -Command {
-        & (Join-Path $PSScriptRoot "Package-UnifiedWindowsPreview.ps1") -Configuration $Configuration
+    Invoke-ExternalStep -Name "Package unified Windows build" -Command {
+        & (Join-Path $PSScriptRoot "Package-UnifiedWindows.ps1") -Configuration $Configuration
     }
 }
 
