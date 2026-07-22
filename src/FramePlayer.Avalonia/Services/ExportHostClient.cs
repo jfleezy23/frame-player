@@ -33,6 +33,7 @@ namespace FramePlayer.Services
         private static readonly object RuntimeAvailabilitySync = new object();
         private static string _cachedRuntimeAvailabilityKey = string.Empty;
         private static RuntimeAvailability? _cachedRuntimeAvailability;
+        private readonly UTF8Encoding _requestEncoding = new UTF8Encoding(false);
 
         internal static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
@@ -131,7 +132,7 @@ namespace FramePlayer.Services
             return response.CompareSideBySideExportResult;
         }
 
-        private static async Task<ExportHostResponse> ExecuteAsync(ExportHostRequest request, CancellationToken cancellationToken)
+        private async Task<ExportHostResponse> ExecuteAsync(ExportHostRequest request, CancellationToken cancellationToken)
         {
             var runtimeAvailability = GetRuntimeAvailability();
             if (!runtimeAvailability.IsAvailable)
@@ -165,7 +166,7 @@ namespace FramePlayer.Services
             try
             {
                 var requestJson = JsonSerializer.Serialize(request, JsonOptions);
-                await File.WriteAllTextAsync(requestPath, requestJson, new UTF8Encoding(false), cancellationToken).ConfigureAwait(false);
+                await File.WriteAllTextAsync(requestPath, requestJson, _requestEncoding, cancellationToken).ConfigureAwait(false);
 
                 // The export host is the current executable in a headless mode, not a daemon.
                 // UseShellExecute stays false so arguments and redirected output remain local to this process tree.
