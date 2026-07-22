@@ -3199,6 +3199,7 @@ namespace FramePlayer.Engines.FFmpeg
                 _codecContext,
                 _videoStream != null ? _videoStream->codecpar : null,
                 sourcePixelFormat);
+            var audioStreamInfo = _audioStreamInfo ?? FfmpegAudioStreamInfo.None;
 
             return new VideoMediaInfo(
                 _currentFilePath,
@@ -3213,12 +3214,12 @@ namespace FramePlayer.Engines.FFmpeg
                 _nominalFrameRate.den,
                 _videoStreamTimeBase.num,
                 _videoStreamTimeBase.den,
-                _audioStreamInfo != null && _audioStreamInfo.HasAudioStream,
-                _audioStreamInfo != null && _audioStreamInfo.DecoderAvailable && string.IsNullOrWhiteSpace(_lastAudioErrorMessage),
-                _audioStreamInfo != null ? _audioStreamInfo.CodecName : string.Empty,
-                _audioStreamInfo != null ? _audioStreamInfo.StreamIndex : -1,
-                _audioStreamInfo != null ? _audioStreamInfo.SampleRate : 0,
-                _audioStreamInfo != null ? _audioStreamInfo.ChannelCount : 0,
+                audioStreamInfo.HasAudioStream,
+                audioStreamInfo.DecoderAvailable && string.IsNullOrWhiteSpace(_lastAudioErrorMessage),
+                audioStreamInfo.CodecName,
+                audioStreamInfo.StreamIndex,
+                audioStreamInfo.SampleRate,
+                audioStreamInfo.ChannelCount,
                 descriptor.DisplayWidth > 0 ? (int?)descriptor.DisplayWidth : null,
                 descriptor.DisplayHeight > 0 ? (int?)descriptor.DisplayHeight : null,
                 hasDisplayAspectRatio ? (int?)displayAspectRatioNumerator : null,
@@ -3230,8 +3231,8 @@ namespace FramePlayer.Engines.FFmpeg
                 GetColorMetadataValue(FfmpegNativeHelpers.GetColorRangeName(_codecContext != null ? _codecContext->color_range : default(AVColorRange))),
                 GetColorMetadataValue(FfmpegNativeHelpers.GetColorPrimariesName(_codecContext != null ? _codecContext->color_primaries : default(AVColorPrimaries))),
                 GetColorMetadataValue(FfmpegNativeHelpers.GetColorTransferName(_codecContext != null ? _codecContext->color_trc : default(AVColorTransferCharacteristic))),
-                _audioStreamInfo != null ? _audioStreamInfo.BitRate : null,
-                _audioStreamInfo != null ? _audioStreamInfo.BitDepth : null);
+                audioStreamInfo.BitRate,
+                audioStreamInfo.BitDepth);
         }
 
         private AVPixelFormat GetInspectorSourcePixelFormat()
