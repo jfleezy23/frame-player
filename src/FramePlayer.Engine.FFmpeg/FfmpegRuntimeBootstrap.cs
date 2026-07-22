@@ -38,13 +38,19 @@ namespace FramePlayer.Engines.FFmpeg
         public static string ResolveRuntimeDirectory(string baseDirectory)
         {
             var platformFolder = ResolvePlatformFolder();
-            var candidates = new[]
-            {
-                Path.Combine(baseDirectory, "Runtime", "macos", platformFolder, "ffmpeg"),
-                Path.Combine(baseDirectory, "Runtime", "macos", platformFolder),
-                Path.Combine(baseDirectory, "Runtime", "ffmpeg"),
-                baseDirectory
-            };
+            var candidates = RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
+                ? new[]
+                {
+                    Path.Combine(baseDirectory, "Runtime", "macos", platformFolder, "ffmpeg"),
+                    Path.Combine(baseDirectory, "Runtime", "macos", platformFolder),
+                    Path.Combine(baseDirectory, "Runtime", "ffmpeg"),
+                    baseDirectory
+                }
+                : new[]
+                {
+                    Path.Combine(baseDirectory, "Runtime", "ffmpeg"),
+                    baseDirectory
+                };
 
             return candidates.FirstOrDefault(Directory.Exists) ?? candidates[0];
         }

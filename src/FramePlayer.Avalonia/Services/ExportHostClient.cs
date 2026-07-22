@@ -30,8 +30,9 @@ namespace FramePlayer.Services
         internal const string AppRuntimeBaseEnvironmentVariable = "FRAMEPLAYER_AVALONIA_RUNTIME_BASE";
         internal const string ExportHostExecutableEnvironmentVariable = "FRAMEPLAYER_AVALONIA_EXPORT_HOST_EXECUTABLE";
         private const string ExecutableName = "FramePlayer.Avalonia";
-        private static readonly Lazy<RuntimeAvailability> CachedRuntimeAvailability =
-            new Lazy<RuntimeAvailability>(DiscoverRuntimeAvailability);
+        private static readonly object RuntimeAvailabilitySync = new object();
+        private static string _cachedRuntimeAvailabilityKey = string.Empty;
+        private static RuntimeAvailability? _cachedRuntimeAvailability;
 
         internal static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
@@ -43,13 +44,13 @@ namespace FramePlayer.Services
         {
             get
             {
-                return CachedRuntimeAvailability.Value.IsAvailable;
+                return GetRuntimeAvailability().IsAvailable;
             }
         }
 
         public static string GetRuntimeAvailabilityMessage()
         {
-            return CachedRuntimeAvailability.Value.Message;
+            return GetRuntimeAvailability().Message;
         }
 
         public async Task<VideoMediaInfo> ProbeAsync(string filePath, CancellationToken cancellationToken = default(CancellationToken))
@@ -132,7 +133,7 @@ namespace FramePlayer.Services
 
         private async Task<ExportHostResponse> ExecuteAsync(ExportHostRequest request, CancellationToken cancellationToken)
         {
-            var runtimeAvailability = CachedRuntimeAvailability.Value;
+            var runtimeAvailability = GetRuntimeAvailability();
             if (!runtimeAvailability.IsAvailable)
             {
                 throw new InvalidOperationException(runtimeAvailability.Message);
@@ -266,6 +267,26 @@ namespace FramePlayer.Services
                     : errors.ToString());
         }
 
+        private static RuntimeAvailability GetRuntimeAvailability()
+        {
+            var cacheKey = string.Join(
+                "\0",
+                AppDomain.CurrentDomain.BaseDirectory,
+                Environment.GetEnvironmentVariable(AppBaseDirectoryEnvironmentVariable) ?? string.Empty,
+                Environment.GetEnvironmentVariable(AppRuntimeBaseEnvironmentVariable) ?? string.Empty);
+            lock (RuntimeAvailabilitySync)
+            {
+                if (_cachedRuntimeAvailability == null ||
+                    !string.Equals(_cachedRuntimeAvailabilityKey, cacheKey, StringComparison.Ordinal))
+                {
+                    _cachedRuntimeAvailability = DiscoverRuntimeAvailability();
+                    _cachedRuntimeAvailabilityKey = cacheKey;
+                }
+
+                return _cachedRuntimeAvailability;
+            }
+        }
+
         internal static IEnumerable<string> ResolveRuntimeBaseDirectories(string baseDirectory)
         {
             var yieldedDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -273,6 +294,14 @@ namespace FramePlayer.Services
             if (!string.IsNullOrWhiteSpace(configuredBaseDirectory) && yieldedDirectories.Add(configuredBaseDirectory))
             {
                 yield return configuredBaseDirectory;
+            }
+
+            var configuredRuntimeBaseDirectory = Environment.GetEnvironmentVariable(AppRuntimeBaseEnvironmentVariable);
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) &&
+                !string.IsNullOrWhiteSpace(configuredRuntimeBaseDirectory) &&
+                yieldedDirectories.Add(configuredRuntimeBaseDirectory))
+            {
+                yield return configuredRuntimeBaseDirectory;
             }
 
             if (!string.IsNullOrWhiteSpace(baseDirectory) && yieldedDirectories.Add(baseDirectory))

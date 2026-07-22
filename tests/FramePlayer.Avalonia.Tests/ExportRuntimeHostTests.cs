@@ -76,6 +76,7 @@ namespace FramePlayer.Avalonia.Tests
             using var temp = new TemporaryDirectory();
             var appBundle = Path.Combine(temp.Path, "Frame Player.app");
             var appMacOs = Path.Combine(appBundle, "Contents", "MacOS");
+            var configuredRuntimeBase = Path.Combine(temp.Path, "runtime-base");
             var executableName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
                 ? "FramePlayer.Avalonia.exe"
                 : "FramePlayer.Avalonia";
@@ -84,9 +85,11 @@ namespace FramePlayer.Avalonia.Tests
             File.WriteAllText(executablePath, "#!/usr/bin/env bash\n", Encoding.UTF8);
 
             var previousAppBundle = Environment.GetEnvironmentVariable(ExportHostClient.AppBaseDirectoryEnvironmentVariable);
+            var previousRuntimeBase = Environment.GetEnvironmentVariable(ExportHostClient.AppRuntimeBaseEnvironmentVariable);
             try
             {
                 Environment.SetEnvironmentVariable(ExportHostClient.AppBaseDirectoryEnvironmentVariable, appMacOs);
+                Environment.SetEnvironmentVariable(ExportHostClient.AppRuntimeBaseEnvironmentVariable, configuredRuntimeBase);
 
                 var launchInfo = ExportHostClient.ResolveExportHostLaunchInfo();
                 var runtimeBaseDirectories = ExportHostClient.ResolveRuntimeBaseDirectories("/tmp/frameplayer-tests").ToArray();
@@ -94,10 +97,20 @@ namespace FramePlayer.Avalonia.Tests
                 Assert.Equal(executablePath, launchInfo.ExecutablePath);
                 Assert.Equal(appMacOs, launchInfo.WorkingDirectory);
                 Assert.Equal(appMacOs, runtimeBaseDirectories[0]);
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    Assert.Equal("/tmp/frameplayer-tests", runtimeBaseDirectories[1]);
+                }
+                else
+                {
+                    Assert.Equal(configuredRuntimeBase, runtimeBaseDirectories[1]);
+                    Assert.Equal("/tmp/frameplayer-tests", runtimeBaseDirectories[2]);
+                }
             }
             finally
             {
                 Environment.SetEnvironmentVariable(ExportHostClient.AppBaseDirectoryEnvironmentVariable, previousAppBundle);
+                Environment.SetEnvironmentVariable(ExportHostClient.AppRuntimeBaseEnvironmentVariable, previousRuntimeBase);
             }
         }
 

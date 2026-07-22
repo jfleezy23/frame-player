@@ -54,7 +54,9 @@ namespace FramePlayer.Avalonia.Tests
                     compareOutput,
                     CompareSideBySideExportMode.WholeVideo,
                     CompareSideBySideExportAudioSource.Primary);
-                Assert.NotNull(compareResult);
+                Assert.True(
+                    compareResult != null,
+                    GetStatusText(window!));
                 Assert.True(compareResult!.Succeeded, compareResult.Message);
                 Assert.True(File.Exists(compareOutput), "Compare export did not create an output file.");
                 AssertProbeSucceeds(compareOutput, expectAudio: null);
@@ -277,6 +279,19 @@ namespace FramePlayer.Avalonia.Tests
                 completed.Set();
             });
             Assert.True(completed.Wait(TimeSpan.FromSeconds(5)), "Timed out setting compare mode.");
+        }
+
+        private string GetStatusText(MainWindow window)
+        {
+            var status = "Compare export returned no result.";
+            var completed = new ManualResetEventSlim(false);
+            _fixture.Run(() =>
+            {
+                status = window.FindControl<TextBlock>("CacheStatusTextBlock")?.Text ?? status;
+                completed.Set();
+            });
+            Assert.True(completed.Wait(TimeSpan.FromSeconds(5)), "Timed out reading export status.");
+            return status;
         }
 
         private async Task InvokeWindowTaskAsync(MainWindow window, string methodName, params object?[] args)
