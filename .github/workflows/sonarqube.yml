@@ -105,10 +105,10 @@ jobs:
 
           # These desktop review/export flows are exercised by the app-driven
           # regression suite rather than imported .NET line-coverage reports.
-          # The macOS preview copies shared-looking source into src/FramePlayer.*
-          # to protect the Windows release path. Keep these exclusions
-          # explicitly scoped to the current preview subtrees instead of using
-          # future-proof wildcards such as src/FramePlayer.Core/**.
+          # The macOS build copies shared-looking source into src/FramePlayer.*
+          # directory prefixes before building. Exclusions in sonar-project.properties are
+          # explicitly scoped to the current subtrees instead of using
+          # broad **/* exclusions.of wildcards such as src/FramePlayer.Core/**.
           $coverageExclusions = @(
             "App.xaml.cs"
             "Controls/LoopRangeOverlay.cs"
@@ -229,8 +229,8 @@ jobs:
             "scripts/Test-RepoHarnessScripts.ps1"
           ) -join ","
 
-          # The DLL-only export host, native FFmpeg interop layer, and Rust
-          # preview bridge are exercised through dedicated host integration tests
+          # The WPF app's isolated components like UI commands and the
+          # bridge are exercised through dedicated host integration tests
           # and app-driven regression suites rather than imported Sonar line
           # coverage, and they necessarily use unsafe/native patterns that would
           # otherwise dominate PR hotspot review. Keep the gate focused on the

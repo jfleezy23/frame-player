@@ -6,11 +6,11 @@ using Xunit;
 
 namespace FramePlayer.Avalonia.Tests
 {
-    public sealed class UnifiedPreviewContractTests : IClassFixture<AvaloniaHeadlessFixture>
+    public sealed class UnifiedContractTests : IClassFixture<AvaloniaHeadlessFixture>
     {
         private readonly AvaloniaHeadlessFixture _fixture;
 
-        public UnifiedPreviewContractTests(AvaloniaHeadlessFixture fixture)
+        public UnifiedContractTests(AvaloniaHeadlessFixture fixture)
         {
             _fixture = fixture;
         }
@@ -27,7 +27,7 @@ namespace FramePlayer.Avalonia.Tests
             Assert.Contains("FRAMEPLAYER_AVALONIA_EXPORT_HOST_EXECUTABLE", exportHost, StringComparison.Ordinal);
             Assert.Contains("FRAMEPLAYER_AVALONIA_APP_BASE_DIRECTORY", exportHost, StringComparison.Ordinal);
             Assert.Contains("FRAMEPLAYER_AVALONIA_RUNTIME_BASE", exportHost, StringComparison.Ordinal);
-            Assert.Contains("FramePlayer.AvaloniaPreview", recentFiles, StringComparison.Ordinal);
+            Assert.Contains("FramePlayer.Avalonia", recentFiles, StringComparison.Ordinal);
         }
 
         [Fact]
@@ -105,7 +105,8 @@ namespace FramePlayer.Avalonia.Tests
         public void UnifiedWindowsPackage_PassesPackageVersionIntoAssemblyMetadata()
         {
             var root = FindRepositoryRoot();
-            var script = File.ReadAllText(Path.Combine(root, "scripts", "Package-UnifiedWindowsPreview.ps1"));
+            Assert.True(File.Exists(Path.Combine(root, "scripts", "Package-UnifiedWindows.ps1")));
+            var script = File.ReadAllText(Path.Combine(root, "scripts", "Package-UnifiedWindows.ps1"));
             var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "windows-ci.yml"));
 
             Assert.Contains("[string]$Version = \"2.0.0-rc.1\"", script, StringComparison.Ordinal);

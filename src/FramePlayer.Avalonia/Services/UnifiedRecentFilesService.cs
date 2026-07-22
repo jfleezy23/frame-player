@@ -14,7 +14,7 @@ namespace FramePlayer.Avalonia.Services
         public UnifiedRecentFilesService()
         {
             var appSupport = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            var appDirectory = Path.Combine(appSupport, "FramePlayer.AvaloniaPreview");
+            var appDirectory = Path.Combine(appSupport, "FramePlayer.Avalonia");
             Directory.CreateDirectory(appDirectory);
             _storagePath = Path.Combine(appDirectory, "recent-files.txt");
         }
