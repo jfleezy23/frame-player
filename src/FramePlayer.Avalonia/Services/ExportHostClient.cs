@@ -131,7 +131,7 @@ namespace FramePlayer.Services
             return response.CompareSideBySideExportResult;
         }
 
-        private async Task<ExportHostResponse> ExecuteAsync(ExportHostRequest request, CancellationToken cancellationToken)
+        private static async Task<ExportHostResponse> ExecuteAsync(ExportHostRequest request, CancellationToken cancellationToken)
         {
             var runtimeAvailability = GetRuntimeAvailability();
             if (!runtimeAvailability.IsAvailable)
@@ -139,10 +139,7 @@ namespace FramePlayer.Services
                 throw new InvalidOperationException(runtimeAvailability.Message);
             }
 
-            if (request == null)
-            {
-                throw new ArgumentNullException(nameof(request));
-            }
+            ArgumentNullException.ThrowIfNull(request);
 
             var launchInfo = ResolveExportHostLaunchInfo();
             if (string.IsNullOrWhiteSpace(launchInfo.ExecutablePath) || !File.Exists(launchInfo.ExecutablePath))
@@ -187,8 +184,8 @@ namespace FramePlayer.Services
                 using (var process = new Process { StartInfo = startInfo })
                 {
                     process.Start();
-                    var standardOutputTask = process.StandardOutput.ReadToEndAsync();
-                    var standardErrorTask = process.StandardError.ReadToEndAsync();
+                    var standardOutputTask = process.StandardOutput.ReadToEndAsync(CancellationToken.None);
+                    var standardErrorTask = process.StandardError.ReadToEndAsync(CancellationToken.None);
                     try
                     {
                         await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);

@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -23,6 +24,7 @@ namespace FramePlayer.Services
         private const string CopiedManifestRelativePath = "Runtime/export-runtime-manifest.json";
         private const string Sha256SumsFileName = "SHA256SUMS.txt";
         private const int Sha256HexLength = 64;
+        private static readonly SearchValues<char> Sha256SeparatorCharacters = SearchValues.Create(" \t");
         private static readonly string[] WindowsRequiredRuntimeFiles = new[]
         {
             "avutil-60.dll",
@@ -111,7 +113,7 @@ namespace FramePlayer.Services
             var validatedFileNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (var line in File.ReadLines(sha256SumsPath))
             {
-                if (string.IsNullOrWhiteSpace(line) || line.TrimStart().StartsWith("#", StringComparison.Ordinal))
+                if (string.IsNullOrWhiteSpace(line) || line.TrimStart().StartsWith('#'))
                 {
                     continue;
                 }
@@ -152,13 +154,12 @@ namespace FramePlayer.Services
                 return false;
             }
 
-            foreach (var requiredFile in ResolveRequiredRuntimeFiles())
+            var missingRequiredFile = ResolveRequiredRuntimeFiles()
+                .FirstOrDefault(requiredFile => !validatedFileNames.Contains(requiredFile));
+            if (!string.IsNullOrEmpty(missingRequiredFile))
             {
-                if (!validatedFileNames.Contains(requiredFile))
-                {
-                    errorMessage = "The bundled FFmpeg shared-library runtime checksum file does not include " + requiredFile + ".";
-                    return false;
-                }
+                errorMessage = "The bundled FFmpeg shared-library runtime checksum file does not include " + missingRequiredFile + ".";
+                return false;
             }
 
             return true;
@@ -184,7 +185,7 @@ namespace FramePlayer.Services
             expectedHash = string.Empty;
             fileName = string.Empty;
             var trimmed = line.Trim();
-            var separatorIndex = trimmed.IndexOfAny(new[] { ' ', '\t' });
+            var separatorIndex = trimmed.AsSpan().IndexOfAny(Sha256SeparatorCharacters);
             if (separatorIndex <= 0)
             {
                 return false;

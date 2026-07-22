@@ -179,7 +179,7 @@ make_version="$(make --version | head -1)"
 
 (
   cd "$STAGING_DIR"
-  shasum -a 256 *.dylib | LC_ALL=C sort -k 2 > SHA256SUMS.txt
+  shasum -a 256 -- *.dylib | LC_ALL=C sort -k 2 > SHA256SUMS.txt
 )
 
 mkdir -p "$RUNTIME_DIR"

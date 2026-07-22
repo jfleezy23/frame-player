@@ -8,6 +8,8 @@ namespace FramePlayer.Engines.FFmpeg
 {
     public static class FfmpegRuntimeBootstrap
     {
+        private const string RuntimeFolderName = "Runtime";
+
         public static RustFfmpegProbeResult LastRustProbeResult { get; private set; } =
             RustFfmpegProbeResult.NotRun();
 
@@ -41,14 +43,14 @@ namespace FramePlayer.Engines.FFmpeg
             var candidates = RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
                 ? new[]
                 {
-                    Path.Combine(baseDirectory, "Runtime", "macos", platformFolder, "ffmpeg"),
-                    Path.Combine(baseDirectory, "Runtime", "macos", platformFolder),
-                    Path.Combine(baseDirectory, "Runtime", "ffmpeg"),
+                    Path.Combine(baseDirectory, RuntimeFolderName, "macos", platformFolder, "ffmpeg"),
+                    Path.Combine(baseDirectory, RuntimeFolderName, "macos", platformFolder),
+                    Path.Combine(baseDirectory, RuntimeFolderName, "ffmpeg"),
                     baseDirectory
                 }
                 : new[]
                 {
-                    Path.Combine(baseDirectory, "Runtime", "ffmpeg"),
+                    Path.Combine(baseDirectory, RuntimeFolderName, "ffmpeg"),
                     baseDirectory
                 };
 
