@@ -181,7 +181,6 @@ namespace FramePlayer.Services
                         {
                             var inputFormatContextToClose = inputFormatContext;
                             ffmpeg.avformat_close_input(&inputFormatContextToClose);
-                            inputFormatContext = null;
                         }
                     }
                 },
