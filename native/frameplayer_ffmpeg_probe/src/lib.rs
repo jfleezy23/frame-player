@@ -11,8 +11,16 @@ pub(crate) const STATUS_INVALID_ARGUMENT: c_int = 1;
 pub(crate) const STATUS_RUNTIME_DIRECTORY_MISSING: c_int = 2;
 pub(crate) const STATUS_LIBRARY_LOAD_FAILED: c_int = 3;
 pub(crate) const STATUS_SYMBOL_LOAD_FAILED: c_int = 4;
+pub(crate) const MAX_DECODED_FRAME_PIXELS: i64 = 256 * 1024 * 1024 / 4;
+// Increment whenever an exported function signature or repr(C) contract changes.
+pub(crate) const FRAMEPLAYER_RUST_FFMPEG_ABI_VERSION: c_uint = 1;
 
 type VersionFn = unsafe extern "C" fn() -> c_uint;
+
+#[no_mangle]
+pub extern "C" fn frameplayer_rust_ffmpeg_abi_version() -> c_uint {
+    FRAMEPLAYER_RUST_FFMPEG_ABI_VERSION
+}
 
 #[repr(C)]
 pub struct FramePlayerRustFfmpegProbeResult {
@@ -36,6 +44,12 @@ impl Default for FramePlayerRustFfmpegProbeResult {
 }
 
 #[no_mangle]
+/// Probes the FFmpeg runtime and writes version metadata to `result`.
+///
+/// # Safety
+///
+/// `runtime_directory` must point to a valid NUL-terminated string for the duration of the call,
+/// and `result` must point to writable storage for one `FramePlayerRustFfmpegProbeResult`.
 pub unsafe extern "C" fn frameplayer_rust_ffmpeg_probe(
     runtime_directory: *const c_char,
     result: *mut FramePlayerRustFfmpegProbeResult,
@@ -327,6 +341,11 @@ mod platform {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_abi_version_matches_managed_contract() {
+        assert_eq!(1, frameplayer_rust_ffmpeg_abi_version());
+    }
 
     #[test]
     fn probe_loads_configured_runtime() {

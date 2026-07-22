@@ -1,15 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
 using FFmpeg.AutoGen;
 
 namespace FramePlayer.Engines.FFmpeg
 {
-    internal static unsafe class RustFfmpegGlobalFrameIndexBuilder
+    internal static class RustFfmpegGlobalFrameIndexBuilder
     {
-        private const int MessageCapacity = 256;
         private const long NoTimestamp = long.MinValue;
         private const string BuilderModeEnvironmentVariable = "FRAMEPLAYER_FFMPEG_INDEX_BUILDER";
 
@@ -38,9 +37,24 @@ namespace FramePlayer.Engines.FFmpeg
             string runtimeDirectory,
             string filePath,
             int videoStreamIndex,
+            TimeSpan maxElapsed,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (!RustFfmpegNativeLayout.TryValidateNativeAbi(out var abiErrorMessage))
+            {
+                return RustFfmpegGlobalFrameIndexResult.Unavailable(
+                    "native-abi-mismatch",
+                    abiErrorMessage);
+            }
+
+            if (!RustFfmpegNativeLayout.TryValidateDecodeCore(out var layoutErrorMessage))
+            {
+                return RustFfmpegGlobalFrameIndexResult.Unavailable(
+                    "native-layout-mismatch",
+                    layoutErrorMessage);
+            }
+
             if (string.IsNullOrWhiteSpace(runtimeDirectory))
             {
                 return RustFfmpegGlobalFrameIndexResult.Unavailable(
@@ -62,18 +76,32 @@ namespace FramePlayer.Engines.FFmpeg
                     "Video stream index is not configured.");
             }
 
-            var cancellationFlag = Marshal.AllocHGlobal(sizeof(int));
-            Marshal.WriteInt32(cancellationFlag, 0);
+            if (maxElapsed <= TimeSpan.Zero)
+            {
+                return new RustFfmpegGlobalFrameIndexResult(
+                    false,
+                    "resource-limit-exceeded",
+                    "Exact frame indexing reached its processing-time limit.",
+                    0,
+                    0,
+                    Array.Empty<RustFfmpegGlobalFrameIndexEntry>());
+            }
+
+            var indexStopwatch = Stopwatch.StartNew();
+            using var cancellationFlag = new RustFfmpegCancellationFlag();
             try
             {
-                using (cancellationToken.Register(state => Marshal.WriteInt32((IntPtr)state, 1), cancellationFlag))
+                using (cancellationFlag.Register(cancellationToken))
                 {
                     NativeGlobalFrameIndexResult nativeResult;
                     var returnStatus = frameplayer_rust_ffmpeg_global_frame_index(
                         runtimeDirectory,
                         filePath,
                         videoStreamIndex,
-                        cancellationFlag,
+                        FfmpegMediaResourceLimits.GlobalFrameIndexEntryLimit,
+                        checked((ulong)FfmpegMediaResourceLimits.GlobalFrameIndexNativeByteLimit),
+                        checked((ulong)Math.Max(1d, Math.Ceiling(maxElapsed.TotalMilliseconds))),
+                        cancellationFlag.Pointer,
                         out nativeResult);
                     var nativeStatus = nativeResult.Status == 0 ? returnStatus : nativeResult.Status;
 
@@ -84,8 +112,17 @@ namespace FramePlayer.Engines.FFmpeg
                             throw new OperationCanceledException(cancellationToken);
                         }
 
+                        EnsureIndexFinalizationActive(
+                            cancellationToken,
+                            indexStopwatch,
+                            maxElapsed);
+
                         var entries = nativeStatus == 0
-                            ? CopyEntries(nativeResult)
+                            ? CopyEntries(
+                                nativeResult,
+                                cancellationToken,
+                                indexStopwatch,
+                                maxElapsed)
                             : Array.Empty<RustFfmpegGlobalFrameIndexEntry>();
                         return new RustFfmpegGlobalFrameIndexResult(
                             nativeStatus == 0,
@@ -106,6 +143,16 @@ namespace FramePlayer.Engines.FFmpeg
                     }
                 }
             }
+            catch (FfmpegMediaResourceLimitException ex)
+            {
+                return new RustFfmpegGlobalFrameIndexResult(
+                    false,
+                    "resource-limit-exceeded",
+                    ex.Message,
+                    0,
+                    0,
+                    Array.Empty<RustFfmpegGlobalFrameIndexEntry>());
+            }
             catch (DllNotFoundException ex)
             {
                 return RustFfmpegGlobalFrameIndexResult.Unavailable(
@@ -124,13 +171,13 @@ namespace FramePlayer.Engines.FFmpeg
                     "native-library-invalid",
                     "Rust FFmpeg exact frame index library could not be loaded by this process: " + ex.Message);
             }
-            finally
-            {
-                Marshal.FreeHGlobal(cancellationFlag);
-            }
         }
 
-        private static RustFfmpegGlobalFrameIndexEntry[] CopyEntries(NativeGlobalFrameIndexResult nativeResult)
+        private static RustFfmpegGlobalFrameIndexEntry[] CopyEntries(
+            NativeGlobalFrameIndexResult nativeResult,
+            CancellationToken cancellationToken,
+            Stopwatch indexStopwatch,
+            TimeSpan maxElapsed)
         {
             if (nativeResult.EntryCount == 0 || nativeResult.Entries == IntPtr.Zero)
             {
@@ -142,14 +189,50 @@ namespace FramePlayer.Engines.FFmpeg
                 throw new InvalidOperationException("Rust FFmpeg exact frame index returned too many entries to marshal.");
             }
 
-            var nativeEntries = (NativeGlobalFrameIndexEntry*)nativeResult.Entries;
-            var entries = new List<RustFfmpegGlobalFrameIndexEntry>((int)nativeResult.EntryCount);
-            for (var index = 0; index < (int)nativeResult.EntryCount; index++)
+            if (nativeResult.EntryCount > FfmpegMediaResourceLimits.GlobalFrameIndexEntryLimit)
             {
-                entries.Add(ToManaged(nativeEntries[index]));
+                throw new FfmpegMediaResourceLimitException(
+                    "Rust FFmpeg exact frame index returned more entries than the configured retained-entry limit.");
             }
 
-            return entries.ToArray();
+            var entryCount = checked((int)nativeResult.EntryCount);
+            var entries = new List<RustFfmpegGlobalFrameIndexEntry>(entryCount);
+            for (var index = 0; index < entryCount; index++)
+            {
+                if ((index & 1023) == 0)
+                {
+                    EnsureIndexFinalizationActive(
+                        cancellationToken,
+                        indexStopwatch,
+                        maxElapsed);
+                }
+
+                entries.Add(ToManaged(
+                    RustFfmpegNativeArray.Read<NativeGlobalFrameIndexEntry>(
+                        nativeResult.Entries,
+                        index,
+                        entryCount)));
+            }
+
+            var copiedEntries = entries.ToArray();
+            EnsureIndexFinalizationActive(
+                cancellationToken,
+                indexStopwatch,
+                maxElapsed);
+            return copiedEntries;
+        }
+
+        private static void EnsureIndexFinalizationActive(
+            CancellationToken cancellationToken,
+            Stopwatch indexStopwatch,
+            TimeSpan maxElapsed)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (indexStopwatch.Elapsed > maxElapsed)
+            {
+                throw new FfmpegMediaResourceLimitException(
+                    "Exact frame indexing reached its processing-time limit during managed finalization.");
+            }
         }
 
         private static RustFfmpegGlobalFrameIndexEntry ToManaged(NativeGlobalFrameIndexEntry entry)
@@ -205,6 +288,8 @@ namespace FramePlayer.Engines.FFmpeg
                     return "frame-receive-failed";
                 case 15:
                     return "cancelled";
+                case 20:
+                    return "resource-limit-exceeded";
                 default:
                     return "native-error";
             }
@@ -212,14 +297,7 @@ namespace FramePlayer.Engines.FFmpeg
 
         private static string ReadMessage(NativeGlobalFrameIndexResult nativeResult)
         {
-            var message = nativeResult.Message;
-            var length = 0;
-            while (length < MessageCapacity && message[length] != 0)
-            {
-                length++;
-            }
-
-            return Encoding.UTF8.GetString(message, length);
+            return nativeResult.Message.ToString();
         }
 
         [DllImport("frameplayer_ffmpeg_probe", CallingConvention = CallingConvention.Cdecl)]
@@ -227,6 +305,9 @@ namespace FramePlayer.Engines.FFmpeg
             [MarshalAs(UnmanagedType.LPUTF8Str)] string runtimeDirectory,
             [MarshalAs(UnmanagedType.LPUTF8Str)] string filePath,
             int videoStreamIndex,
+            ulong maxEntries,
+            ulong maxNativeBytes,
+            ulong maxElapsedMilliseconds,
             IntPtr cancellationFlag,
             out NativeGlobalFrameIndexResult result);
 
@@ -236,14 +317,14 @@ namespace FramePlayer.Engines.FFmpeg
             UIntPtr entryCount);
 
         [StructLayout(LayoutKind.Sequential)]
-        private unsafe struct NativeGlobalFrameIndexResult
+        internal struct NativeGlobalFrameIndexResult
         {
             public int Status;
             public IntPtr Entries;
             public ulong EntryCount;
             public int TimeBaseNumerator;
             public int TimeBaseDenominator;
-            public fixed byte Message[MessageCapacity];
+            public RustFfmpegNativeMessage Message;
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -295,6 +376,11 @@ namespace FramePlayer.Engines.FFmpeg
         public int TimeBaseDenominator { get; }
 
         public RustFfmpegGlobalFrameIndexEntry[] Entries { get; }
+
+        public bool ResourceLimitExceeded
+        {
+            get { return string.Equals(StatusName, "resource-limit-exceeded", StringComparison.Ordinal); }
+        }
 
         public static RustFfmpegGlobalFrameIndexResult Unavailable(string statusName, string message)
         {

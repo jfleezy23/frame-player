@@ -1,11 +1,13 @@
 use crate::{
-    load_runtime_libraries, load_symbol, MESSAGE_CAPACITY, STATUS_INVALID_ARGUMENT,
-    STATUS_LIBRARY_LOAD_FAILED, STATUS_OK, STATUS_RUNTIME_DIRECTORY_MISSING,
-    STATUS_SYMBOL_LOAD_FAILED,
+    load_runtime_libraries, load_symbol, MAX_DECODED_FRAME_PIXELS, MESSAGE_CAPACITY,
+    STATUS_INVALID_ARGUMENT, STATUS_LIBRARY_LOAD_FAILED, STATUS_OK,
+    STATUS_RUNTIME_DIRECTORY_MISSING, STATUS_SYMBOL_LOAD_FAILED,
 };
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};
 use std::path::Path;
+use std::sync::atomic::{AtomicI32, Ordering};
+use std::time::{Duration, Instant};
 
 const STATUS_FILE_OPEN_FAILED: c_int = 5;
 const STATUS_STREAM_UNAVAILABLE: c_int = 6;
@@ -18,6 +20,7 @@ const STATUS_PACKET_READ_FAILED: c_int = 12;
 const STATUS_PACKET_SEND_FAILED: c_int = 13;
 const STATUS_FRAME_RECEIVE_FAILED: c_int = 14;
 const STATUS_CANCELLED: c_int = 15;
+const STATUS_RESOURCE_LIMIT_EXCEEDED: c_int = 20;
 const AVERROR_EOF: c_int = -541_478_725;
 #[cfg(target_os = "macos")]
 const AVERROR_EAGAIN: c_int = -35;
@@ -30,6 +33,9 @@ const AV_FRAME_FLAG_KEY: c_int = 0x0002;
 // bundled FFmpeg 8.1 runtime. Keep parity tests forced to Rust when changing.
 const AVFORMAT_CONTEXT_NB_STREAMS_OFFSET: usize = 44;
 const AVFORMAT_CONTEXT_STREAMS_OFFSET: usize = 48;
+const AVFORMAT_CONTEXT_INTERRUPT_CALLBACK_OFFSET: usize = 216;
+const AVFORMAT_CONTEXT_INTERRUPT_OPAQUE_OFFSET: usize =
+    AVFORMAT_CONTEXT_INTERRUPT_CALLBACK_OFFSET + std::mem::size_of::<*const c_void>();
 const AVSTREAM_CODECPAR_OFFSET: usize = 16;
 const AVSTREAM_TIME_BASE_OFFSET: usize = 32;
 const AVSTREAM_AVG_FRAME_RATE_OFFSET: usize = 88;
@@ -37,6 +43,7 @@ const AVSTREAM_R_FRAME_RATE_OFFSET: usize = 204;
 const AVCODEC_PARAMETERS_CODEC_ID_OFFSET: usize = 4;
 const AVCODEC_CONTEXT_PKT_TIMEBASE_OFFSET: usize = 92;
 const AVCODEC_CONTEXT_FRAMERATE_OFFSET: usize = 100;
+const AVCODEC_CONTEXT_MAX_PIXELS_OFFSET: usize = 792;
 const AVPACKET_STREAM_INDEX_OFFSET: usize = 36;
 const AVFRAME_WIDTH_OFFSET: usize = 104;
 const AVFRAME_HEIGHT_OFFSET: usize = 108;
@@ -48,6 +55,7 @@ const AVFRAME_BEST_EFFORT_TIMESTAMP_OFFSET: usize = 304;
 type AvStrErrorFn = unsafe extern "C" fn(c_int, *mut c_char, usize) -> c_int;
 type AvformatOpenInputFn =
     unsafe extern "C" fn(*mut *mut c_void, *const c_char, *mut c_void, *mut *mut c_void) -> c_int;
+type AvformatAllocContextFn = unsafe extern "C" fn() -> *mut c_void;
 type AvformatFindStreamInfoFn = unsafe extern "C" fn(*mut c_void, *mut *mut c_void) -> c_int;
 type AvformatCloseInputFn = unsafe extern "C" fn(*mut *mut c_void);
 type AvReadFrameFn = unsafe extern "C" fn(*mut c_void, *mut c_void) -> c_int;
@@ -115,6 +123,7 @@ struct Anchor {
 
 struct Symbols {
     av_strerror: AvStrErrorFn,
+    avformat_alloc_context: AvformatAllocContextFn,
     avformat_open_input: AvformatOpenInputFn,
     avformat_find_stream_info: AvformatFindStreamInfoFn,
     avformat_close_input: AvformatCloseInputFn,
@@ -201,7 +210,26 @@ struct IndexSession {
     codec_context: CodecContextGuard,
     packet: PacketGuard,
     frame: FrameGuard,
+    interrupt_state: Box<IndexInterruptState>,
     _runtime: crate::RuntimeLibraries,
+}
+
+struct RawIndexResourceLimits {
+    max_entries: u64,
+    max_native_bytes: u64,
+    max_elapsed_milliseconds: u64,
+}
+
+struct IndexResourceLimits {
+    max_entries: usize,
+    max_native_bytes: usize,
+    max_elapsed: Duration,
+}
+
+struct IndexInterruptState {
+    cancel_flag: *const c_int,
+    started_at: Instant,
+    max_elapsed: Duration,
 }
 
 enum IndexLoopAction {
@@ -215,6 +243,9 @@ pub unsafe extern "C" fn frameplayer_rust_ffmpeg_global_frame_index(
     runtime_directory: *const c_char,
     file_path: *const c_char,
     video_stream_index: c_int,
+    max_entries: u64,
+    max_native_bytes: u64,
+    max_elapsed_milliseconds: u64,
     cancel_flag: *const c_int,
     result: *mut FramePlayerRustFfmpegGlobalIndexResult,
 ) -> c_int {
@@ -229,6 +260,11 @@ pub unsafe extern "C" fn frameplayer_rust_ffmpeg_global_frame_index(
             runtime_directory,
             file_path,
             video_stream_index,
+            RawIndexResourceLimits {
+                max_entries,
+                max_native_bytes,
+                max_elapsed_milliseconds,
+            },
             cancel_flag,
             result,
         )
@@ -252,7 +288,7 @@ pub unsafe extern "C" fn frameplayer_rust_ffmpeg_global_frame_index_free(
         return;
     }
 
-    drop(Box::from_raw(std::slice::from_raw_parts_mut(
+    drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
         entries,
         entry_count,
     )));
@@ -262,13 +298,46 @@ unsafe fn global_frame_index_inner(
     runtime_directory: *const c_char,
     file_path: *const c_char,
     video_stream_index: c_int,
+    raw_limits: RawIndexResourceLimits,
     cancel_flag: *const c_int,
     result: *mut FramePlayerRustFfmpegGlobalIndexResult,
 ) -> c_int {
-    if runtime_directory.is_null() || file_path.is_null() || video_stream_index < 0 {
+    if runtime_directory.is_null()
+        || file_path.is_null()
+        || video_stream_index < 0
+        || raw_limits.max_entries == 0
+        || raw_limits.max_native_bytes == 0
+        || raw_limits.max_elapsed_milliseconds == 0
+    {
         write_message(result, "Exact frame index arguments were invalid.");
         return STATUS_INVALID_ARGUMENT;
     }
+
+    let max_entries = match usize::try_from(raw_limits.max_entries) {
+        Ok(value) => value,
+        Err(_) => {
+            write_message(
+                result,
+                "Exact frame index entry limit exceeded this platform's address space.",
+            );
+            return STATUS_INVALID_ARGUMENT;
+        }
+    };
+    let max_native_bytes = match usize::try_from(raw_limits.max_native_bytes) {
+        Ok(value) => value,
+        Err(_) => {
+            write_message(
+                result,
+                "Exact frame index byte limit exceeded this platform's address space.",
+            );
+            return STATUS_INVALID_ARGUMENT;
+        }
+    };
+    let limits = IndexResourceLimits {
+        max_entries,
+        max_native_bytes,
+        max_elapsed: Duration::from_millis(raw_limits.max_elapsed_milliseconds),
+    };
 
     let runtime_directory = match CStr::from_ptr(runtime_directory).to_str() {
         Ok(value) if !value.trim().is_empty() => value,
@@ -290,6 +359,7 @@ unsafe fn global_frame_index_inner(
         Path::new(runtime_directory),
         file_path,
         video_stream_index,
+        &limits,
         cancel_flag,
         result,
     ) {
@@ -302,20 +372,35 @@ unsafe fn build_global_frame_index(
     runtime_directory: &Path,
     file_path: &str,
     video_stream_index: c_int,
+    limits: &IndexResourceLimits,
     cancel_flag: *const c_int,
     result: *mut FramePlayerRustFfmpegGlobalIndexResult,
 ) -> Result<(), c_int> {
     ensure_index_not_cancelled(cancel_flag, result)?;
+    let started_at = Instant::now();
 
-    let session = create_index_session(runtime_directory, file_path, video_stream_index, result)?;
-    let entries = decode_index_entries(
-        &session.symbols,
-        session.format_context.ptr,
-        session.codec_context.ptr,
-        session.packet.ptr,
-        session.frame.ptr,
+    let session = create_index_session(
+        runtime_directory,
+        file_path,
         video_stream_index,
+        limits,
         cancel_flag,
+        started_at,
+        result,
+    )?;
+    ensure_index_within_resource_limits(
+        0,
+        limits.max_entries,
+        started_at.elapsed(),
+        limits.max_elapsed,
+        result,
+    )?;
+    let entries = decode_index_entries(
+        &session,
+        video_stream_index,
+        limits,
+        cancel_flag,
+        started_at,
         result,
     )?;
 
@@ -339,12 +424,24 @@ unsafe fn create_index_session(
     runtime_directory: &Path,
     file_path: &str,
     video_stream_index: c_int,
+    limits: &IndexResourceLimits,
+    cancel_flag: *const c_int,
+    started_at: Instant,
     result: *mut FramePlayerRustFfmpegGlobalIndexResult,
 ) -> Result<IndexSession, c_int> {
     ensure_index_runtime_directory(runtime_directory, result)?;
+    ensure_index_active(cancel_flag, started_at, limits, result)?;
 
     let (runtime, symbols) = load_index_runtime_symbols(runtime_directory, result)?;
-    let format_context = open_index_format_context(&symbols, file_path, result)?;
+    ensure_index_active(cancel_flag, started_at, limits, result)?;
+    let mut interrupt_state = Box::new(IndexInterruptState {
+        cancel_flag,
+        started_at,
+        max_elapsed: limits.max_elapsed,
+    });
+    let format_context =
+        open_index_format_context(&symbols, file_path, interrupt_state.as_mut(), result)?;
+    ensure_index_active(cancel_flag, started_at, limits, result)?;
     let (video_stream, video_time_base) =
         resolve_index_video_stream(format_context.ptr, video_stream_index, result)?;
     let codec_context = create_index_codec_context(
@@ -354,6 +451,7 @@ unsafe fn create_index_session(
         video_time_base,
         result,
     )?;
+    ensure_index_active(cancel_flag, started_at, limits, result)?;
     let packet = allocate_index_packet(&symbols, result)?;
     let frame = allocate_index_frame(&symbols, result)?;
 
@@ -363,6 +461,7 @@ unsafe fn create_index_session(
         codec_context,
         packet,
         frame,
+        interrupt_state,
         _runtime: runtime,
     })
 }
@@ -408,6 +507,7 @@ unsafe fn load_index_runtime_symbols(
 unsafe fn open_index_format_context(
     symbols: &Symbols,
     file_path: &str,
+    interrupt_state: &mut IndexInterruptState,
     result: *mut FramePlayerRustFfmpegGlobalIndexResult,
 ) -> Result<FormatContextGuard, c_int> {
     let input_path = match CString::new(file_path) {
@@ -418,13 +518,36 @@ unsafe fn open_index_format_context(
         }
     };
 
-    let mut raw_format_context: *mut c_void = std::ptr::null_mut();
+    let mut raw_format_context = (symbols.avformat_alloc_context)();
+    if raw_format_context.is_null() {
+        write_message(
+            result,
+            "Could not allocate the FFmpeg format context for Rust exact frame indexing.",
+        );
+        return Err(STATUS_FILE_OPEN_FAILED);
+    }
+    write_field(
+        raw_format_context,
+        AVFORMAT_CONTEXT_INTERRUPT_CALLBACK_OFFSET,
+        index_interrupt_callback as unsafe extern "C" fn(*mut c_void) -> c_int,
+    );
+    write_field(
+        raw_format_context,
+        AVFORMAT_CONTEXT_INTERRUPT_OPAQUE_OFFSET,
+        interrupt_state as *mut IndexInterruptState as *mut c_void,
+    );
     let open_result = (symbols.avformat_open_input)(
         &mut raw_format_context,
         input_path.as_ptr(),
         std::ptr::null_mut(),
         std::ptr::null_mut(),
     );
+    if let Some(status) = index_interrupt_status(interrupt_state, result) {
+        if !raw_format_context.is_null() {
+            (symbols.avformat_close_input)(&mut raw_format_context);
+        }
+        return Err(status);
+    }
     if open_result < 0 {
         if !raw_format_context.is_null() {
             (symbols.avformat_close_input)(&mut raw_format_context);
@@ -445,6 +568,9 @@ unsafe fn open_index_format_context(
 
     let stream_info_result =
         (symbols.avformat_find_stream_info)(format_context.ptr, std::ptr::null_mut());
+    if let Some(status) = index_interrupt_status(interrupt_state, result) {
+        return Err(status);
+    }
     if stream_info_result < 0 {
         write_message(
             result,
@@ -581,6 +707,11 @@ unsafe fn configure_index_codec_context(
         AVCODEC_CONTEXT_FRAMERATE_OFFSET,
         get_nominal_frame_rate(symbols, format_context, video_stream),
     );
+    write_field(
+        codec_context,
+        AVCODEC_CONTEXT_MAX_PIXELS_OFFSET,
+        MAX_DECODED_FRAME_PIXELS,
+    );
 }
 
 unsafe fn open_index_decoder(
@@ -644,6 +775,10 @@ unsafe fn allocate_index_frame(
 unsafe fn load_symbols(runtime: &crate::RuntimeLibraries) -> Result<Symbols, c_int> {
     Ok(Symbols {
         av_strerror: load_symbol::<AvStrErrorFn>(&runtime.avutil, "av_strerror")?,
+        avformat_alloc_context: load_symbol::<AvformatAllocContextFn>(
+            &runtime.avformat,
+            "avformat_alloc_context",
+        )?,
         avformat_open_input: load_symbol::<AvformatOpenInputFn>(
             &runtime.avformat,
             "avformat_open_input",
@@ -696,15 +831,23 @@ unsafe fn load_symbols(runtime: &crate::RuntimeLibraries) -> Result<Symbols, c_i
 }
 
 unsafe fn decode_index_entries(
-    symbols: &Symbols,
-    format_context: *mut c_void,
-    codec_context: *mut c_void,
-    packet: *mut c_void,
-    decoded_frame: *mut c_void,
+    session: &IndexSession,
     video_stream_index: c_int,
+    limits: &IndexResourceLimits,
     cancel_flag: *const c_int,
+    started_at: Instant,
     result: *mut FramePlayerRustFfmpegGlobalIndexResult,
 ) -> Result<Vec<FramePlayerRustFfmpegGlobalIndexEntry>, c_int> {
+    let symbols = &session.symbols;
+    let codec_context = session.codec_context.ptr;
+    let packet = session.packet.ptr;
+    let entry_size = std::mem::size_of::<FramePlayerRustFfmpegGlobalIndexEntry>();
+    let effective_max_entries = limits.max_entries.min(limits.max_native_bytes / entry_size);
+    if effective_max_entries == 0 {
+        write_message(result, "Exact frame index limits cannot retain one entry.");
+        return Err(STATUS_RESOURCE_LIMIT_EXCEEDED);
+    }
+
     let mut entries = Vec::new();
     let mut current_anchor: Option<Anchor> = None;
     let mut absolute_frame_index = 0i64;
@@ -714,20 +857,26 @@ unsafe fn decode_index_entries(
 
     loop {
         ensure_index_not_cancelled(cancel_flag, result)?;
+        ensure_index_within_resource_limits(
+            entries.len(),
+            effective_max_entries,
+            started_at.elapsed(),
+            limits.max_elapsed,
+            result,
+        )?;
 
-        match try_receive_indexed_frame(
-            symbols,
-            codec_context,
-            decoded_frame,
+        if let Some(entry) = try_receive_indexed_frame(
+            session,
             &mut absolute_frame_index,
             &mut current_anchor,
+            limits,
+            cancel_flag,
+            started_at,
             result,
         )? {
-            Some(entry) => {
-                entries.push(entry);
-                continue;
-            }
-            None => {}
+            ensure_index_storage_capacity(&mut entries, effective_max_entries, result)?;
+            entries.push(entry);
+            continue;
         }
 
         if submit_pending_index_packet(
@@ -753,9 +902,7 @@ unsafe fn decode_index_entries(
         }
 
         read_index_packet(
-            symbols,
-            format_context,
-            packet,
+            session,
             video_stream_index,
             &mut input_exhausted,
             &mut has_pending_video_packet,
@@ -767,7 +914,95 @@ unsafe fn decode_index_entries(
         (symbols.av_packet_unref)(packet);
     }
 
+    ensure_index_not_cancelled(cancel_flag, result)?;
+    ensure_index_within_resource_limits(
+        entries.len(),
+        effective_max_entries,
+        started_at.elapsed(),
+        limits.max_elapsed,
+        result,
+    )?;
+
     Ok(entries)
+}
+
+unsafe fn ensure_index_storage_capacity(
+    entries: &mut Vec<FramePlayerRustFfmpegGlobalIndexEntry>,
+    max_entries: usize,
+    result: *mut FramePlayerRustFfmpegGlobalIndexResult,
+) -> Result<(), c_int> {
+    if entries.len() < entries.capacity() {
+        return Ok(());
+    }
+
+    let remaining_entries = max_entries.saturating_sub(entries.len());
+    if remaining_entries == 0 {
+        write_message(
+            result,
+            "Exact frame index reached its retained-entry limit.",
+        );
+        return Err(STATUS_RESOURCE_LIMIT_EXCEEDED);
+    }
+
+    let growth = entries.capacity().max(4_096).min(remaining_entries);
+    if entries.try_reserve_exact(growth).is_err() {
+        write_message(
+            result,
+            "Exact frame index could not reserve bounded native storage.",
+        );
+        return Err(STATUS_RESOURCE_LIMIT_EXCEEDED);
+    }
+
+    Ok(())
+}
+
+unsafe fn ensure_index_within_resource_limits(
+    entry_count: usize,
+    max_entries: usize,
+    elapsed: Duration,
+    max_elapsed: Duration,
+    result: *mut FramePlayerRustFfmpegGlobalIndexResult,
+) -> Result<(), c_int> {
+    match index_resource_limit(entry_count, max_entries, elapsed, max_elapsed) {
+        Some(IndexResourceLimit::EntryCount) => {
+            write_message(
+                result,
+                "Exact frame index reached its retained-entry byte limit.",
+            );
+            Err(STATUS_RESOURCE_LIMIT_EXCEEDED)
+        }
+        Some(IndexResourceLimit::ElapsedTime) => {
+            write_message(
+                result,
+                "Exact frame index reached its processing-time limit.",
+            );
+            Err(STATUS_RESOURCE_LIMIT_EXCEEDED)
+        }
+        None => Ok(()),
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum IndexResourceLimit {
+    EntryCount,
+    ElapsedTime,
+}
+
+fn index_resource_limit(
+    entry_count: usize,
+    max_entries: usize,
+    elapsed: Duration,
+    max_elapsed: Duration,
+) -> Option<IndexResourceLimit> {
+    if entry_count >= max_entries {
+        return Some(IndexResourceLimit::EntryCount);
+    }
+
+    if elapsed > max_elapsed {
+        return Some(IndexResourceLimit::ElapsedTime);
+    }
+
+    None
 }
 
 unsafe fn ensure_index_not_cancelled(
@@ -780,6 +1015,57 @@ unsafe fn ensure_index_not_cancelled(
     }
 
     Ok(())
+}
+
+unsafe fn ensure_index_active(
+    cancel_flag: *const c_int,
+    started_at: Instant,
+    limits: &IndexResourceLimits,
+    result: *mut FramePlayerRustFfmpegGlobalIndexResult,
+) -> Result<(), c_int> {
+    ensure_index_not_cancelled(cancel_flag, result)?;
+    ensure_index_within_resource_limits(
+        0,
+        limits.max_entries,
+        started_at.elapsed(),
+        limits.max_elapsed,
+        result,
+    )
+}
+
+unsafe fn index_interrupt_status(
+    interrupt_state: &IndexInterruptState,
+    result: *mut FramePlayerRustFfmpegGlobalIndexResult,
+) -> Option<c_int> {
+    if cancellation_requested(interrupt_state.cancel_flag) {
+        write_message(result, "Exact frame index build was cancelled.");
+        return Some(STATUS_CANCELLED);
+    }
+
+    if interrupt_state.started_at.elapsed() > interrupt_state.max_elapsed {
+        write_message(
+            result,
+            "Exact frame index reached its processing-time limit.",
+        );
+        return Some(STATUS_RESOURCE_LIMIT_EXCEEDED);
+    }
+
+    None
+}
+
+unsafe extern "C" fn index_interrupt_callback(opaque: *mut c_void) -> c_int {
+    if opaque.is_null() {
+        return 0;
+    }
+
+    let interrupt_state = &*(opaque as *const IndexInterruptState);
+    if cancellation_requested(interrupt_state.cancel_flag)
+        || interrupt_state.started_at.elapsed() > interrupt_state.max_elapsed
+    {
+        1
+    } else {
+        0
+    }
 }
 
 unsafe fn submit_pending_index_packet(
@@ -854,15 +1140,19 @@ unsafe fn flush_index_decoder(
 }
 
 unsafe fn read_index_packet(
-    symbols: &Symbols,
-    format_context: *mut c_void,
-    packet: *mut c_void,
+    session: &IndexSession,
     video_stream_index: c_int,
     input_exhausted: &mut bool,
     has_pending_video_packet: &mut bool,
     result: *mut FramePlayerRustFfmpegGlobalIndexResult,
 ) -> Result<(), c_int> {
+    let symbols = &session.symbols;
+    let format_context = session.format_context.ptr;
+    let packet = session.packet.ptr;
     let read_result = (symbols.av_read_frame)(format_context, packet);
+    if let Some(status) = index_interrupt_status(session.interrupt_state.as_ref(), result) {
+        return Err(status);
+    }
     if read_result == AVERROR_EOF {
         *input_exhausted = true;
         return Ok(());
@@ -889,15 +1179,20 @@ unsafe fn read_index_packet(
 }
 
 unsafe fn try_receive_indexed_frame(
-    symbols: &Symbols,
-    codec_context: *mut c_void,
-    decoded_frame: *mut c_void,
+    session: &IndexSession,
     absolute_frame_index: &mut i64,
     current_anchor: &mut Option<Anchor>,
+    limits: &IndexResourceLimits,
+    cancel_flag: *const c_int,
+    started_at: Instant,
     result: *mut FramePlayerRustFfmpegGlobalIndexResult,
 ) -> Result<Option<FramePlayerRustFfmpegGlobalIndexEntry>, c_int> {
+    let symbols = &session.symbols;
+    let codec_context = session.codec_context.ptr;
+    let decoded_frame = session.frame.ptr;
     loop {
         let receive_result = (symbols.avcodec_receive_frame)(codec_context, decoded_frame);
+        ensure_index_active(cancel_flag, started_at, limits, result)?;
         if receive_result == AVERROR_EAGAIN || receive_result == AVERROR_EOF {
             return Ok(None);
         }
@@ -1047,7 +1342,7 @@ fn timestamp_or_none(timestamp: i64) -> Option<i64> {
 }
 
 unsafe fn cancellation_requested(cancel_flag: *const c_int) -> bool {
-    !cancel_flag.is_null() && std::ptr::read_volatile(cancel_flag) != 0
+    !cancel_flag.is_null() && (&*cancel_flag.cast::<AtomicI32>()).load(Ordering::Acquire) != 0
 }
 
 unsafe fn read_field<T: Copy>(base: *const c_void, offset: usize) -> T {
@@ -1079,4 +1374,57 @@ unsafe fn write_message(result: *mut FramePlayerRustFfmpegGlobalIndexResult, mes
         (*result).message[index] = *byte as c_char;
     }
     (*result).message[byte_count] = 0;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn index_resource_limits_enforce_exact_boundaries() {
+        let max_elapsed = Duration::from_secs(120);
+
+        assert_eq!(
+            None,
+            index_resource_limit(499_999, 500_000, max_elapsed, max_elapsed)
+        );
+        assert_eq!(
+            Some(IndexResourceLimit::EntryCount),
+            index_resource_limit(500_000, 500_000, Duration::ZERO, max_elapsed)
+        );
+        assert_eq!(
+            Some(IndexResourceLimit::ElapsedTime),
+            index_resource_limit(
+                0,
+                500_000,
+                max_elapsed + Duration::from_nanos(1),
+                max_elapsed,
+            )
+        );
+    }
+
+    #[test]
+    fn index_interrupt_callback_enforces_deadline_and_cancellation() {
+        let cancel_flag = 0;
+        let mut deadline_state = IndexInterruptState {
+            cancel_flag: &cancel_flag,
+            started_at: Instant::now(),
+            max_elapsed: Duration::ZERO,
+        };
+        assert_eq!(1, unsafe {
+            index_interrupt_callback(&mut deadline_state as *mut IndexInterruptState as *mut c_void)
+        });
+
+        let cancelled_flag = 1;
+        let mut cancelled_state = IndexInterruptState {
+            cancel_flag: &cancelled_flag,
+            started_at: Instant::now(),
+            max_elapsed: Duration::from_secs(120),
+        };
+        assert_eq!(1, unsafe {
+            index_interrupt_callback(
+                &mut cancelled_state as *mut IndexInterruptState as *mut c_void,
+            )
+        });
+    }
 }

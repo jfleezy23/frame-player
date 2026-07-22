@@ -1,13 +1,10 @@
 using System;
 using System.Runtime.InteropServices;
-using System.Text;
 
 namespace FramePlayer.Engines.FFmpeg
 {
-    public static unsafe class RustFfmpegProbe
+    public static class RustFfmpegProbe
     {
-        private const int MessageCapacity = 256;
-
         public static RustFfmpegProbeResult TryProbe(string runtimeDirectory)
         {
             if (string.IsNullOrWhiteSpace(runtimeDirectory))
@@ -15,6 +12,13 @@ namespace FramePlayer.Engines.FFmpeg
                 return RustFfmpegProbeResult.Unavailable(
                     "runtime-directory-missing",
                     "FFmpeg runtime directory is not configured.");
+            }
+
+            if (!RustFfmpegNativeLayout.TryValidateNativeAbi(out var abiErrorMessage))
+            {
+                return RustFfmpegProbeResult.Unavailable(
+                    "native-abi-mismatch",
+                    abiErrorMessage);
             }
 
             try
@@ -71,14 +75,7 @@ namespace FramePlayer.Engines.FFmpeg
 
         private static string ReadMessage(NativeProbeResult nativeResult)
         {
-            var message = nativeResult.Message;
-            var length = 0;
-            while (length < MessageCapacity && message[length] != 0)
-            {
-                length++;
-            }
-
-            return Encoding.UTF8.GetString(message, length);
+            return nativeResult.Message.ToString();
         }
 
         [DllImport("frameplayer_ffmpeg_probe", CallingConvention = CallingConvention.Cdecl)]
@@ -87,13 +84,13 @@ namespace FramePlayer.Engines.FFmpeg
             out NativeProbeResult result);
 
         [StructLayout(LayoutKind.Sequential)]
-        private unsafe struct NativeProbeResult
+        internal struct NativeProbeResult
         {
             public int Status;
             public uint AvutilVersion;
             public uint AvcodecVersion;
             public uint AvformatVersion;
-            public fixed byte Message[MessageCapacity];
+            public RustFfmpegNativeMessage Message;
         }
     }
 }

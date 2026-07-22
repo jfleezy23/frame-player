@@ -29,7 +29,7 @@ function Get-Sha256 {
         [string]$FilePath
     )
 
-    return (Get-FileHash -Path $FilePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    return (Get-FileHash -LiteralPath $FilePath -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
 function Test-ManifestLeafName {
@@ -181,7 +181,9 @@ if ((Test-ToolsDirectory -DirectoryPath $candidateToolsDirectory -RequiredFiles 
     Write-Host "Restoring FFmpeg export tools from local source-built candidate at '$candidateToolsDirectory'."
     Remove-Item -LiteralPath $toolsDirectory -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $toolsDirectory | Out-Null
-    Copy-Item -Path (Join-Path $candidateToolsDirectory "*") -Destination $toolsDirectory -Recurse -Force
+    Get-ChildItem -LiteralPath $candidateToolsDirectory -Force | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination $toolsDirectory -Recurse -Force
+    }
 
     if (-not (Test-ToolsIntegrity -DirectoryPath $toolsDirectory -ExpectedHashes $expectedFileHashes)) {
         throw "The local FFmpeg export tools candidate failed integrity validation after restore."
@@ -210,7 +212,9 @@ if ([string]::IsNullOrWhiteSpace($manifest.assetSha256)) {
     Complete-BestEffort "Export-tools manifest is missing assetSha256 for archive validation."
 }
 
-$extractRoot = Join-Path $env:TEMP ("frameplayer-export-tools-" + [Guid]::NewGuid().ToString("N"))
+$temporaryDirectory = [System.IO.Path]::GetTempPath()
+$extractRoot = Join-Path $temporaryDirectory ("frameplayer-export-tools-" + [Guid]::NewGuid().ToString("N"))
+$downloadedArchivePath = $null
 
 New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $extractRoot | Out-Null
@@ -224,9 +228,10 @@ try {
             "https://github.com/jfleezy23/frame-player/releases/download/{0}/{1}" -f $manifest.tag, $manifest.assetName
         }
 
-        $archivePath = Join-Path $env:TEMP (([Guid]::NewGuid().ToString("N")) + "-" + $manifest.assetName)
+        $downloadedArchivePath = Join-Path $temporaryDirectory (([Guid]::NewGuid().ToString("N")) + "-" + $manifest.assetName)
+        $archivePath = $downloadedArchivePath
         Write-Host "Downloading FFmpeg export tools from $downloadUrl"
-        Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath -UseBasicParsing
     }
     else {
         Write-Host "Restoring FFmpeg export tools from local archive '$archivePath'."
@@ -237,7 +242,7 @@ try {
         throw "The FFmpeg export-tools archive failed SHA256 validation."
     }
 
-    Expand-Archive -Path $archivePath -DestinationPath $extractRoot -Force
+    Expand-Archive -LiteralPath $archivePath -DestinationPath $extractRoot -Force
 
     $sourceDirectory = Join-Path $extractRoot "ffmpeg-tools"
     if ((Test-ToolsDirectory -DirectoryPath $extractRoot -RequiredFiles $requiredToolFiles)) {
@@ -257,7 +262,9 @@ try {
 
     Remove-Item -LiteralPath $toolsDirectory -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $toolsDirectory | Out-Null
-    Copy-Item -Path (Join-Path $sourceDirectory "*") -Destination $toolsDirectory -Recurse -Force
+    Get-ChildItem -LiteralPath $sourceDirectory -Force | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination $toolsDirectory -Recurse -Force
+    }
 
     if (-not (Test-ToolsIntegrity -DirectoryPath $toolsDirectory -ExpectedHashes $expectedFileHashes)) {
         throw "The restored FFmpeg export tools failed integrity validation."
@@ -267,7 +274,7 @@ try {
 }
 finally {
     Remove-Item -LiteralPath $extractRoot -Recurse -Force -ErrorAction SilentlyContinue
-    if ($archivePath -like (Join-Path $env:TEMP "*")) {
-        Remove-Item -LiteralPath $archivePath -Force -ErrorAction SilentlyContinue
+    if ($null -ne $downloadedArchivePath) {
+        Remove-Item -LiteralPath $downloadedArchivePath -Force -ErrorAction SilentlyContinue
     }
 }

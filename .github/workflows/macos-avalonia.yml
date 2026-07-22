@@ -65,20 +65,23 @@ jobs:
           )
           cp "$extract_dir/"*.dylib "$runtime_dir/"
 
+      - name: Build Rust FFmpeg probe
+        run: scripts/Build-RustFfmpegProbe.sh osx-arm64
+
       - name: Restore
         run: |
-          dotnet restore src/FramePlayer.Avalonia/FramePlayer.Avalonia.csproj
-          dotnet restore tests/FramePlayer.Core.Tests/FramePlayer.Core.Tests.csproj
-          dotnet restore tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj
+          dotnet restore src/FramePlayer.Avalonia/FramePlayer.Avalonia.csproj -r osx-arm64
+          dotnet restore tests/FramePlayer.Core.Tests/FramePlayer.Core.Tests.csproj -r osx-arm64
+          dotnet restore tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj -r osx-arm64
 
       - name: Build
         run: |
-          dotnet build src/FramePlayer.Avalonia/FramePlayer.Avalonia.csproj -c Release --no-restore
+          dotnet build src/FramePlayer.Avalonia/FramePlayer.Avalonia.csproj -c Release -r osx-arm64 --no-restore
 
       - name: Test
         run: |
-          dotnet test tests/FramePlayer.Core.Tests/FramePlayer.Core.Tests.csproj -c Release --no-restore
-          dotnet test tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj -c Release --no-restore --filter "Category!=ReleaseCandidate"
+          dotnet test tests/FramePlayer.Core.Tests/FramePlayer.Core.Tests.csproj -c Release -r osx-arm64 --no-restore
+          dotnet test tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj -c Release -r osx-arm64 --no-restore --filter "Category!=ReleaseCandidate"
 
       - name: Bundle smoke test
         run: |

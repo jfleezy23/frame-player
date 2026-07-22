@@ -25,6 +25,7 @@ namespace FramePlayer.Avalonia.Tests
             var root = Path.Combine(Path.GetTempPath(), "frame-player-runtime-" + Guid.NewGuid().ToString("N"));
             try
             {
+                var genericRuntime = Path.Combine(root, "Runtime", "ffmpeg");
                 var expected = OperatingSystem.IsMacOS()
                     ? Path.Combine(
                         root,
@@ -32,7 +33,14 @@ namespace FramePlayer.Avalonia.Tests
                         "macos",
                         FfmpegRuntimeBootstrap.ResolvePlatformFolder(),
                         "ffmpeg")
-                    : Path.Combine(root, "Runtime", "ffmpeg");
+                    : genericRuntime;
+                Directory.CreateDirectory(genericRuntime);
+                Directory.CreateDirectory(Path.Combine(
+                    root,
+                    "Runtime",
+                    "macos",
+                    FfmpegRuntimeBootstrap.ResolvePlatformFolder(),
+                    "ffmpeg"));
                 Directory.CreateDirectory(expected);
 
                 Assert.Equal(expected, FfmpegRuntimeBootstrap.ResolveRuntimeDirectory(root));
