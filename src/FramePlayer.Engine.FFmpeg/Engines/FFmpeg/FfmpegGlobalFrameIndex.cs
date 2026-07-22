@@ -189,7 +189,6 @@ namespace FramePlayer.Engines.FFmpeg
 
                     FfmpegGlobalFrameIndexEntry indexedFrame;
                     if (TryReceiveIndexedFrame(
-                        formatContext,
                         videoStream,
                         codecContext,
                         decodedFrame,
@@ -231,7 +230,6 @@ namespace FramePlayer.Engines.FFmpeg
 
                         if (flushResult == ffmpeg.AVERROR_EOF)
                         {
-                            flushPacketSent = true;
                             break;
                         }
 
@@ -477,7 +475,6 @@ namespace FramePlayer.Engines.FFmpeg
         }
 
         private static bool TryReceiveIndexedFrame(
-            AVFormatContext* formatContext,
             AVStream* videoStream,
             AVCodecContext* codecContext,
             AVFrame* decodedFrame,
@@ -506,7 +503,6 @@ namespace FramePlayer.Engines.FFmpeg
                     }
 
                     entry = CreateIndexEntry(
-                        formatContext,
                         videoStream,
                         decodedFrame,
                         absoluteFrameIndex,
@@ -528,7 +524,6 @@ namespace FramePlayer.Engines.FFmpeg
         }
 
         private static FfmpegGlobalFrameIndexEntry CreateIndexEntry(
-            AVFormatContext* formatContext,
             AVStream* videoStream,
             AVFrame* decodedFrame,
             long absoluteFrameIndex,

@@ -2303,7 +2303,7 @@ namespace FramePlayer.Engines.FFmpeg
             var anchorReached = anchorEntry != null &&
                 anchorEntry.AbsoluteFrameIndex == 0L &&
                 targetEntry.SeekAnchorTimestamp <= 0L;
-            var nextAbsoluteFrameIndex = anchorReached && anchorEntry != null
+            var nextAbsoluteFrameIndex = anchorReached
                 ? anchorEntry.AbsoluteFrameIndex
                 : -1L;
 
