@@ -155,8 +155,6 @@ if ($expectedFileHashes.Count -eq 0) {
 $runtimeRoot = Join-Path $repoRoot "Runtime"
 $runtimeDirectory = Join-Path $runtimeRoot "ffmpeg-export"
 $candidateRuntimeDirectory = Join-Path $runtimeRoot "ffmpeg-export-8.1.2-candidate"
-$toolsDirectory = Join-Path $runtimeRoot "ffmpeg-tools"
-$toolsCandidateDirectory = Join-Path $runtimeRoot "ffmpeg-tools-8.1.2-candidate"
 $artifactsRoot = Join-Path $repoRoot "artifacts"
 
 if ((Test-Path -LiteralPath $runtimeDirectory) -and
@@ -174,32 +172,6 @@ if ((Test-Path -LiteralPath $candidateRuntimeDirectory) -and
 
     if (-not (Test-ExportRuntimeIntegrity -DirectoryPath $runtimeDirectory -ExpectedHashes $expectedFileHashes)) {
         throw "The local FFmpeg export runtime candidate failed integrity validation after restore."
-    }
-
-    Write-Host "Export runtime ready at '$runtimeDirectory'."
-    exit 0
-}
-
-foreach ($sourceDirectory in @($toolsDirectory, $toolsCandidateDirectory)) {
-    if (-not (Test-Path -LiteralPath $sourceDirectory)) {
-        continue
-    }
-
-    $missingSourceFiles = @($expectedFileHashes.Keys | Where-Object { -not (Test-Path -LiteralPath (Join-Path $sourceDirectory $_)) })
-    if ($missingSourceFiles.Count -gt 0) {
-        continue
-    }
-
-    Write-Host "Restoring FFmpeg export runtime from local FFmpeg tools directory '$sourceDirectory'."
-    Remove-Item -LiteralPath $runtimeDirectory -Recurse -Force -ErrorAction SilentlyContinue
-    New-Item -ItemType Directory -Force -Path $runtimeDirectory | Out-Null
-
-    foreach ($fileName in $expectedFileHashes.Keys) {
-        Copy-Item -LiteralPath (Join-Path $sourceDirectory $fileName) -Destination (Join-Path $runtimeDirectory $fileName) -Force
-    }
-
-    if (-not (Test-ExportRuntimeIntegrity -DirectoryPath $runtimeDirectory -ExpectedHashes $expectedFileHashes)) {
-        throw "The FFmpeg tools directory failed export-runtime integrity validation after restore."
     }
 
     Write-Host "Export runtime ready at '$runtimeDirectory'."

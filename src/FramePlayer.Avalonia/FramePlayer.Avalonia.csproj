@@ -34,7 +34,6 @@
     <None Include="..\..\THIRD_PARTY_NOTICES.md" Link="THIRD_PARTY_NOTICES.md" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\Runtime\runtime-manifest.json" Link="Runtime\runtime-manifest.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\Runtime\export-runtime-manifest.json" Link="Runtime\export-runtime-manifest.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\Runtime\export-tools-manifest.json" Link="Runtime\export-tools-manifest.json" CopyToOutputDirectory="PreserveNewest" />
     <EmbeddedResource Include="..\..\Runtime\export-runtime-manifest.json" LogicalName="FramePlayer.Runtime.export-runtime-manifest.json" />
   </ItemGroup>
 
@@ -63,7 +62,7 @@
           BeforeTargets="PrepareForBuild"
           Condition="'$(OS)' == 'Windows_NT' and '$(SkipRuntimeBootstrap)' != 'true' and !Exists('..\..\Runtime\\ffmpeg\\avcodec-62.dll')">
     <Message Importance="high"
-             Text="FFmpeg runtime DLLs are missing. Downloading the pinned runtime for the unified Avalonia preview build..." />
+             Text="FFmpeg runtime DLLs are missing. Downloading the pinned runtime for the universal application..." />
     <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\scripts\Ensure-DevRuntime.ps1&quot;"
           WorkingDirectory="$(MSBuildProjectDirectory)\..\.." />
   </Target>
@@ -72,7 +71,7 @@
           BeforeTargets="PrepareForBuild"
           Condition="'$(OS)' == 'Windows_NT' and '$(SkipRuntimeBootstrap)' != 'true' and !Exists('..\..\Runtime\\ffmpeg-export\\avfilter-11.dll')">
     <Message Importance="high"
-             Text="FFmpeg export runtime DLLs are missing. Restoring the pinned export runtime for the unified Avalonia preview build..." />
+             Text="FFmpeg export runtime DLLs are missing. Restoring the pinned export runtime for the universal application..." />
     <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\scripts\Ensure-DevExportRuntime.ps1&quot; -Required"
           WorkingDirectory="$(MSBuildProjectDirectory)\..\.." />
   </Target>
@@ -81,14 +80,14 @@
           BeforeTargets="Build"
           Condition="'$(OS)' == 'Windows_NT' and '$(SkipRuntimeBootstrap)' != 'true' and !Exists('..\..\Runtime\\ffmpeg\\avcodec-62.dll')">
     <Message Importance="high"
-             Text="FFmpeg runtime DLLs are not present in Runtime\\ffmpeg for the unified Avalonia preview. If restore failed, run .\\scripts\\Ensure-DevRuntime.ps1 manually and rebuild." />
+             Text="FFmpeg runtime DLLs are not present in Runtime\\ffmpeg for the universal application. If restore failed, run .\\scripts\\Ensure-DevRuntime.ps1 manually and rebuild." />
   </Target>
 
   <Target Name="WarnIfUnifiedBundledExportRuntimeMissing"
           BeforeTargets="Build"
           Condition="'$(OS)' == 'Windows_NT' and '$(SkipRuntimeBootstrap)' != 'true' and !Exists('..\..\Runtime\\ffmpeg-export\\avfilter-11.dll')">
     <Message Importance="high"
-             Text="FFmpeg export runtime DLLs are not present in Runtime\\ffmpeg-export for the unified Avalonia preview. If restore failed, run .\\scripts\\Ensure-DevExportRuntime.ps1 manually and rebuild." />
+             Text="FFmpeg export runtime DLLs are not present in Runtime\\ffmpeg-export for the universal application. If restore failed, run .\\scripts\\Ensure-DevExportRuntime.ps1 manually and rebuild." />
   </Target>
 
   <Target Name="AddUnifiedBundledRuntimeContent"

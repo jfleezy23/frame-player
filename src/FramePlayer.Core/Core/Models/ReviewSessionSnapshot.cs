@@ -1,6 +1,6 @@
 namespace FramePlayer.Core.Models
 {
-    // Neutral single-session state snapshot that a future non-WPF shell can consume.
+    // Neutral single-session state snapshot consumed by the universal shell.
 public sealed class ReviewSessionSnapshot
 {
         public static ReviewSessionSnapshot Empty { get; } =

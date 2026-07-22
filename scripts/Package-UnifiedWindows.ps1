@@ -90,6 +90,6 @@ Compress-Archive -Path (Join-Path $publishDir "*") -DestinationPath $zipPath -Fo
 $hash = Get-FileHash -Algorithm SHA256 $zipPath
 "$($hash.Hash.ToLowerInvariant())  $(Split-Path -Leaf $zipPath)" | Set-Content -NoNewline -Encoding ascii $shaPath
 
-Write-Host "Packaged unified Windows preview:"
+Write-Host "Packaged Frame Player for Windows:"
 Write-Host $zipPath
 Get-Content $shaPath

@@ -1,0 +1,70 @@
+name: Universal Windows Package
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  package:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5
+        with:
+          global-json-file: .\global.json
+
+      - name: Setup Rust toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal
+          cargo --version
+
+      - name: Restore pinned runtimes
+        shell: pwsh
+        run: |
+          .\scripts\Ensure-DevRuntime.ps1
+          .\scripts\Ensure-DevExportRuntime.ps1 -Required
+
+      - name: Package universal application
+        id: package
+        shell: pwsh
+        run: |
+          $version = '${{ github.event.release.tag_name }}'.TrimStart('v')
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            $version = '2.0.0-rc.1'
+          }
+
+          .\scripts\Package-UnifiedWindows.ps1 -Version $version
+          $zipPath = "artifacts/$version/FramePlayer-Windows-x64-$version.zip"
+          "zip_path=$zipPath" >> $env:GITHUB_OUTPUT
+          "artifact_name=FramePlayer-Windows-x64-$version" >> $env:GITHUB_OUTPUT
+
+      - name: Upload universal package
+        id: upload_release_zip
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.package.outputs.artifact_name }}
+          path: ${{ steps.package.outputs.zip_path }}
+          if-no-files-found: error
+
+      - name: Attest package provenance
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-name: ${{ steps.package.outputs.artifact_name }}
+          subject-digest: sha256:${{ steps.upload_release_zip.outputs.artifact-digest }}

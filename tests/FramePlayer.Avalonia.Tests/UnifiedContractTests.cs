@@ -156,7 +156,11 @@ namespace FramePlayer.Avalonia.Tests
             var directory = new DirectoryInfo(AppContext.BaseDirectory);
             while (directory != null)
             {
-                if (File.Exists(Path.Combine(directory.FullName, "FramePlayer.csproj")))
+                if (File.Exists(Path.Combine(
+                    directory.FullName,
+                    "src",
+                    "FramePlayer.Avalonia",
+                    "FramePlayer.Avalonia.csproj")))
                 {
                     return directory.FullName;
                 }

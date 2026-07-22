@@ -3,15 +3,15 @@ set -euo pipefail
 
 MODE="${1:-run}"
 CONFIGURATION="${CONFIGURATION:-Debug}"
-APP_NAME="${APP_NAME:-FramePlayer.Mac}"
+APP_NAME="${APP_NAME:-FramePlayer.Avalonia}"
 BUNDLE_NAME="${BUNDLE_NAME:-Frame Player}"
-BUNDLE_ID="${BUNDLE_ID:-com.frameplayer.app}"
+BUNDLE_ID="${BUNDLE_ID:-com.frameplayer}"
 MIN_SYSTEM_VERSION="${MIN_SYSTEM_VERSION:-13.0}"
 APP_VERSION="${APP_VERSION:-0.1.0}"
 APP_BUILD="${APP_BUILD:-}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PROJECT="${PROJECT:-$ROOT_DIR/src/FramePlayer.Mac/FramePlayer.Mac.csproj}"
+PROJECT="${PROJECT:-$ROOT_DIR/src/FramePlayer.Avalonia/FramePlayer.Avalonia.csproj}"
 PUBLISH_ROOT="$ROOT_DIR/dist/publish"
 DIST_DIR="$ROOT_DIR/dist"
 APP_BUNDLE="$DIST_DIR/$BUNDLE_NAME.app"
@@ -19,7 +19,7 @@ APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
 APP_RESOURCES="$APP_CONTENTS/Resources"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
-APP_ICON_SOURCE="${APP_ICON_SOURCE:-$ROOT_DIR/src/FramePlayer.Mac/Assets/FramePlayer.icns}"
+APP_ICON_SOURCE="${APP_ICON_SOURCE:-$ROOT_DIR/src/FramePlayer.Avalonia/Assets/FramePlayer.icns}"
 APP_ICON_NAME="${APP_ICON_NAME:-FramePlayer}"
 MAC_RUNTIME_SOURCE="${MAC_RUNTIME_SOURCE:-$ROOT_DIR/Runtime/macos}"
 
@@ -59,7 +59,7 @@ else
   export PATH="$DOTNET_BIN_DIR:$PATH"
 fi
 
-pkill -x "$APP_NAME" >/dev/null 2>&1 || true
+pkill -f -x "$APP_MACOS/$APP_NAME" >/dev/null 2>&1 || true
 
 build_app() {
   rm -rf "$PUBLISH_ROOT/osx-arm64"
@@ -129,7 +129,7 @@ case "$MODE" in
   --verify|verify)
     open_app
     sleep 2
-    pgrep -x "$APP_NAME" >/dev/null
+    pgrep -f -x "$APP_MACOS/$APP_NAME" >/dev/null
     ;;
   --build-only|build-only)
     ;;

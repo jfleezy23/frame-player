@@ -1488,6 +1488,36 @@ namespace FramePlayer.Avalonia.Tests
                 "bgra");
         }
 
+        [Fact]
+        public void CompareMode_FocusedUnloadedPaneDisablesMainTransportCommands()
+        {
+            _fixture.Run(() =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+                    RequireControl<CheckBox>(window, "AllPanesCheckBox").IsChecked = false;
+                    var playPause = RequireControl<Button>(window, "PlayPauseButton");
+                    var previousFrame = RequireControl<Button>(window, "PreviousFrameButton");
+                    var nextFrame = RequireControl<Button>(window, "NextFrameButton");
+                    playPause.IsEnabled = true;
+                    previousFrame.IsEnabled = true;
+                    nextFrame.IsEnabled = true;
+
+                    InvokePrivate(window, "SelectPane", ParsePane("Compare"));
+
+                    Assert.False(playPause.IsEnabled);
+                    Assert.False(previousFrame.IsEnabled);
+                    Assert.False(nextFrame.IsEnabled);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
         private static T RequireControl<T>(Window window, string name)
             where T : Control
         {
@@ -1844,7 +1874,11 @@ namespace FramePlayer.Avalonia.Tests
             var directory = new DirectoryInfo(startDirectory);
             while (directory != null)
             {
-                if (File.Exists(Path.Combine(directory.FullName, "FramePlayer.csproj")))
+                if (File.Exists(Path.Combine(
+                    directory.FullName,
+                    "src",
+                    "FramePlayer.Avalonia",
+                    "FramePlayer.Avalonia.csproj")))
                 {
                     return directory.FullName;
                 }

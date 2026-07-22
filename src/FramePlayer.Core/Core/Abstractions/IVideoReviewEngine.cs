@@ -7,7 +7,7 @@ using FramePlayer.Core.Models;
 namespace FramePlayer.Core.Abstractions
 {
     /// <summary>
-    /// Defines the frame-first playback contract used by the WPF shell and review coordinators.
+    /// Defines the frame-first playback contract used by the universal shell and review coordinators.
     /// Implementations must preserve decoded display-order frame identity for pause, seek, and
     /// step operations instead of deriving visible state from slider position or wall-clock time.
     /// </summary>

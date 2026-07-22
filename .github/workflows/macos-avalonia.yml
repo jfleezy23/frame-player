@@ -31,29 +31,57 @@ jobs:
           rustup toolchain install stable --profile minimal
           cargo --version
 
+      - name: Restore pinned FFmpeg runtime
+        run: |
+          manifest_path="Runtime/macos/osx-arm64/ffmpeg-runtime-manifest.json"
+          runtime_dir="Runtime/macos/osx-arm64/ffmpeg"
+          extract_dir="$RUNNER_TEMP/frameplayer-ffmpeg-runtime"
+          asset_name="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["assetName"])' "$manifest_path")"
+          asset_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["assetUrl"])' "$manifest_path")"
+          asset_sha256="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["assetSha256"])' "$manifest_path")"
+
+          case "$asset_name" in
+            ""|*/*|*\\*) echo "Invalid runtime asset name: $asset_name" >&2; exit 2 ;;
+          esac
+          case "$asset_url" in
+            "https://github.com/jfleezy23/frame-player/releases/download/v2.0.0/$asset_name") ;;
+            *) echo "Unexpected runtime asset URL: $asset_url" >&2; exit 2 ;;
+          esac
+
+          archive_path="$RUNNER_TEMP/$asset_name"
+          curl --fail --location --proto '=https' --tlsv1.2 "$asset_url" --output "$archive_path"
+          printf '%s  %s\n' "$asset_sha256" "$archive_path" | shasum -a 256 -c -
+
+          rm -rf "$extract_dir"
+          mkdir -p "$extract_dir" "$runtime_dir"
+          /usr/bin/ditto -x -k "$archive_path" "$extract_dir"
+          (
+            cd "$extract_dir"
+            shasum -a 256 -c "$GITHUB_WORKSPACE/$runtime_dir/SHA256SUMS.txt"
+            cmp -s build-provenance.txt "$GITHUB_WORKSPACE/$runtime_dir/build-provenance.txt"
+            for dylib in *.dylib; do
+              test "$(otool -l "$dylib" | awk '$1 == "minos" { print $2; exit }')" = '13.0'
+            done
+          )
+          cp "$extract_dir/"*.dylib "$runtime_dir/"
+
       - name: Restore
         run: |
-          dotnet restore src/FramePlayer.Mac/FramePlayer.Mac.csproj
-          dotnet restore tests/FramePlayer.Mac.Tests/FramePlayer.Mac.Tests.csproj
           dotnet restore src/FramePlayer.Avalonia/FramePlayer.Avalonia.csproj
+          dotnet restore tests/FramePlayer.Core.Tests/FramePlayer.Core.Tests.csproj
           dotnet restore tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj
 
       - name: Build
         run: |
-          dotnet build src/FramePlayer.Mac/FramePlayer.Mac.csproj -c Release --no-restore
           dotnet build src/FramePlayer.Avalonia/FramePlayer.Avalonia.csproj -c Release --no-restore
 
       - name: Test
         run: |
-          dotnet test tests/FramePlayer.Mac.Tests/FramePlayer.Mac.Tests.csproj -c Release --no-restore --filter "Category!=ReleaseCandidate"
-          dotnet test tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj -c Release --no-restore
+          dotnet test tests/FramePlayer.Core.Tests/FramePlayer.Core.Tests.csproj -c Release --no-restore
+          dotnet test tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj -c Release --no-restore --filter "Category!=ReleaseCandidate"
 
       - name: Bundle smoke test
         run: |
-          CONFIGURATION=Release script/build_and_run.sh --build-only
-          test -x "dist/Frame Player.app/Contents/MacOS/FramePlayer.Mac"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "dist/Frame Player.app/Contents/Info.plist"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "dist/Frame Player.app/Contents/Info.plist"
           PACKAGE_VERSION=2.0.0-rc.1 script/package_unified_macos_release.sh --unsigned
           zip_path="artifacts/2.0.0-rc.1/FramePlayer-macOS-arm64-2.0.0-rc.1.zip"
           sha_path="$zip_path.sha256"
@@ -87,6 +115,7 @@ jobs:
             "$app_path/Contents/MacOS/libframeplayer_ffmpeg_probe.dylib" \
             "$app_path/Contents/MacOS/Runtime/runtime-manifest.json" \
             "$app_path/Contents/MacOS/Runtime/export-runtime-manifest.json" \
+            "$app_path/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg-runtime-manifest.json" \
             "$app_path/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/SHA256SUMS.txt" \
             "$app_path/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/build-provenance.txt"; do
             if [[ ! -f "$required_path" ]]; then
