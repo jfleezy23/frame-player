@@ -1588,10 +1588,7 @@ namespace FramePlayer.Engines.FFmpeg
 
         private void PresentPlaybackFrame(DecodedFrameBuffer preparedFrame, bool wasCacheHit)
         {
-            if (preparedFrame == null)
-            {
-                throw new ArgumentNullException(nameof(preparedFrame));
-            }
+            ArgumentNullException.ThrowIfNull(preparedFrame);
 
             DecodedFrameBuffer frameToPresent;
             if (wasCacheHit)
@@ -2327,10 +2324,7 @@ namespace FramePlayer.Engines.FFmpeg
             bool primeForwardFrames = true,
             bool allowRust = true)
         {
-            if (targetEntry == null)
-            {
-                throw new ArgumentNullException(nameof(targetEntry));
-            }
+            ArgumentNullException.ThrowIfNull(targetEntry);
 
             if (allowRust)
             {
@@ -2828,7 +2822,7 @@ namespace FramePlayer.Engines.FFmpeg
         }
 
         private BackwardReconstructionResult BuildBackwardReconstructionResult(
-            IList<DecodedFrameBuffer> framesBeforeOriginal,
+            List<DecodedFrameBuffer> framesBeforeOriginal,
             DecodedFrameBuffer matchedCurrentFrame,
             CancellationToken cancellationToken)
         {
@@ -2876,7 +2870,7 @@ namespace FramePlayer.Engines.FFmpeg
         }
 
         private FrameSeekWindowResult BuildFrameSeekWindowResult(
-            IList<DecodedFrameBuffer> framesBeforeTarget,
+            List<DecodedFrameBuffer> framesBeforeTarget,
             DecodedFrameBuffer targetFrame,
             CancellationToken cancellationToken,
             bool primeForwardFrames = true)
@@ -2934,7 +2928,7 @@ namespace FramePlayer.Engines.FFmpeg
             return null;
         }
 
-        private DecodedFrameBuffer NormalizeFrameToIndexedEntry(
+        private static DecodedFrameBuffer NormalizeFrameToIndexedEntry(
             DecodedFrameBuffer frame,
             FfmpegGlobalFrameIndexEntry indexedEntry)
         {
@@ -3154,12 +3148,8 @@ namespace FramePlayer.Engines.FFmpeg
                 return;
             }
 
-            var cropResult = ffmpeg.av_frame_apply_cropping(sourceFrame, 0);
-            if (cropResult < 0)
-            {
-                // Keep the uncropped frame if FFmpeg cannot apply the visible-frame crop safely.
-                return;
-            }
+            // A failure intentionally leaves the source frame uncropped; keep this call terminal in the helper.
+            _ = ffmpeg.av_frame_apply_cropping(sourceFrame, 0);
         }
 
         private void SetCurrentFrame(DecodedFrameBuffer frame)
@@ -3316,7 +3306,7 @@ namespace FramePlayer.Engines.FFmpeg
                 : 0L;
         }
 
-        private long? GetAbsoluteFrameIndex(DecodedFrameBuffer frame)
+        private static long? GetAbsoluteFrameIndex(DecodedFrameBuffer frame)
         {
             return frame != null &&
                 frame.Descriptor.IsFrameIndexAbsolute &&
@@ -3356,7 +3346,7 @@ namespace FramePlayer.Engines.FFmpeg
                 candidate.Descriptor.FrameIndex.Value == original.Descriptor.FrameIndex.Value;
         }
 
-        private bool FrameMatchesIndexEntry(DecodedFrameBuffer frame, FfmpegGlobalFrameIndexEntry indexedEntry)
+        private static bool FrameMatchesIndexEntry(DecodedFrameBuffer frame, FfmpegGlobalFrameIndexEntry indexedEntry)
         {
             if (frame == null || indexedEntry == null)
             {
@@ -3388,7 +3378,10 @@ namespace FramePlayer.Engines.FFmpeg
                 frame.Descriptor.PresentationTime == indexedEntry.PresentationTime;
         }
 
-        private bool IsAtOrAfterRequestedTarget(DecodedFrameBuffer frame, TimeSpan requestedPosition, long requestedTimestamp)
+        private static bool IsAtOrAfterRequestedTarget(
+            DecodedFrameBuffer frame,
+            TimeSpan requestedPosition,
+            long requestedTimestamp)
         {
             if (frame == null)
             {
@@ -3577,10 +3570,7 @@ namespace FramePlayer.Engines.FFmpeg
 
         private void ThrowIfDisposed()
         {
-            if (_disposed)
-            {
-                throw new ObjectDisposedException(nameof(FfmpegReviewEngine));
-            }
+            ObjectDisposedException.ThrowIf(_disposed, this);
         }
 
         private sealed class BackwardReconstructionResult
