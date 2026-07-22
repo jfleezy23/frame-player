@@ -43,6 +43,13 @@ namespace FramePlayer.Engines.FFmpeg
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (!RustFfmpegNativeLayout.TryValidateNativeAbi(out var abiErrorMessage))
+            {
+                return RustFfmpegGlobalFrameIndexResult.Unavailable(
+                    "native-abi-mismatch",
+                    abiErrorMessage);
+            }
+
             if (!RustFfmpegNativeLayout.TryValidateDecodeCore(out var layoutErrorMessage))
             {
                 return RustFfmpegGlobalFrameIndexResult.Unavailable(

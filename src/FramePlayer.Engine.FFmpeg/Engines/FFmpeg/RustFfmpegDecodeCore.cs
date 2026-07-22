@@ -71,7 +71,8 @@ namespace FramePlayer.Engines.FFmpeg
                 return false;
             }
 
-            if (!RustFfmpegNativeLayout.TryValidateDecodeCore(out errorMessage))
+            if (!RustFfmpegNativeLayout.TryValidateNativeAbi(out errorMessage) ||
+                !RustFfmpegNativeLayout.TryValidateDecodeCore(out errorMessage))
             {
                 return false;
             }

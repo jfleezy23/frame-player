@@ -6,6 +6,8 @@ namespace FramePlayer.Engines.FFmpeg
 {
     internal static class RustFfmpegNativeLayout
     {
+        // Must match FRAMEPLAYER_RUST_FFMPEG_ABI_VERSION in the native crate.
+        private const uint ExpectedNativeAbiVersion = 1;
         private const int AVFormatContextNbStreamsOffset = 44;
         private const int AVFormatContextStreamsOffset = 48;
         private const int AVFormatContextInterruptCallbackOffset = 216;
@@ -56,6 +58,43 @@ namespace FramePlayer.Engines.FFmpeg
                 TryValidateOffset<AVCodecContext>(nameof(AVCodecContext.framerate), AVCodecContextFrameRateOffset, out errorMessage) &&
                 TryValidateOffset<AVCodecContext>(nameof(AVCodecContext.max_pixels), AVCodecContextMaxPixelsOffset, out errorMessage) &&
                 TryValidateOffset<AVPacket>(nameof(AVPacket.stream_index), AVPacketStreamIndexOffset, out errorMessage);
+        }
+
+        public static bool TryValidateNativeAbi(out string errorMessage)
+        {
+            uint actualVersion;
+            try
+            {
+                actualVersion = frameplayer_rust_ffmpeg_abi_version();
+            }
+            catch (DllNotFoundException ex)
+            {
+                errorMessage = "Rust FFmpeg native library was not found: " + ex.Message;
+                return false;
+            }
+            catch (EntryPointNotFoundException)
+            {
+                errorMessage = "Rust FFmpeg native library does not expose the required ABI version; rebuild the native library.";
+                return false;
+            }
+            catch (BadImageFormatException ex)
+            {
+                errorMessage = "Rust FFmpeg native library could not be loaded by this process: " + ex.Message;
+                return false;
+            }
+
+            if (actualVersion == ExpectedNativeAbiVersion)
+            {
+                errorMessage = string.Empty;
+                return true;
+            }
+
+            errorMessage = string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "Rust FFmpeg native ABI mismatch: expected version {0}, actual version {1}.",
+                ExpectedNativeAbiVersion,
+                actualVersion);
+            return false;
         }
 
         private static bool TryValidateAVFrameOffsets(out string errorMessage)
@@ -116,5 +155,8 @@ namespace FramePlayer.Engines.FFmpeg
                 actualOffset);
             return false;
         }
+
+        [DllImport("frameplayer_ffmpeg_probe", CallingConvention = CallingConvention.Cdecl)]
+        private static extern uint frameplayer_rust_ffmpeg_abi_version();
     }
 }

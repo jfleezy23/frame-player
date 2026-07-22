@@ -17,6 +17,13 @@ namespace FramePlayer.Engines.FFmpeg
                     "FFmpeg runtime directory is not configured.");
             }
 
+            if (!RustFfmpegNativeLayout.TryValidateNativeAbi(out var abiErrorMessage))
+            {
+                return RustFfmpegProbeResult.Unavailable(
+                    "native-abi-mismatch",
+                    abiErrorMessage);
+            }
+
             try
             {
                 NativeProbeResult nativeResult;

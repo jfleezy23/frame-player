@@ -27,7 +27,8 @@ namespace FramePlayer.Engines.FFmpeg
                 return false;
             }
 
-            if (!RustFfmpegNativeLayout.TryValidateFrameConverter(out errorMessage))
+            if (!RustFfmpegNativeLayout.TryValidateNativeAbi(out errorMessage) ||
+                !RustFfmpegNativeLayout.TryValidateFrameConverter(out errorMessage))
             {
                 return false;
             }
