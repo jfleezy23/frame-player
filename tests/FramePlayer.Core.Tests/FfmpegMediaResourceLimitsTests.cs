@@ -148,6 +148,13 @@ namespace FramePlayer.Core.Tests
         }
 
         [Fact]
+        public unsafe void OpenInput_RejectsMissingFormatContextStorage()
+        {
+            Assert.Throws<ArgumentNullException>(() =>
+                FfmpegNativeHelpers.OpenInput(null, "sample.mov", null, null));
+        }
+
+        [Fact]
         public void RustInteropMessage_DecodesNullTerminatedAndFullCapacityUtf8()
         {
             var message = default(RustFfmpegNativeMessage);
