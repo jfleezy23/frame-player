@@ -122,7 +122,7 @@ namespace FramePlayer.Services
     {
         private const long MiB = 1024L * 1024L;
         private const long UnknownFrameEstimateBytes = 8L * MiB;
-        private const int MinimumProtectedPreviousFrames = 4;
+        private const int MaximumOperationalQueueDepth = 2;
 
         private readonly object _sync = new object();
         private readonly Dictionary<string, PaneBudgetState> _paneStates =
@@ -230,7 +230,9 @@ namespace FramePlayer.Services
                     state.ActualDecodeBackend = actualDecodeBackend;
                 }
                 state.ApproximateFrameBytes = approximateFrameBytes;
-                state.OperationalQueueDepth = Math.Max(0, operationalQueueDepth);
+                state.OperationalQueueDepth = Math.Max(
+                    0,
+                    Math.Min(MaximumOperationalQueueDepth, operationalQueueDepth));
                 state.SessionBudgetOverrideMegabytes = sessionBudgetOverrideMegabytes;
 
                 changedAllocations = RecalculateAllocationsLocked();
@@ -388,8 +390,19 @@ namespace FramePlayer.Services
                 ref forwardTarget,
                 ref reverseTarget);
 
+            var paneBudgetBytes = sessionBudgetBytes;
+            var minimumOperationalBudgetBytes = ComputeRequiredBudgetBytes(
+                frameBytes,
+                queueDepth,
+                forwardTarget: 0,
+                reverseTarget: 0);
+            if (minimumOperationalBudgetBytes > sessionBudgetBytes)
+            {
+                paneBudgetBytes = Math.Min(sessionBudgetBytes, Math.Max(1L, frameBytes - 1L));
+            }
+
             var previousFrames = ComputePreviousFramesFromBudget(
-                sessionBudgetBytes,
+                paneBudgetBytes,
                 frameBytes,
                 queueDepth,
                 forwardTarget);
@@ -399,7 +412,7 @@ namespace FramePlayer.Services
                 isGpuActive ? DecodedFrameBudgetBand.SinglePaneGpu : DecodedFrameBudgetBand.SinglePaneCpu,
                 _hostResourceClass,
                 sessionBudgetBytes,
-                sessionBudgetBytes,
+                paneBudgetBytes,
                 previousFrames,
                 forwardTarget,
                 queueDepth,
@@ -445,11 +458,11 @@ namespace FramePlayer.Services
                 }
             }
 
-            while (requiredBytes > sessionBudgetBytes && reverseTargets.Any(target => target > MinimumProtectedPreviousFrames))
+            while (requiredBytes > sessionBudgetBytes && reverseTargets.Any(target => target > 0))
             {
                 for (var index = 0; index < paneCount && requiredBytes > sessionBudgetBytes; index++)
                 {
-                    if (reverseTargets[index] <= MinimumProtectedPreviousFrames)
+                    if (reverseTargets[index] <= 0)
                     {
                         continue;
                     }
@@ -467,10 +480,33 @@ namespace FramePlayer.Services
                     queueDepths[index],
                     forwardTargets[index],
                     reverseTargets[index]);
-                allocatedBytes += baseBudgetBytes[index];
+                allocatedBytes = SaturatingAdd(allocatedBytes, baseBudgetBytes[index]);
             }
 
-            var remainingBytes = Math.Max(0L, sessionBudgetBytes - allocatedBytes);
+            var requiresFailClosedScaling = allocatedBytes > sessionBudgetBytes;
+            allocatedBytes = ScaleRequiredBudgetsToSessionLimit(
+                baseBudgetBytes,
+                allocatedBytes,
+                sessionBudgetBytes);
+
+            if (requiresFailClosedScaling)
+            {
+                allocatedBytes = 0L;
+                for (var index = 0; index < paneCount; index++)
+                {
+                    // Operational decoder queues are fixed at CPU=1/GPU=2. If those queues plus
+                    // the current frame cannot fit, use a positive sub-frame limit so decoding
+                    // fails closed instead of reporting a queue reduction that never occurred.
+                    baseBudgetBytes[index] = Math.Min(
+                        baseBudgetBytes[index],
+                        Math.Max(1L, frameBytes[index] - 1L));
+                    allocatedBytes = SaturatingAdd(allocatedBytes, baseBudgetBytes[index]);
+                }
+            }
+
+            var remainingBytes = requiresFailClosedScaling
+                ? 0L
+                : Math.Max(0L, sessionBudgetBytes - allocatedBytes);
             var extraPerPaneBytes = paneCount > 0 ? remainingBytes / paneCount : 0L;
             var leftoverBytes = paneCount > 0 ? remainingBytes % paneCount : 0L;
             var allocations = new List<PaneBudgetAllocation>(paneCount);
@@ -497,6 +533,54 @@ namespace FramePlayer.Services
             }
 
             return allocations;
+        }
+
+        private static long ScaleRequiredBudgetsToSessionLimit(
+            long[] requiredBudgetBytes,
+            long allocatedBytes,
+            long sessionBudgetBytes)
+        {
+            var normalizedSessionBudgetBytes = Math.Max(0L, sessionBudgetBytes);
+            if (requiredBudgetBytes == null ||
+                requiredBudgetBytes.Length == 0 ||
+                allocatedBytes <= normalizedSessionBudgetBytes)
+            {
+                return Math.Max(0L, allocatedBytes);
+            }
+
+            // A zero pane budget means "use the default limit" to the decoder. Reserve one byte
+            // per open pane so an undersized allocation remains a positive, fail-closed limit.
+            var minimumBudgetBytes = normalizedSessionBudgetBytes >= requiredBudgetBytes.Length
+                ? 1L
+                : 0L;
+            var distributableBudgetBytes = normalizedSessionBudgetBytes -
+                (minimumBudgetBytes * requiredBudgetBytes.Length);
+            long scaledAllocatedBytes = 0L;
+            for (var index = 0; index < requiredBudgetBytes.Length; index++)
+            {
+                var proportionalBudgetBytes = (long)(
+                    (decimal)Math.Max(0L, requiredBudgetBytes[index]) /
+                    allocatedBytes * distributableBudgetBytes);
+                var remainingPaneMinimumBytes = minimumBudgetBytes *
+                    (requiredBudgetBytes.Length - index - 1L);
+                var maximumBudgetBytes = normalizedSessionBudgetBytes -
+                    scaledAllocatedBytes - remainingPaneMinimumBytes;
+                var scaledBudgetBytes = Math.Min(
+                    minimumBudgetBytes + proportionalBudgetBytes,
+                    maximumBudgetBytes);
+                requiredBudgetBytes[index] = scaledBudgetBytes;
+                scaledAllocatedBytes += scaledBudgetBytes;
+            }
+
+            var leftoverBytes = normalizedSessionBudgetBytes - scaledAllocatedBytes;
+            for (var index = 0; index < requiredBudgetBytes.Length && leftoverBytes > 0L; index++)
+            {
+                requiredBudgetBytes[index]++;
+                scaledAllocatedBytes++;
+                leftoverBytes--;
+            }
+
+            return scaledAllocatedBytes;
         }
 
         private static long ResolveSessionBudgetCeilingBytes(HostResourceClass hostResourceClass, int openPaneCount)
@@ -597,7 +681,7 @@ namespace FramePlayer.Services
                 requiredBytes = ComputeRequiredBudgetBytes(frameBytes, queueDepth, forwardTarget, reverseTarget);
             }
 
-            while (requiredBytes > budgetBytes && reverseTarget > MinimumProtectedPreviousFrames)
+            while (requiredBytes > budgetBytes && reverseTarget > 0)
             {
                 reverseTarget--;
                 requiredBytes = ComputeRequiredBudgetBytes(frameBytes, queueDepth, forwardTarget, reverseTarget);
@@ -613,11 +697,13 @@ namespace FramePlayer.Services
             long totalBytes = 0L;
             for (var index = 0; index < frameBytes.Length; index++)
             {
-                totalBytes += ComputeRequiredBudgetBytes(
+                totalBytes = SaturatingAdd(
+                    totalBytes,
+                    ComputeRequiredBudgetBytes(
                     frameBytes[index],
                     queueDepths[index],
                     forwardTargets[index],
-                    reverseTargets[index]);
+                    reverseTargets[index]));
             }
 
             return totalBytes;
@@ -630,7 +716,19 @@ namespace FramePlayer.Services
             int reverseTarget)
         {
             var frameCount = 1L + Math.Max(0, queueDepth) + Math.Max(0, forwardTarget) + Math.Max(0, reverseTarget);
-            return frameCount * Math.Max(1L, frameBytes);
+            var normalizedFrameBytes = Math.Max(1L, frameBytes);
+            return frameCount > long.MaxValue / normalizedFrameBytes
+                ? long.MaxValue
+                : frameCount * normalizedFrameBytes;
+        }
+
+        private static long SaturatingAdd(long left, long right)
+        {
+            var normalizedLeft = Math.Max(0L, left);
+            var normalizedRight = Math.Max(0L, right);
+            return normalizedLeft > long.MaxValue - normalizedRight
+                ? long.MaxValue
+                : normalizedLeft + normalizedRight;
         }
 
         private static void UpdateStateAllocationAndAppendLocked(

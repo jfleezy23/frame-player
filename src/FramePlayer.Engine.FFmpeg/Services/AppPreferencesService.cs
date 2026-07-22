@@ -11,13 +11,26 @@ namespace FramePlayer.Services
         private readonly string _storagePath;
 
         public AppPreferencesService()
-        {
-            var appDirectory = Path.Combine(
+            : this(Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "FramePlayer");
+                "FramePlayer",
+                "preferences.txt"))
+        {
+        }
 
-            Directory.CreateDirectory(appDirectory);
-            _storagePath = Path.Combine(appDirectory, "preferences.txt");
+        internal AppPreferencesService(string storagePath)
+        {
+            if (string.IsNullOrWhiteSpace(storagePath))
+            {
+                throw new ArgumentException("A preferences storage path is required.", nameof(storagePath));
+            }
+
+            _storagePath = Path.GetFullPath(storagePath);
+            var storageDirectory = Path.GetDirectoryName(_storagePath);
+            if (!string.IsNullOrWhiteSpace(storageDirectory))
+            {
+                Directory.CreateDirectory(storageDirectory);
+            }
         }
 
         public AppPreferences Load()

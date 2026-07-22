@@ -1,5 +1,4 @@
 using System;
-using System.Globalization;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -41,17 +40,6 @@ namespace FramePlayer.Services
             ResolveExportTimes(request, loopRange, out startTime, out endTimeExclusive, out endBoundaryStrategy);
             Directory.CreateDirectory(outputDirectory);
 
-            int outputWidth;
-            int outputHeight;
-            ResolveOutputDimensions(request, viewportSnapshot, out outputWidth, out outputHeight);
-            var ffmpegArguments = BuildFfmpegArguments(
-                sourceFullPath,
-                outputFullPath,
-                startTime,
-                endTimeExclusive - startTime,
-                viewportSnapshot,
-                outputWidth,
-                outputHeight);
             return new ClipExportPlan(
                 sourceFullPath,
                 outputFullPath,
@@ -64,7 +52,7 @@ namespace FramePlayer.Services
                 loopRange.LoopOut.AbsoluteFrameIndex,
                 endBoundaryStrategy,
                 viewportSnapshot,
-                ffmpegArguments,
+                string.Empty,
                 string.Empty,
                 string.Empty);
         }
@@ -168,25 +156,6 @@ namespace FramePlayer.Services
             }
         }
 
-        private static void ResolveOutputDimensions(
-            ClipExportRequest request,
-            PaneViewportSnapshot viewportSnapshot,
-            out int outputWidth,
-            out int outputHeight)
-        {
-            var mediaInfo = request.SessionSnapshot != null
-                ? request.SessionSnapshot.MediaInfo
-                : VideoMediaInfo.Empty;
-            outputWidth = mediaInfo != null
-                ? Math.Max(1, mediaInfo.PixelWidth)
-                : Math.Max(1, viewportSnapshot.SourcePixelWidth);
-            outputHeight = mediaInfo != null
-                ? Math.Max(1, mediaInfo.PixelHeight)
-                : Math.Max(1, viewportSnapshot.SourcePixelHeight);
-            outputWidth = NativeExportSupport.ResolveEvenVideoDimension(outputWidth);
-            outputHeight = NativeExportSupport.ResolveEvenVideoDimension(outputHeight);
-        }
-
         public async Task<ClipExportResult> ExportAsync(ClipExportRequest request, CancellationToken cancellationToken = default(CancellationToken))
         {
             var plan = CreatePlan(request);
@@ -197,62 +166,6 @@ namespace FramePlayer.Services
         {
             ArgumentNullException.ThrowIfNull(plan);
             return await new ExportHostClient().ExportClipAsync(plan, cancellationToken).ConfigureAwait(false);
-        }
-
-        private static string BuildFfmpegArguments(
-            string sourceFilePath,
-            string outputFilePath,
-            TimeSpan startTime,
-            TimeSpan duration,
-            PaneViewportSnapshot viewportSnapshot,
-            int outputWidth,
-            int outputHeight)
-        {
-            var filterArguments = BuildVideoFilterArguments(viewportSnapshot, outputWidth, outputHeight);
-            return string.Format(
-                CultureInfo.InvariantCulture,
-                "-v error -y -i \"{0}\" -ss {1} -t {2} -map 0:v:0 -map 0:a? -sn -dn {3}-c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart \"{4}\"",
-                sourceFilePath,
-                FfmpegExportTiming.FormatFfmpegTime(startTime),
-                FfmpegExportTiming.FormatFfmpegTime(duration),
-                filterArguments,
-                outputFilePath);
-        }
-
-        private static string BuildVideoFilterArguments(
-            PaneViewportSnapshot viewportSnapshot,
-            int outputWidth,
-            int outputHeight)
-        {
-            if (viewportSnapshot == null)
-            {
-                return string.Empty;
-            }
-
-            if (!viewportSnapshot.IsZoomed)
-            {
-                if (outputWidth == viewportSnapshot.SourcePixelWidth &&
-                    outputHeight == viewportSnapshot.SourcePixelHeight)
-                {
-                    return string.Empty;
-                }
-
-                return string.Format(
-                    CultureInfo.InvariantCulture,
-                    "-vf \"pad=width={0}:height={1}:x=0:y=0:color=black\" ",
-                    Math.Max(2, outputWidth),
-                    Math.Max(2, outputHeight));
-            }
-
-            return string.Format(
-                CultureInfo.InvariantCulture,
-                "-vf \"crop={0}:{1}:{2}:{3},scale={4}:{5}:flags=lanczos\" ",
-                viewportSnapshot.SourceCropWidth,
-                viewportSnapshot.SourceCropHeight,
-                viewportSnapshot.SourceCropX,
-                viewportSnapshot.SourceCropY,
-                Math.Max(1, outputWidth),
-                Math.Max(1, outputHeight));
         }
     }
 }

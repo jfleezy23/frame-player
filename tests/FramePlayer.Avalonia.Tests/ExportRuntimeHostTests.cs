@@ -4,6 +4,8 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading.Tasks;
+using FramePlayer.Core.Models;
 using FramePlayer.Engines.FFmpeg;
 using FramePlayer.Services;
 using Xunit;
@@ -55,6 +57,41 @@ namespace FramePlayer.Avalonia.Tests
             Assert.True(
                 ExportRuntimeManifestService.TryValidateRuntimeDirectory(temp.Path, out var message),
                 message);
+        }
+
+        [Fact]
+        public void ExportRuntimeManifestService_RejectsMalformedIncompleteAndMissingRuntimes()
+        {
+            using var temp = new TemporaryDirectory();
+            var missingDirectory = Path.Combine(temp.Path, "missing");
+            Assert.False(ExportRuntimeManifestService.TryValidateRuntimeDirectory(missingDirectory, out var message));
+            Assert.Contains("directory is missing", message, StringComparison.OrdinalIgnoreCase);
+
+            var checksumPath = Path.Combine(temp.Path, "SHA256SUMS.txt");
+            File.WriteAllText(checksumPath, "# no runtime entries" + Environment.NewLine, Encoding.UTF8);
+            Assert.False(ExportRuntimeManifestService.TryValidateRuntimeDirectory(temp.Path, out message));
+            Assert.Contains("checksum file is empty", message, StringComparison.OrdinalIgnoreCase);
+
+            File.WriteAllText(checksumPath, "invalid runtime.bin" + Environment.NewLine, Encoding.UTF8);
+            Assert.False(ExportRuntimeManifestService.TryValidateRuntimeDirectory(temp.Path, out message));
+            Assert.Contains("invalid entry", message, StringComparison.OrdinalIgnoreCase);
+
+            var runtimeFile = ResolveCurrentPlatformRuntimeFiles()[0];
+            var runtimeFilePath = Path.Combine(temp.Path, runtimeFile);
+            File.WriteAllText(runtimeFilePath, "runtime", Encoding.UTF8);
+            File.WriteAllText(
+                checksumPath,
+                ComputeSha256(runtimeFilePath) + "  " + runtimeFile + Environment.NewLine,
+                Encoding.UTF8);
+            Assert.False(ExportRuntimeManifestService.TryValidateRuntimeDirectory(temp.Path, out message));
+            Assert.Contains("does not include", message, StringComparison.OrdinalIgnoreCase);
+
+            File.WriteAllText(
+                checksumPath,
+                new string('0', 64) + "  missing-runtime.bin" + Environment.NewLine,
+                Encoding.UTF8);
+            Assert.False(ExportRuntimeManifestService.TryValidateRuntimeDirectory(temp.Path, out message));
+            Assert.Contains("runtime is missing", message, StringComparison.OrdinalIgnoreCase);
         }
 
         [Fact]
@@ -112,6 +149,115 @@ namespace FramePlayer.Avalonia.Tests
                 Environment.SetEnvironmentVariable(ExportHostClient.AppBaseDirectoryEnvironmentVariable, previousAppBundle);
                 Environment.SetEnvironmentVariable(ExportHostClient.AppRuntimeBaseEnvironmentVariable, previousRuntimeBase);
             }
+        }
+
+        [Fact]
+        public async Task ExportHostClient_PublicOperationsRejectMissingConfiguredHost()
+        {
+            using var temp = new TemporaryDirectory();
+            var runtimeDirectory = Path.Combine(temp.Path, ExportHostClient.ExportRuntimeFolderName);
+            Directory.CreateDirectory(runtimeDirectory);
+            WriteCurrentPlatformRuntimeWithSha256Sums(runtimeDirectory);
+            var missingExecutable = Path.Combine(
+                temp.Path,
+                RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                    ? "missing-export-host.exe"
+                    : "missing-export-host");
+
+            var previousAppBase = Environment.GetEnvironmentVariable(ExportHostClient.AppBaseDirectoryEnvironmentVariable);
+            var previousRuntimeBase = Environment.GetEnvironmentVariable(ExportHostClient.AppRuntimeBaseEnvironmentVariable);
+            var previousExecutable = Environment.GetEnvironmentVariable(ExportHostClient.ExportHostExecutableEnvironmentVariable);
+            try
+            {
+                Environment.SetEnvironmentVariable(ExportHostClient.AppBaseDirectoryEnvironmentVariable, temp.Path);
+                Environment.SetEnvironmentVariable(ExportHostClient.AppRuntimeBaseEnvironmentVariable, null);
+                Environment.SetEnvironmentVariable(ExportHostClient.ExportHostExecutableEnvironmentVariable, missingExecutable);
+
+                Assert.True(ExportHostClient.IsBundledRuntimeAvailable);
+                Assert.Contains("ready", ExportHostClient.GetRuntimeAvailabilityMessage(), StringComparison.OrdinalIgnoreCase);
+
+                var client = new ExportHostClient();
+                await AssertMissingHostAsync(() => client.ProbeAsync("missing-source.mp4"));
+                await AssertMissingHostAsync(() => client.InsertAudioAsync(new AudioInsertionPlan(
+                    "source.mp4",
+                    "audio.wav",
+                    "output.mp4",
+                    "Primary",
+                    TimeSpan.FromSeconds(1),
+                    string.Empty,
+                    string.Empty,
+                    string.Empty)));
+                await AssertMissingHostAsync(() => client.ExportClipAsync(new ClipExportPlan(
+                    "source.mp4",
+                    "output.mp4",
+                    "Primary",
+                    "pane-primary",
+                    isPaneLocal: true,
+                    TimeSpan.Zero,
+                    TimeSpan.FromSeconds(1),
+                    0L,
+                    30L,
+                    "position-step",
+                    PaneViewportSnapshot.CreateFullFrame(640, 480),
+                    string.Empty,
+                    string.Empty,
+                    string.Empty)));
+                await AssertMissingHostAsync(() => client.ExportCompareAsync(new CompareSideBySideExportPlan
+                {
+                    OutputFilePath = "output.mp4"
+                }));
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(ExportHostClient.AppBaseDirectoryEnvironmentVariable, previousAppBase);
+                Environment.SetEnvironmentVariable(ExportHostClient.AppRuntimeBaseEnvironmentVariable, previousRuntimeBase);
+                Environment.SetEnvironmentVariable(ExportHostClient.ExportHostExecutableEnvironmentVariable, previousExecutable);
+            }
+        }
+
+        [Fact]
+        public async Task ExportHostClient_ReportsChildStartupFailureFromCurrentExecutable()
+        {
+            using var temp = new TemporaryDirectory();
+            var runtimeDirectory = Path.Combine(temp.Path, ExportHostClient.ExportRuntimeFolderName);
+            Directory.CreateDirectory(runtimeDirectory);
+            WriteCurrentPlatformRuntimeWithSha256Sums(runtimeDirectory);
+            var executablePath = Path.Combine(
+                AppContext.BaseDirectory,
+                RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                    ? "FramePlayer.Avalonia.exe"
+                    : "FramePlayer.Avalonia");
+            Assert.True(File.Exists(executablePath), "The built export host executable was not found.");
+
+            var previousAppBase = Environment.GetEnvironmentVariable(ExportHostClient.AppBaseDirectoryEnvironmentVariable);
+            var previousRuntimeBase = Environment.GetEnvironmentVariable(ExportHostClient.AppRuntimeBaseEnvironmentVariable);
+            var previousExecutable = Environment.GetEnvironmentVariable(ExportHostClient.ExportHostExecutableEnvironmentVariable);
+            try
+            {
+                Environment.SetEnvironmentVariable(ExportHostClient.AppBaseDirectoryEnvironmentVariable, temp.Path);
+                Environment.SetEnvironmentVariable(
+                    ExportHostClient.AppRuntimeBaseEnvironmentVariable,
+                    Path.Combine(temp.Path, "missing-child-runtime"));
+                Environment.SetEnvironmentVariable(ExportHostClient.ExportHostExecutableEnvironmentVariable, executablePath);
+
+                var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                    new ExportHostClient().ProbeAsync(Path.Combine(temp.Path, "missing-source.mp4")));
+
+                Assert.DoesNotContain("executable path could not be resolved", exception.Message, StringComparison.OrdinalIgnoreCase);
+                Assert.False(string.IsNullOrWhiteSpace(exception.Message));
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(ExportHostClient.AppBaseDirectoryEnvironmentVariable, previousAppBase);
+                Environment.SetEnvironmentVariable(ExportHostClient.AppRuntimeBaseEnvironmentVariable, previousRuntimeBase);
+                Environment.SetEnvironmentVariable(ExportHostClient.ExportHostExecutableEnvironmentVariable, previousExecutable);
+            }
+        }
+
+        private static async Task AssertMissingHostAsync(Func<Task> operation)
+        {
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(operation);
+            Assert.Contains("executable path could not be resolved", exception.Message, StringComparison.OrdinalIgnoreCase);
         }
 
         private static string ComputeSha256(string filePath)
