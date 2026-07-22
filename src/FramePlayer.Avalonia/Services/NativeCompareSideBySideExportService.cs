@@ -67,30 +67,36 @@ namespace FramePlayer.Services
 
             AppendVideoChain(
                 filterBuilder,
-                "primaryvsrc",
-                plan.PrimaryStartTime,
-                plan.PrimaryContentDuration,
-                plan.PrimaryLeadingPad,
-                plan.PrimaryTrailingPad,
-                plan.PrimaryRenderWidth,
-                plan.PrimaryRenderHeight,
-                plan.OutputHeight,
-                plan.PrimaryViewportSnapshot,
-                "primaryv",
+                new VideoChainSettings
+                {
+                    SourceInstanceName = "primaryvsrc",
+                    StartTime = plan.PrimaryStartTime,
+                    ContentDuration = plan.PrimaryContentDuration,
+                    LeadingPad = plan.PrimaryLeadingPad,
+                    TrailingPad = plan.PrimaryTrailingPad,
+                    RenderWidth = plan.PrimaryRenderWidth,
+                    RenderHeight = plan.PrimaryRenderHeight,
+                    CanvasHeight = plan.OutputHeight,
+                    ViewportSnapshot = plan.PrimaryViewportSnapshot,
+                    OutputLabel = "primaryv"
+                },
                 includeTrim);
             filterBuilder.Append(';');
             AppendVideoChain(
                 filterBuilder,
-                "comparevsrc",
-                plan.CompareStartTime,
-                plan.CompareContentDuration,
-                plan.CompareLeadingPad,
-                plan.CompareTrailingPad,
-                plan.CompareRenderWidth,
-                plan.CompareRenderHeight,
-                plan.OutputHeight,
-                plan.CompareViewportSnapshot,
-                "comparev",
+                new VideoChainSettings
+                {
+                    SourceInstanceName = "comparevsrc",
+                    StartTime = plan.CompareStartTime,
+                    ContentDuration = plan.CompareContentDuration,
+                    LeadingPad = plan.CompareLeadingPad,
+                    TrailingPad = plan.CompareTrailingPad,
+                    RenderWidth = plan.CompareRenderWidth,
+                    RenderHeight = plan.CompareRenderHeight,
+                    CanvasHeight = plan.OutputHeight,
+                    ViewportSnapshot = plan.CompareViewportSnapshot,
+                    OutputLabel = "comparev"
+                },
                 includeTrim);
             filterBuilder.Append(';');
             filterBuilder.Append("[primaryv][comparev]hstack=inputs=2,pad=width='ceil(iw/2)*2':height='ceil(ih/2)*2':x=0:y=0:color=black,setsar=1,format=pix_fmts=yuv420p,buffersink@outv");
@@ -106,75 +112,66 @@ namespace FramePlayer.Services
 
         private static void AppendVideoChain(
             StringBuilder filterBuilder,
-            string sourceInstanceName,
-            TimeSpan startTime,
-            TimeSpan contentDuration,
-            TimeSpan leadingPad,
-            TimeSpan trailingPad,
-            int renderWidth,
-            int renderHeight,
-            int canvasHeight,
-            PaneViewportSnapshot viewportSnapshot,
-            string outputLabel,
+            VideoChainSettings settings,
             bool includeTrim)
         {
             filterBuilder.AppendFormat(
                 CultureInfo.InvariantCulture,
                 "movie@{0},",
-                sourceInstanceName);
+                settings.SourceInstanceName);
 
             if (includeTrim)
             {
                 filterBuilder.AppendFormat(
                     CultureInfo.InvariantCulture,
                     "trim=start={0}:duration={1},setpts=PTS-STARTPTS,",
-                    NativeExportSupport.FormatFilterTime(startTime),
-                    NativeExportSupport.FormatFilterTime(contentDuration));
+                    NativeExportSupport.FormatFilterTime(settings.StartTime),
+                    NativeExportSupport.FormatFilterTime(settings.ContentDuration));
             }
             else
             {
                 filterBuilder.Append("setpts=PTS-STARTPTS,");
             }
 
-            if (viewportSnapshot != null && viewportSnapshot.IsZoomed)
+            if (settings.ViewportSnapshot != null && settings.ViewportSnapshot.IsZoomed)
             {
                 filterBuilder.AppendFormat(
                     CultureInfo.InvariantCulture,
                     "crop={0}:{1}:{2}:{3},",
-                    viewportSnapshot.SourceCropWidth,
-                    viewportSnapshot.SourceCropHeight,
-                    viewportSnapshot.SourceCropX,
-                    viewportSnapshot.SourceCropY);
+                    settings.ViewportSnapshot.SourceCropWidth,
+                    settings.ViewportSnapshot.SourceCropHeight,
+                    settings.ViewportSnapshot.SourceCropX,
+                    settings.ViewportSnapshot.SourceCropY);
             }
 
             filterBuilder.Append("format=rgba,");
             filterBuilder.AppendFormat(
                 CultureInfo.InvariantCulture,
                 "scale={0}:{1}:flags=lanczos,",
-                renderWidth,
-                renderHeight);
+                settings.RenderWidth,
+                settings.RenderHeight);
 
-            if (leadingPad > TimeSpan.Zero || trailingPad > TimeSpan.Zero)
+            if (settings.LeadingPad > TimeSpan.Zero || settings.TrailingPad > TimeSpan.Zero)
             {
                 filterBuilder.Append("tpad=");
-                if (leadingPad > TimeSpan.Zero)
+                if (settings.LeadingPad > TimeSpan.Zero)
                 {
                     filterBuilder.AppendFormat(
                         CultureInfo.InvariantCulture,
                         "start_mode=add:start_duration={0}",
-                        NativeExportSupport.FormatFilterTime(leadingPad));
-                    if (trailingPad > TimeSpan.Zero)
+                        NativeExportSupport.FormatFilterTime(settings.LeadingPad));
+                    if (settings.TrailingPad > TimeSpan.Zero)
                     {
                         filterBuilder.Append(':');
                     }
                 }
 
-                if (trailingPad > TimeSpan.Zero)
+                if (settings.TrailingPad > TimeSpan.Zero)
                 {
                     filterBuilder.AppendFormat(
                         CultureInfo.InvariantCulture,
                         "stop_mode=add:stop_duration={0}",
-                        NativeExportSupport.FormatFilterTime(trailingPad));
+                        NativeExportSupport.FormatFilterTime(settings.TrailingPad));
                 }
 
                 filterBuilder.Append(',');
@@ -183,8 +180,31 @@ namespace FramePlayer.Services
             filterBuilder.AppendFormat(
                 CultureInfo.InvariantCulture,
                 "pad=width=iw:height={0}:x=0:y=(oh-ih)/2:color=black[{1}]",
-                canvasHeight,
-                outputLabel);
+                settings.CanvasHeight,
+                settings.OutputLabel);
+        }
+
+        private sealed class VideoChainSettings
+        {
+            public string SourceInstanceName { get; init; } = string.Empty;
+
+            public TimeSpan StartTime { get; init; }
+
+            public TimeSpan ContentDuration { get; init; }
+
+            public TimeSpan LeadingPad { get; init; }
+
+            public TimeSpan TrailingPad { get; init; }
+
+            public int RenderWidth { get; init; }
+
+            public int RenderHeight { get; init; }
+
+            public int CanvasHeight { get; init; }
+
+            public PaneViewportSnapshot? ViewportSnapshot { get; init; }
+
+            public string OutputLabel { get; init; } = string.Empty;
         }
 
         private static void AppendAudioChain(
