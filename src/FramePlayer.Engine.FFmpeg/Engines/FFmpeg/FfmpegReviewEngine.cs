@@ -2338,6 +2338,17 @@ namespace FramePlayer.Engines.FFmpeg
                 }
             }
 
+            return MaterializeIndexedFrameWindowWithManagedDecoder(
+                targetEntry,
+                primeForwardFrames,
+                cancellationToken);
+        }
+
+        private FrameSeekWindowResult MaterializeIndexedFrameWindowWithManagedDecoder(
+            FfmpegGlobalFrameIndexEntry targetEntry,
+            bool primeForwardFrames,
+            CancellationToken cancellationToken)
+        {
             var anchorEntry = ResolveIndexedAnchorEntry(targetEntry);
             SeekToStreamTimestamp(targetEntry.SeekAnchorTimestamp, targetEntry.SeekAnchorTimestamp <= 0L);
 
@@ -2360,41 +2371,84 @@ namespace FramePlayer.Engines.FFmpeg
                     return null;
                 }
 
-                if (!anchorReached)
+                if (!TryReachIndexedAnchor(
+                    decodedFrame,
+                    anchorEntry,
+                    ref anchorReached,
+                    ref nextAbsoluteFrameIndex))
                 {
-                    if (anchorEntry == null || !FrameMatchesIndexEntry(decodedFrame, anchorEntry))
-                    {
-                        decodedFrame.Dispose();
-                        continue;
-                    }
-
-                    anchorReached = true;
-                    nextAbsoluteFrameIndex = anchorEntry.AbsoluteFrameIndex;
+                    continue;
                 }
 
-                FfmpegGlobalFrameIndexEntry currentEntry;
-                if (!_globalFrameIndex.TryGetByAbsoluteFrameIndex(nextAbsoluteFrameIndex, out currentEntry))
+                if (!TryNormalizeIndexedFrame(
+                    decodedFrame,
+                    nextAbsoluteFrameIndex,
+                    out var currentEntry,
+                    out var normalizedFrame))
                 {
-                    decodedFrame.Dispose();
                     DisposeDecodedFrames(framesBeforeTarget);
                     return null;
                 }
 
-                var normalizedFrame = NormalizeFrameToIndexedEntry(decodedFrame, currentEntry);
                 if (currentEntry.AbsoluteFrameIndex == targetEntry.AbsoluteFrameIndex)
                 {
                     return BuildFrameSeekWindowResult(framesBeforeTarget, normalizedFrame, cancellationToken, primeForwardFrames);
                 }
 
-                framesBeforeTarget.Add(normalizedFrame);
-                while (framesBeforeTarget.Count > _maxPreviousCachedFrameCount)
-                {
-                    var removedFrame = framesBeforeTarget[0];
-                    framesBeforeTarget.RemoveAt(0);
-                    removedFrame.Dispose();
-                }
-
+                AddPreviousIndexedFrame(framesBeforeTarget, normalizedFrame);
                 nextAbsoluteFrameIndex++;
+            }
+        }
+
+        private bool TryReachIndexedAnchor(
+            DecodedFrameBuffer decodedFrame,
+            FfmpegGlobalFrameIndexEntry anchorEntry,
+            ref bool anchorReached,
+            ref long nextAbsoluteFrameIndex)
+        {
+            if (anchorReached)
+            {
+                return true;
+            }
+
+            if (anchorEntry == null || !FrameMatchesIndexEntry(decodedFrame, anchorEntry))
+            {
+                decodedFrame.Dispose();
+                return false;
+            }
+
+            anchorReached = true;
+            nextAbsoluteFrameIndex = anchorEntry.AbsoluteFrameIndex;
+            return true;
+        }
+
+        private bool TryNormalizeIndexedFrame(
+            DecodedFrameBuffer decodedFrame,
+            long absoluteFrameIndex,
+            out FfmpegGlobalFrameIndexEntry indexedEntry,
+            out DecodedFrameBuffer normalizedFrame)
+        {
+            if (!_globalFrameIndex.TryGetByAbsoluteFrameIndex(absoluteFrameIndex, out indexedEntry))
+            {
+                decodedFrame.Dispose();
+                normalizedFrame = null;
+                return false;
+            }
+
+            normalizedFrame = NormalizeFrameToIndexedEntry(decodedFrame, indexedEntry);
+            return true;
+        }
+
+        private void AddPreviousIndexedFrame(
+            List<DecodedFrameBuffer> framesBeforeTarget,
+            DecodedFrameBuffer normalizedFrame)
+        {
+            framesBeforeTarget.Add(normalizedFrame);
+            while (framesBeforeTarget.Count > _maxPreviousCachedFrameCount)
+            {
+                var removedFrame = framesBeforeTarget[0];
+                framesBeforeTarget.RemoveAt(0);
+                removedFrame.Dispose();
             }
         }
 
@@ -2472,144 +2526,127 @@ namespace FramePlayer.Engines.FFmpeg
             var stopwatch = Stopwatch.StartNew();
             var completeCacheByteLimit = ComputeCompleteDecodedCacheBudgetThresholdBytes(
                 _configuredCacheBudgetBytes);
-            FfmpegGlobalFrameIndexEntry firstEntry;
-            var decodeMode = RustFfmpegDecodeCore.ResolveMode();
-            if (decodeMode != RustFfmpegDecodeCoreMode.Managed &&
-                _globalFrameIndex.TryGetByAbsoluteFrameIndex(0L, out firstEntry))
+
+            var rustLoadResult = TryLoadCompleteDecodedCacheWithRust(
+                targetEntry,
+                indexedFrameCount,
+                completeCacheByteLimit,
+                stopwatch,
+                startingForwardCount,
+                cancellationToken);
+            if (rustLoadResult == CompleteDecodedCacheRustLoadResult.Loaded)
             {
-                var decodeRequest = CreateRustDecodeWindowRequest(
-                    firstEntry,
-                    targetEntry,
-                    (int)targetEntry.AbsoluteFrameIndex,
-                    (int)(indexedFrameCount - targetEntry.AbsoluteFrameIndex - 1L),
-                    completeCacheByteLimit);
-                if (TryDecodeIndexedWindowWithRust(
-                    decodeRequest,
-                    out var rustFrames,
-                    out var rustCurrentIndex,
-                    out var resourceLimitExceeded,
-                    out var errorMessage,
-                    cancellationToken))
-                {
-                    try
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        _frameCache.LoadWindow(rustFrames, rustCurrentIndex);
-                    }
-                    catch
-                    {
-                        DisposeDecodedFrames(rustFrames);
-                        throw;
-                    }
-                    _completeDecodedCacheLoaded = true;
-                    _completeDecodedCacheFrameCount = rustFrames.Count;
-
-                    stopwatch.Stop();
-                    LastCacheRefillMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
-                    LastCacheRefillReason = "complete-decoded-cache-rust";
-                    LastCacheRefillMode = LastCacheRefillMilliseconds > 0d ? "sync" : "none";
-                    LastCacheRefillWasSynchronous = LastCacheRefillMilliseconds > 0d;
-                    LastCacheRefillAfterLanding = true;
-                    LastCacheRefillStartingForwardCount = startingForwardCount;
-                    LastCacheRefillCompletedForwardCount = _frameCache.ForwardCount;
-                    LastCacheRefillCompletedPreviousCount = _frameCache.PreviousCount;
-                    return true;
-                }
-
-                if (resourceLimitExceeded)
-                {
-                    MarkCompleteDecodedCacheResourceLimited(stopwatch, startingForwardCount);
-                    return false;
-                }
-
-                if (decodeMode == RustFfmpegDecodeCoreMode.Rust)
-                {
-                    throw new InvalidOperationException("Rust FFmpeg decode core failed to load the complete decoded cache: " + errorMessage);
-                }
+                return true;
             }
 
+            if (rustLoadResult == CompleteDecodedCacheRustLoadResult.ResourceLimited)
+            {
+                return false;
+            }
+
+            return TryLoadCompleteDecodedCacheWithManagedDecoder(
+                targetEntry,
+                indexedFrameCount,
+                completeCacheByteLimit,
+                stopwatch,
+                startingForwardCount,
+                cancellationToken);
+        }
+
+        private CompleteDecodedCacheRustLoadResult TryLoadCompleteDecodedCacheWithRust(
+            FfmpegGlobalFrameIndexEntry targetEntry,
+            long indexedFrameCount,
+            long completeCacheByteLimit,
+            Stopwatch stopwatch,
+            int startingForwardCount,
+            CancellationToken cancellationToken)
+        {
+            var decodeMode = RustFfmpegDecodeCore.ResolveMode();
+            if (decodeMode == RustFfmpegDecodeCoreMode.Managed ||
+                !_globalFrameIndex.TryGetByAbsoluteFrameIndex(0L, out var firstEntry))
+            {
+                return CompleteDecodedCacheRustLoadResult.NotAttempted;
+            }
+
+            var decodeRequest = CreateRustDecodeWindowRequest(
+                firstEntry,
+                targetEntry,
+                (int)targetEntry.AbsoluteFrameIndex,
+                (int)(indexedFrameCount - targetEntry.AbsoluteFrameIndex - 1L),
+                completeCacheByteLimit);
+            if (TryDecodeIndexedWindowWithRust(
+                decodeRequest,
+                out var rustFrames,
+                out var rustCurrentIndex,
+                out var resourceLimitExceeded,
+                out var errorMessage,
+                cancellationToken))
+            {
+                try
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    _frameCache.LoadWindow(rustFrames, rustCurrentIndex);
+                }
+                catch
+                {
+                    DisposeDecodedFrames(rustFrames);
+                    throw;
+                }
+
+                RecordCompleteDecodedCacheLoaded(
+                    stopwatch,
+                    startingForwardCount,
+                    rustFrames.Count,
+                    "complete-decoded-cache-rust");
+                return CompleteDecodedCacheRustLoadResult.Loaded;
+            }
+
+            if (resourceLimitExceeded)
+            {
+                MarkCompleteDecodedCacheResourceLimited(stopwatch, startingForwardCount);
+                return CompleteDecodedCacheRustLoadResult.ResourceLimited;
+            }
+
+            if (decodeMode == RustFfmpegDecodeCoreMode.Rust)
+            {
+                throw new InvalidOperationException("Rust FFmpeg decode core failed to load the complete decoded cache: " + errorMessage);
+            }
+
+            return CompleteDecodedCacheRustLoadResult.NotAttempted;
+        }
+
+        private bool TryLoadCompleteDecodedCacheWithManagedDecoder(
+            FfmpegGlobalFrameIndexEntry targetEntry,
+            long indexedFrameCount,
+            long completeCacheByteLimit,
+            Stopwatch stopwatch,
+            int startingForwardCount,
+            CancellationToken cancellationToken)
+        {
             SeekToStreamTimestamp(0L, frameIndexAbsolute: true);
 
             var completeFrames = new List<DecodedFrameBuffer>((int)indexedFrameCount);
             var completeFramesTransferred = false;
             try
             {
-                long completeFrameBytes = 0L;
-                for (var absoluteFrameIndex = 0L; absoluteFrameIndex < indexedFrameCount; absoluteFrameIndex++)
+                if (!TryPopulateCompleteDecodedCache(
+                    completeFrames,
+                    indexedFrameCount,
+                    completeCacheByteLimit,
+                    stopwatch,
+                    startingForwardCount,
+                    cancellationToken))
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    if (!FfmpegMediaResourceLimits.TryReserveBytes(
-                        completeFrameBytes,
-                        FfmpegMediaResourceLimits.ManagedDecodedFrameOverheadBytes,
-                        completeCacheByteLimit,
-                        out var frameBytesBeforePixels))
-                    {
-                        MarkCompleteDecodedCacheResourceLimited(stopwatch, startingForwardCount);
-                        return false;
-                    }
-
-                    DecodedFrameBuffer decodedFrame;
-                    try
-                    {
-                        decodedFrame = ReadNextDisplayableFrame(
-                            cancellationToken,
-                            Math.Min(
-                                FfmpegMediaResourceLimits.ResolveDecodedFrameByteLimit(_configuredCacheBudgetBytes),
-                                completeCacheByteLimit - frameBytesBeforePixels));
-                    }
-                    catch (FfmpegMediaResourceLimitException)
-                    {
-                        MarkCompleteDecodedCacheResourceLimited(stopwatch, startingForwardCount);
-                        return false;
-                    }
-
-                    if (decodedFrame == null)
-                    {
-                        stopwatch.Stop();
-                        _completeDecodedCacheLoaded = false;
-                        _completeDecodedCacheFrameCount = 0;
-                        return false;
-                    }
-
-                    FfmpegGlobalFrameIndexEntry currentEntry;
-                    if (!_globalFrameIndex.TryGetByAbsoluteFrameIndex(absoluteFrameIndex, out currentEntry))
-                    {
-                        stopwatch.Stop();
-                        decodedFrame.Dispose();
-                        _completeDecodedCacheLoaded = false;
-                        _completeDecodedCacheFrameCount = 0;
-                        return false;
-                    }
-
-                    var normalizedFrame = NormalizeFrameToIndexedEntry(decodedFrame, currentEntry);
-                    if (!FfmpegMediaResourceLimits.TryReserveBytes(
-                        frameBytesBeforePixels,
-                        normalizedFrame.ApproximateByteCount,
-                        completeCacheByteLimit,
-                        out completeFrameBytes))
-                    {
-                        normalizedFrame.Dispose();
-                        MarkCompleteDecodedCacheResourceLimited(stopwatch, startingForwardCount);
-                        return false;
-                    }
-
-                    completeFrames.Add(normalizedFrame);
+                    return false;
                 }
 
                 _frameCache.LoadWindow(completeFrames, (int)targetEntry.AbsoluteFrameIndex);
                 completeFramesTransferred = true;
-                _completeDecodedCacheLoaded = true;
-                _completeDecodedCacheFrameCount = completeFrames.Count;
-
-                stopwatch.Stop();
-                LastCacheRefillMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
-                LastCacheRefillReason = "complete-decoded-cache";
-                LastCacheRefillMode = LastCacheRefillMilliseconds > 0d ? "sync" : "none";
-                LastCacheRefillWasSynchronous = LastCacheRefillMilliseconds > 0d;
-                LastCacheRefillAfterLanding = true;
-                LastCacheRefillStartingForwardCount = startingForwardCount;
-                LastCacheRefillCompletedForwardCount = _frameCache.ForwardCount;
-                LastCacheRefillCompletedPreviousCount = _frameCache.PreviousCount;
+                RecordCompleteDecodedCacheLoaded(
+                    stopwatch,
+                    startingForwardCount,
+                    completeFrames.Count,
+                    "complete-decoded-cache");
                 return true;
             }
             finally
@@ -2618,6 +2655,124 @@ namespace FramePlayer.Engines.FFmpeg
                     completeFrames,
                     completeFramesTransferred);
             }
+        }
+
+        private bool TryPopulateCompleteDecodedCache(
+            List<DecodedFrameBuffer> completeFrames,
+            long indexedFrameCount,
+            long completeCacheByteLimit,
+            Stopwatch stopwatch,
+            int startingForwardCount,
+            CancellationToken cancellationToken)
+        {
+            var completeFrameBytes = 0L;
+            for (var absoluteFrameIndex = 0L; absoluteFrameIndex < indexedFrameCount; absoluteFrameIndex++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var readStatus = TryReadCompleteDecodedCacheFrame(
+                    absoluteFrameIndex,
+                    completeFrameBytes,
+                    completeCacheByteLimit,
+                    out var normalizedFrame,
+                    out completeFrameBytes,
+                    cancellationToken);
+                if (readStatus == CompleteDecodedFrameReadStatus.ResourceLimited)
+                {
+                    MarkCompleteDecodedCacheResourceLimited(stopwatch, startingForwardCount);
+                    return false;
+                }
+
+                if (readStatus != CompleteDecodedFrameReadStatus.Succeeded)
+                {
+                    stopwatch.Stop();
+                    _completeDecodedCacheLoaded = false;
+                    _completeDecodedCacheFrameCount = 0;
+                    return false;
+                }
+
+                completeFrames.Add(normalizedFrame);
+            }
+
+            return true;
+        }
+
+        private CompleteDecodedFrameReadStatus TryReadCompleteDecodedCacheFrame(
+            long absoluteFrameIndex,
+            long completeFrameBytes,
+            long completeCacheByteLimit,
+            out DecodedFrameBuffer normalizedFrame,
+            out long updatedCompleteFrameBytes,
+            CancellationToken cancellationToken)
+        {
+            normalizedFrame = null;
+            updatedCompleteFrameBytes = completeFrameBytes;
+            if (!FfmpegMediaResourceLimits.TryReserveBytes(
+                completeFrameBytes,
+                FfmpegMediaResourceLimits.ManagedDecodedFrameOverheadBytes,
+                completeCacheByteLimit,
+                out var frameBytesBeforePixels))
+            {
+                return CompleteDecodedFrameReadStatus.ResourceLimited;
+            }
+
+            DecodedFrameBuffer decodedFrame;
+            try
+            {
+                decodedFrame = ReadNextDisplayableFrame(
+                    cancellationToken,
+                    Math.Min(
+                        FfmpegMediaResourceLimits.ResolveDecodedFrameByteLimit(_configuredCacheBudgetBytes),
+                        completeCacheByteLimit - frameBytesBeforePixels));
+            }
+            catch (FfmpegMediaResourceLimitException)
+            {
+                return CompleteDecodedFrameReadStatus.ResourceLimited;
+            }
+
+            if (decodedFrame == null)
+            {
+                return CompleteDecodedFrameReadStatus.InputExhausted;
+            }
+
+            if (!_globalFrameIndex.TryGetByAbsoluteFrameIndex(absoluteFrameIndex, out var currentEntry))
+            {
+                decodedFrame.Dispose();
+                return CompleteDecodedFrameReadStatus.IndexEntryMissing;
+            }
+
+            normalizedFrame = NormalizeFrameToIndexedEntry(decodedFrame, currentEntry);
+            if (!FfmpegMediaResourceLimits.TryReserveBytes(
+                frameBytesBeforePixels,
+                normalizedFrame.ApproximateByteCount,
+                completeCacheByteLimit,
+                out updatedCompleteFrameBytes))
+            {
+                normalizedFrame.Dispose();
+                normalizedFrame = null;
+                return CompleteDecodedFrameReadStatus.ResourceLimited;
+            }
+
+            return CompleteDecodedFrameReadStatus.Succeeded;
+        }
+
+        private void RecordCompleteDecodedCacheLoaded(
+            Stopwatch stopwatch,
+            int startingForwardCount,
+            int completeFrameCount,
+            string reason)
+        {
+            _completeDecodedCacheLoaded = true;
+            _completeDecodedCacheFrameCount = completeFrameCount;
+
+            stopwatch.Stop();
+            LastCacheRefillMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
+            LastCacheRefillReason = reason;
+            LastCacheRefillMode = LastCacheRefillMilliseconds > 0d ? "sync" : "none";
+            LastCacheRefillWasSynchronous = LastCacheRefillMilliseconds > 0d;
+            LastCacheRefillAfterLanding = true;
+            LastCacheRefillStartingForwardCount = startingForwardCount;
+            LastCacheRefillCompletedForwardCount = _frameCache.ForwardCount;
+            LastCacheRefillCompletedPreviousCount = _frameCache.PreviousCount;
         }
 
         private RustFfmpegDecodeWindowRequest CreateRustDecodeWindowRequest(
@@ -2995,58 +3150,78 @@ namespace FramePlayer.Engines.FFmpeg
 
                 if (_hasPendingVideoPacket)
                 {
-                    var sendPendingResult = ffmpeg.avcodec_send_packet(_codecContext, _packet);
-                    if (sendPendingResult == ffmpeg.AVERROR(ffmpeg.EAGAIN))
-                    {
-                        continue;
-                    }
-
-                    FfmpegNativeHelpers.ThrowIfError(sendPendingResult, "Submit packet to decoder");
-                    _hasPendingVideoPacket = false;
-                    ffmpeg.av_packet_unref(_packet);
+                    SubmitPendingVideoPacket();
                     continue;
                 }
 
                 if (_inputExhausted)
                 {
-                    if (_flushPacketSent)
+                    if (FlushDecoderAtEndOfStream())
                     {
                         return null;
                     }
 
-                    var flushResult = ffmpeg.avcodec_send_packet(_codecContext, null);
-                    if (flushResult == ffmpeg.AVERROR(ffmpeg.EAGAIN))
-                    {
-                        continue;
-                    }
-
-                    if (flushResult == ffmpeg.AVERROR_EOF)
-                    {
-                        _flushPacketSent = true;
-                        return null;
-                    }
-
-                    FfmpegNativeHelpers.ThrowIfError(flushResult, "Flush decoder at end of stream");
-                    _flushPacketSent = true;
                     continue;
                 }
 
-                var readResult = ffmpeg.av_read_frame(_formatContext, _packet);
-                if (readResult == ffmpeg.AVERROR_EOF)
-                {
-                    _inputExhausted = true;
-                    continue;
-                }
-
-                FfmpegNativeHelpers.ThrowIfError(readResult, "Read encoded packet");
-                if (_packet->stream_index != _videoStreamIndex)
-                {
-                    ffmpeg.av_packet_unref(_packet);
-                    continue;
-                }
-
-                _hasPendingVideoPacket = true;
+                ReadNextEncodedPacket();
             }
+        }
+
+        private void SubmitPendingVideoPacket()
+        {
+            var sendPendingResult = ffmpeg.avcodec_send_packet(_codecContext, _packet);
+            if (sendPendingResult == ffmpeg.AVERROR(ffmpeg.EAGAIN))
+            {
+                return;
+            }
+
+            FfmpegNativeHelpers.ThrowIfError(sendPendingResult, "Submit packet to decoder");
+            _hasPendingVideoPacket = false;
+            ffmpeg.av_packet_unref(_packet);
+        }
+
+        private bool FlushDecoderAtEndOfStream()
+        {
+            if (_flushPacketSent)
+            {
+                return true;
+            }
+
+            var flushResult = ffmpeg.avcodec_send_packet(_codecContext, null);
+            if (flushResult == ffmpeg.AVERROR(ffmpeg.EAGAIN))
+            {
+                return false;
+            }
+
+            if (flushResult == ffmpeg.AVERROR_EOF)
+            {
+                _flushPacketSent = true;
+                return true;
+            }
+
+            FfmpegNativeHelpers.ThrowIfError(flushResult, "Flush decoder at end of stream");
+            _flushPacketSent = true;
+            return false;
+        }
+
+        private void ReadNextEncodedPacket()
+        {
+            var readResult = ffmpeg.av_read_frame(_formatContext, _packet);
+            if (readResult == ffmpeg.AVERROR_EOF)
+            {
+                _inputExhausted = true;
+                return;
+            }
+
+            FfmpegNativeHelpers.ThrowIfError(readResult, "Read encoded packet");
+            if (_packet->stream_index != _videoStreamIndex)
+            {
+                ffmpeg.av_packet_unref(_packet);
+                return;
+            }
+
+            _hasPendingVideoPacket = true;
         }
 
         private DecodedFrameBuffer TryReceiveDecodedFrame(
@@ -3597,6 +3772,21 @@ namespace FramePlayer.Engines.FFmpeg
         private void ThrowIfDisposed()
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+        }
+
+        private enum CompleteDecodedCacheRustLoadResult
+        {
+            NotAttempted,
+            Loaded,
+            ResourceLimited
+        }
+
+        private enum CompleteDecodedFrameReadStatus
+        {
+            Succeeded,
+            ResourceLimited,
+            InputExhausted,
+            IndexEntryMissing
         }
 
         private sealed class BackwardReconstructionResult
