@@ -538,11 +538,25 @@ unsafe fn create_converter_entry(
     converter: *mut *mut RustFrameConverter,
     result: *mut FramePlayerRustFrameConvertResult,
 ) -> c_int {
+    let converter_value = match create_converter(runtime_directory, result) {
+        Ok(value) => value,
+        Err(status) => return status,
+    };
+
+    *converter = Box::into_raw(Box::new(converter_value));
+    write_convert_message(result, "Rust frame converter was created.");
+    STATUS_OK
+}
+
+unsafe fn create_converter(
+    runtime_directory: *const c_char,
+    result: *mut FramePlayerRustFrameConvertResult,
+) -> Result<RustFrameConverter, c_int> {
     let runtime_directory = match read_path(runtime_directory) {
         Ok(value) => value,
         Err(status) => {
             write_convert_message(result, "FFmpeg runtime directory was not valid.");
-            return status;
+            return Err(status);
         }
     };
 
@@ -550,24 +564,22 @@ unsafe fn create_converter_entry(
         Ok(value) => value,
         Err(status) => {
             write_convert_message(result, "Could not load FFmpeg runtime libraries.");
-            return status;
+            return Err(status);
         }
     };
     let symbols = match load_symbols(&runtime) {
         Ok(value) => value,
         Err(status) => {
             write_convert_message(result, "Could not resolve FFmpeg runtime symbols.");
-            return status;
+            return Err(status);
         }
     };
 
-    *converter = Box::into_raw(Box::new(RustFrameConverter {
+    Ok(RustFrameConverter {
         _runtime: runtime,
         symbols,
         sws_context: std::ptr::null_mut(),
-    }));
-    write_convert_message(result, "Rust frame converter was created.");
-    STATUS_OK
+    })
 }
 
 unsafe fn convert_with_converter_entry(
@@ -610,15 +622,14 @@ unsafe fn convert_frame_entry(
         return STATUS_INVALID_ARGUMENT;
     }
 
-    let mut converter: *mut RustFrameConverter = std::ptr::null_mut();
-    let create_status = create_converter_entry(runtime_directory, &mut converter, result);
-    if create_status != STATUS_OK {
-        return create_status;
-    }
+    let mut converter = match create_converter(runtime_directory, result) {
+        Ok(value) => value,
+        Err(status) => return status,
+    };
 
     match convert_frame(
-        &(*converter).symbols,
-        &mut (*converter).sws_context,
+        &converter.symbols,
+        &mut converter.sws_context,
         std::ptr::null_mut(),
         std::ptr::null_mut(),
         source_frame,
@@ -626,12 +637,10 @@ unsafe fn convert_frame_entry(
     ) {
         Ok(frame) => {
             (*result).frame = frame;
-            frameplayer_rust_ffmpeg_frame_converter_free(converter);
             write_convert_message(result, "Rust converted decoded frame to native BGRA.");
             STATUS_OK
         }
         Err(status) => {
-            frameplayer_rust_ffmpeg_frame_converter_free(converter);
             write_convert_message(result, "Rust frame conversion failed.");
             status
         }
@@ -1508,4 +1517,110 @@ unsafe fn write_convert_message(result: *mut FramePlayerRustFrameConvertResult, 
         (*result).message[index] = *byte as c_char;
     }
     (*result).message[byte_count] = 0;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn persistent_converter_creation_returns_valid_handle() {
+        let Some(runtime_directory) = std::env::var_os("FRAMEPLAYER_FFMPEG_RUNTIME_DIR") else {
+            return;
+        };
+        let runtime_path = CString::new(runtime_directory.to_string_lossy().as_bytes())
+            .expect("runtime path should not contain NUL");
+        let mut converter = std::ptr::null_mut();
+        let mut result = FramePlayerRustFrameConvertResult::default();
+
+        let status = unsafe {
+            frameplayer_rust_ffmpeg_frame_converter_create(
+                runtime_path.as_ptr(),
+                &mut converter,
+                &mut result,
+            )
+        };
+        let message = unsafe { CStr::from_ptr(result.message.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        let converter_was_initialized = !converter.is_null();
+
+        if converter_was_initialized {
+            unsafe { frameplayer_rust_ffmpeg_frame_converter_free(converter) };
+        }
+
+        assert_eq!(STATUS_OK, status, "{message}");
+        assert_eq!(STATUS_OK, result.status, "{message}");
+        assert!(
+            converter_was_initialized,
+            "converter handle should be initialized"
+        );
+    }
+
+    #[test]
+    fn one_shot_conversion_returns_bgra_frame() {
+        let Some(runtime_directory) = std::env::var_os("FRAMEPLAYER_FFMPEG_RUNTIME_DIR") else {
+            return;
+        };
+        let runtime_directory = runtime_directory.to_string_lossy();
+        let runtime_path = CString::new(runtime_directory.as_bytes())
+            .expect("runtime path should not contain NUL");
+        let runtime = unsafe { load_runtime_libraries(Path::new(runtime_directory.as_ref())) }
+            .expect("FFmpeg runtime libraries should load");
+        let symbols = unsafe { load_symbols(&runtime) }.expect("FFmpeg symbols should load");
+        let mut source_frame = unsafe { (symbols.av_frame_alloc)() };
+        assert!(
+            !source_frame.is_null(),
+            "FFmpeg should allocate a source frame"
+        );
+
+        let source_pixels = [3u8, 2, 1, 255];
+        unsafe {
+            write_field::<*const u8>(source_frame, 0, source_pixels.as_ptr());
+            write_field::<c_int>(source_frame, 64, 4);
+            write_field::<c_int>(source_frame, AVFRAME_WIDTH_OFFSET, 1);
+            write_field::<c_int>(source_frame, AVFRAME_HEIGHT_OFFSET, 1);
+            write_field::<c_int>(source_frame, AVFRAME_FORMAT_OFFSET, AV_PIX_FMT_BGRA);
+        }
+
+        let mut result = FramePlayerRustFrameConvertResult::default();
+        let status = unsafe {
+            frameplayer_rust_ffmpeg_convert_frame_to_bgra(
+                runtime_path.as_ptr(),
+                source_frame,
+                &mut result,
+            )
+        };
+        let message = unsafe { CStr::from_ptr(result.message.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        let output_metadata = (
+            result.frame.width,
+            result.frame.height,
+            result.frame.stride,
+            result.frame.pixel_buffer_len,
+            result.frame.source_pixel_format,
+        );
+        let output_pixels = if status == STATUS_OK
+            && !result.frame.pixel_data.is_null()
+            && result.frame.pixel_buffer_len == source_pixels.len()
+        {
+            unsafe {
+                std::slice::from_raw_parts(result.frame.pixel_data, result.frame.pixel_buffer_len)
+                    .to_vec()
+            }
+        } else {
+            Vec::new()
+        };
+
+        unsafe {
+            free_native_frame(std::mem::take(&mut result.frame));
+            (symbols.av_frame_free)(&mut source_frame);
+        }
+
+        assert_eq!(STATUS_OK, status, "{message}");
+        assert_eq!(STATUS_OK, result.status, "{message}");
+        assert_eq!((1, 1, 4, 4, AV_PIX_FMT_BGRA), output_metadata);
+        assert_eq!(source_pixels, output_pixels.as_slice());
+    }
 }
