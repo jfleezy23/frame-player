@@ -100,6 +100,19 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
+        public void ExportRuntimeBootstrap_DoesNotSeedFromDistinctDeveloperToolBundle()
+        {
+            var script = File.ReadAllText(Path.Combine(
+                GetRepositoryRoot(),
+                "scripts",
+                "Ensure-DevExportRuntime.ps1"));
+
+            Assert.DoesNotContain("ffmpeg-tools", script, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("$manifest.assetUrl", script, StringComparison.Ordinal);
+            Assert.Contains("Test-ExportRuntimeIntegrity", script, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public void MainWindow_RoutesLongRunningExportsThroughExportHost()
         {
             var source = File.ReadAllText(Path.Combine(

@@ -30,6 +30,6 @@ All pinned FFmpeg 8.1.2 native runtimes use the official `n8.1.2` tag at commit 
 The local source-build workflow and produced archive path are documented in `docs\ffmpeg-8.1-build-notes.md`.
 This runtime also requires `libwinpthread-1.dll`, which is staged beside the FFmpeg DLLs and validated through the manifest.
 The export runtime is staged separately so export/probe work can run in a secondary headless host without touching the primary playback DLL set.
-The current restore path can seed `ffmpeg-export` from the local export-tools bundle for dev/test convenience, but shipped output is expected to carry only the DLL-based export runtime.
+The export runtime restores only from its own source-built candidate or pinned archive. The distinct export-tools bundle is never used as a runtime seed because its binaries have separate build provenance and hashes.
 The dedicated `Build-FFmpeg-ExportRuntime-8.1.ps1` script stages a lean local candidate under `Runtime\ffmpeg-export-8.1.2-candidate\` when you want to validate the smaller no-program runtime directly.
 Use `scripts\Build-RustFfmpegProbe.ps1` on Windows or `scripts/Build-RustFfmpegProbe.sh` on macOS to stage the Rust FFmpeg native library for packaging the corresponding universal-app target.
