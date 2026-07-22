@@ -1,12 +1,11 @@
 using System;
 using System.Runtime.InteropServices;
-using FFmpeg.AutoGen;
 using FramePlayer.Core.Models;
 using Microsoft.Win32.SafeHandles;
 
 namespace FramePlayer.Engines.FFmpeg
 {
-    internal unsafe sealed class RustFfmpegBgraFrameConverter : IDisposable
+    internal sealed class RustFfmpegBgraFrameConverter : IDisposable
     {
         private IntPtr _converter;
 
@@ -71,7 +70,7 @@ namespace FramePlayer.Engines.FFmpeg
         }
 
         public bool TryConvert(
-            AVFrame* sourceFrame,
+            IntPtr sourceFrame,
             FrameDescriptor descriptor,
             long maxFrameBytes,
             out DecodedFrameBuffer frameBuffer,
@@ -90,7 +89,7 @@ namespace FramePlayer.Engines.FFmpeg
                 NativeFrameConvertResult result;
                 var status = frameplayer_rust_ffmpeg_frame_converter_convert(
                     _converter,
-                    (IntPtr)sourceFrame,
+                    sourceFrame,
                     checked((ulong)maxFrameBytes),
                     out result);
                 var nativeStatus = result.Status != 0 ? result.Status : status;

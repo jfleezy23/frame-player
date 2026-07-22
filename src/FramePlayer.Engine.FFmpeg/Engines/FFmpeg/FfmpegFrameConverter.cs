@@ -140,7 +140,7 @@ namespace FramePlayer.Engines.FFmpeg
             }
 
             if (_rustConverter.TryConvert(
-                sourceFrame,
+                (IntPtr)sourceFrame,
                 descriptor,
                 maxFrameBytes,
                 out frameBuffer,

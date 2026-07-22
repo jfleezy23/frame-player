@@ -7,7 +7,7 @@ using FramePlayer.Core.Models;
 
 namespace FramePlayer.Engines.FFmpeg
 {
-    internal static unsafe class RustFfmpegDecodeCore
+    internal static class RustFfmpegDecodeCore
     {
         private const long NoTimestamp = long.MinValue;
         private const string DecodeModeEnvironmentVariable = "FRAMEPLAYER_FFMPEG_DECODE_CORE";
@@ -75,11 +75,10 @@ namespace FramePlayer.Engines.FFmpeg
                 return false;
             }
 
-            var cancellationFlag = Marshal.AllocHGlobal(sizeof(int));
-            Marshal.WriteInt32(cancellationFlag, 0);
+            using var cancellationFlag = new RustFfmpegCancellationFlag();
             try
             {
-                using (cancellationToken.Register(state => SignalCancellation((IntPtr)state), cancellationFlag))
+                using (cancellationFlag.Register(cancellationToken))
                 {
                     NativeDecodeWindowResult nativeResult;
                     var status = frameplayer_rust_ffmpeg_decode_window(
@@ -92,7 +91,7 @@ namespace FramePlayer.Engines.FFmpeg
                         forwardFrameLimit,
                         checked((ulong)maxFrameBytes),
                         checked((ulong)maxWindowBytes),
-                        cancellationFlag,
+                        cancellationFlag.Pointer,
                         out nativeResult);
                     var nativeStatus = nativeResult.Status != 0 ? nativeResult.Status : status;
 
@@ -166,15 +165,6 @@ namespace FramePlayer.Engines.FFmpeg
                 errorMessage = "native-decode-window-marshal-failed: " + ex.Message;
                 return false;
             }
-            finally
-            {
-                Marshal.FreeHGlobal(cancellationFlag);
-            }
-        }
-
-        private static void SignalCancellation(IntPtr cancellationFlag)
-        {
-            Interlocked.Exchange(ref *(int*)cancellationFlag.ToPointer(), 1);
         }
 
         private static void DisposeDecodedFrames(IEnumerable<DecodedFrameBuffer> frames)
@@ -207,15 +197,19 @@ namespace FramePlayer.Engines.FFmpeg
                 throw new InvalidOperationException("Rust decode core returned too many frames to marshal.");
             }
 
-            var nativeFrames = (RustFfmpegBgraFrameConverter.NativeFrame*)nativeResult.Frames;
-            var frames = new List<DecodedFrameBuffer>((int)nativeResult.FrameCount);
+            var frameCount = checked((int)nativeResult.FrameCount);
+            var frames = new List<DecodedFrameBuffer>(frameCount);
             long totalFrameBytes = 0L;
             try
             {
-                for (var index = 0; index < (int)nativeResult.FrameCount; index++)
+                for (var index = 0; index < frameCount; index++)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    var frameBytes = checked((long)nativeFrames[index].PixelBufferLength.ToUInt64());
+                    var nativeFrame = RustFfmpegNativeArray.Read<RustFfmpegBgraFrameConverter.NativeFrame>(
+                        nativeResult.Frames,
+                        index,
+                        frameCount);
+                    var frameBytes = checked((long)nativeFrame.PixelBufferLength.ToUInt64());
                     if (frameBytes > maxFrameBytes ||
                         !FfmpegMediaResourceLimits.TryReserveDecodedFrameBytes(
                             totalFrameBytes,
@@ -228,16 +222,29 @@ namespace FramePlayer.Engines.FFmpeg
                             "Rust decode core returned a frame window beyond the requested byte limits.");
                     }
 
-                    var decodedFrame = ToDecodedFrameBuffer(
-                        ref nativeFrames[index],
-                        videoStreamTimeBase);
+                    DecodedFrameBuffer decodedFrame = null;
                     try
                     {
+                        try
+                        {
+                            decodedFrame = ToDecodedFrameBuffer(
+                                ref nativeFrame,
+                                videoStreamTimeBase);
+                        }
+                        finally
+                        {
+                            RustFfmpegNativeArray.Write(
+                                nativeResult.Frames,
+                                index,
+                                frameCount,
+                                nativeFrame);
+                        }
+
                         frames.Add(decodedFrame);
                     }
                     catch
                     {
-                        decodedFrame.Dispose();
+                        decodedFrame?.Dispose();
                         throw;
                     }
 

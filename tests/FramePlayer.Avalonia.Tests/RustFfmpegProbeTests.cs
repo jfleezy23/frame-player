@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
@@ -198,6 +199,7 @@ namespace FramePlayer.Avalonia.Tests
                     Assert.True(frame.HasNativePixelBuffer);
                     Assert.True(frame.ApproximateByteCount > 0);
                     Assert.Equal("bgra", frame.PixelFormatName);
+                    Assert.Equal(255, Marshal.ReadByte(frame.PixelBufferPointer, 3));
                 });
             }
             finally
