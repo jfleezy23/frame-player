@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 using FFmpeg.AutoGen;
 
@@ -13,8 +15,14 @@ namespace FramePlayer.Engines.FFmpeg
         private readonly Dictionary<long, FfmpegGlobalFrameIndexEntry> _entriesByDecodeTimestamp;
         private readonly HashSet<long> _ambiguousPresentationTimestamps;
         private readonly HashSet<long> _ambiguousDecodeTimestamps;
+        private static readonly IndexInterruptCallbackDelegate IndexInterruptCallback = InterruptIndexIo;
+        private static readonly IntPtr IndexInterruptCallbackPointer =
+            Marshal.GetFunctionPointerForDelegate(IndexInterruptCallback);
 
-        private FfmpegGlobalFrameIndex(List<FfmpegGlobalFrameIndexEntry> entries)
+        private FfmpegGlobalFrameIndex(
+            List<FfmpegGlobalFrameIndexEntry> entries,
+            CancellationToken cancellationToken,
+            Stopwatch indexStopwatch)
         {
             _entries = entries ?? throw new ArgumentNullException(nameof(entries));
             _entriesByPresentationTimestamp = new Dictionary<long, FfmpegGlobalFrameIndexEntry>();
@@ -22,11 +30,19 @@ namespace FramePlayer.Engines.FFmpeg
             _ambiguousPresentationTimestamps = new HashSet<long>();
             _ambiguousDecodeTimestamps = new HashSet<long>();
 
-            foreach (var entry in _entries)
+            for (var index = 0; index < _entries.Count; index++)
             {
+                if ((index & 1023) == 0)
+                {
+                    EnsureIndexFinalizationActive(cancellationToken, indexStopwatch);
+                }
+
+                var entry = _entries[index];
                 AddTimestampLookup(_entriesByPresentationTimestamp, _ambiguousPresentationTimestamps, entry.PresentationTimestamp, entry);
                 AddTimestampLookup(_entriesByDecodeTimestamp, _ambiguousDecodeTimestamps, entry.DecodeTimestamp, entry);
             }
+
+            EnsureIndexFinalizationActive(cancellationToken, indexStopwatch);
         }
 
         public long Count
@@ -52,6 +68,7 @@ namespace FramePlayer.Engines.FFmpeg
             }
 
             cancellationToken.ThrowIfCancellationRequested();
+            var indexStopwatch = Stopwatch.StartNew();
             var buildMode = RustFfmpegGlobalFrameIndexBuilder.ResolveBuildMode();
             if (buildMode != RustFfmpegGlobalFrameIndexBuildMode.Managed)
             {
@@ -59,31 +76,57 @@ namespace FramePlayer.Engines.FFmpeg
                     ffmpeg.RootPath,
                     filePath,
                     videoStreamIndex,
+                    FfmpegMediaResourceLimits.GlobalFrameIndexTimeLimit - indexStopwatch.Elapsed,
                     cancellationToken);
                 if (rustIndex.Succeeded)
                 {
-                    return FromRustIndex(rustIndex);
+                    return FromRustIndex(rustIndex, cancellationToken, indexStopwatch);
                 }
 
-                if (buildMode == RustFfmpegGlobalFrameIndexBuildMode.Rust)
+                if (!ShouldFallBackToManagedIndex(buildMode, rustIndex))
                 {
+                    if (rustIndex.ResourceLimitExceeded)
+                    {
+                        throw new FfmpegMediaResourceLimitException(
+                            "Exact frame indexing exceeded its resource limits: " + rustIndex.Message);
+                    }
+
                     throw new InvalidOperationException("Rust FFmpeg exact frame index failed: " +
                         rustIndex.StatusName + ": " + rustIndex.Message);
                 }
+
+                FfmpegMediaResourceLimits.EnsureGlobalFrameIndexCapacity(0, indexStopwatch.Elapsed);
             }
 
             AVFormatContext* formatContext = null;
             AVCodecContext* codecContext = null;
             AVPacket* packet = null;
             AVFrame* decodedFrame = null;
+            GCHandle indexInterruptHandle = default;
 
             try
             {
+                var interruptState = new IndexInterruptState(cancellationToken, indexStopwatch);
+                indexInterruptHandle = GCHandle.Alloc(interruptState);
+                formatContext = ffmpeg.avformat_alloc_context();
+                if (formatContext == null)
+                {
+                    throw new InvalidOperationException("Could not allocate the FFmpeg format context for frame indexing.");
+                }
+
+                formatContext->interrupt_callback.callback.Pointer = IndexInterruptCallbackPointer;
+                formatContext->interrupt_callback.opaque =
+                    GCHandle.ToIntPtr(indexInterruptHandle).ToPointer();
+
+                var openResult = FfmpegNativeHelpers.OpenInput(&formatContext, filePath, null, null);
+                ThrowIfIndexInterrupted(interruptState, 0);
                 FfmpegNativeHelpers.ThrowIfError(
-                    FfmpegNativeHelpers.OpenInput(&formatContext, filePath, null, null),
+                    openResult,
                     "Open media container for frame index");
+                var streamInfoResult = ffmpeg.avformat_find_stream_info(formatContext, null);
+                ThrowIfIndexInterrupted(interruptState, 0);
                 FfmpegNativeHelpers.ThrowIfError(
-                    ffmpeg.avformat_find_stream_info(formatContext, null),
+                    streamInfoResult,
                     "Probe media streams for frame index");
 
                 if (videoStreamIndex < 0 || videoStreamIndex >= formatContext->nb_streams)
@@ -110,9 +153,12 @@ namespace FramePlayer.Engines.FFmpeg
 
                 codecContext->pkt_timebase = videoStream->time_base;
                 codecContext->framerate = FfmpegNativeHelpers.GetNominalFrameRate(formatContext, videoStream, null);
+                codecContext->max_pixels = FfmpegMediaResourceLimits.AbsoluteDecodedFramePixelLimit;
 
+                var openDecoderResult = ffmpeg.avcodec_open2(codecContext, decoder, null);
+                ThrowIfIndexInterrupted(interruptState, 0);
                 FfmpegNativeHelpers.ThrowIfError(
-                    ffmpeg.avcodec_open2(codecContext, decoder, null),
+                    openDecoderResult,
                     "Open video decoder for frame index");
 
                 packet = ffmpeg.av_packet_alloc();
@@ -137,6 +183,9 @@ namespace FramePlayer.Engines.FFmpeg
                 while (true)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    FfmpegMediaResourceLimits.EnsureGlobalFrameIndexCapacity(
+                        entries.Count,
+                        indexStopwatch.Elapsed);
 
                     FfmpegGlobalFrameIndexEntry indexedFrame;
                     if (TryReceiveIndexedFrame(
@@ -146,6 +195,7 @@ namespace FramePlayer.Engines.FFmpeg
                         decodedFrame,
                         ref absoluteFrameIndex,
                         ref currentAnchorEntry,
+                        interruptState,
                         out indexedFrame))
                     {
                         entries.Add(indexedFrame);
@@ -191,6 +241,7 @@ namespace FramePlayer.Engines.FFmpeg
                     }
 
                     var readResult = ffmpeg.av_read_frame(formatContext, packet);
+                    ThrowIfIndexInterrupted(interruptState, entries.Count);
                     if (readResult == ffmpeg.AVERROR_EOF)
                     {
                         inputExhausted = true;
@@ -207,7 +258,8 @@ namespace FramePlayer.Engines.FFmpeg
                     hasPendingVideoPacket = true;
                 }
 
-                return new FfmpegGlobalFrameIndex(entries);
+                EnsureIndexFinalizationActive(cancellationToken, indexStopwatch);
+                return new FfmpegGlobalFrameIndex(entries, cancellationToken, indexStopwatch);
             }
             finally
             {
@@ -234,10 +286,82 @@ namespace FramePlayer.Engines.FFmpeg
                     var formatContextToClose = formatContext;
                     ffmpeg.avformat_close_input(&formatContextToClose);
                 }
+
+                if (indexInterruptHandle.IsAllocated)
+                {
+                    indexInterruptHandle.Free();
+                }
             }
         }
 
-        private static FfmpegGlobalFrameIndex FromRustIndex(RustFfmpegGlobalFrameIndexResult rustIndex)
+        private static void ThrowIfIndexInterrupted(
+            IndexInterruptState interruptState,
+            int currentEntryCount)
+        {
+            interruptState.CancellationToken.ThrowIfCancellationRequested();
+            FfmpegMediaResourceLimits.EnsureGlobalFrameIndexCapacity(
+                currentEntryCount,
+                interruptState.Stopwatch.Elapsed);
+        }
+
+        private static int InterruptIndexIo(void* opaque)
+        {
+            if (opaque == null)
+            {
+                return 0;
+            }
+
+            try
+            {
+                var handle = GCHandle.FromIntPtr((IntPtr)opaque);
+                return handle.Target is IndexInterruptState state && state.ShouldInterrupt
+                    ? 1
+                    : 0;
+            }
+            catch
+            {
+                return 1;
+            }
+        }
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate int IndexInterruptCallbackDelegate(void* opaque);
+
+        private sealed class IndexInterruptState
+        {
+            internal IndexInterruptState(CancellationToken cancellationToken, Stopwatch stopwatch)
+            {
+                CancellationToken = cancellationToken;
+                Stopwatch = stopwatch ?? throw new ArgumentNullException(nameof(stopwatch));
+            }
+
+            internal CancellationToken CancellationToken { get; }
+
+            internal Stopwatch Stopwatch { get; }
+
+            internal bool ShouldInterrupt =>
+                CancellationToken.IsCancellationRequested ||
+                Stopwatch.Elapsed > FfmpegMediaResourceLimits.GlobalFrameIndexTimeLimit;
+        }
+
+        internal static bool ShouldFallBackToManagedIndex(
+            RustFfmpegGlobalFrameIndexBuildMode buildMode,
+            RustFfmpegGlobalFrameIndexResult rustIndex)
+        {
+            if (rustIndex == null)
+            {
+                throw new ArgumentNullException(nameof(rustIndex));
+            }
+
+            return buildMode == RustFfmpegGlobalFrameIndexBuildMode.Auto &&
+                !rustIndex.Succeeded &&
+                !rustIndex.ResourceLimitExceeded;
+        }
+
+        private static FfmpegGlobalFrameIndex FromRustIndex(
+            RustFfmpegGlobalFrameIndexResult rustIndex,
+            CancellationToken cancellationToken,
+            Stopwatch indexStopwatch)
         {
             if (rustIndex == null)
             {
@@ -249,9 +373,21 @@ namespace FramePlayer.Engines.FFmpeg
                 num = rustIndex.TimeBaseNumerator,
                 den = rustIndex.TimeBaseDenominator
             };
-            var entries = new List<FfmpegGlobalFrameIndexEntry>(rustIndex.Entries.Length);
-            foreach (var rustEntry in rustIndex.Entries)
+            if (rustIndex.Entries.Length > FfmpegMediaResourceLimits.GlobalFrameIndexEntryLimit)
             {
+                throw new FfmpegMediaResourceLimitException(
+                    "Rust FFmpeg exact frame index exceeded the configured retained-entry limit.");
+            }
+
+            var entries = new List<FfmpegGlobalFrameIndexEntry>(rustIndex.Entries.Length);
+            for (var index = 0; index < rustIndex.Entries.Length; index++)
+            {
+                if ((index & 1023) == 0)
+                {
+                    EnsureIndexFinalizationActive(cancellationToken, indexStopwatch);
+                }
+
+                var rustEntry = rustIndex.Entries[index];
                 var presentationTime = rustEntry.SearchTimestamp.HasValue
                     ? FfmpegNativeHelpers.ToTimeSpan(rustEntry.SearchTimestamp.Value, timeBase)
                     : TimeSpan.Zero;
@@ -270,7 +406,18 @@ namespace FramePlayer.Engines.FFmpeg
                     seekAnchorStrategy));
             }
 
-            return new FfmpegGlobalFrameIndex(entries);
+            EnsureIndexFinalizationActive(cancellationToken, indexStopwatch);
+            return new FfmpegGlobalFrameIndex(entries, cancellationToken, indexStopwatch);
+        }
+
+        private static void EnsureIndexFinalizationActive(
+            CancellationToken cancellationToken,
+            Stopwatch indexStopwatch)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            FfmpegMediaResourceLimits.EnsureGlobalFrameIndexCapacity(
+                0,
+                indexStopwatch.Elapsed);
         }
 
         public bool TryGetByAbsoluteFrameIndex(long frameIndex, out FfmpegGlobalFrameIndexEntry entry)
@@ -342,11 +489,13 @@ namespace FramePlayer.Engines.FFmpeg
             AVFrame* decodedFrame,
             ref long absoluteFrameIndex,
             ref FfmpegGlobalFrameIndexEntry currentAnchorEntry,
+            IndexInterruptState interruptState,
             out FfmpegGlobalFrameIndexEntry entry)
         {
             while (true)
             {
                 var receiveResult = ffmpeg.avcodec_receive_frame(codecContext, decodedFrame);
+                ThrowIfIndexInterrupted(interruptState, checked((int)absoluteFrameIndex));
                 if (receiveResult == ffmpeg.AVERROR(ffmpeg.EAGAIN) || receiveResult == ffmpeg.AVERROR_EOF)
                 {
                     entry = null;

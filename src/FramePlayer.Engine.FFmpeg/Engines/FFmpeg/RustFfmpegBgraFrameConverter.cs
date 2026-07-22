@@ -71,7 +71,12 @@ namespace FramePlayer.Engines.FFmpeg
             }
         }
 
-        public bool TryConvert(AVFrame* sourceFrame, FrameDescriptor descriptor, out DecodedFrameBuffer frameBuffer, out string errorMessage)
+        public bool TryConvert(
+            AVFrame* sourceFrame,
+            FrameDescriptor descriptor,
+            long maxFrameBytes,
+            out DecodedFrameBuffer frameBuffer,
+            out string errorMessage)
         {
             frameBuffer = null;
             errorMessage = string.Empty;
@@ -87,6 +92,7 @@ namespace FramePlayer.Engines.FFmpeg
                 var status = frameplayer_rust_ffmpeg_frame_converter_convert(
                     _converter,
                     (IntPtr)sourceFrame,
+                    checked((ulong)maxFrameBytes),
                     out result);
                 var nativeStatus = result.Status != 0 ? result.Status : status;
                 if (nativeStatus != 0)
@@ -96,8 +102,15 @@ namespace FramePlayer.Engines.FFmpeg
                     return false;
                 }
 
-                frameBuffer = ToFrameBuffer(result.Frame, descriptor);
-                return true;
+                try
+                {
+                    frameBuffer = ToFrameBuffer(ref result.Frame, descriptor);
+                    return true;
+                }
+                finally
+                {
+                    ReleaseNativeFrameBuffer(result.Frame);
+                }
             }
             catch (DllNotFoundException ex)
             {
@@ -132,25 +145,32 @@ namespace FramePlayer.Engines.FFmpeg
             _converter = IntPtr.Zero;
         }
 
-        internal static DecodedFrameBuffer ToFrameBuffer(NativeFrame nativeFrame, FrameDescriptor descriptor)
+        internal static DecodedFrameBuffer ToFrameBuffer(
+            ref NativeFrame nativeFrame,
+            FrameDescriptor descriptor)
         {
             if (nativeFrame.PixelBuffer == IntPtr.Zero ||
                 nativeFrame.PixelData == IntPtr.Zero ||
                 nativeFrame.PixelBufferLength == UIntPtr.Zero ||
-                nativeFrame.PixelBufferLength.ToUInt64() > int.MaxValue)
+                nativeFrame.PixelBufferLength.ToUInt64() > int.MaxValue ||
+                nativeFrame.PixelBufferLength.ToUInt64() >
+                    (ulong)FfmpegMediaResourceLimits.AbsoluteDecodedFrameByteLimit)
             {
-                ReleaseNativeFrameBuffer(nativeFrame);
                 throw new InvalidOperationException("Rust frame conversion returned an invalid native pixel buffer.");
             }
 
             var pixelBufferLength = checked((int)nativeFrame.PixelBufferLength.ToUInt64());
+            var pixelData = nativeFrame.PixelData;
             var handle = new RustFfmpegNativeFrameBufferHandle(nativeFrame.PixelBuffer, pixelBufferLength);
+            nativeFrame.PixelBuffer = IntPtr.Zero;
+            nativeFrame.PixelData = IntPtr.Zero;
+            nativeFrame.PixelBufferLength = UIntPtr.Zero;
             try
             {
                 return new DecodedFrameBuffer(
                     descriptor,
                     handle,
-                    nativeFrame.PixelData,
+                    pixelData,
                     pixelBufferLength,
                     nativeFrame.Stride,
                     "bgra");
@@ -186,6 +206,8 @@ namespace FramePlayer.Engines.FFmpeg
                     return "symbol-load-failed";
                 case 16:
                     return "conversion-failed";
+                case 20:
+                    return "resource-limit-exceeded";
                 default:
                     return "native-error";
             }
@@ -213,6 +235,7 @@ namespace FramePlayer.Engines.FFmpeg
         private static extern int frameplayer_rust_ffmpeg_frame_converter_convert(
             IntPtr converter,
             IntPtr sourceFrame,
+            ulong maxFrameBufferBytes,
             out NativeFrameConvertResult result);
 
         [DllImport("frameplayer_ffmpeg_probe", CallingConvention = CallingConvention.Cdecl)]

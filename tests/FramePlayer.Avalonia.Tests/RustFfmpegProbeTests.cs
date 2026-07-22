@@ -160,13 +160,17 @@ namespace FramePlayer.Avalonia.Tests
                     targetEntry,
                     previousFrameLimit: 3,
                     forwardFrameLimit: 1,
+                    maxFrameBytes: FfmpegMediaResourceLimits.AbsoluteDecodedFrameByteLimit,
+                    maxWindowBytes: FfmpegMediaResourceLimits.AbsoluteDecodedFrameByteLimit,
                     videoStreamTimeBase: new AVRational { num = 1, den = 1000 },
                     cancellationToken: CancellationToken.None,
                     frames: out frames,
                     currentIndex: out var currentIndex,
+                    resourceLimitExceeded: out var resourceLimitExceeded,
                     errorMessage: out var errorMessage);
 
                 Assert.True(decoded, errorMessage);
+                Assert.False(resourceLimitExceeded, errorMessage);
                 var decodedFrames = frames ?? throw new InvalidOperationException("Rust decode core returned no frame list.");
                 Assert.InRange(currentIndex, 0, decodedFrames.Count - 1);
                 Assert.Equal(targetFrameIndex, decodedFrames[currentIndex].Descriptor.FrameIndex);
@@ -176,6 +180,70 @@ namespace FramePlayer.Avalonia.Tests
                     Assert.True(frame.ApproximateByteCount > 0);
                     Assert.Equal("bgra", frame.PixelFormatName);
                 });
+            }
+            finally
+            {
+                if (frames != null)
+                {
+                    foreach (var frame in frames)
+                    {
+                        frame?.Dispose();
+                    }
+                }
+
+                Environment.SetEnvironmentVariable("FRAMEPLAYER_FFMPEG_INDEX_BUILDER", previousBuilderMode);
+            }
+        }
+
+        [Fact]
+        public void DecodeCore_RejectsFrameBeforeReturningWindowAboveByteLimit()
+        {
+            if (!string.Equals(
+                Environment.GetEnvironmentVariable("FRAMEPLAYER_ENABLE_RUST_DECODE_CORE_TESTS"),
+                "1",
+                StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var repoRoot = FindRepoRoot();
+            var mediaPath = ResolveSampleMediaPath(repoRoot);
+            if (!File.Exists(mediaPath))
+            {
+                return;
+            }
+
+            FfmpegRuntimeBootstrap.ConfigureForCurrentPlatform(repoRoot);
+            var previousBuilderMode = Environment.GetEnvironmentVariable("FRAMEPLAYER_FFMPEG_INDEX_BUILDER");
+            List<DecodedFrameBuffer>? frames = null;
+            try
+            {
+                Environment.SetEnvironmentVariable("FRAMEPLAYER_FFMPEG_INDEX_BUILDER", "rust");
+                var index = FfmpegGlobalFrameIndex.Build(mediaPath, 0, CancellationToken.None);
+                Assert.True(index.TryGetByAbsoluteFrameIndex(0L, out var firstEntry));
+
+                var decoded = RustFfmpegDecodeCore.TryDecodeIndexedWindow(
+                    ffmpeg.RootPath,
+                    mediaPath,
+                    0,
+                    firstEntry,
+                    firstEntry,
+                    previousFrameLimit: 0,
+                    forwardFrameLimit: 0,
+                    maxFrameBytes: 1L,
+                    maxWindowBytes: 1L,
+                    videoStreamTimeBase: new AVRational { num = 1, den = 1000 },
+                    cancellationToken: CancellationToken.None,
+                    frames: out frames,
+                    currentIndex: out var currentIndex,
+                    resourceLimitExceeded: out var resourceLimitExceeded,
+                    errorMessage: out var errorMessage);
+
+                Assert.False(decoded);
+                Assert.True(resourceLimitExceeded, errorMessage);
+                Assert.Null(frames);
+                Assert.Equal(-1, currentIndex);
+                Assert.Contains("resource-limit-exceeded", errorMessage, StringComparison.Ordinal);
             }
             finally
             {

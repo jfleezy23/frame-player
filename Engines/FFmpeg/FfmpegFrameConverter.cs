@@ -9,19 +9,28 @@ namespace FramePlayer.Engines.FFmpeg
         private const AVPixelFormat OutputPixelFormat = AVPixelFormat.AV_PIX_FMT_BGRA;
         private SwsContext* _scaleContext;
 
-        public DecodedFrameBuffer Convert(AVFrame* sourceFrame, FrameDescriptor descriptor)
+        public DecodedFrameBuffer Convert(AVFrame* sourceFrame, FrameDescriptor descriptor, long maxFrameBytes)
         {
             if (sourceFrame == null)
             {
                 throw new ArgumentNullException(nameof(sourceFrame));
             }
 
+            FfmpegMediaResourceLimits.EnsureBgraFrameWithinLimit(
+                sourceFrame->width,
+                sourceFrame->height,
+                maxFrameBytes);
             EnsureScaleContext(sourceFrame);
 
             var width = sourceFrame->width;
             var height = sourceFrame->height;
             var bufferSize = ffmpeg.av_image_get_buffer_size(OutputPixelFormat, width, height, 1);
             FfmpegNativeHelpers.ThrowIfError(bufferSize, "Allocate BGRA conversion buffer");
+            if (!FfmpegMediaResourceLimits.TryReserveBytes(0L, bufferSize, maxFrameBytes, out _))
+            {
+                throw new FfmpegMediaResourceLimitException(
+                    "FFmpeg's decoded BGRA buffer size exceeded the active frame limit.");
+            }
 
             var pixelBuffer = new byte[bufferSize];
             int stride;

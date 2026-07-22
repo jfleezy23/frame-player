@@ -8,6 +8,9 @@ namespace FramePlayer.Engines.FFmpeg
     {
         private const int AVFormatContextNbStreamsOffset = 44;
         private const int AVFormatContextStreamsOffset = 48;
+        private const int AVFormatContextInterruptCallbackOffset = 216;
+        private static readonly int AVFormatContextInterruptOpaqueOffset =
+            AVFormatContextInterruptCallbackOffset + IntPtr.Size;
         private const int AVStreamCodecparOffset = 16;
         private const int AVStreamTimeBaseOffset = 32;
         private const int AVStreamAverageFrameRateOffset = 88;
@@ -15,6 +18,7 @@ namespace FramePlayer.Engines.FFmpeg
         private const int AVCodecParametersCodecIdOffset = 4;
         private const int AVCodecContextPacketTimeBaseOffset = 92;
         private const int AVCodecContextFrameRateOffset = 100;
+        private const int AVCodecContextMaxPixelsOffset = 792;
         private const int AVPacketStreamIndexOffset = 36;
         private const int AVFrameDataOffset = 0;
         private const int AVFrameLinesizeOffset = 64;
@@ -37,6 +41,12 @@ namespace FramePlayer.Engines.FFmpeg
             return TryValidateAVFrameOffsets(out errorMessage) &&
                 TryValidateOffset<AVFormatContext>(nameof(AVFormatContext.nb_streams), AVFormatContextNbStreamsOffset, out errorMessage) &&
                 TryValidateOffset<AVFormatContext>(nameof(AVFormatContext.streams), AVFormatContextStreamsOffset, out errorMessage) &&
+                TryValidateOffset<AVFormatContext>(nameof(AVFormatContext.interrupt_callback), AVFormatContextInterruptCallbackOffset, out errorMessage) &&
+                TryValidateNestedOffset<AVFormatContext, AVIOInterruptCB>(
+                    nameof(AVFormatContext.interrupt_callback),
+                    nameof(AVIOInterruptCB.opaque),
+                    AVFormatContextInterruptOpaqueOffset,
+                    out errorMessage) &&
                 TryValidateOffset<AVStream>(nameof(AVStream.codecpar), AVStreamCodecparOffset, out errorMessage) &&
                 TryValidateOffset<AVStream>(nameof(AVStream.time_base), AVStreamTimeBaseOffset, out errorMessage) &&
                 TryValidateOffset<AVStream>(nameof(AVStream.avg_frame_rate), AVStreamAverageFrameRateOffset, out errorMessage) &&
@@ -44,6 +54,7 @@ namespace FramePlayer.Engines.FFmpeg
                 TryValidateOffset<AVCodecParameters>(nameof(AVCodecParameters.codec_id), AVCodecParametersCodecIdOffset, out errorMessage) &&
                 TryValidateOffset<AVCodecContext>(nameof(AVCodecContext.pkt_timebase), AVCodecContextPacketTimeBaseOffset, out errorMessage) &&
                 TryValidateOffset<AVCodecContext>(nameof(AVCodecContext.framerate), AVCodecContextFrameRateOffset, out errorMessage) &&
+                TryValidateOffset<AVCodecContext>(nameof(AVCodecContext.max_pixels), AVCodecContextMaxPixelsOffset, out errorMessage) &&
                 TryValidateOffset<AVPacket>(nameof(AVPacket.stream_index), AVPacketStreamIndexOffset, out errorMessage);
         }
 
@@ -75,6 +86,32 @@ namespace FramePlayer.Engines.FFmpeg
                 "FFmpeg.AutoGen layout mismatch for {0}.{1}: expected offset {2}, actual offset {3}.",
                 typeof(T).Name,
                 fieldName,
+                expectedOffset,
+                actualOffset);
+            return false;
+        }
+
+        private static bool TryValidateNestedOffset<TOuter, TInner>(
+            string outerFieldName,
+            string innerFieldName,
+            int expectedOffset,
+            out string errorMessage)
+        {
+            var actualOffset = checked(
+                Marshal.OffsetOf<TOuter>(outerFieldName).ToInt32() +
+                Marshal.OffsetOf<TInner>(innerFieldName).ToInt32());
+            if (actualOffset == expectedOffset)
+            {
+                errorMessage = string.Empty;
+                return true;
+            }
+
+            errorMessage = string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "FFmpeg.AutoGen nested layout mismatch for {0}.{1}.{2}: expected offset {3}, actual offset {4}.",
+                typeof(TOuter).Name,
+                outerFieldName,
+                innerFieldName,
                 expectedOffset,
                 actualOffset);
             return false;

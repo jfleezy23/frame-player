@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using FramePlayer.Core.Models;
 using FramePlayer.Engines.FFmpeg;
+using Microsoft.Win32.SafeHandles;
 using Xunit;
 
 namespace FramePlayer.Core.Tests
@@ -41,11 +42,22 @@ namespace FramePlayer.Core.Tests
         }
 
         [Fact]
+        public void CompleteDecodedCachePolicy_ChargesOverheadForTinyFrames()
+        {
+            Assert.False(FfmpegReviewEngine.IsCompleteDecodedCachePolicyEligible(
+                indexedFrameCount: 100_000L,
+                approximateFrameBytes: BgraBytesPerPixel,
+                paneBudgetBytes: 64L * MiB));
+        }
+
+        [Fact]
         public void CompleteDecodedCachePolicy_DisablesWhenBudgetFallsBelowThreshold()
         {
             var frameBytes = 640L * 480L * BgraBytesPerPixel;
             var indexedFrameCount = 10L;
-            var exactEligibleBudgetBytes = indexedFrameCount * frameBytes * 4L / 3L;
+            var retainedFrameBytes = frameBytes + FfmpegMediaResourceLimits.ManagedDecodedFrameOverheadBytes;
+            var requiredRetainedBytes = indexedFrameCount * retainedFrameBytes;
+            var exactEligibleBudgetBytes = (requiredRetainedBytes * 4L + 2L) / 3L;
 
             Assert.True(FfmpegReviewEngine.IsCompleteDecodedCachePolicyEligible(
                 indexedFrameCount,
@@ -55,6 +67,43 @@ namespace FramePlayer.Core.Tests
                 indexedFrameCount,
                 frameBytes,
                 exactEligibleBudgetBytes - 1L));
+        }
+
+        [Fact]
+        public void CompleteDecodedCachePolicy_RetriesOnlyAfterBudgetIncreases()
+        {
+            const long rejectedBudgetBytes = 256L * MiB;
+
+            Assert.False(FfmpegReviewEngine.ShouldRetryCompleteDecodedCache(0L, rejectedBudgetBytes));
+            Assert.False(FfmpegReviewEngine.ShouldRetryCompleteDecodedCache(
+                rejectedBudgetBytes,
+                rejectedBudgetBytes));
+            Assert.True(FfmpegReviewEngine.ShouldRetryCompleteDecodedCache(
+                rejectedBudgetBytes,
+                rejectedBudgetBytes + 1L));
+        }
+
+        [Fact]
+        public void CompleteDecodedCachePolicy_DisposesFramesUntilOwnershipTransfers()
+        {
+            var releasedHandle = new CountingSafeHandle(new IntPtr(1234));
+            var releasedFrame = CreateNativeFrame(releasedHandle);
+
+            FfmpegReviewEngine.DisposeDecodedFramesUnlessTransferred(
+                new[] { releasedFrame },
+                ownershipTransferred: false);
+
+            Assert.Equal(1, releasedHandle.ReleaseCount);
+
+            var transferredHandle = new CountingSafeHandle(new IntPtr(5678));
+            var transferredFrame = CreateNativeFrame(transferredHandle);
+            FfmpegReviewEngine.DisposeDecodedFramesUnlessTransferred(
+                new[] { transferredFrame },
+                ownershipTransferred: true);
+
+            Assert.Equal(0, transferredHandle.ReleaseCount);
+            transferredFrame.Dispose();
+            Assert.Equal(1, transferredHandle.ReleaseCount);
         }
 
         [Fact]
@@ -99,6 +148,46 @@ namespace FramePlayer.Core.Tests
             }
 
             return frames;
+        }
+
+        private static DecodedFrameBuffer CreateNativeFrame(CountingSafeHandle handle)
+        {
+            return new DecodedFrameBuffer(
+                new FrameDescriptor(
+                    0L,
+                    TimeSpan.Zero,
+                    isKeyFrame: true,
+                    isFrameIndexAbsolute: true,
+                    pixelWidth: 1,
+                    pixelHeight: 1,
+                    pixelFormatName: "bgra",
+                    sourcePixelFormatName: "bgra",
+                    presentationTimestamp: 0L,
+                    decodeTimestamp: 0L,
+                    durationTimestamp: null),
+                handle,
+                new IntPtr(1234),
+                pixelBufferLength: BgraBytesPerPixel,
+                stride: BgraBytesPerPixel,
+                pixelFormatName: "bgra");
+        }
+
+        private sealed class CountingSafeHandle : SafeHandleZeroOrMinusOneIsInvalid
+        {
+            internal CountingSafeHandle(IntPtr handle)
+                : base(ownsHandle: true)
+            {
+                SetHandle(handle);
+            }
+
+            internal int ReleaseCount { get; private set; }
+
+            protected override bool ReleaseHandle()
+            {
+                ReleaseCount++;
+                handle = IntPtr.Zero;
+                return true;
+            }
         }
     }
 }

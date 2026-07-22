@@ -1,11 +1,14 @@
 use crate::{
-    load_runtime_libraries, load_symbol, MESSAGE_CAPACITY, STATUS_INVALID_ARGUMENT,
-    STATUS_LIBRARY_LOAD_FAILED, STATUS_OK, STATUS_RUNTIME_DIRECTORY_MISSING,
-    STATUS_SYMBOL_LOAD_FAILED,
+    load_runtime_libraries, load_symbol, MAX_DECODED_FRAME_PIXELS, MESSAGE_CAPACITY,
+    STATUS_INVALID_ARGUMENT, STATUS_LIBRARY_LOAD_FAILED, STATUS_OK,
+    STATUS_RUNTIME_DIRECTORY_MISSING, STATUS_SYMBOL_LOAD_FAILED,
 };
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};
 use std::path::Path;
+#[cfg(test)]
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicI32, Ordering};
 
 const STATUS_FILE_OPEN_FAILED: c_int = 5;
 const STATUS_STREAM_UNAVAILABLE: c_int = 6;
@@ -22,6 +25,12 @@ const STATUS_CONVERSION_FAILED: c_int = 16;
 const STATUS_SEEK_FAILED: c_int = 17;
 const STATUS_ANCHOR_NOT_FOUND: c_int = 18;
 const STATUS_TARGET_NOT_FOUND: c_int = 19;
+const STATUS_RESOURCE_LIMIT_EXCEEDED: c_int = 20;
+
+const DEFAULT_MAX_FRAME_BUFFER_BYTES: usize = 256 * 1024 * 1024;
+const MAX_DECODE_WINDOW_FRAME_COUNT: usize = 500_000;
+#[cfg(test)]
+static TEST_FREED_FRAME_BUFFER_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 const AVERROR_EOF: c_int = -541_478_725;
 #[cfg(target_os = "macos")]
@@ -43,6 +52,7 @@ const AVSTREAM_R_FRAME_RATE_OFFSET: usize = 204;
 const AVCODEC_PARAMETERS_CODEC_ID_OFFSET: usize = 4;
 const AVCODEC_CONTEXT_PKT_TIMEBASE_OFFSET: usize = 92;
 const AVCODEC_CONTEXT_FRAMERATE_OFFSET: usize = 100;
+const AVCODEC_CONTEXT_MAX_PIXELS_OFFSET: usize = 792;
 const AVPACKET_STREAM_INDEX_OFFSET: usize = 36;
 const AVFRAME_WIDTH_OFFSET: usize = 104;
 const AVFRAME_HEIGHT_OFFSET: usize = 108;
@@ -285,18 +295,35 @@ impl Drop for DecodeSession {
 }
 
 struct DecodeWindowState {
-    window_frames: Vec<FramePlayerRustNativeFrame>,
     frames_before_target: Vec<FramePlayerRustNativeFrame>,
+    retained_buffer_bytes: usize,
     anchor_reached: bool,
     next_absolute_frame_index: i64,
 }
 
+struct DecodeWindowRequest {
+    video_stream_index: c_int,
+    anchor_entry: FramePlayerRustDecodeCoreIndexEntry,
+    target_entry: FramePlayerRustDecodeCoreIndexEntry,
+    previous_frame_limit: c_int,
+    forward_frame_limit: c_int,
+    max_frame_buffer_bytes: u64,
+    max_window_buffer_bytes: u64,
+}
+
+struct DecodeWindowConfig {
+    video_stream_index: c_int,
+    anchor_entry: FramePlayerRustDecodeCoreIndexEntry,
+    target_entry: FramePlayerRustDecodeCoreIndexEntry,
+    previous_frame_limit: usize,
+    forward_frame_limit: usize,
+    max_frame_buffer_bytes: usize,
+    max_window_pixel_buffer_bytes: usize,
+    max_window_frame_count: usize,
+}
+
 impl DecodeWindowState {
-    fn new(
-        anchor_entry: &FramePlayerRustDecodeCoreIndexEntry,
-        previous_frame_limit: usize,
-        forward_frame_limit: usize,
-    ) -> Self {
+    fn new(anchor_entry: &FramePlayerRustDecodeCoreIndexEntry) -> Self {
         let anchor_reached =
             anchor_entry.absolute_frame_index == 0 && anchor_entry.seek_anchor_timestamp <= 0;
         let next_absolute_frame_index = if anchor_reached {
@@ -306,8 +333,8 @@ impl DecodeWindowState {
         };
 
         Self {
-            window_frames: Vec::with_capacity(previous_frame_limit + forward_frame_limit + 1),
-            frames_before_target: Vec::with_capacity(previous_frame_limit),
+            frames_before_target: Vec::new(),
+            retained_buffer_bytes: 0,
             anchor_reached,
             next_absolute_frame_index,
         }
@@ -315,16 +342,47 @@ impl DecodeWindowState {
 
     unsafe fn release_all(&mut self) {
         free_native_frames(std::mem::take(&mut self.frames_before_target));
-        free_native_frames(std::mem::take(&mut self.window_frames));
+        self.retained_buffer_bytes = 0;
+    }
+
+    fn next_frame_limit(
+        &self,
+        max_frame_buffer_bytes: usize,
+        max_window_buffer_bytes: usize,
+    ) -> Result<usize, c_int> {
+        let remaining_window_bytes = max_window_buffer_bytes
+            .checked_sub(self.retained_buffer_bytes)
+            .ok_or(STATUS_RESOURCE_LIMIT_EXCEEDED)?;
+        let next_limit = max_frame_buffer_bytes.min(remaining_window_bytes);
+        if next_limit == 0 {
+            return Err(STATUS_RESOURCE_LIMIT_EXCEEDED);
+        }
+
+        Ok(next_limit)
     }
 
     unsafe fn read_frame(
         &mut self,
         session: &mut DecodeSession,
+        max_frame_buffer_bytes: usize,
+        max_window_buffer_bytes: usize,
         cancel_flag: *const c_int,
         result: *mut FramePlayerRustDecodeWindowResult,
     ) -> Result<FramePlayerRustNativeFrame, c_int> {
-        match read_next_frame(session, cancel_flag, result) {
+        let next_frame_limit =
+            match self.next_frame_limit(max_frame_buffer_bytes, max_window_buffer_bytes) {
+                Ok(value) => value,
+                Err(status) => {
+                    self.release_all();
+                    write_window_message(
+                        result,
+                        "Rust decode window reached its decoded-frame byte limit.",
+                    );
+                    return Err(status);
+                }
+            };
+
+        match read_next_frame(session, next_frame_limit, cancel_flag, result) {
             Ok(Some(frame)) => Ok(frame),
             Ok(None) => {
                 self.release_all();
@@ -375,14 +433,27 @@ impl DecodeWindowState {
         &mut self,
         frame: FramePlayerRustNativeFrame,
         previous_frame_limit: usize,
-    ) {
+        max_window_frame_count: usize,
+    ) -> Result<(), c_int> {
+        if let Err(status) = ensure_decode_window_storage_capacity(
+            &mut self.frames_before_target,
+            max_window_frame_count,
+        ) {
+            free_native_frame(frame);
+            return Err(status);
+        }
+        self.retained_buffer_bytes += frame.pixel_buffer_len;
         self.frames_before_target.push(frame);
         while self.frames_before_target.len() > previous_frame_limit {
             let removed = self.frames_before_target.remove(0);
+            self.retained_buffer_bytes = self
+                .retained_buffer_bytes
+                .saturating_sub(removed.pixel_buffer_len);
             free_native_frame(removed);
         }
 
         self.next_absolute_frame_index += 1;
+        Ok(())
     }
 }
 
@@ -399,6 +470,8 @@ pub unsafe extern "C" fn frameplayer_rust_ffmpeg_frame_buffer_free(buffer: *mut 
     }
 
     drop(Box::from_raw(buffer));
+    #[cfg(test)]
+    TEST_FREED_FRAME_BUFFER_COUNT.fetch_add(1, Ordering::SeqCst);
 }
 
 #[no_mangle]
@@ -428,20 +501,22 @@ pub unsafe extern "C" fn frameplayer_rust_ffmpeg_frame_converter_create(
 pub unsafe extern "C" fn frameplayer_rust_ffmpeg_frame_converter_convert(
     converter: *mut RustFrameConverter,
     source_frame: *mut c_void,
+    max_frame_buffer_bytes: u64,
     result: *mut FramePlayerRustFrameConvertResult,
 ) -> c_int {
-    if converter.is_null() || result.is_null() {
+    if converter.is_null() || result.is_null() || max_frame_buffer_bytes == 0 {
         return STATUS_INVALID_ARGUMENT;
     }
 
     *result = FramePlayerRustFrameConvertResult::default();
-    let status =
-        std::panic::catch_unwind(|| convert_with_converter_entry(converter, source_frame, result))
-            .unwrap_or_else(|_| {
-                (*result).status = STATUS_INVALID_ARGUMENT;
-                write_convert_message(result, "Rust frame conversion panicked.");
-                STATUS_INVALID_ARGUMENT
-            });
+    let status = std::panic::catch_unwind(|| {
+        convert_with_converter_entry(converter, source_frame, max_frame_buffer_bytes, result)
+    })
+    .unwrap_or_else(|_| {
+        (*result).status = STATUS_INVALID_ARGUMENT;
+        write_convert_message(result, "Rust frame conversion panicked.");
+        STATUS_INVALID_ARGUMENT
+    });
     (*result).status = status;
     status
 }
@@ -488,6 +563,8 @@ pub unsafe extern "C" fn frameplayer_rust_ffmpeg_decode_window(
     target_entry: FramePlayerRustDecodeCoreIndexEntry,
     previous_frame_limit: c_int,
     forward_frame_limit: c_int,
+    max_frame_buffer_bytes: u64,
+    max_window_buffer_bytes: u64,
     cancel_flag: *const c_int,
     result: *mut FramePlayerRustDecodeWindowResult,
 ) -> c_int {
@@ -500,11 +577,15 @@ pub unsafe extern "C" fn frameplayer_rust_ffmpeg_decode_window(
         decode_window_entry(
             runtime_directory,
             file_path,
-            video_stream_index,
-            anchor_entry,
-            target_entry,
-            previous_frame_limit,
-            forward_frame_limit,
+            DecodeWindowRequest {
+                video_stream_index,
+                anchor_entry,
+                target_entry,
+                previous_frame_limit,
+                forward_frame_limit,
+                max_frame_buffer_bytes,
+                max_window_buffer_bytes,
+            },
             cancel_flag,
             result,
         )
@@ -527,10 +608,15 @@ pub unsafe extern "C" fn frameplayer_rust_ffmpeg_decode_window_free(
         return;
     }
 
-    drop(Box::from_raw(std::slice::from_raw_parts_mut(
-        frames,
-        frame_count,
-    )));
+    let mut boxed = Box::from_raw(std::ptr::slice_from_raw_parts_mut(frames, frame_count));
+    for frame in boxed.iter_mut() {
+        if !frame.pixel_buffer.is_null() {
+            frameplayer_rust_ffmpeg_frame_buffer_free(frame.pixel_buffer);
+            frame.pixel_buffer = std::ptr::null_mut();
+            frame.pixel_data = std::ptr::null();
+            frame.pixel_buffer_len = 0;
+        }
+    }
 }
 
 unsafe fn create_converter_entry(
@@ -585,12 +671,24 @@ unsafe fn create_converter(
 unsafe fn convert_with_converter_entry(
     converter: *mut RustFrameConverter,
     source_frame: *mut c_void,
+    max_frame_buffer_bytes: u64,
     result: *mut FramePlayerRustFrameConvertResult,
 ) -> c_int {
     if source_frame.is_null() {
         write_convert_message(result, "Source frame pointer was null.");
         return STATUS_INVALID_ARGUMENT;
     }
+
+    let max_frame_buffer_bytes = match usize::try_from(max_frame_buffer_bytes) {
+        Ok(value) if value > 0 => value,
+        _ => {
+            write_convert_message(
+                result,
+                "Frame byte limit exceeded this platform's address space.",
+            );
+            return STATUS_INVALID_ARGUMENT;
+        }
+    };
 
     match convert_frame(
         &(*converter).symbols,
@@ -599,6 +697,7 @@ unsafe fn convert_with_converter_entry(
         std::ptr::null_mut(),
         source_frame,
         -1,
+        max_frame_buffer_bytes,
     ) {
         Ok(frame) => {
             (*result).frame = frame;
@@ -634,6 +733,7 @@ unsafe fn convert_frame_entry(
         std::ptr::null_mut(),
         source_frame,
         -1,
+        DEFAULT_MAX_FRAME_BUFFER_BYTES,
     ) {
         Ok(frame) => {
             (*result).frame = frame;
@@ -650,18 +750,70 @@ unsafe fn convert_frame_entry(
 unsafe fn decode_window_entry(
     runtime_directory: *const c_char,
     file_path: *const c_char,
-    video_stream_index: c_int,
-    anchor_entry: FramePlayerRustDecodeCoreIndexEntry,
-    target_entry: FramePlayerRustDecodeCoreIndexEntry,
-    previous_frame_limit: c_int,
-    forward_frame_limit: c_int,
+    request: DecodeWindowRequest,
     cancel_flag: *const c_int,
     result: *mut FramePlayerRustDecodeWindowResult,
 ) -> c_int {
-    if video_stream_index < 0 || previous_frame_limit < 0 || forward_frame_limit < 0 {
+    if request.video_stream_index < 0
+        || request.previous_frame_limit < 0
+        || request.forward_frame_limit < 0
+        || request.max_frame_buffer_bytes == 0
+        || request.max_window_buffer_bytes == 0
+    {
         write_window_message(result, "Decode window arguments were invalid.");
         return STATUS_INVALID_ARGUMENT;
     }
+
+    let max_frame_buffer_bytes = match usize::try_from(request.max_frame_buffer_bytes) {
+        Ok(value) => value,
+        Err(_) => {
+            write_window_message(
+                result,
+                "Decode frame byte limit exceeded this platform's address space.",
+            );
+            return STATUS_INVALID_ARGUMENT;
+        }
+    };
+    let max_window_buffer_bytes = match usize::try_from(request.max_window_buffer_bytes) {
+        Ok(value) => value,
+        Err(_) => {
+            write_window_message(
+                result,
+                "Decode window byte limit exceeded this platform's address space.",
+            );
+            return STATUS_INVALID_ARGUMENT;
+        }
+    };
+    let max_window_frame_count = match resolve_decode_window_frame_count(
+        request.previous_frame_limit as usize,
+        request.forward_frame_limit as usize,
+        max_window_buffer_bytes,
+    ) {
+        Ok(value) => value,
+        Err(_) => {
+            write_window_message(result, "Decode window reached its retained-frame limit.");
+            return STATUS_RESOURCE_LIMIT_EXCEEDED;
+        }
+    };
+    let metadata_bytes = match max_window_frame_count
+        .checked_mul(std::mem::size_of::<FramePlayerRustNativeFrame>())
+    {
+        Some(value) => value,
+        None => {
+            write_window_message(result, "Decode window metadata size overflowed.");
+            return STATUS_RESOURCE_LIMIT_EXCEEDED;
+        }
+    };
+    let max_window_pixel_buffer_bytes = match max_window_buffer_bytes.checked_sub(metadata_bytes) {
+        Some(value) if value > 0 => value,
+        _ => {
+            write_window_message(
+                result,
+                "Decode window byte limit could not retain frame metadata and pixels.",
+            );
+            return STATUS_RESOURCE_LIMIT_EXCEEDED;
+        }
+    };
 
     let runtime_directory = match read_path(runtime_directory) {
         Ok(value) => value,
@@ -678,17 +830,18 @@ unsafe fn decode_window_entry(
         }
     };
 
-    match decode_window(
-        runtime_directory,
-        file_path,
-        video_stream_index,
-        anchor_entry,
-        target_entry,
-        previous_frame_limit as usize,
-        forward_frame_limit as usize,
-        cancel_flag,
-        result,
-    ) {
+    let config = DecodeWindowConfig {
+        video_stream_index: request.video_stream_index,
+        anchor_entry: request.anchor_entry,
+        target_entry: request.target_entry,
+        previous_frame_limit: request.previous_frame_limit as usize,
+        forward_frame_limit: request.forward_frame_limit as usize,
+        max_frame_buffer_bytes,
+        max_window_pixel_buffer_bytes,
+        max_window_frame_count,
+    };
+
+    match decode_window(runtime_directory, file_path, &config, cancel_flag, result) {
         Ok(()) => STATUS_OK,
         Err(status) => status,
     }
@@ -697,25 +850,24 @@ unsafe fn decode_window_entry(
 unsafe fn decode_window(
     runtime_directory: &str,
     file_path: &str,
-    video_stream_index: c_int,
-    anchor_entry: FramePlayerRustDecodeCoreIndexEntry,
-    target_entry: FramePlayerRustDecodeCoreIndexEntry,
-    previous_frame_limit: usize,
-    forward_frame_limit: usize,
+    config: &DecodeWindowConfig,
     cancel_flag: *const c_int,
     result: *mut FramePlayerRustDecodeWindowResult,
 ) -> Result<(), c_int> {
-    let mut session =
-        create_decode_session(runtime_directory, file_path, video_stream_index, result)?;
+    let mut session = create_decode_session(
+        runtime_directory,
+        file_path,
+        config.video_stream_index,
+        result,
+    )?;
     seek_decode_session(
         &mut session,
-        anchor_entry.seek_anchor_timestamp,
+        config.anchor_entry.seek_anchor_timestamp,
         cancel_flag,
         result,
     )?;
 
-    let mut state =
-        DecodeWindowState::new(&anchor_entry, previous_frame_limit, forward_frame_limit);
+    let mut state = DecodeWindowState::new(&config.anchor_entry);
 
     loop {
         if let Err(status) = ensure_decode_window_not_cancelled(cancel_flag, result) {
@@ -723,25 +875,35 @@ unsafe fn decode_window(
             return Err(status);
         }
 
-        let mut frame = state.read_frame(&mut session, cancel_flag, result)?;
-        if !state.accept_anchor_or_skip(&frame, &anchor_entry) {
+        let mut frame = state.read_frame(
+            &mut session,
+            config.max_frame_buffer_bytes,
+            config.max_window_pixel_buffer_bytes,
+            cancel_flag,
+            result,
+        )?;
+        if !state.accept_anchor_or_skip(&frame, &config.anchor_entry) {
             free_native_frame(frame);
             continue;
         }
 
         state.assign_absolute_frame_index(&mut frame);
-        if state.target_reached(&target_entry) {
-            return finish_decode_window(
-                &mut session,
-                state,
-                frame,
-                forward_frame_limit,
-                cancel_flag,
-                result,
-            );
+        if state.target_reached(&config.target_entry) {
+            return finish_decode_window(&mut session, state, frame, config, cancel_flag, result);
         }
 
-        state.remember_before_target(frame, previous_frame_limit);
+        if let Err(status) = state.remember_before_target(
+            frame,
+            config.previous_frame_limit,
+            config.max_window_frame_count,
+        ) {
+            state.release_all();
+            write_window_message(
+                result,
+                "Rust decode window could not reserve frame metadata.",
+            );
+            return Err(status);
+        }
     }
 }
 
@@ -749,36 +911,74 @@ unsafe fn finish_decode_window(
     session: &mut DecodeSession,
     mut state: DecodeWindowState,
     current_frame: FramePlayerRustNativeFrame,
-    forward_frame_limit: usize,
+    config: &DecodeWindowConfig,
     cancel_flag: *const c_int,
     result: *mut FramePlayerRustDecodeWindowResult,
 ) -> Result<(), c_int> {
-    state.window_frames.append(&mut state.frames_before_target);
-    let current_index = state.window_frames.len() as c_int;
-    state.window_frames.push(current_frame);
+    let mut window_frames = std::mem::take(&mut state.frames_before_target);
+    let current_index = window_frames.len() as c_int;
+    if let Err(status) =
+        ensure_decode_window_storage_capacity(&mut window_frames, config.max_window_frame_count)
+    {
+        free_native_frame(current_frame);
+        free_native_frames(window_frames);
+        write_window_message(
+            result,
+            "Rust decode window could not reserve frame metadata.",
+        );
+        return Err(status);
+    }
+    state.retained_buffer_bytes += current_frame.pixel_buffer_len;
+    window_frames.push(current_frame);
 
-    while state.window_frames.len() - (current_index as usize) - 1 < forward_frame_limit {
+    while window_frames.len() - (current_index as usize) - 1 < config.forward_frame_limit {
         if let Err(status) = ensure_decode_window_not_cancelled(cancel_flag, result) {
-            free_native_frames(state.window_frames);
+            free_native_frames(window_frames);
             return Err(status);
         }
 
-        let mut next_frame = match read_next_frame(session, cancel_flag, result) {
-            Ok(Some(value)) => value,
-            Ok(None) => break,
+        let next_frame_limit = match state.next_frame_limit(
+            config.max_frame_buffer_bytes,
+            config.max_window_pixel_buffer_bytes,
+        ) {
+            Ok(value) => value,
             Err(status) => {
-                free_native_frames(state.window_frames);
+                free_native_frames(window_frames);
+                write_window_message(
+                    result,
+                    "Rust decode window reached its decoded-frame byte limit.",
+                );
                 return Err(status);
             }
         };
+        let mut next_frame = match read_next_frame(session, next_frame_limit, cancel_flag, result) {
+            Ok(Some(value)) => value,
+            Ok(None) => break,
+            Err(status) => {
+                free_native_frames(window_frames);
+                return Err(status);
+            }
+        };
+        if let Err(status) =
+            ensure_decode_window_storage_capacity(&mut window_frames, config.max_window_frame_count)
+        {
+            free_native_frame(next_frame);
+            free_native_frames(window_frames);
+            write_window_message(
+                result,
+                "Rust decode window could not reserve frame metadata.",
+            );
+            return Err(status);
+        }
         state.next_absolute_frame_index += 1;
         next_frame.absolute_frame_index = state.next_absolute_frame_index;
-        state.window_frames.push(next_frame);
+        state.retained_buffer_bytes += next_frame.pixel_buffer_len;
+        window_frames.push(next_frame);
     }
 
-    (*result).frame_count = state.window_frames.len() as u64;
+    (*result).frame_count = window_frames.len() as u64;
     (*result).current_index = current_index;
-    let mut boxed = state.window_frames.into_boxed_slice();
+    let mut boxed = window_frames.into_boxed_slice();
     (*result).frames = boxed.as_mut_ptr();
     std::mem::forget(boxed);
     write_window_message(result, "Rust decoded indexed frame window.");
@@ -891,6 +1091,11 @@ unsafe fn create_decode_session(
         AVCODEC_CONTEXT_FRAMERATE_OFFSET,
         get_nominal_frame_rate(&symbols, format_context, video_stream),
     );
+    write_field(
+        codec_context,
+        AVCODEC_CONTEXT_MAX_PIXELS_OFFSET,
+        MAX_DECODED_FRAME_PIXELS,
+    );
 
     let open_decoder_result = (symbols.avcodec_open2)(codec_context, decoder, std::ptr::null_mut());
     if open_decoder_result < 0 {
@@ -976,15 +1181,15 @@ unsafe fn seek_decode_session(
 
 unsafe fn read_next_frame(
     session: &mut DecodeSession,
+    max_frame_buffer_bytes: usize,
     cancel_flag: *const c_int,
     result: *mut FramePlayerRustDecodeWindowResult,
 ) -> Result<Option<FramePlayerRustNativeFrame>, c_int> {
     loop {
         ensure_decode_window_not_cancelled(cancel_flag, result)?;
 
-        match try_receive_frame(session, result)? {
-            Some(frame) => return Ok(Some(frame)),
-            None => {}
+        if let Some(frame) = try_receive_frame(session, max_frame_buffer_bytes, result)? {
+            return Ok(Some(frame));
         }
 
         if submit_pending_decode_packet(session, result)? {
@@ -1097,6 +1302,7 @@ unsafe fn read_decode_packet(
 
 unsafe fn try_receive_frame(
     session: &mut DecodeSession,
+    max_frame_buffer_bytes: usize,
     result: *mut FramePlayerRustDecodeWindowResult,
 ) -> Result<Option<FramePlayerRustNativeFrame>, c_int> {
     loop {
@@ -1130,6 +1336,7 @@ unsafe fn try_receive_frame(
             session.video_stream,
             session.decoded_frame,
             -1,
+            max_frame_buffer_bytes,
         );
         (session.symbols.av_frame_unref)(session.decoded_frame);
         let frame = frame_result?;
@@ -1144,6 +1351,7 @@ unsafe fn convert_frame(
     video_stream: *mut c_void,
     source_frame: *mut c_void,
     absolute_frame_index: i64,
+    max_buffer_bytes: usize,
 ) -> Result<FramePlayerRustNativeFrame, c_int> {
     let width = read_field::<c_int>(source_frame, AVFRAME_WIDTH_OFFSET);
     let height = read_field::<c_int>(source_frame, AVFRAME_HEIGHT_OFFSET);
@@ -1151,6 +1359,8 @@ unsafe fn convert_frame(
     if width <= 0 || height <= 0 {
         return Err(STATUS_CONVERSION_FAILED);
     }
+
+    let (stride, buffer_len) = resolve_bgra_layout(width, height, max_buffer_bytes)?;
 
     let next_context = (symbols.sws_get_cached_context)(
         *sws_context,
@@ -1170,10 +1380,8 @@ unsafe fn convert_frame(
     }
     *sws_context = next_context;
 
-    let stride = width.checked_mul(4).ok_or(STATUS_CONVERSION_FAILED)?;
-    let buffer_len = stride.checked_mul(height).ok_or(STATUS_CONVERSION_FAILED)? as usize;
     let mut buffer = Box::new(RustFrameBuffer {
-        data: vec![0u8; buffer_len],
+        data: allocate_zeroed_buffer(buffer_len)?,
     });
 
     let source_data = read_source_data(source_frame);
@@ -1233,6 +1441,75 @@ unsafe fn convert_frame(
         display_height,
         source_pixel_format: source_format,
     })
+}
+
+fn resolve_bgra_layout(
+    width: c_int,
+    height: c_int,
+    max_buffer_bytes: usize,
+) -> Result<(c_int, usize), c_int> {
+    if width <= 0 || height <= 0 {
+        return Err(STATUS_CONVERSION_FAILED);
+    }
+
+    let stride = width.checked_mul(4).ok_or(STATUS_CONVERSION_FAILED)?;
+    let buffer_len = stride
+        .checked_mul(height)
+        .and_then(|value| usize::try_from(value).ok())
+        .ok_or(STATUS_CONVERSION_FAILED)?;
+    if max_buffer_bytes == 0 || buffer_len > max_buffer_bytes {
+        return Err(STATUS_RESOURCE_LIMIT_EXCEEDED);
+    }
+
+    Ok((stride, buffer_len))
+}
+
+fn allocate_zeroed_buffer(buffer_len: usize) -> Result<Vec<u8>, c_int> {
+    if buffer_len == 0 {
+        return Err(STATUS_RESOURCE_LIMIT_EXCEEDED);
+    }
+
+    let mut data = Vec::new();
+    data.try_reserve_exact(buffer_len)
+        .map_err(|_| STATUS_RESOURCE_LIMIT_EXCEEDED)?;
+    data.resize(buffer_len, 0);
+    Ok(data)
+}
+
+fn resolve_decode_window_frame_count(
+    previous_frame_limit: usize,
+    forward_frame_limit: usize,
+    max_window_buffer_bytes: usize,
+) -> Result<usize, c_int> {
+    let frame_count = previous_frame_limit
+        .checked_add(forward_frame_limit)
+        .and_then(|value| value.checked_add(1))
+        .ok_or(STATUS_RESOURCE_LIMIT_EXCEEDED)?;
+    let max_frames_by_metadata = max_window_buffer_bytes
+        .checked_div(std::mem::size_of::<FramePlayerRustNativeFrame>())
+        .ok_or(STATUS_RESOURCE_LIMIT_EXCEEDED)?;
+    if frame_count > MAX_DECODE_WINDOW_FRAME_COUNT || frame_count > max_frames_by_metadata {
+        return Err(STATUS_RESOURCE_LIMIT_EXCEEDED);
+    }
+
+    Ok(frame_count)
+}
+
+fn ensure_decode_window_storage_capacity(
+    frames: &mut Vec<FramePlayerRustNativeFrame>,
+    max_frame_count: usize,
+) -> Result<(), c_int> {
+    if frames.len() >= max_frame_count {
+        return Err(STATUS_RESOURCE_LIMIT_EXCEEDED);
+    }
+
+    if frames.len() == frames.capacity() {
+        frames
+            .try_reserve_exact(1)
+            .map_err(|_| STATUS_RESOURCE_LIMIT_EXCEEDED)?;
+    }
+
+    Ok(())
 }
 
 unsafe fn load_symbols(runtime: &crate::RuntimeLibraries) -> Result<Symbols, c_int> {
@@ -1453,7 +1730,7 @@ fn timestamp_or_none(timestamp: i64) -> Option<i64> {
 }
 
 unsafe fn cancellation_requested(cancel_flag: *const c_int) -> bool {
-    !cancel_flag.is_null() && std::ptr::read_volatile(cancel_flag) != 0
+    !cancel_flag.is_null() && (&*cancel_flag.cast::<AtomicI32>()).load(Ordering::Acquire) != 0
 }
 
 unsafe fn read_path<'a>(path: *const c_char) -> Result<&'a str, c_int> {
@@ -1524,6 +1801,114 @@ mod tests {
     use super::*;
 
     #[test]
+    fn bgra_layout_enforces_allocation_boundary_before_conversion() {
+        let exact_limit = 8_192usize * 8_192usize * 4usize;
+
+        assert_eq!(
+            Ok((32_768, exact_limit)),
+            resolve_bgra_layout(8_192, 8_192, exact_limit)
+        );
+        assert_eq!(
+            Err(STATUS_RESOURCE_LIMIT_EXCEEDED),
+            resolve_bgra_layout(8_192, 8_193, exact_limit)
+        );
+        assert_eq!(
+            Err(STATUS_RESOURCE_LIMIT_EXCEEDED),
+            resolve_bgra_layout(16_255, 16_255, DEFAULT_MAX_FRAME_BUFFER_BYTES)
+        );
+    }
+
+    #[test]
+    fn bgra_buffer_allocation_reports_capacity_failure() {
+        assert_eq!(Ok(vec![0u8; 4]), allocate_zeroed_buffer(4));
+        assert_eq!(
+            Err(STATUS_RESOURCE_LIMIT_EXCEEDED),
+            allocate_zeroed_buffer(usize::MAX)
+        );
+    }
+
+    #[test]
+    fn decode_window_frame_count_enforces_exact_boundary() {
+        assert_eq!(
+            Ok(MAX_DECODE_WINDOW_FRAME_COUNT),
+            resolve_decode_window_frame_count(249_999, 250_000, usize::MAX)
+        );
+        assert_eq!(
+            Err(STATUS_RESOURCE_LIMIT_EXCEEDED),
+            resolve_decode_window_frame_count(250_000, 250_000, usize::MAX)
+        );
+        assert_eq!(
+            Err(STATUS_RESOURCE_LIMIT_EXCEEDED),
+            resolve_decode_window_frame_count(0, 0, 1)
+        );
+    }
+
+    #[test]
+    fn decode_window_storage_capacity_enforces_logical_limit() {
+        let mut frames = Vec::new();
+        for _ in 0..5 {
+            assert_eq!(
+                Ok(()),
+                ensure_decode_window_storage_capacity(&mut frames, 5)
+            );
+            frames.push(FramePlayerRustNativeFrame::default());
+        }
+
+        assert_eq!(
+            Err(STATUS_RESOURCE_LIMIT_EXCEEDED),
+            ensure_decode_window_storage_capacity(&mut frames, 5)
+        );
+    }
+
+    #[test]
+    fn decode_window_free_releases_unclaimed_pixel_buffers() {
+        let before = TEST_FREED_FRAME_BUFFER_COUNT.load(Ordering::SeqCst);
+        let mut frames = vec![
+            native_test_frame_with_pixels(),
+            native_test_frame_with_pixels(),
+            FramePlayerRustNativeFrame::default(),
+        ]
+        .into_boxed_slice();
+        let frames_pointer = frames.as_mut_ptr();
+        let frame_count = frames.len();
+        std::mem::forget(frames);
+
+        unsafe { frameplayer_rust_ffmpeg_decode_window_free(frames_pointer, frame_count) };
+
+        assert!(TEST_FREED_FRAME_BUFFER_COUNT.load(Ordering::SeqCst) >= before + 2);
+    }
+
+    #[test]
+    fn remember_before_target_releases_frame_when_metadata_reservation_fails() {
+        let before = TEST_FREED_FRAME_BUFFER_COUNT.load(Ordering::SeqCst);
+        let anchor = FramePlayerRustDecodeCoreIndexEntry {
+            absolute_frame_index: 0,
+            presentation_timestamp: 0,
+            decode_timestamp: 0,
+            search_timestamp: 0,
+            seek_anchor_frame_index: 0,
+            seek_anchor_timestamp: 0,
+        };
+        let mut state = DecodeWindowState::new(&anchor);
+
+        assert_eq!(Err(STATUS_RESOURCE_LIMIT_EXCEEDED), unsafe {
+            state.remember_before_target(native_test_frame_with_pixels(), 0, 0)
+        });
+        assert!(TEST_FREED_FRAME_BUFFER_COUNT.load(Ordering::SeqCst) > before);
+    }
+
+    fn native_test_frame_with_pixels() -> FramePlayerRustNativeFrame {
+        let buffer = Box::new(RustFrameBuffer { data: vec![0u8; 4] });
+        let pixel_data = buffer.data.as_ptr();
+        FramePlayerRustNativeFrame {
+            pixel_buffer: Box::into_raw(buffer),
+            pixel_data,
+            pixel_buffer_len: 4,
+            ..FramePlayerRustNativeFrame::default()
+        }
+    }
+
+    #[test]
     fn persistent_converter_creation_returns_valid_handle() {
         let Some(runtime_directory) = std::env::var_os("FRAMEPLAYER_FFMPEG_RUNTIME_DIR") else {
             return;
@@ -1582,6 +1967,30 @@ mod tests {
             write_field::<c_int>(source_frame, AVFRAME_HEIGHT_OFFSET, 1);
             write_field::<c_int>(source_frame, AVFRAME_FORMAT_OFFSET, AV_PIX_FMT_BGRA);
         }
+
+        let mut converter = std::ptr::null_mut();
+        let mut create_result = FramePlayerRustFrameConvertResult::default();
+        let create_status = unsafe {
+            frameplayer_rust_ffmpeg_frame_converter_create(
+                runtime_path.as_ptr(),
+                &mut converter,
+                &mut create_result,
+            )
+        };
+        assert_eq!(STATUS_OK, create_status);
+        let mut limited_result = FramePlayerRustFrameConvertResult::default();
+        let limited_status = unsafe {
+            frameplayer_rust_ffmpeg_frame_converter_convert(
+                converter,
+                source_frame,
+                3,
+                &mut limited_result,
+            )
+        };
+        unsafe { frameplayer_rust_ffmpeg_frame_converter_free(converter) };
+        assert_eq!(STATUS_RESOURCE_LIMIT_EXCEEDED, limited_status);
+        assert_eq!(STATUS_RESOURCE_LIMIT_EXCEEDED, limited_result.status);
+        assert!(limited_result.frame.pixel_buffer.is_null());
 
         let mut result = FramePlayerRustFrameConvertResult::default();
         let status = unsafe {

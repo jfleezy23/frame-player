@@ -13,23 +13,33 @@ namespace FramePlayer.Engines.FFmpeg
         private bool _rustConverterUnavailable;
         private string _rustConverterErrorMessage = string.Empty;
 
-        public DecodedFrameBuffer Convert(AVFrame* sourceFrame, FrameDescriptor descriptor)
+        public DecodedFrameBuffer Convert(AVFrame* sourceFrame, FrameDescriptor descriptor, long maxFrameBytes)
         {
             if (sourceFrame == null)
             {
                 throw new ArgumentNullException(nameof(sourceFrame));
             }
 
+            FfmpegMediaResourceLimits.EnsureBgraFrameWithinLimit(
+                sourceFrame->width,
+                sourceFrame->height,
+                maxFrameBytes);
+
             var converterMode = ResolveConverterMode();
             if (converterMode != FfmpegFrameConverterMode.Managed)
             {
-                if (TryConvertWithRust(sourceFrame, descriptor, converterMode, out var frameBuffer))
+                if (TryConvertWithRust(
+                    sourceFrame,
+                    descriptor,
+                    converterMode,
+                    maxFrameBytes,
+                    out var frameBuffer))
                 {
                     return frameBuffer;
                 }
             }
 
-            return ConvertManaged(sourceFrame, descriptor);
+            return ConvertManaged(sourceFrame, descriptor, maxFrameBytes);
         }
 
         public void Dispose()
@@ -44,7 +54,7 @@ namespace FramePlayer.Engines.FFmpeg
             _rustConverter = null;
         }
 
-        private DecodedFrameBuffer ConvertManaged(AVFrame* sourceFrame, FrameDescriptor descriptor)
+        private DecodedFrameBuffer ConvertManaged(AVFrame* sourceFrame, FrameDescriptor descriptor, long maxFrameBytes)
         {
             EnsureScaleContext(sourceFrame);
 
@@ -52,6 +62,11 @@ namespace FramePlayer.Engines.FFmpeg
             var height = sourceFrame->height;
             var bufferSize = ffmpeg.av_image_get_buffer_size(OutputPixelFormat, width, height, 1);
             FfmpegNativeHelpers.ThrowIfError(bufferSize, "Allocate BGRA conversion buffer");
+            if (!FfmpegMediaResourceLimits.TryReserveBytes(0L, bufferSize, maxFrameBytes, out _))
+            {
+                throw new FfmpegMediaResourceLimitException(
+                    "FFmpeg's decoded BGRA buffer size exceeded the active frame limit.");
+            }
 
             var pixelBuffer = new byte[bufferSize];
             int stride;
@@ -98,6 +113,7 @@ namespace FramePlayer.Engines.FFmpeg
             AVFrame* sourceFrame,
             FrameDescriptor descriptor,
             FfmpegFrameConverterMode converterMode,
+            long maxFrameBytes,
             out DecodedFrameBuffer frameBuffer)
         {
             frameBuffer = null;
@@ -123,7 +139,12 @@ namespace FramePlayer.Engines.FFmpeg
                 return false;
             }
 
-            if (_rustConverter.TryConvert(sourceFrame, descriptor, out frameBuffer, out _rustConverterErrorMessage))
+            if (_rustConverter.TryConvert(
+                sourceFrame,
+                descriptor,
+                maxFrameBytes,
+                out frameBuffer,
+                out _rustConverterErrorMessage))
             {
                 return true;
             }
