@@ -114,16 +114,16 @@ namespace FramePlayer.Engines.FFmpeg
                         }
 
                         EnsureIndexFinalizationActive(
-                            cancellationToken,
                             indexStopwatch,
-                            maxElapsed);
+                            maxElapsed,
+                            cancellationToken);
 
                         var entries = nativeStatus == 0
                             ? CopyEntries(
                                 nativeResult,
-                                cancellationToken,
                                 indexStopwatch,
-                                maxElapsed)
+                                maxElapsed,
+                                cancellationToken)
                             : Array.Empty<RustFfmpegGlobalFrameIndexEntry>();
                         return new RustFfmpegGlobalFrameIndexResult(
                             nativeStatus == 0,
@@ -176,9 +176,9 @@ namespace FramePlayer.Engines.FFmpeg
 
         private static RustFfmpegGlobalFrameIndexEntry[] CopyEntries(
             NativeGlobalFrameIndexResult nativeResult,
-            CancellationToken cancellationToken,
             Stopwatch indexStopwatch,
-            TimeSpan maxElapsed)
+            TimeSpan maxElapsed,
+            CancellationToken cancellationToken)
         {
             if (nativeResult.EntryCount == 0 || nativeResult.Entries == IntPtr.Zero)
             {
@@ -203,9 +203,9 @@ namespace FramePlayer.Engines.FFmpeg
                 if ((index & 1023) == 0)
                 {
                     EnsureIndexFinalizationActive(
-                        cancellationToken,
                         indexStopwatch,
-                        maxElapsed);
+                        maxElapsed,
+                        cancellationToken);
                 }
 
                 entries.Add(ToManaged(
@@ -217,16 +217,16 @@ namespace FramePlayer.Engines.FFmpeg
 
             var copiedEntries = entries.ToArray();
             EnsureIndexFinalizationActive(
-                cancellationToken,
                 indexStopwatch,
-                maxElapsed);
+                maxElapsed,
+                cancellationToken);
             return copiedEntries;
         }
 
         private static void EnsureIndexFinalizationActive(
-            CancellationToken cancellationToken,
             Stopwatch indexStopwatch,
-            TimeSpan maxElapsed)
+            TimeSpan maxElapsed,
+            CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (indexStopwatch.Elapsed > maxElapsed)

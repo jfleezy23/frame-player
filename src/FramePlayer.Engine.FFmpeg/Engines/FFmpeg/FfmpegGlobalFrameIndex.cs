@@ -21,8 +21,8 @@ namespace FramePlayer.Engines.FFmpeg
 
         private FfmpegGlobalFrameIndex(
             List<FfmpegGlobalFrameIndexEntry> entries,
-            CancellationToken cancellationToken,
-            Stopwatch indexStopwatch)
+            Stopwatch indexStopwatch,
+            CancellationToken cancellationToken)
         {
             _entries = entries ?? throw new ArgumentNullException(nameof(entries));
             _entriesByPresentationTimestamp = new Dictionary<long, FfmpegGlobalFrameIndexEntry>();
@@ -34,7 +34,7 @@ namespace FramePlayer.Engines.FFmpeg
             {
                 if ((index & 1023) == 0)
                 {
-                    EnsureIndexFinalizationActive(cancellationToken, indexStopwatch);
+                    EnsureIndexFinalizationActive(indexStopwatch, cancellationToken);
                 }
 
                 var entry = _entries[index];
@@ -42,7 +42,7 @@ namespace FramePlayer.Engines.FFmpeg
                 AddTimestampLookup(_entriesByDecodeTimestamp, _ambiguousDecodeTimestamps, entry.DecodeTimestamp, entry);
             }
 
-            EnsureIndexFinalizationActive(cancellationToken, indexStopwatch);
+            EnsureIndexFinalizationActive(indexStopwatch, cancellationToken);
         }
 
         public long Count
@@ -80,7 +80,7 @@ namespace FramePlayer.Engines.FFmpeg
                     cancellationToken);
                 if (rustIndex.Succeeded)
                 {
-                    return FromRustIndex(rustIndex, cancellationToken, indexStopwatch);
+                    return FromRustIndex(rustIndex, indexStopwatch, cancellationToken);
                 }
 
                 if (!ShouldFallBackToManagedIndex(buildMode, rustIndex))
@@ -106,7 +106,7 @@ namespace FramePlayer.Engines.FFmpeg
 
             try
             {
-                var interruptState = new IndexInterruptState(cancellationToken, indexStopwatch);
+                var interruptState = new IndexInterruptState(indexStopwatch, cancellationToken);
                 indexInterruptHandle = GCHandle.Alloc(interruptState);
                 formatContext = ffmpeg.avformat_alloc_context();
                 if (formatContext == null)
@@ -256,8 +256,8 @@ namespace FramePlayer.Engines.FFmpeg
                     hasPendingVideoPacket = true;
                 }
 
-                EnsureIndexFinalizationActive(cancellationToken, indexStopwatch);
-                return new FfmpegGlobalFrameIndex(entries, cancellationToken, indexStopwatch);
+                EnsureIndexFinalizationActive(indexStopwatch, cancellationToken);
+                return new FfmpegGlobalFrameIndex(entries, indexStopwatch, cancellationToken);
             }
             finally
             {
@@ -327,7 +327,7 @@ namespace FramePlayer.Engines.FFmpeg
 
         private sealed class IndexInterruptState
         {
-            internal IndexInterruptState(CancellationToken cancellationToken, Stopwatch stopwatch)
+            internal IndexInterruptState(Stopwatch stopwatch, CancellationToken cancellationToken)
             {
                 CancellationToken = cancellationToken;
                 Stopwatch = stopwatch ?? throw new ArgumentNullException(nameof(stopwatch));
@@ -355,8 +355,8 @@ namespace FramePlayer.Engines.FFmpeg
 
         private static FfmpegGlobalFrameIndex FromRustIndex(
             RustFfmpegGlobalFrameIndexResult rustIndex,
-            CancellationToken cancellationToken,
-            Stopwatch indexStopwatch)
+            Stopwatch indexStopwatch,
+            CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(rustIndex);
 
@@ -376,7 +376,7 @@ namespace FramePlayer.Engines.FFmpeg
             {
                 if ((index & 1023) == 0)
                 {
-                    EnsureIndexFinalizationActive(cancellationToken, indexStopwatch);
+                    EnsureIndexFinalizationActive(indexStopwatch, cancellationToken);
                 }
 
                 var rustEntry = rustIndex.Entries[index];
@@ -398,13 +398,13 @@ namespace FramePlayer.Engines.FFmpeg
                     seekAnchorStrategy));
             }
 
-            EnsureIndexFinalizationActive(cancellationToken, indexStopwatch);
-            return new FfmpegGlobalFrameIndex(entries, cancellationToken, indexStopwatch);
+            EnsureIndexFinalizationActive(indexStopwatch, cancellationToken);
+            return new FfmpegGlobalFrameIndex(entries, indexStopwatch, cancellationToken);
         }
 
         private static void EnsureIndexFinalizationActive(
-            CancellationToken cancellationToken,
-            Stopwatch indexStopwatch)
+            Stopwatch indexStopwatch,
+            CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             FfmpegMediaResourceLimits.EnsureGlobalFrameIndexCapacity(

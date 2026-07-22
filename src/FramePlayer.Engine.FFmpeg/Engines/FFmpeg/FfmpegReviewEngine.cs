@@ -610,7 +610,7 @@ namespace FramePlayer.Engines.FFmpeg
                 _lastAudioErrorMessage = string.Empty;
                 _playbackCancellationSource = cancellationSource;
                 _audioPlaybackSession = TryStartAudioPlayback(_currentFrame.Descriptor.PresentationTime, cancellationSource.Token);
-                _playbackTask = Task.Run(() => PlaybackLoop(cancellationSource.Token, cancellationSource));
+                _playbackTask = Task.Run(() => PlaybackLoop(cancellationSource, cancellationSource.Token));
                 IsPlaying = true;
             }
 
@@ -683,7 +683,7 @@ namespace FramePlayer.Engines.FFmpeg
             IsPlaying = false;
             _frameCache.AppendForwardAndAdvance(nextFrame);
             SetCurrentFrame(_frameCache.Current);
-            PrimeForwardCache(cancellationToken, "step-forward-decode", afterLanding: true);
+            PrimeForwardCache("step-forward-decode", afterLanding: true, cancellationToken);
             SetOperationInstrumentation(
                 IsGlobalFrameIndexAvailable && _currentFrame.Descriptor.IsFrameIndexAbsolute,
                 "decode-forward",
@@ -1284,8 +1284,8 @@ namespace FramePlayer.Engines.FFmpeg
         }
 
         private void PlaybackLoop(
-            CancellationToken cancellationToken,
-            CancellationTokenSource cancellationSource)
+            CancellationTokenSource cancellationSource,
+            CancellationToken cancellationToken)
         {
             try
             {
@@ -1527,7 +1527,7 @@ namespace FramePlayer.Engines.FFmpeg
             _completeDecodedCacheLoaded = false;
             _completeDecodedCacheFrameCount = 0;
             SetCurrentFrame(landedFrame);
-            PrimeForwardCache(cancellationToken, "playback-start-realign", afterLanding: true);
+            PrimeForwardCache("playback-start-realign", afterLanding: true, cancellationToken);
             _playbackStartNeedsDecoderRealignment = false;
         }
 
@@ -2195,7 +2195,10 @@ namespace FramePlayer.Engines.FFmpeg
             }
         }
 
-        private void PrimeForwardCache(CancellationToken cancellationToken, string reason, bool afterLanding)
+        private void PrimeForwardCache(
+            string reason,
+            bool afterLanding,
+            CancellationToken cancellationToken)
         {
             var startingForwardCount = _frameCache.ForwardCount;
             var stopwatch = Stopwatch.StartNew();
@@ -2288,8 +2291,8 @@ namespace FramePlayer.Engines.FFmpeg
             {
                 var rustWindow = TryMaterializeIndexedFrameWindowWithRust(
                     targetEntry,
-                    cancellationToken,
-                    primeForwardFrames);
+                    primeForwardFrames,
+                    cancellationToken);
                 if (rustWindow != null)
                 {
                     return rustWindow;
@@ -2358,8 +2361,8 @@ namespace FramePlayer.Engines.FFmpeg
 
         private FrameSeekWindowResult TryMaterializeIndexedFrameWindowWithRust(
             FfmpegGlobalFrameIndexEntry targetEntry,
-            CancellationToken cancellationToken,
-            bool primeForwardFrames)
+            bool primeForwardFrames,
+            CancellationToken cancellationToken)
         {
             var decodeMode = RustFfmpegDecodeCore.ResolveMode();
             if (decodeMode == RustFfmpegDecodeCoreMode.Managed)
@@ -2932,7 +2935,7 @@ namespace FramePlayer.Engines.FFmpeg
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var bufferedFrame = TryReceiveDecodedFrame(cancellationToken, maxFrameBytes);
+                var bufferedFrame = TryReceiveDecodedFrame(maxFrameBytes, cancellationToken);
                 if (bufferedFrame != null)
                 {
                     return bufferedFrame;
@@ -2995,8 +2998,8 @@ namespace FramePlayer.Engines.FFmpeg
         }
 
         private DecodedFrameBuffer TryReceiveDecodedFrame(
-            CancellationToken cancellationToken,
-            long? maxFrameBytes)
+            long? maxFrameBytes,
+            CancellationToken cancellationToken)
         {
             while (true)
             {
