@@ -33,6 +33,7 @@ namespace FramePlayer.Services
         private static readonly object RuntimeAvailabilitySync = new object();
         private static string _cachedRuntimeAvailabilityKey = string.Empty;
         private static RuntimeAvailability? _cachedRuntimeAvailability;
+        private readonly UTF8Encoding _requestEncoding = new UTF8Encoding(false);
 
         internal static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
@@ -139,10 +140,7 @@ namespace FramePlayer.Services
                 throw new InvalidOperationException(runtimeAvailability.Message);
             }
 
-            if (request == null)
-            {
-                throw new ArgumentNullException(nameof(request));
-            }
+            ArgumentNullException.ThrowIfNull(request);
 
             var launchInfo = ResolveExportHostLaunchInfo();
             if (string.IsNullOrWhiteSpace(launchInfo.ExecutablePath) || !File.Exists(launchInfo.ExecutablePath))
@@ -168,7 +166,7 @@ namespace FramePlayer.Services
             try
             {
                 var requestJson = JsonSerializer.Serialize(request, JsonOptions);
-                await File.WriteAllTextAsync(requestPath, requestJson, new UTF8Encoding(false), cancellationToken).ConfigureAwait(false);
+                await File.WriteAllTextAsync(requestPath, requestJson, _requestEncoding, cancellationToken).ConfigureAwait(false);
 
                 // The export host is the current executable in a headless mode, not a daemon.
                 // UseShellExecute stays false so arguments and redirected output remain local to this process tree.
@@ -187,8 +185,8 @@ namespace FramePlayer.Services
                 using (var process = new Process { StartInfo = startInfo })
                 {
                     process.Start();
-                    var standardOutputTask = process.StandardOutput.ReadToEndAsync();
-                    var standardErrorTask = process.StandardError.ReadToEndAsync();
+                    var standardOutputTask = process.StandardOutput.ReadToEndAsync(CancellationToken.None);
+                    var standardErrorTask = process.StandardError.ReadToEndAsync(CancellationToken.None);
                     try
                     {
                         await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
