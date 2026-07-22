@@ -17,9 +17,9 @@ Frame Player depends on third-party libraries and runtime components that are no
 
 - Project: <https://ffmpeg.org/>
 - Legal guidance: <https://ffmpeg.org/legal.html>
-- Runtime version currently used by the app: `n8.1-frameplayer-source`
-- Runtime provenance: built from the official FFmpeg source tag `n8.1` at commit `9047fa1b084f76b1b4d065af2d743df1b40dfb56`
-- Runtime DLLs are restored locally through `scripts/ffmpeg/Build-FFmpeg-8.1.ps1` and `scripts/Ensure-DevRuntime.ps1`, not stored in git history
+- Runtime version currently used by the app: `n8.1.2-frameplayer-source`
+- Runtime provenance: built from the official FFmpeg source tag `n8.1.2` at commit `38b88335f99e76ed89ff3c93f877fdefce736c13`
+- Runtime DLLs are built locally with `scripts/ffmpeg/Build-FFmpeg-8.1.ps1` or restored from the pinned archive with `scripts/Ensure-DevRuntime.ps1`; they are not stored in git history
 
 Important note:
 
@@ -30,8 +30,8 @@ Important note:
 ### FFmpeg Export Runtime
 
 - Project: <https://ffmpeg.org/>
-- Export runtime version currently used by the app: `n8.1-frameplayer-export-tools`
-- Export runtime provenance: built from the official FFmpeg source tag `n8.1`, restored locally into `ffmpeg-export` through `scripts/Ensure-DevExportRuntime.ps1`
+- Export runtime version currently used by the app: `n8.1.2-frameplayer-export-runtime`
+- Export runtime provenance: built from the official FFmpeg source tag `n8.1.2` at commit `38b88335f99e76ed89ff3c93f877fdefce736c13`, then restored locally into `ffmpeg-export` through `scripts/Ensure-DevExportRuntime.ps1`
 - The export runtime is intentionally separated from the in-process playback runtime and lives under `ffmpeg-export`
 
 Important note:
@@ -44,15 +44,15 @@ Important note:
 ### x264
 
 - Project: <https://code.videolan.org/videolan/x264>
-- Role in this repo: enabled only in the separate FFmpeg export runtime path to provide H.264 MP4 export
+- Role in this repo: enabled in the export-capable FFmpeg runtimes to provide H.264 MP4 export
 - License note: x264 is GPL-licensed; review the upstream project before redistributing builds that include it
 
-### macOS FFmpeg Preview Runtime
+### macOS FFmpeg Runtime
 
 - Project: <https://ffmpeg.org/>
 - Runtime version: `n8.1.2-frameplayer-macos-source`
 - Runtime provenance: built from the official FFmpeg source tag `n8.1.2` at commit `38b88335f99e76ed89ff3c93f877fdefce736c13`
-- Runtime path used by the macOS preview: `Runtime/macos/osx-arm64/ffmpeg`
+- Runtime path used by the universal application's macOS target: `Runtime/macos/osx-arm64/ffmpeg`
 - Tracked provenance: `Runtime/macos/osx-arm64/ffmpeg/build-provenance.txt`
 - Tracked hashes: `Runtime/macos/osx-arm64/ffmpeg/SHA256SUMS.txt`
 - The local macOS runtime provenance currently shows FFmpeg configured with `--enable-gpl` and `--enable-libx264`.
@@ -60,13 +60,13 @@ Important note:
 
 Important note:
 
-- Because the macOS FFmpeg build enables GPL components and x264, redistribution of the macOS preview runtime has GPL implications.
-- The published `macos-preview-0.1.0` Apple Silicon artifact redistributes this staged runtime, so release and distribution work must continue to preserve the applicable FFmpeg/x264 license notices, source-offer posture, provenance, and hash records.
+- Because the macOS FFmpeg build enables GPL components and x264, redistribution of the macOS runtime has GPL implications.
+- Any Apple Silicon package that redistributes this staged runtime must preserve the applicable FFmpeg/x264 license notices, source-offer posture, provenance, and hash records.
 
 ### Rust Standard Library
 
 - Project: <https://www.rust-lang.org/>
-- Role in this repo: linked into the first-party `frameplayer_ffmpeg_probe` native library shipped with the unified Avalonia preview
+- Role in this repo: linked into the first-party `frameplayer_ffmpeg_probe` native library shipped with the universal Avalonia application
 - License: MIT OR Apache-2.0
 - License policy source: <https://www.rust-lang.org/policies/licenses>
 
