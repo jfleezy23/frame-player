@@ -69,7 +69,7 @@ jobs:
 
       - name: Cache SonarQube packages
         if: steps.sonar_config.outputs.enabled == 'true'
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: ~\.sonar\cache
           key: ${{ runner.os }}-sonar
@@ -78,7 +78,7 @@ jobs:
       - name: Cache SonarQube scanner
         if: steps.sonar_config.outputs.enabled == 'true'
         id: cache-sonar-scanner
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: .\.sonar\scanner
           key: ${{ runner.os }}-sonar-scanner-${{ env.SONAR_SCANNER_VERSION }}
@@ -93,7 +93,7 @@ jobs:
       - name: Cache .NET coverage tool
         if: steps.sonar_config.outputs.enabled == 'true'
         id: cache-dotnet-coverage
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: .sonar/coverage-tool
           key: ${{ runner.os }}-dotnet-coverage-${{ env.DOTNET_COVERAGE_VERSION }}
