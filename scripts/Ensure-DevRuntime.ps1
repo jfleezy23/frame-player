@@ -160,12 +160,12 @@ $requiredRuntimeFiles = @(
 
 $missingRequiredManifestFiles = $requiredRuntimeFiles | Where-Object { -not $expectedFileHashes.ContainsKey($_) }
 if ($missingRequiredManifestFiles.Count -gt 0) {
-    throw "Runtime manifest appears stale or mismatched for the FFmpeg 8.1 runtime. Missing required file hash entries: $($missingRequiredManifestFiles -join ', '). Update Runtime\\runtime-manifest.json to the current FFmpeg 8.1 runtime metadata."
+    throw "Runtime manifest appears stale or mismatched for the FFmpeg 8.1 release line. Missing required file hash entries: $($missingRequiredManifestFiles -join ', '). Update Runtime\\runtime-manifest.json to the current FFmpeg 8.1-line runtime metadata."
 }
 
 $runtimeRoot = Join-Path $repoRoot "Runtime"
 $runtimeDirectory = Join-Path $runtimeRoot "ffmpeg"
-$candidateRuntimeDirectory = Join-Path $runtimeRoot "ffmpeg-8.1-candidate"
+$candidateRuntimeDirectory = Join-Path $runtimeRoot "ffmpeg-8.1.2-candidate"
 $artifactsRoot = Join-Path $repoRoot "artifacts"
 
 if ((Test-RuntimeDirectory -DirectoryPath $runtimeDirectory) -and (Test-RuntimeIntegrity -DirectoryPath $runtimeDirectory -ExpectedHashes $expectedFileHashes)) {
@@ -180,7 +180,7 @@ if ((Test-RuntimeDirectory -DirectoryPath $candidateRuntimeDirectory) -and (Test
     Copy-Item (Join-Path $candidateRuntimeDirectory "*.dll") -Destination $runtimeDirectory -Force
 
     if (-not (Test-RuntimeIntegrity -DirectoryPath $runtimeDirectory -ExpectedHashes $expectedFileHashes)) {
-        throw "The local FFmpeg 8.1 candidate runtime failed integrity validation after restore."
+        throw "The local FFmpeg 8.1-line candidate runtime failed integrity validation after restore."
     }
 
     Write-Host "Runtime ready at '$runtimeDirectory'."
@@ -193,7 +193,7 @@ if ([string]::IsNullOrWhiteSpace($manifest.assetName)) {
 
 $hasRemoteLocation = -not [string]::IsNullOrWhiteSpace($manifest.assetUrl) -or -not [string]::IsNullOrWhiteSpace($manifest.tag)
 if (-not $hasRemoteLocation) {
-    throw "Runtime manifest is missing both tag and assetUrl. CI/bootstrap cannot download the pinned FFmpeg 8.1 runtime archive when local runtime artifacts are absent."
+    throw "Runtime manifest is missing both tag and assetUrl. CI/bootstrap cannot download the pinned FFmpeg 8.1-line runtime archive when local runtime artifacts are absent."
 }
 
 $archiveCandidatePaths = @()

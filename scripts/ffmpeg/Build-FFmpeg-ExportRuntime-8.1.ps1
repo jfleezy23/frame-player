@@ -11,13 +11,13 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $resolvedWorkRoot = if ([string]::IsNullOrWhiteSpace($WorkRoot)) {
-    Join-Path $env:TEMP "frameplayer-ffmpeg-export-runtime-8.1-source-build"
+    Join-Path $env:TEMP "frameplayer-ffmpeg-export-runtime-8.1.2-source-build"
 }
 else {
     $WorkRoot
 }
 $resolvedCandidateRuntimePath = if ([string]::IsNullOrWhiteSpace($CandidateRuntimePath)) {
-    Join-Path $repoRoot "Runtime\ffmpeg-export-8.1-candidate"
+    Join-Path $repoRoot "Runtime\ffmpeg-export-8.1.2-candidate"
 }
 else {
     $CandidateRuntimePath
@@ -55,7 +55,7 @@ export MSYSTEM=MINGW64
 export CHERE_INVOKING=1
 
 work_root='$workRootUnix'
-source_dir="`$work_root/ffmpeg-n8.1"
+source_dir="`$work_root/ffmpeg-n8.1.2"
 build_dir="`$work_root/build-mingw64-export-runtime"
 install_dir="`$work_root/install-mingw64-export-runtime"
 candidate_dir='$candidateRuntimeUnix'
@@ -78,16 +78,16 @@ if [ "`$clean" = "1" ]; then
 fi
 
 if [ ! -d "`$source_dir/.git" ]; then
-    git clone --branch n8.1 --depth 1 https://git.ffmpeg.org/ffmpeg.git "`$source_dir"
+    git clone --branch n8.1.2 --depth 1 https://git.ffmpeg.org/ffmpeg.git "`$source_dir"
 else
-    git -C "`$source_dir" fetch --depth 1 origin tag n8.1
-    git -C "`$source_dir" checkout -f n8.1
+    git -C "`$source_dir" fetch --depth 1 origin tag n8.1.2
+    git -C "`$source_dir" checkout -f n8.1.2
 fi
 
 actual_commit="`$(git -C "`$source_dir" rev-parse HEAD)"
-expected_commit="9047fa1b084f76b1b4d065af2d743df1b40dfb56"
+expected_commit="38b88335f99e76ed89ff3c93f877fdefce736c13"
 if [ "`$actual_commit" != "`$expected_commit" ]; then
-    echo "Unexpected FFmpeg n8.1 commit: `$actual_commit" >&2
+    echo "Unexpected FFmpeg n8.1.2 commit: `$actual_commit" >&2
     exit 3
 fi
 
@@ -155,7 +155,7 @@ done
 rm -f "`$candidate_dir/ffmpeg.exe" "`$candidate_dir/ffprobe.exe"
 
 {
-    echo "FFmpeg tag: n8.1"
+    echo "FFmpeg tag: n8.1.2"
     echo "FFmpeg commit: `$actual_commit"
     echo "Toolchain: MSYS2 MinGW-w64 x64"
     echo "GCC: `$(gcc --version | head -1)"
@@ -182,7 +182,7 @@ echo "Candidate FFmpeg export runtime staged at: `$candidate_dir"
 ls -la "`$candidate_dir"
 "@
 
-$temporaryScriptPath = Join-Path $env:TEMP ("frameplayer-build-ffmpeg-export-runtime-8.1-" + [Guid]::NewGuid().ToString("N") + ".sh")
+$temporaryScriptPath = Join-Path $env:TEMP ("frameplayer-build-ffmpeg-export-runtime-8.1.2-" + [Guid]::NewGuid().ToString("N") + ".sh")
 Set-Content -LiteralPath $temporaryScriptPath -Value $script -Encoding ASCII
 $temporaryScriptUnix = (& $bashPath -lc "cygpath -u '$($temporaryScriptPath -replace '\\', '\\')'").Trim()
 

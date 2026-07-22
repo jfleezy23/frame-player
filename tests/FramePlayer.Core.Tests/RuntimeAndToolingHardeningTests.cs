@@ -98,6 +98,20 @@ namespace FramePlayer.Core.Tests
         }
 
         [Theory]
+        [InlineData("Build-FFmpeg-8.1.ps1")]
+        [InlineData("Build-FFmpeg-ExportRuntime-8.1.ps1")]
+        [InlineData("Build-FFmpeg-Tools-8.1.ps1")]
+        public void FfmpegWindowsSourceBuildScripts_PinSecurityRelease812(string scriptName)
+        {
+            var scriptPath = Path.Combine(GetRepositoryRoot(), "scripts", "ffmpeg", scriptName);
+            var script = File.ReadAllText(scriptPath);
+
+            Assert.Contains("n8.1.2", script, StringComparison.Ordinal);
+            Assert.Contains("38b88335f99e76ed89ff3c93f877fdefce736c13", script, StringComparison.Ordinal);
+            Assert.DoesNotContain("--branch n8.1 --depth", script, StringComparison.Ordinal);
+        }
+
+        [Theory]
         [InlineData(null, false)]
         [InlineData("", false)]
         [InlineData("   ", false)]

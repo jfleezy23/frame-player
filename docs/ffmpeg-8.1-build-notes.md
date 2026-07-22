@@ -1,6 +1,6 @@
-# FFmpeg 8.1 Source Build Notes
+# FFmpeg 8.1.2 Source Build Notes
 
-This file records the isolated source-build workflow for the FFmpeg 8.1 runtime that is now active in the app. The build output is staged separately first, then restored into `Runtime\ffmpeg\` through `scripts\Ensure-DevRuntime.ps1`.
+This file records the isolated source-build workflow for the FFmpeg 8.1 release line. The source-build entrypoints now target the 8.1.2 security release. Build output is staged separately first, then restored into `Runtime\ffmpeg\` through `scripts\Ensure-DevRuntime.ps1` after the matching manifest hashes are updated.
 
 For the current `v1.8.4` release, use `docs\release-v1.8.4-feedback.md` as the maintainer-facing product summary and keep this file as the runtime/build provenance source of truth.
 
@@ -10,14 +10,14 @@ For the current `v1.8.4` release, use `docs\release-v1.8.4-feedback.md` as the m
 .\scripts\ffmpeg\Build-FFmpeg-8.1.ps1 -Clean
 ```
 
-The default source/build scratch path is `%TEMP%\frameplayer-ffmpeg-8.1-source-build` because FFmpeg rejects out-of-tree builds when the source path contains whitespace.
+The default source/build scratch path is `%TEMP%\frameplayer-ffmpeg-8.1.2-source-build` because FFmpeg rejects out-of-tree builds when the source path contains whitespace.
 
 ## Source
 
 - Source repository: `https://git.ffmpeg.org/ffmpeg.git`
-- Source tag: `n8.1`
-- Expected annotated tag object: `a65b3bfe9dacc3b20597ef199d0afdd8bc8128e2`
-- Expected source commit: `9047fa1b084f76b1b4d065af2d743df1b40dfb56`
+- Source tag: `n8.1.2`
+- Expected annotated tag object: `1c2c67c0b9f7f66ab32c19dcf7f227bcd290aa4c`
+- Expected source commit: `38b88335f99e76ed89ff3c93f877fdefce736c13`
 
 ## Toolchain
 
@@ -58,7 +58,7 @@ The MinGW-w64 build can also require `libwinpthread-1.dll` at runtime. The build
 The script stages output in:
 
 ```text
-Runtime\ffmpeg-8.1-candidate\
+Runtime\ffmpeg-8.1.2-candidate\
 ```
 
 The script also stages a local runtime bundle in:
@@ -71,8 +71,8 @@ Both paths are intentionally ignored by git. `scripts\Ensure-DevRuntime.ps1` res
 
 ## Current Restore Model
 
-- `Runtime\runtime-manifest.json` records the expected FFmpeg 8.1 DLL hashes, archive filename, archive SHA256, and source-build provenance.
-- `scripts\Ensure-DevRuntime.ps1` restores `Runtime\ffmpeg\` from `Runtime\ffmpeg-8.1-candidate\` or the staged local runtime archive before attempting any remote download path.
+- `Runtime\runtime-manifest.json` records the expected FFmpeg DLL hashes, archive filename, archive SHA256, and source-build provenance. It remains on the prior `n8.1` Windows archive until the 8.1.2 Windows runtime is built and hash-verified.
+- `scripts\Ensure-DevRuntime.ps1` restores `Runtime\ffmpeg\` from `Runtime\ffmpeg-8.1.2-candidate\` or the staged local runtime archive before attempting any remote download path.
 - If neither local source exists, the script downloads the pinned runtime from the verified runtime-only `v1.5.0` release asset currently declared in the manifest and validates both the archive SHA256 and extracted DLL hashes.
 - `Runtime\runtime-manifest.json` now also records that the current source-built runtime targets FFmpeg Vulkan hardware-device support while still requiring a system Vulkan loader at runtime.
 
@@ -90,5 +90,6 @@ This is intentional and now supported. Clean GitHub runners do not have staged l
 ## Still Needed Beyond Clean-Runner Restore
 
 - Keep the published runtime archive, `assetSha256`, and per-DLL SHA256 entries aligned whenever the pinned runtime changes.
+- Build the Windows playback, export-runtime, and export-tools candidates from `n8.1.2`, then update all three manifests only after their archive and per-file hashes are available.
 - Do not retarget the manifest to any future published archive unless the archive SHA256 and extracted DLL hashes are proven to match the pinned runtime.
 - If the pinned runtime ever changes again, update `tag`/`assetUrl`, archive SHA256, and CI expectations together after the new asset is live and hash-verified.
