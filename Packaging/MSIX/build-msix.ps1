@@ -249,7 +249,7 @@ if ($usingCustomSigningCertificate) {
 
     $pfxPath = $SigningPfxPath
 
-    $pfxData = if ($securePassword -eq $null) {
+    $pfxData = if ($null -eq $securePassword) {
         Get-PfxData -FilePath $SigningPfxPath
     }
     else {

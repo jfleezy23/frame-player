@@ -22,6 +22,7 @@ case "$WORK_ROOT" in
     echo "Refusing unsafe FFmpeg work root: '$WORK_ROOT'." >&2
     exit 2
     ;;
+  *) ;;
 esac
 
 runtime_parent="$(cd "$(dirname "$RUNTIME_DIR")" && pwd)"
