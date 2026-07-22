@@ -48,11 +48,7 @@ namespace FramePlayer.Services
                         FfmpegNativeHelpers.ThrowIfError(videoStreamIndex, "Select source video stream");
                         var inputVideoStream = inputFormatContext->streams[videoStreamIndex];
 
-                        filterGraph = ffmpeg.avfilter_graph_alloc();
-                        if (filterGraph == null)
-                        {
-                            throw new InvalidOperationException("Could not allocate the FFmpeg audio insertion filter graph.");
-                        }
+                        filterGraph = AllocateAudioInsertionFilterGraph();
 
                         var audioGraph = BuildAudioFilterGraph(plan);
                         NativeExportSupport.ConfigureFilterGraph(
@@ -60,17 +56,9 @@ namespace FramePlayer.Services
                             audioGraph,
                             BuildFileSources(plan));
 
-                        audioSinkContext = NativeExportSupport.ResolveFilterContext(filterGraph, "outa", "abuffersink");
-                        if (audioSinkContext == null)
-                        {
-                            throw new InvalidOperationException("The audio insertion filter graph did not expose the expected audio sink.");
-                        }
+                        audioSinkContext = ResolveRequiredAudioSink(filterGraph);
 
-                        nextAudioFrame = NativeExportSupport.ReadNextFilterFrame(audioSinkContext);
-                        if (nextAudioFrame == null)
-                        {
-                            throw new InvalidOperationException("The replacement audio file did not produce any decodable audio samples.");
-                        }
+                        nextAudioFrame = ReadRequiredAudioFrame(audioSinkContext);
 
                         var audioSinkTimeBase = ffmpeg.av_buffersink_get_time_base(audioSinkContext);
                         outputFormatContext = NativeExportSupport.CreateMp4OutputContext(plan.OutputFilePath);
@@ -83,11 +71,7 @@ namespace FramePlayer.Services
                         NativeExportSupport.OpenOutputIo(outputFormatContext, plan.OutputFilePath);
                         NativeExportSupport.WriteOutputHeader(outputFormatContext);
 
-                        nextVideoPacket = ffmpeg.av_packet_alloc();
-                        if (nextVideoPacket == null)
-                        {
-                            throw new InvalidOperationException("Could not allocate the FFmpeg packet used for source video copy.");
-                        }
+                        nextVideoPacket = AllocateVideoCopyPacket();
 
                         long? lastAudioFramePts = null;
 
@@ -185,6 +169,50 @@ namespace FramePlayer.Services
                     }
                 },
                 cancellationToken);
+        }
+
+        private static AVFilterGraph* AllocateAudioInsertionFilterGraph()
+        {
+            var filterGraph = ffmpeg.avfilter_graph_alloc();
+            if (filterGraph == null)
+            {
+                throw new InvalidOperationException("Could not allocate the FFmpeg audio insertion filter graph.");
+            }
+
+            return filterGraph;
+        }
+
+        private static AVFilterContext* ResolveRequiredAudioSink(AVFilterGraph* filterGraph)
+        {
+            var audioSinkContext = NativeExportSupport.ResolveFilterContext(filterGraph, "outa", "abuffersink");
+            if (audioSinkContext == null)
+            {
+                throw new InvalidOperationException("The audio insertion filter graph did not expose the expected audio sink.");
+            }
+
+            return audioSinkContext;
+        }
+
+        private static AVFrame* ReadRequiredAudioFrame(AVFilterContext* audioSinkContext)
+        {
+            var audioFrame = NativeExportSupport.ReadNextFilterFrame(audioSinkContext);
+            if (audioFrame == null)
+            {
+                throw new InvalidOperationException("The replacement audio file did not produce any decodable audio samples.");
+            }
+
+            return audioFrame;
+        }
+
+        private static AVPacket* AllocateVideoCopyPacket()
+        {
+            var videoPacket = ffmpeg.av_packet_alloc();
+            if (videoPacket == null)
+            {
+                throw new InvalidOperationException("Could not allocate the FFmpeg packet used for source video copy.");
+            }
+
+            return videoPacket;
         }
 
         internal static string BuildAudioFilterGraph(AudioInsertionPlan plan)
