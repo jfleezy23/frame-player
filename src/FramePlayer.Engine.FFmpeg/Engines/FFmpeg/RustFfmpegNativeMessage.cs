@@ -11,6 +11,11 @@ namespace FramePlayer.Engines.FFmpeg
 
         private byte _element0;
 
+        public RustFfmpegNativeMessage()
+        {
+            this = default;
+        }
+
         public override string ToString()
         {
             if (_element0 == 0)

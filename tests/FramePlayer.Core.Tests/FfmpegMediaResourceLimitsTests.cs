@@ -150,7 +150,20 @@ namespace FramePlayer.Core.Tests
         [Fact]
         public void RustInteropMessage_DecodesNullTerminatedAndFullCapacityUtf8()
         {
-            var message = new RustFfmpegNativeMessage();
+            var message = default(RustFfmpegNativeMessage);
+            for (var index = 0; index < RustFfmpegNativeMessage.Capacity; index++)
+            {
+                message[index] = byte.MaxValue;
+            }
+
+            message = new RustFfmpegNativeMessage();
+            for (var index = 0; index < RustFfmpegNativeMessage.Capacity; index++)
+            {
+                Assert.Equal(0, message[index]);
+            }
+
+            Assert.Equal(string.Empty, message.ToString());
+
             message[0] = (byte)'o';
             message[1] = (byte)'k';
             message[2] = 0;
