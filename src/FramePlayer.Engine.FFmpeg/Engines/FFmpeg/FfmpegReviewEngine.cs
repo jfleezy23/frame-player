@@ -2400,7 +2400,7 @@ namespace FramePlayer.Engines.FFmpeg
             }
         }
 
-        private bool TryReachIndexedAnchor(
+        private static bool TryReachIndexedAnchor(
             DecodedFrameBuffer decodedFrame,
             FfmpegGlobalFrameIndexEntry anchorEntry,
             ref bool anchorReached,
