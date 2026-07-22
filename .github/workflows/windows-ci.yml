@@ -51,16 +51,20 @@ jobs:
         shell: pwsh
         run: .\scripts\Ensure-DevExportRuntime.ps1 -Required
 
+      - name: Build Rust FFmpeg probe
+        shell: pwsh
+        run: .\scripts\Build-RustFfmpegProbe.ps1 -RuntimeIdentifier win-x64
+
       - name: Restore and build
         shell: pwsh
         run: |
-          dotnet build .\src\FramePlayer.Avalonia\FramePlayer.Avalonia.csproj -c Release
+          dotnet build .\src\FramePlayer.Avalonia\FramePlayer.Avalonia.csproj -c Release -r win-x64
 
       - name: Run cold-path unit tests
         shell: pwsh
         run: |
-          dotnet test .\tests\FramePlayer.Core.Tests\FramePlayer.Core.Tests.csproj -c Release
-          dotnet test .\tests\FramePlayer.Avalonia.Tests\FramePlayer.Avalonia.Tests.csproj -c Release --filter "Category!=ReleaseCandidate"
+          dotnet test .\tests\FramePlayer.Core.Tests\FramePlayer.Core.Tests.csproj -c Release -r win-x64
+          dotnet test .\tests\FramePlayer.Avalonia.Tests\FramePlayer.Avalonia.Tests.csproj -c Release -r win-x64 --filter "Category!=ReleaseCandidate"
 
       - name: Package unified Windows build
         shell: pwsh
