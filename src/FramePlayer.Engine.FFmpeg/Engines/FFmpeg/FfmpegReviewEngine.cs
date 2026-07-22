@@ -1932,7 +1932,7 @@ namespace FramePlayer.Engines.FFmpeg
             }
 
             AVCodecHWConfig* hardwareConfiguration = null;
-            for (var configIndex = 0; ; configIndex++)
+            for (var configIndex = 0; configIndex < int.MaxValue; configIndex++)
             {
                 var candidate = ffmpeg.avcodec_get_hw_config(_videoDecoder, configIndex);
                 if (candidate == null)
