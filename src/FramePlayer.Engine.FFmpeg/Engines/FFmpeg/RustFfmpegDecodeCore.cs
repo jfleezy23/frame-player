@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using FFmpeg.AutoGen;
@@ -7,7 +8,7 @@ using FramePlayer.Core.Models;
 
 namespace FramePlayer.Engines.FFmpeg
 {
-    internal static class RustFfmpegDecodeCore
+    internal static partial class RustFfmpegDecodeCore
     {
         private const long NoTimestamp = long.MinValue;
         private const string DecodeModeEnvironmentVariable = "FRAMEPLAYER_FFMPEG_DECODE_CORE";
@@ -340,10 +341,11 @@ namespace FramePlayer.Engines.FFmpeg
             return nativeResult.Message.ToString();
         }
 
-        [DllImport("frameplayer_ffmpeg_probe", CallingConvention = CallingConvention.Cdecl)]
-        private static extern int frameplayer_rust_ffmpeg_decode_window(
-            [MarshalAs(UnmanagedType.LPUTF8Str)] string runtimeDirectory,
-            [MarshalAs(UnmanagedType.LPUTF8Str)] string filePath,
+        [LibraryImport("frameplayer_ffmpeg_probe", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static partial int frameplayer_rust_ffmpeg_decode_window(
+            string runtimeDirectory,
+            string filePath,
             int videoStreamIndex,
             NativeIndexEntry anchorEntry,
             NativeIndexEntry targetEntry,
@@ -354,8 +356,9 @@ namespace FramePlayer.Engines.FFmpeg
             IntPtr cancellationFlag,
             out NativeDecodeWindowResult result);
 
-        [DllImport("frameplayer_ffmpeg_probe", CallingConvention = CallingConvention.Cdecl)]
-        private static extern void frameplayer_rust_ffmpeg_decode_window_free(
+        [LibraryImport("frameplayer_ffmpeg_probe")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static partial void frameplayer_rust_ffmpeg_decode_window_free(
             IntPtr frames,
             UIntPtr frameCount);
 

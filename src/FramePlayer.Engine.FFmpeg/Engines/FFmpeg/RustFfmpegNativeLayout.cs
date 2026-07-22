@@ -1,10 +1,11 @@
 using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using FFmpeg.AutoGen;
 
 namespace FramePlayer.Engines.FFmpeg
 {
-    internal static class RustFfmpegNativeLayout
+    internal static partial class RustFfmpegNativeLayout
     {
         // Must match FRAMEPLAYER_RUST_FFMPEG_ABI_VERSION in the native crate.
         private const uint ExpectedNativeAbiVersion = 1;
@@ -156,7 +157,8 @@ namespace FramePlayer.Engines.FFmpeg
             return false;
         }
 
-        [DllImport("frameplayer_ffmpeg_probe", CallingConvention = CallingConvention.Cdecl)]
-        private static extern uint frameplayer_rust_ffmpeg_abi_version();
+        [LibraryImport("frameplayer_ffmpeg_probe")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static partial uint frameplayer_rust_ffmpeg_abi_version();
     }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using FramePlayer.Engines.FFmpeg;
@@ -105,6 +106,107 @@ namespace FramePlayer.Core.Tests
 
             Assert.Equal(typeof(IntPtr), firstParameter.ParameterType);
             Assert.False(firstParameter.ParameterType.IsPointer);
+        }
+
+        [Fact]
+        public void NativeImports_UseSourceGeneratedMarshallingAndExpectedCallingConventions()
+        {
+            var rustImports = new[]
+            {
+                (typeof(RustFfmpegBgraFrameConverter), new[]
+                {
+                    "frameplayer_rust_ffmpeg_frame_converter_create",
+                    "frameplayer_rust_ffmpeg_frame_converter_convert",
+                    "frameplayer_rust_ffmpeg_frame_converter_free",
+                    "frameplayer_rust_ffmpeg_frame_buffer_free"
+                }),
+                (typeof(RustFfmpegDecodeCore), new[]
+                {
+                    "frameplayer_rust_ffmpeg_decode_window",
+                    "frameplayer_rust_ffmpeg_decode_window_free"
+                }),
+                (typeof(RustFfmpegGlobalFrameIndexBuilder), new[]
+                {
+                    "frameplayer_rust_ffmpeg_global_frame_index",
+                    "frameplayer_rust_ffmpeg_global_frame_index_free"
+                }),
+                (typeof(RustFfmpegNativeLayout), new[]
+                {
+                    "frameplayer_rust_ffmpeg_abi_version"
+                }),
+                (typeof(RustFfmpegProbe), new[]
+                {
+                    "frameplayer_rust_ffmpeg_probe"
+                })
+            };
+
+            foreach (var (declaringType, methodNames) in rustImports)
+            {
+                foreach (var methodName in methodNames)
+                {
+                    var method = declaringType.GetMethod(
+                        methodName,
+                        BindingFlags.Static | BindingFlags.NonPublic);
+
+                    Assert.NotNull(method);
+                    Assert.NotNull(method.GetCustomAttribute<LibraryImportAttribute>());
+                    var callingConvention = method.GetCustomAttribute<UnmanagedCallConvAttribute>();
+                    Assert.NotNull(callingConvention);
+                    Assert.NotNull(callingConvention.CallConvs);
+                    Assert.Contains(typeof(CallConvCdecl), callingConvention.CallConvs);
+                }
+            }
+
+            var utf8RustImports = new[]
+            {
+                (typeof(RustFfmpegBgraFrameConverter), "frameplayer_rust_ffmpeg_frame_converter_create"),
+                (typeof(RustFfmpegDecodeCore), "frameplayer_rust_ffmpeg_decode_window"),
+                (typeof(RustFfmpegGlobalFrameIndexBuilder), "frameplayer_rust_ffmpeg_global_frame_index"),
+                (typeof(RustFfmpegProbe), "frameplayer_rust_ffmpeg_probe")
+            };
+            foreach (var (declaringType, methodName) in utf8RustImports)
+            {
+                var method = declaringType.GetMethod(
+                    methodName,
+                    BindingFlags.Static | BindingFlags.NonPublic);
+
+                Assert.NotNull(method);
+                var libraryImport = method.GetCustomAttribute<LibraryImportAttribute>();
+                Assert.NotNull(libraryImport);
+                Assert.Equal(StringMarshalling.Utf8, libraryImport.StringMarshalling);
+            }
+
+            var windowsImports = new[]
+            {
+                (MethodName: "LoadLibrary", EntryPoint: "LoadLibraryW", StringMarshalling.Utf16),
+                (MethodName: "GetModuleHandle", EntryPoint: "GetModuleHandleW", StringMarshalling.Utf16),
+                (MethodName: "GetProcAddress", EntryPoint: "GetProcAddress", StringMarshalling.Utf8)
+            };
+            foreach (var (methodName, entryPoint, stringMarshalling) in windowsImports)
+            {
+                var method = typeof(FfmpegNativeHelpers).GetMethod(
+                    methodName,
+                    BindingFlags.Static | BindingFlags.NonPublic);
+
+                Assert.NotNull(method);
+                var libraryImport = method.GetCustomAttribute<LibraryImportAttribute>();
+                Assert.NotNull(libraryImport);
+                Assert.Equal(entryPoint, libraryImport.EntryPoint);
+                Assert.Equal(stringMarshalling, libraryImport.StringMarshalling);
+                Assert.True(libraryImport.SetLastError);
+            }
+
+            var memoryStatusMethod = typeof(FfmpegNativeHelpers).GetMethod(
+                "GlobalMemoryStatusEx",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.NotNull(memoryStatusMethod);
+            var memoryStatusImport = memoryStatusMethod.GetCustomAttribute<LibraryImportAttribute>();
+            Assert.NotNull(memoryStatusImport);
+            Assert.Equal("GlobalMemoryStatusEx", memoryStatusImport.EntryPoint);
+            Assert.True(memoryStatusImport.SetLastError);
+            var returnMarshalling = memoryStatusMethod.ReturnParameter.GetCustomAttribute<MarshalAsAttribute>();
+            Assert.NotNull(returnMarshalling);
+            Assert.Equal(UnmanagedType.Bool, returnMarshalling.Value);
         }
 
         [Fact]
