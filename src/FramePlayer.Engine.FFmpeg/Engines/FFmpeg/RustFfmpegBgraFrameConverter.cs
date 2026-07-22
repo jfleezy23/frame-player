@@ -1,11 +1,12 @@
 using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using FramePlayer.Core.Models;
 using Microsoft.Win32.SafeHandles;
 
 namespace FramePlayer.Engines.FFmpeg
 {
-    internal sealed class RustFfmpegBgraFrameConverter : IDisposable
+    internal sealed partial class RustFfmpegBgraFrameConverter : IDisposable
     {
         private IntPtr _converter;
 
@@ -216,24 +217,28 @@ namespace FramePlayer.Engines.FFmpeg
             return nativeResult.Message.ToString();
         }
 
-        [DllImport("frameplayer_ffmpeg_probe", CallingConvention = CallingConvention.Cdecl)]
-        private static extern int frameplayer_rust_ffmpeg_frame_converter_create(
-            [MarshalAs(UnmanagedType.LPUTF8Str)] string runtimeDirectory,
+        [LibraryImport("frameplayer_ffmpeg_probe", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static partial int frameplayer_rust_ffmpeg_frame_converter_create(
+            string runtimeDirectory,
             out IntPtr converter,
             out NativeFrameConvertResult result);
 
-        [DllImport("frameplayer_ffmpeg_probe", CallingConvention = CallingConvention.Cdecl)]
-        private static extern int frameplayer_rust_ffmpeg_frame_converter_convert(
+        [LibraryImport("frameplayer_ffmpeg_probe")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static partial int frameplayer_rust_ffmpeg_frame_converter_convert(
             IntPtr converter,
             IntPtr sourceFrame,
             ulong maxFrameBufferBytes,
             out NativeFrameConvertResult result);
 
-        [DllImport("frameplayer_ffmpeg_probe", CallingConvention = CallingConvention.Cdecl)]
-        private static extern void frameplayer_rust_ffmpeg_frame_converter_free(IntPtr converter);
+        [LibraryImport("frameplayer_ffmpeg_probe")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static partial void frameplayer_rust_ffmpeg_frame_converter_free(IntPtr converter);
 
-        [DllImport("frameplayer_ffmpeg_probe", CallingConvention = CallingConvention.Cdecl)]
-        private static extern void frameplayer_rust_ffmpeg_frame_buffer_free(IntPtr pixelBuffer);
+        [LibraryImport("frameplayer_ffmpeg_probe")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static partial void frameplayer_rust_ffmpeg_frame_buffer_free(IntPtr pixelBuffer);
 
         [StructLayout(LayoutKind.Sequential)]
         internal struct NativeFrame

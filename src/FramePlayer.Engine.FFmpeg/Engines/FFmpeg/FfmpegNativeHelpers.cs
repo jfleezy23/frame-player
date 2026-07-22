@@ -8,7 +8,7 @@ using FFmpeg.AutoGen;
 
 namespace FramePlayer.Engines.FFmpeg
 {
-    internal static unsafe class FfmpegNativeHelpers
+    internal static unsafe partial class FfmpegNativeHelpers
     {
         private const string AvformatLibraryName = "avformat-62.dll";
         private static readonly object NativeLibraryLoadLock = new object();
@@ -422,7 +422,7 @@ namespace FramePlayer.Engines.FFmpeg
         private static bool TryGetMemoryStatus(out MemoryStatusEx memoryStatus)
         {
             memoryStatus = new MemoryStatusEx();
-            memoryStatus.dwLength = (uint)Marshal.SizeOf(typeof(MemoryStatusEx));
+            memoryStatus.dwLength = (uint)Marshal.SizeOf<MemoryStatusEx>();
             return GlobalMemoryStatusEx(ref memoryStatus);
         }
 
@@ -580,18 +580,30 @@ namespace FramePlayer.Engines.FFmpeg
             return handle;
         }
 
-        [DllImport("kernel32", CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern IntPtr LoadLibrary(string lpFileName);
+        [LibraryImport(
+            "kernel32",
+            EntryPoint = "LoadLibraryW",
+            StringMarshalling = StringMarshalling.Utf16,
+            SetLastError = true)]
+        private static partial IntPtr LoadLibrary(string lpFileName);
 
-        [DllImport("kernel32", CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern IntPtr GetModuleHandle(string lpModuleName);
+        [LibraryImport(
+            "kernel32",
+            EntryPoint = "GetModuleHandleW",
+            StringMarshalling = StringMarshalling.Utf16,
+            SetLastError = true)]
+        private static partial IntPtr GetModuleHandle(string lpModuleName);
 
-        [DllImport("kernel32", CharSet = CharSet.Ansi, ExactSpelling = true, SetLastError = true)]
-        private static extern IntPtr GetProcAddress(IntPtr hModule, string procName);
+        [LibraryImport(
+            "kernel32",
+            EntryPoint = "GetProcAddress",
+            StringMarshalling = StringMarshalling.Utf8,
+            SetLastError = true)]
+        private static partial IntPtr GetProcAddress(IntPtr hModule, string procName);
 
-        [DllImport("kernel32", SetLastError = true)]
+        [LibraryImport("kernel32", EntryPoint = "GlobalMemoryStatusEx", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool GlobalMemoryStatusEx(ref MemoryStatusEx lpBuffer);
+        private static partial bool GlobalMemoryStatusEx(ref MemoryStatusEx lpBuffer);
 
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
         private struct MemoryStatusEx

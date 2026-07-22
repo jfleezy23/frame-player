@@ -1,9 +1,10 @@
 using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace FramePlayer.Engines.FFmpeg
 {
-    public static class RustFfmpegProbe
+    public static partial class RustFfmpegProbe
     {
         public static RustFfmpegProbeResult TryProbe(string runtimeDirectory)
         {
@@ -78,9 +79,10 @@ namespace FramePlayer.Engines.FFmpeg
             return nativeResult.Message.ToString();
         }
 
-        [DllImport("frameplayer_ffmpeg_probe", CallingConvention = CallingConvention.Cdecl)]
-        private static extern int frameplayer_rust_ffmpeg_probe(
-            [MarshalAs(UnmanagedType.LPUTF8Str)] string runtimeDirectory,
+        [LibraryImport("frameplayer_ffmpeg_probe", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static partial int frameplayer_rust_ffmpeg_probe(
+            string runtimeDirectory,
             out NativeProbeResult result);
 
         [StructLayout(LayoutKind.Sequential)]

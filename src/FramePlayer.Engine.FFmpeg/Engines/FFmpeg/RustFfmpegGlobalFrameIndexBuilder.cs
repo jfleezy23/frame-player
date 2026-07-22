@@ -1,13 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using FFmpeg.AutoGen;
 
 namespace FramePlayer.Engines.FFmpeg
 {
-    internal static class RustFfmpegGlobalFrameIndexBuilder
+    internal static partial class RustFfmpegGlobalFrameIndexBuilder
     {
         private const long NoTimestamp = long.MinValue;
         private const string BuilderModeEnvironmentVariable = "FRAMEPLAYER_FFMPEG_INDEX_BUILDER";
@@ -300,10 +301,11 @@ namespace FramePlayer.Engines.FFmpeg
             return nativeResult.Message.ToString();
         }
 
-        [DllImport("frameplayer_ffmpeg_probe", CallingConvention = CallingConvention.Cdecl)]
-        private static extern int frameplayer_rust_ffmpeg_global_frame_index(
-            [MarshalAs(UnmanagedType.LPUTF8Str)] string runtimeDirectory,
-            [MarshalAs(UnmanagedType.LPUTF8Str)] string filePath,
+        [LibraryImport("frameplayer_ffmpeg_probe", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static partial int frameplayer_rust_ffmpeg_global_frame_index(
+            string runtimeDirectory,
+            string filePath,
             int videoStreamIndex,
             ulong maxEntries,
             ulong maxNativeBytes,
@@ -311,8 +313,9 @@ namespace FramePlayer.Engines.FFmpeg
             IntPtr cancellationFlag,
             out NativeGlobalFrameIndexResult result);
 
-        [DllImport("frameplayer_ffmpeg_probe", CallingConvention = CallingConvention.Cdecl)]
-        private static extern void frameplayer_rust_ffmpeg_global_frame_index_free(
+        [LibraryImport("frameplayer_ffmpeg_probe")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static partial void frameplayer_rust_ffmpeg_global_frame_index_free(
             IntPtr entries,
             UIntPtr entryCount);
 
