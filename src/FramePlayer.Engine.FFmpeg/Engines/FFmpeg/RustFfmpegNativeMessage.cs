@@ -14,6 +14,7 @@ namespace FramePlayer.Engines.FFmpeg
         public RustFfmpegNativeMessage()
         {
             this = default;
+            _element0 = 0;
         }
 
         public override string ToString()
