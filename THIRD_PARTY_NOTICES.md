@@ -50,6 +50,8 @@ Important note:
 ### macOS FFmpeg Preview Runtime
 
 - Project: <https://ffmpeg.org/>
+- Runtime version: `n8.1.2-frameplayer-macos-source`
+- Runtime provenance: built from the official FFmpeg source tag `n8.1.2` at commit `38b88335f99e76ed89ff3c93f877fdefce736c13`
 - Runtime path used by the macOS preview: `Runtime/macos/osx-arm64/ffmpeg`
 - Tracked provenance: `Runtime/macos/osx-arm64/ffmpeg/build-provenance.txt`
 - Tracked hashes: `Runtime/macos/osx-arm64/ffmpeg/SHA256SUMS.txt`

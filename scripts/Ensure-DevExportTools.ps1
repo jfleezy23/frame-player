@@ -167,7 +167,7 @@ if ($missingManifestFiles.Count -gt 0) {
 
 $runtimeRoot = Join-Path $repoRoot "Runtime"
 $toolsDirectory = Join-Path $runtimeRoot "ffmpeg-tools"
-$candidateToolsDirectory = Join-Path $runtimeRoot "ffmpeg-tools-8.1-candidate"
+$candidateToolsDirectory = Join-Path $runtimeRoot "ffmpeg-tools-8.1.2-candidate"
 $artifactsRoot = Join-Path $repoRoot "artifacts"
 
 if ((Test-ToolsDirectory -DirectoryPath $toolsDirectory -RequiredFiles $requiredToolFiles) -and

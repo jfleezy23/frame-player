@@ -154,9 +154,9 @@ if ($expectedFileHashes.Count -eq 0) {
 
 $runtimeRoot = Join-Path $repoRoot "Runtime"
 $runtimeDirectory = Join-Path $runtimeRoot "ffmpeg-export"
-$candidateRuntimeDirectory = Join-Path $runtimeRoot "ffmpeg-export-8.1-candidate"
+$candidateRuntimeDirectory = Join-Path $runtimeRoot "ffmpeg-export-8.1.2-candidate"
 $toolsDirectory = Join-Path $runtimeRoot "ffmpeg-tools"
-$toolsCandidateDirectory = Join-Path $runtimeRoot "ffmpeg-tools-8.1-candidate"
+$toolsCandidateDirectory = Join-Path $runtimeRoot "ffmpeg-tools-8.1.2-candidate"
 $artifactsRoot = Join-Path $repoRoot "artifacts"
 
 if ((Test-Path -LiteralPath $runtimeDirectory) -and

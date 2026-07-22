@@ -93,6 +93,21 @@ namespace FramePlayer.Mac.Tests
             Assert.Contains("libavutil.60.dylib", script, StringComparison.Ordinal);
         }
 
+        [Fact]
+        public void FfmpegMacRuntimeBuild_PinsSecurityRelease812()
+        {
+            var buildScript = File.ReadAllText(RepositoryPath("scripts", "ffmpeg", "Build-FFmpeg-macOS-8.1.sh"));
+            var provenance = File.ReadAllText(RepositoryPath("Runtime", "macos", "osx-arm64", "ffmpeg", "build-provenance.txt"));
+            var checksums = File.ReadAllText(RepositoryPath("Runtime", "macos", "osx-arm64", "ffmpeg", "SHA256SUMS.txt"));
+
+            Assert.Contains("FFMPEG_TAG=\"n8.1.2\"", buildScript, StringComparison.Ordinal);
+            Assert.Contains("FFMPEG_COMMIT=\"38b88335f99e76ed89ff3c93f877fdefce736c13\"", buildScript, StringComparison.Ordinal);
+            Assert.Contains("FFmpeg tag: n8.1.2", provenance, StringComparison.Ordinal);
+            Assert.Contains("FFmpeg commit: 38b88335f99e76ed89ff3c93f877fdefce736c13", provenance, StringComparison.Ordinal);
+            Assert.Contains("libavcodec.62.28.102.dylib", checksums, StringComparison.Ordinal);
+            Assert.DoesNotContain(".100.dylib", checksums, StringComparison.Ordinal);
+        }
+
         private static string RepositoryPath(params string[] segments)
         {
             var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
