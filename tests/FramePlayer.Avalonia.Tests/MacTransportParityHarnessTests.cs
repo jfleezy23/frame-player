@@ -29,7 +29,7 @@ namespace FramePlayer.Avalonia.Tests
         {
             var windowType = typeof(MainWindow);
 
-            RequireMethod(windowType, "LaunchNewWindow");
+            Assert.NotNull(RequireMethod(windowType, "LaunchNewWindow"));
             RequireMethod(windowType, "OpenMediaAsync", typeof(string));
             RequireMethod(windowType, "OpenMediaAsync", typeof(string), typeof(string));
             RequireMethod(windowType, "CloseMediaAsync");
