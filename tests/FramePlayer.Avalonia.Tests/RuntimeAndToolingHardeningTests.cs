@@ -9,6 +9,15 @@ namespace FramePlayer.Avalonia.Tests
 {
     public sealed class RuntimeAndToolingHardeningTests
     {
+        private static readonly string[] UniversalProjectPaths =
+        {
+            "src/FramePlayer.Avalonia/FramePlayer.Avalonia.csproj",
+            "src/FramePlayer.Core/FramePlayer.Core.csproj",
+            "src/FramePlayer.Engine.FFmpeg/FramePlayer.Engine.FFmpeg.csproj",
+            "tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj",
+            "tests/FramePlayer.Core.Tests/FramePlayer.Core.Tests.csproj"
+        };
+
         [Fact]
         public void ExportRuntimeManifestValidation_Succeeds_ForBundledRuntimeDirectory_WhenPresent()
         {
@@ -148,14 +157,7 @@ namespace FramePlayer.Avalonia.Tests
                 .ToArray();
 
             Assert.Equal(
-                new[]
-                {
-                    "src/FramePlayer.Avalonia/FramePlayer.Avalonia.csproj",
-                    "src/FramePlayer.Core/FramePlayer.Core.csproj",
-                    "src/FramePlayer.Engine.FFmpeg/FramePlayer.Engine.FFmpeg.csproj",
-                    "tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj",
-                    "tests/FramePlayer.Core.Tests/FramePlayer.Core.Tests.csproj"
-                },
+                UniversalProjectPaths,
                 projects);
         }
 

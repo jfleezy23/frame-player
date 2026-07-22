@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -236,7 +235,7 @@ namespace FramePlayer.NativeExport.Tests
                     string.Empty));
             Assert.True(audioResult.Succeeded, audioResult.Message + Environment.NewLine + audioResult.StandardError);
             Assert.True(File.Exists(audioOutputPath), "Audio insertion did not produce an output file.");
-            Assert.True(audioResult.ProbedHasAudioStream == true, "Audio insertion output did not contain audio.");
+            Assert.True(audioResult.ProbedHasAudioStream, "Audio insertion output did not contain audio.");
 
             var exportDuration = TimeSpan.FromMilliseconds(
                 Math.Max(1d, Math.Min(750d, sourceInfo.Duration.TotalMilliseconds / 2d)));
@@ -263,18 +262,18 @@ namespace FramePlayer.NativeExport.Tests
                     sourceHeight: sourceInfo.PixelHeight));
             Assert.True(compareResult.Succeeded, compareResult.Message + Environment.NewLine + compareResult.StandardError);
             Assert.True(File.Exists(compareOutputPath), "Compare export did not produce an output file.");
-            Assert.True(compareResult.ProbedHasAudioStream == true, "Compare export did not preserve selected audio.");
+            Assert.True(compareResult.ProbedHasAudioStream, "Compare export did not preserve selected audio.");
         }
 
         private static void AssertOptionBoundSources(
             string filterGraph,
-            IReadOnlyList<NativeExportSupport.FilterFileSource> sources,
+            NativeExportSupport.FilterFileSource[] sources,
             string expectedPath,
             int expectedSourceCount)
         {
             Assert.DoesNotContain(expectedPath, filterGraph, StringComparison.Ordinal);
             Assert.DoesNotContain("filename=", filterGraph, StringComparison.Ordinal);
-            Assert.Equal(expectedSourceCount, sources.Count);
+            Assert.Equal(expectedSourceCount, sources.Length);
             Assert.All(sources, source => Assert.Equal(expectedPath, source.FilePath));
             Assert.All(sources, source => Assert.Contains(source.ContextName, filterGraph, StringComparison.Ordinal));
         }

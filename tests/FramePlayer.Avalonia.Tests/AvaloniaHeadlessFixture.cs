@@ -35,10 +35,7 @@ namespace FramePlayer.Avalonia.Tests
 
         public async Task RunAsync(Func<Task> action, TimeSpan timeout, string operationName)
         {
-            if (action == null)
-            {
-                throw new ArgumentNullException(nameof(action));
-            }
+            ArgumentNullException.ThrowIfNull(action);
 
             if (timeout <= TimeSpan.Zero)
             {
@@ -75,10 +72,7 @@ namespace FramePlayer.Avalonia.Tests
 
         public void Run(Action action, TimeSpan timeout, string operationName)
         {
-            if (action == null)
-            {
-                throw new ArgumentNullException(nameof(action));
-            }
+            ArgumentNullException.ThrowIfNull(action);
 
             if (timeout <= TimeSpan.Zero)
             {

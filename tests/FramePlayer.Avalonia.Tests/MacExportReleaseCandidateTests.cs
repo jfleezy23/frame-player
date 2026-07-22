@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -16,6 +15,7 @@ namespace FramePlayer.Avalonia.Tests
 {
     public sealed class MacExportReleaseCandidateTests : IClassFixture<AvaloniaHeadlessFixture>
     {
+        private static readonly string[] SupportedExtensions = { ".avi", ".m4v", ".mkv", ".mov", ".mp4", ".ts", ".wmv" };
         private readonly AvaloniaHeadlessFixture _fixture;
 
         public MacExportReleaseCandidateTests(AvaloniaHeadlessFixture fixture)
@@ -161,7 +161,7 @@ namespace FramePlayer.Avalonia.Tests
             throw new DirectoryNotFoundException("Could not find frame-player repository root from " + AppContext.BaseDirectory);
         }
 
-        private static IReadOnlyList<string> FindCorpusFiles()
+        private static string[] FindCorpusFiles()
         {
             var corpus = Environment.GetEnvironmentVariable("FRAMEPLAYER_MAC_CORPUS");
             if (string.IsNullOrWhiteSpace(corpus))
@@ -171,15 +171,14 @@ namespace FramePlayer.Avalonia.Tests
 
             Assert.True(Directory.Exists(corpus), "Corpus folder not found: " + corpus);
             var files = Directory.EnumerateFiles(corpus, "*", SearchOption.AllDirectories)
-                .Where(path => new[] { ".avi", ".m4v", ".mkv", ".mov", ".mp4", ".ts", ".wmv" }
-                    .Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
+                .Where(path => SupportedExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
                 .OrderBy(path => path, StringComparer.Ordinal)
                 .ToArray();
             Assert.NotEmpty(files);
             return files;
         }
 
-        private static async Task<string?> FindH264Mp4Async(IReadOnlyList<string> files)
+        private static async Task<string?> FindH264Mp4Async(string[] files)
         {
             var factory = new VideoReviewEngineFactory(new FfmpegReviewEngineOptionsProvider(new AppPreferencesService()));
             var mp4Files = files
@@ -219,7 +218,7 @@ namespace FramePlayer.Avalonia.Tests
             Assert.True(await InvokeWindowTaskAsync<bool>(window, "SetTimelineLoopMarkerAtAsync", paneId, LoopPlaybackMarkerEndpoint.Out, end));
         }
 
-        private async Task WaitForIndexAsync(FfmpegReviewEngine engine)
+        private static async Task WaitForIndexAsync(FfmpegReviewEngine engine)
         {
             var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(5);
             while (DateTimeOffset.UtcNow < deadline)
@@ -244,7 +243,7 @@ namespace FramePlayer.Avalonia.Tests
             }
         }
 
-        private FfmpegReviewEngine GetEngine(MainWindow window, string paneId)
+        private static FfmpegReviewEngine GetEngine(MainWindow window, string paneId)
         {
             var fieldName = string.Equals(paneId, "pane-compare", StringComparison.Ordinal)
                 ? "_compareEngine"

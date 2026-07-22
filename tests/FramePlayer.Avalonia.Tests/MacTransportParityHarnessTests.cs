@@ -17,6 +17,7 @@ namespace FramePlayer.Avalonia.Tests
     public sealed class MacTransportParityHarnessTests : IClassFixture<AvaloniaHeadlessFixture>
     {
         private static readonly TimeSpan PlaybackObservationDelay = TimeSpan.FromMilliseconds(900);
+        private static readonly string[] SupportedExtensions = { ".avi", ".m4v", ".mkv", ".mov", ".mp4", ".ts", ".wmv" };
         private readonly AvaloniaHeadlessFixture _fixture;
 
         public MacTransportParityHarnessTests(AvaloniaHeadlessFixture fixture)
@@ -92,7 +93,7 @@ namespace FramePlayer.Avalonia.Tests
         public async Task MacWindow_LoopPlaybackStaysInsideHarnessRange()
         {
             ConfigureRuntime();
-            var file = FindCorpusFiles().First();
+            var file = FindCorpusFiles()[0];
 
             MainWindow? window = null;
             try
@@ -242,7 +243,7 @@ namespace FramePlayer.Avalonia.Tests
             throw new DirectoryNotFoundException("Could not find frame-player repository root from " + AppContext.BaseDirectory);
         }
 
-        private static IReadOnlyList<string> FindCorpusFiles()
+        private static string[] FindCorpusFiles()
         {
             var corpus = Environment.GetEnvironmentVariable("FRAMEPLAYER_MAC_CORPUS");
             if (string.IsNullOrWhiteSpace(corpus))
@@ -252,15 +253,14 @@ namespace FramePlayer.Avalonia.Tests
 
             Assert.True(Directory.Exists(corpus), "Corpus folder not found: " + corpus);
             var files = Directory.EnumerateFiles(corpus, "*", SearchOption.AllDirectories)
-                .Where(path => new[] { ".avi", ".m4v", ".mkv", ".mov", ".mp4", ".ts", ".wmv" }
-                    .Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
+                .Where(path => SupportedExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
                 .OrderBy(path => path, StringComparer.Ordinal)
                 .ToArray();
             Assert.NotEmpty(files);
             return files;
         }
 
-        private async Task WaitForIndexAsync(FfmpegReviewEngine engine)
+        private static async Task WaitForIndexAsync(FfmpegReviewEngine engine)
         {
             var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(5);
             while (DateTimeOffset.UtcNow < deadline)
@@ -274,14 +274,14 @@ namespace FramePlayer.Avalonia.Tests
             }
         }
 
-        private FfmpegReviewEngine GetPrimaryEngine(MainWindow window)
+        private static FfmpegReviewEngine GetPrimaryEngine(MainWindow window)
         {
             var field = typeof(MainWindow).GetField("_primaryEngine", BindingFlags.Instance | BindingFlags.NonPublic)
                 ?? throw new InvalidOperationException("Missing _primaryEngine field.");
             return (FfmpegReviewEngine)field.GetValue(window)!;
         }
 
-        private FfmpegReviewEngine GetCompareEngine(MainWindow window)
+        private static FfmpegReviewEngine GetCompareEngine(MainWindow window)
         {
             var field = typeof(MainWindow).GetField("_compareEngine", BindingFlags.Instance | BindingFlags.NonPublic)
                 ?? throw new InvalidOperationException("Missing _compareEngine field.");
