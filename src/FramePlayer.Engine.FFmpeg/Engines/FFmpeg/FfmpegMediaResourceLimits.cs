@@ -99,34 +99,14 @@ namespace FramePlayer.Engines.FFmpeg
 
         internal static void EnsureGlobalFrameIndexCapacity(int currentEntryCount, TimeSpan elapsed)
         {
-            if (currentEntryCount < 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(currentEntryCount));
-            }
+            ArgumentOutOfRangeException.ThrowIfNegative(currentEntryCount);
 
+            // The entry limit is the managed-memory boundary: its worst-case estimate is
+            // kept within GlobalFrameIndexManagedByteLimit by a locked test invariant.
             if (currentEntryCount >= GlobalFrameIndexEntryLimit)
             {
                 throw new FfmpegMediaResourceLimitException(
                     "Exact frame indexing reached its retained-entry limit; sequential decode remains available.");
-            }
-
-            long estimatedRetainedBytes;
-            try
-            {
-                estimatedRetainedBytes = checked(
-                    ((long)currentEntryCount + 1L) * EstimatedManagedGlobalFrameIndexBytesPerEntry);
-            }
-            catch (OverflowException ex)
-            {
-                throw new FfmpegMediaResourceLimitException(
-                    "Exact frame indexing overflowed its managed retained-memory estimate.",
-                    ex);
-            }
-
-            if (estimatedRetainedBytes > GlobalFrameIndexManagedByteLimit)
-            {
-                throw new FfmpegMediaResourceLimitException(
-                    "Exact frame indexing reached its managed retained-memory limit; sequential decode remains available.");
             }
 
             if (elapsed > GlobalFrameIndexTimeLimit)
