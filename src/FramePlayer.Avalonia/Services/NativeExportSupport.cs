@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
@@ -18,6 +19,7 @@ namespace FramePlayer.Services
         internal static GraphExportOutcome RunGraphExport(
             string outputFilePath,
             string filterGraph,
+            IReadOnlyList<FilterFileSource> fileSources,
             int outputWidth,
             int outputHeight,
             bool includeAudio,
@@ -54,29 +56,7 @@ namespace FramePlayer.Services
                     throw new InvalidOperationException("Could not allocate the FFmpeg export filter graph.");
                 }
 
-                AVFilterInOut* inputs = null;
-                AVFilterInOut* outputs = null;
-                try
-                {
-                    FfmpegNativeHelpers.ThrowIfError(
-                        ffmpeg.avfilter_graph_parse_ptr(filterGraphContext, filterGraph, &inputs, &outputs, null),
-                        "Parse export filter graph");
-                    FfmpegNativeHelpers.ThrowIfError(
-                        ffmpeg.avfilter_graph_config(filterGraphContext, null),
-                        "Configure export filter graph");
-                }
-                finally
-                {
-                    if (inputs != null)
-                    {
-                        ffmpeg.avfilter_inout_free(&inputs);
-                    }
-
-                    if (outputs != null)
-                    {
-                        ffmpeg.avfilter_inout_free(&outputs);
-                    }
-                }
+                ConfigureFilterGraph(filterGraphContext, filterGraph, fileSources);
 
                 videoSinkContext = ResolveFilterContext(filterGraphContext, VideoSinkName, "buffersink");
                 if (videoSinkContext == null)
@@ -537,18 +517,206 @@ namespace FramePlayer.Services
             return frame;
         }
 
-        internal static string EscapeFilterFilePath(string filePath)
+        internal static void ConfigureFilterGraph(
+            AVFilterGraph* filterGraph,
+            string filterGraphDescription,
+            IReadOnlyList<FilterFileSource> fileSources)
         {
-            var normalizedPath = Path.GetFullPath(filePath ?? string.Empty)
-                .Replace("\\", "/", StringComparison.Ordinal)
-                .Replace(":", "\\:", StringComparison.Ordinal)
-                .Replace("'", "\\'", StringComparison.Ordinal);
-            return normalizedPath;
+            if (filterGraph == null)
+            {
+                throw new ArgumentNullException(nameof(filterGraph));
+            }
+
+            if (string.IsNullOrWhiteSpace(filterGraphDescription))
+            {
+                throw new ArgumentException("A filter graph is required.", nameof(filterGraphDescription));
+            }
+
+            ArgumentNullException.ThrowIfNull(fileSources);
+
+            AVFilterGraphSegment* segment = null;
+            AVFilterInOut* inputs = null;
+            AVFilterInOut* outputs = null;
+            try
+            {
+                FfmpegNativeHelpers.ThrowIfError(
+                    ffmpeg.avfilter_graph_segment_parse(filterGraph, filterGraphDescription, 0, &segment),
+                    "Parse export filter graph topology");
+                RejectInlineFileSourceOptions(segment);
+                FfmpegNativeHelpers.ThrowIfError(
+                    ffmpeg.avfilter_graph_segment_create_filters(segment, 0),
+                    "Create export filter graph filters");
+                FfmpegNativeHelpers.ThrowIfError(
+                    ffmpeg.avfilter_graph_segment_apply_opts(segment, 0),
+                    "Apply export filter graph options");
+
+                var configuredSourceNames = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var fileSource in fileSources)
+                {
+                    if (!configuredSourceNames.Add(fileSource.ContextName))
+                    {
+                        throw new InvalidOperationException(
+                            "The export filter graph file source name is duplicated: " + fileSource.ContextName);
+                    }
+
+                    var sourceContext = ffmpeg.avfilter_graph_get_filter(filterGraph, fileSource.ContextName);
+                    if (sourceContext == null || sourceContext->filter == null || sourceContext->filter->name == null)
+                    {
+                        throw new InvalidOperationException(
+                            "The export filter graph did not expose the expected file source: " + fileSource.ContextName);
+                    }
+
+                    var actualFilterName = Marshal.PtrToStringAnsi((IntPtr)sourceContext->filter->name) ?? string.Empty;
+                    if (!string.Equals(actualFilterName, fileSource.FilterName, StringComparison.Ordinal))
+                    {
+                        throw new InvalidOperationException(
+                            "The export filter graph source '" + fileSource.ContextName +
+                            "' uses filter '" + actualFilterName +
+                            "' instead of '" + fileSource.FilterName + "'.");
+                    }
+
+                    FfmpegNativeHelpers.ThrowIfError(
+                        ffmpeg.av_opt_set(
+                            sourceContext,
+                            "filename",
+                            Path.GetFullPath(fileSource.FilePath),
+                            ffmpeg.AV_OPT_SEARCH_CHILDREN),
+                        "Set export file source filename");
+                }
+
+                for (uint filterIndex = 0; filterIndex < filterGraph->nb_filters; filterIndex++)
+                {
+                    var candidate = filterGraph->filters[filterIndex];
+                    if (candidate == null || candidate->filter == null || candidate->filter->name == null)
+                    {
+                        continue;
+                    }
+
+                    var candidateFilterName = Marshal.PtrToStringAnsi((IntPtr)candidate->filter->name) ?? string.Empty;
+                    if (!string.Equals(candidateFilterName, "movie", StringComparison.Ordinal) &&
+                        !string.Equals(candidateFilterName, "amovie", StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    var candidateContextName = candidate->name == null
+                        ? string.Empty
+                        : Marshal.PtrToStringAnsi((IntPtr)candidate->name) ?? string.Empty;
+                    if (!configuredSourceNames.Contains(candidateContextName))
+                    {
+                        throw new InvalidOperationException(
+                            "The export filter graph file source is not option-bound: " + candidateContextName);
+                    }
+                }
+
+                FfmpegNativeHelpers.ThrowIfError(
+                    ffmpeg.avfilter_graph_segment_init(segment, 0),
+                    "Initialize export filter graph filters");
+                FfmpegNativeHelpers.ThrowIfError(
+                    ffmpeg.avfilter_graph_segment_link(segment, 0, &inputs, &outputs),
+                    "Link export filter graph");
+                FfmpegNativeHelpers.ThrowIfError(
+                    ffmpeg.avfilter_graph_config(filterGraph, null),
+                    "Configure export filter graph");
+            }
+            finally
+            {
+                if (inputs != null)
+                {
+                    ffmpeg.avfilter_inout_free(&inputs);
+                }
+
+                if (outputs != null)
+                {
+                    ffmpeg.avfilter_inout_free(&outputs);
+                }
+
+                if (segment != null)
+                {
+                    ffmpeg.avfilter_graph_segment_free(&segment);
+                }
+            }
+        }
+
+        private static void RejectInlineFileSourceOptions(AVFilterGraphSegment* segment)
+        {
+            if (segment == null)
+            {
+                throw new ArgumentNullException(nameof(segment));
+            }
+
+            for (nuint chainIndex = 0; chainIndex < segment->nb_chains; chainIndex++)
+            {
+                var chain = segment->chains[chainIndex];
+                if (chain == null)
+                {
+                    continue;
+                }
+
+                for (nuint filterIndex = 0; filterIndex < chain->nb_filters; filterIndex++)
+                {
+                    var filterParameters = chain->filters[filterIndex];
+                    if (filterParameters == null || filterParameters->filter_name == null)
+                    {
+                        continue;
+                    }
+
+                    var filterName = Marshal.PtrToStringAnsi((IntPtr)filterParameters->filter_name) ?? string.Empty;
+                    if ((!string.Equals(filterName, "movie", StringComparison.Ordinal) &&
+                         !string.Equals(filterName, "amovie", StringComparison.Ordinal)) ||
+                        filterParameters->opts == null)
+                    {
+                        continue;
+                    }
+
+                    throw new ArgumentException(
+                        "Native export file sources must be configured through FFmpeg options, not filtergraph text.");
+                }
+            }
         }
 
         internal static string FormatFilterTime(TimeSpan value)
         {
             return value.TotalSeconds.ToString("0.######", CultureInfo.InvariantCulture);
+        }
+
+        internal readonly struct FilterFileSource
+        {
+            internal FilterFileSource(string instanceName, string filterName, string filePath)
+            {
+                if (string.IsNullOrWhiteSpace(instanceName))
+                {
+                    throw new ArgumentException("A filter instance name is required.", nameof(instanceName));
+                }
+
+                if (string.IsNullOrWhiteSpace(filterName))
+                {
+                    throw new ArgumentException("A filter name is required.", nameof(filterName));
+                }
+
+                if (!string.Equals(filterName, "movie", StringComparison.Ordinal) &&
+                    !string.Equals(filterName, "amovie", StringComparison.Ordinal))
+                {
+                    throw new ArgumentException("A file source must use the movie or amovie filter.", nameof(filterName));
+                }
+
+                if (string.IsNullOrWhiteSpace(filePath))
+                {
+                    throw new ArgumentException("A file source path is required.", nameof(filePath));
+                }
+
+                InstanceName = instanceName;
+                FilterName = filterName;
+                FilePath = filePath;
+            }
+
+            internal string InstanceName { get; }
+
+            internal string FilterName { get; }
+
+            internal string FilePath { get; }
+
+            internal string ContextName => FilterName + "@" + InstanceName;
         }
 
         internal static void ProbeOutput(

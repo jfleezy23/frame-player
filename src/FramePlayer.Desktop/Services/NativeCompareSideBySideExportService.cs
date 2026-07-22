@@ -23,6 +23,7 @@ namespace FramePlayer.Services
                     var outcome = NativeExportSupport.RunGraphExport(
                         plan.OutputFilePath,
                         BuildFilterGraph(plan),
+                        BuildFileSources(plan),
                         plan.OutputWidth,
                         plan.OutputHeight,
                         plan.SelectedAudioHasStream,
@@ -56,7 +57,7 @@ namespace FramePlayer.Services
                 cancellationToken);
         }
 
-        private static string BuildFilterGraph(CompareSideBySideExportPlan plan)
+        internal static string BuildFilterGraph(CompareSideBySideExportPlan plan)
         {
             // Whole-video compare exports still know the source start/duration bounds.
             // Trimming from the known range before padding keeps filter timestamps
@@ -66,7 +67,7 @@ namespace FramePlayer.Services
 
             AppendVideoChain(
                 filterBuilder,
-                plan.PrimarySourceFilePath,
+                "primaryvsrc",
                 plan.PrimaryStartTime,
                 plan.PrimaryContentDuration,
                 plan.PrimaryLeadingPad,
@@ -80,7 +81,7 @@ namespace FramePlayer.Services
             filterBuilder.Append(';');
             AppendVideoChain(
                 filterBuilder,
-                plan.CompareSourceFilePath,
+                "comparevsrc",
                 plan.CompareStartTime,
                 plan.CompareContentDuration,
                 plan.CompareLeadingPad,
@@ -105,7 +106,7 @@ namespace FramePlayer.Services
 
         private static void AppendVideoChain(
             StringBuilder filterBuilder,
-            string sourceFilePath,
+            string sourceInstanceName,
             TimeSpan startTime,
             TimeSpan contentDuration,
             TimeSpan leadingPad,
@@ -119,8 +120,8 @@ namespace FramePlayer.Services
         {
             filterBuilder.AppendFormat(
                 CultureInfo.InvariantCulture,
-                "movie=filename='{0}',",
-                NativeExportSupport.EscapeFilterFilePath(sourceFilePath));
+                "movie@{0},",
+                sourceInstanceName);
 
             if (includeTrim)
             {
@@ -191,9 +192,6 @@ namespace FramePlayer.Services
             CompareSideBySideExportPlan plan,
             bool includeTrim)
         {
-            var sourceFilePath = plan.AudioSource == CompareSideBySideExportAudioSource.Compare
-                ? plan.CompareSourceFilePath
-                : plan.PrimarySourceFilePath;
             var startTime = plan.AudioSource == CompareSideBySideExportAudioSource.Compare
                 ? plan.CompareStartTime
                 : plan.PrimaryStartTime;
@@ -204,10 +202,7 @@ namespace FramePlayer.Services
                 ? plan.CompareLeadingPad
                 : plan.PrimaryLeadingPad;
 
-            filterBuilder.AppendFormat(
-                CultureInfo.InvariantCulture,
-                "amovie=filename='{0}',",
-                NativeExportSupport.EscapeFilterFilePath(sourceFilePath));
+            filterBuilder.Append("amovie@audiosrc,");
 
             if (includeTrim)
             {
@@ -235,6 +230,38 @@ namespace FramePlayer.Services
                 CultureInfo.InvariantCulture,
                 "apad=whole_dur={0},atrim=duration={0},aformat=sample_fmts=fltp,asetnsamples=n=1024:p=0,abuffersink@outa",
                 NativeExportSupport.FormatFilterTime(plan.OutputDuration));
+        }
+
+        internal static NativeExportSupport.FilterFileSource[] BuildFileSources(
+            CompareSideBySideExportPlan plan)
+        {
+            ArgumentNullException.ThrowIfNull(plan);
+
+            var primaryVideoSource = new NativeExportSupport.FilterFileSource(
+                "primaryvsrc",
+                "movie",
+                plan.PrimarySourceFilePath);
+            var compareVideoSource = new NativeExportSupport.FilterFileSource(
+                "comparevsrc",
+                "movie",
+                plan.CompareSourceFilePath);
+            if (!plan.SelectedAudioHasStream)
+            {
+                return new[] { primaryVideoSource, compareVideoSource };
+            }
+
+            var audioSourcePath = plan.AudioSource == CompareSideBySideExportAudioSource.Compare
+                ? plan.CompareSourceFilePath
+                : plan.PrimarySourceFilePath;
+            return new[]
+            {
+                primaryVideoSource,
+                compareVideoSource,
+                new NativeExportSupport.FilterFileSource(
+                    "audiosrc",
+                    "amovie",
+                    audioSourcePath)
+            };
         }
     }
 }
