@@ -31,26 +31,28 @@ jobs:
           rustup toolchain install stable --profile minimal
           cargo --version
 
-      - name: Cache pinned FFmpeg runtime
-        id: cache_ffmpeg_runtime
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: Runtime/macos/osx-arm64/ffmpeg/*.dylib
-          key: macos-arm64-ffmpeg-n8.1.2-${{ hashFiles('scripts/ffmpeg/Build-FFmpeg-macOS-8.1.sh', 'Runtime/macos/osx-arm64/ffmpeg/SHA256SUMS.txt') }}
-
-      - name: Build pinned FFmpeg runtime
-        if: steps.cache_ffmpeg_runtime.outputs.cache-hit != 'true'
+      - name: Build pinned FFmpeg runtime candidate
         run: |
           work_root="$RUNNER_TEMP/frameplayer-ffmpeg-macos-8.1.2-source-build"
           mkdir -p "$work_root"
           WORK_ROOT="$work_root" RUNTIME_DIR="$work_root/runtime" \
             scripts/ffmpeg/Build-FFmpeg-macOS-8.1.sh
-          cp "$work_root/runtime/"*.dylib Runtime/macos/osx-arm64/ffmpeg/
+          cp "$work_root/runtime/"* Runtime/macos/osx-arm64/ffmpeg/
 
-      - name: Validate pinned FFmpeg runtime
+      - name: Validate pinned FFmpeg runtime candidate
         run: |
-          cd Runtime/macos/osx-arm64/ffmpeg
+          cd "$RUNNER_TEMP/frameplayer-ffmpeg-macos-8.1.2-source-build/runtime"
           shasum -a 256 -c SHA256SUMS.txt
+          grep -Fx 'FFmpeg tag: n8.1.2' build-provenance.txt
+          grep -Fx 'FFmpeg commit: 38b88335f99e76ed89ff3c93f877fdefce736c13' build-provenance.txt
+
+      - name: Upload pinned FFmpeg runtime candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: FramePlayer-ffmpeg-runtime-osx-arm64-8.1.2
+          path: ${{ runner.temp }}/frameplayer-ffmpeg-macos-8.1.2-source-build/runtime
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Restore
         run: |
