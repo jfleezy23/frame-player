@@ -13,6 +13,11 @@ namespace FramePlayer.Engines.FFmpeg
 
         public override string ToString()
         {
+            if (_element0 == 0)
+            {
+                return string.Empty;
+            }
+
             ReadOnlySpan<byte> bytes = this;
             var length = bytes.IndexOf((byte)0);
             if (length < 0)
