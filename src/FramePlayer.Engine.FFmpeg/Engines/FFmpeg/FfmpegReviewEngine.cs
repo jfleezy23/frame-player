@@ -1066,7 +1066,7 @@ namespace FramePlayer.Engines.FFmpeg
                 return;
             }
 
-            StopPlaybackForDispose();
+            StopPlayback(raiseStateChanged: false);
             CloseCore(clearFilePath: true, clearErrorMessage: true);
             _budgetCoordinator.AllocationChanged -= BudgetCoordinator_AllocationChanged;
             _budgetCoordinator.UnregisterPane(_paneId);
@@ -1392,59 +1392,6 @@ namespace FramePlayer.Engines.FFmpeg
             if (raiseStateChanged && wasPlaying)
             {
                 OnStateChanged();
-            }
-        }
-
-        private void StopPlaybackForDispose()
-        {
-            Task playbackTask;
-            CancellationTokenSource cancellationSource;
-            FfmpegAudioPlaybackSession audioSession;
-
-            lock (_playbackSync)
-            {
-                playbackTask = _playbackTask;
-                cancellationSource = _playbackCancellationSource;
-                audioSession = _audioPlaybackSession;
-                _audioPlaybackSession = null;
-                IsPlaying = false;
-
-                if (cancellationSource != null && !cancellationSource.IsCancellationRequested)
-                {
-                    cancellationSource.Cancel();
-                }
-            }
-
-            StopAudioPlaybackSession(audioSession);
-
-            if (playbackTask != null)
-            {
-                try
-                {
-                    playbackTask.GetAwaiter().GetResult();
-                }
-                catch (OperationCanceledException)
-                {
-                    // Disposal cancels this task before synchronously joining it.
-                }
-            }
-
-            lock (_playbackSync)
-            {
-                if (ReferenceEquals(_playbackTask, playbackTask))
-                {
-                    _playbackTask = null;
-                }
-
-                if (ReferenceEquals(_playbackCancellationSource, cancellationSource))
-                {
-                    _playbackCancellationSource = null;
-                }
-            }
-
-            if (cancellationSource != null)
-            {
-                cancellationSource.Dispose();
             }
         }
 
