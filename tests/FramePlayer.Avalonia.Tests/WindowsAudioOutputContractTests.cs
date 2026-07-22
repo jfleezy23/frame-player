@@ -1,5 +1,8 @@
 using System;
 using System.IO;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using FramePlayer.Engines.FFmpeg;
 using Xunit;
 
 namespace FramePlayer.Avalonia.Tests
@@ -23,15 +26,43 @@ namespace FramePlayer.Avalonia.Tests
         [Fact]
         public void WinMmAudioOutput_ImplementsSharedAudioOutputContract()
         {
-            var outputSource = ReadRepositoryFile(
-                "src",
-                "FramePlayer.Engine.FFmpeg",
-                "Engines",
-                "FFmpeg",
-                "WinMmAudioOutput.cs");
+            Assert.True(typeof(IAudioOutput).IsAssignableFrom(typeof(WinMmAudioOutput)));
 
-            Assert.Contains("internal sealed class WinMmAudioOutput : IAudioOutput", outputSource, StringComparison.Ordinal);
-            Assert.Contains("[DllImport(\"winmm.dll\"", outputSource, StringComparison.Ordinal);
+            var nativeMethodNames = new[]
+            {
+                "waveOutOpen",
+                "waveOutPrepareHeader",
+                "waveOutWrite",
+                "waveOutUnprepareHeader",
+                "waveOutReset",
+                "waveOutClose",
+                "waveOutGetPosition"
+            };
+            foreach (var methodName in nativeMethodNames)
+            {
+                var method = typeof(WinMmAudioOutput).GetMethod(
+                    methodName,
+                    BindingFlags.NonPublic | BindingFlags.Static);
+
+                Assert.NotNull(method);
+                Assert.NotNull(method.GetCustomAttribute<LibraryImportAttribute>());
+            }
+        }
+
+        [Theory]
+        [InlineData(0, 2, 16, "sampleRate")]
+        [InlineData(48_000, 0, 16, "channelCount")]
+        [InlineData(48_000, 2, 0, "bitsPerSample")]
+        public void WinMmAudioOutput_RejectsNonPositiveFormatValues(
+            int sampleRate,
+            int channelCount,
+            int bitsPerSample,
+            string expectedParameterName)
+        {
+            var exception = Assert.Throws<ArgumentOutOfRangeException>(() =>
+                new WinMmAudioOutput(sampleRate, channelCount, bitsPerSample));
+
+            Assert.Equal(expectedParameterName, exception.ParamName);
         }
 
         [Fact]
