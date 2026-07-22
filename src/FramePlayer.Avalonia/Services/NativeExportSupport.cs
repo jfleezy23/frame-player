@@ -507,14 +507,29 @@ namespace FramePlayer.Services
             }
 
             var result = ffmpeg.av_buffersink_get_frame(sinkContext, frame);
-            if (result == ffmpeg.AVERROR_EOF || result == ffmpeg.AVERROR(ffmpeg.EAGAIN))
+            if (!HandleFilterFrameReadResult(ref frame, result))
             {
-                FreeFrame(ref frame);
                 return null;
             }
 
-            FfmpegNativeHelpers.ThrowIfError(result, "Pull filtered export frame");
             return frame;
+        }
+
+        internal static bool HandleFilterFrameReadResult(ref AVFrame* frame, int result)
+        {
+            if (result >= 0)
+            {
+                return true;
+            }
+
+            FreeFrame(ref frame);
+            if (result == ffmpeg.AVERROR_EOF || result == ffmpeg.AVERROR(ffmpeg.EAGAIN))
+            {
+                return false;
+            }
+
+            FfmpegNativeHelpers.ThrowIfError(result, "Pull filtered export frame");
+            return false;
         }
 
         internal static void ConfigureFilterGraph(
@@ -1042,7 +1057,7 @@ namespace FramePlayer.Services
             }
         }
 
-        #pragma warning disable CS0618
+#pragma warning disable CS0618
         private static AVSampleFormat ResolveSupportedSampleFormat(AVCodec* encoder, AVSampleFormat requestedSampleFormat)
         {
             if (encoder == null || encoder->sample_fmts == null)
@@ -1080,7 +1095,7 @@ namespace FramePlayer.Services
                 ? encoder->supported_samplerates[0]
                 : requestedSampleRate;
         }
-        #pragma warning restore CS0618
+#pragma warning restore CS0618
 
         internal readonly struct GraphExportOutcome
         {

@@ -24,6 +24,11 @@ namespace FramePlayer.Services
                 FfmpegNativeHelpers.ThrowIfError(
                     FfmpegNativeHelpers.OpenInput(&formatContext, filePath, null, null),
                     "Open media container");
+                if (formatContext == null)
+                {
+                    throw new InvalidOperationException("FFmpeg did not return an opened media container.");
+                }
+
                 FfmpegNativeHelpers.ThrowIfError(
                     ffmpeg.avformat_find_stream_info(formatContext, null),
                     "Probe media streams");
@@ -38,7 +43,17 @@ namespace FramePlayer.Services
                     0);
                 FfmpegNativeHelpers.ThrowIfError(videoStreamIndex, "Select primary video stream");
 
+                if (formatContext->streams == null || (uint)videoStreamIndex >= formatContext->nb_streams)
+                {
+                    throw new InvalidOperationException("FFmpeg returned an invalid primary video stream index.");
+                }
+
                 var videoStream = formatContext->streams[videoStreamIndex];
+                if (videoStream == null || videoStream->codecpar == null)
+                {
+                    throw new InvalidOperationException("FFmpeg returned an invalid primary video stream.");
+                }
+
                 var codecParameters = videoStream->codecpar;
                 var nominalFrameRate = FfmpegNativeHelpers.GetNominalFrameRate(formatContext, videoStream, null);
                 var positionStep = FfmpegNativeHelpers.GetPositionStep(nominalFrameRate);
@@ -73,9 +88,19 @@ namespace FramePlayer.Services
                     0);
                 if (bestAudioStreamIndex >= 0)
                 {
+                    if ((uint)bestAudioStreamIndex >= formatContext->nb_streams)
+                    {
+                        throw new InvalidOperationException("FFmpeg returned an invalid primary audio stream index.");
+                    }
+
                     hasAudioStream = true;
                     audioStreamIndex = bestAudioStreamIndex;
                     var audioStream = formatContext->streams[bestAudioStreamIndex];
+                    if (audioStream == null || audioStream->codecpar == null)
+                    {
+                        throw new InvalidOperationException("FFmpeg returned an invalid primary audio stream.");
+                    }
+
                     var audioCodecParameters = audioStream->codecpar;
                     audioCodecName = FfmpegNativeHelpers.GetCodecName(audioCodecParameters->codec_id);
                     audioSampleRate = audioCodecParameters->sample_rate;

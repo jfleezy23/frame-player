@@ -51,16 +51,19 @@ namespace FramePlayer.Engines.FFmpeg
         internal static string GetErrorMessage(int errorCode)
         {
             const int BufferSize = 1024;
-            var buffer = stackalloc byte[BufferSize];
-            ffmpeg.av_strerror(errorCode, buffer, (ulong)BufferSize);
-            return PtrToString(buffer);
-        }
+            Span<byte> buffer = stackalloc byte[BufferSize];
+            buffer.Clear();
+            fixed (byte* bufferPointer = buffer)
+            {
+                if (ffmpeg.av_strerror(errorCode, bufferPointer, (ulong)buffer.Length) < 0)
+                {
+                    return string.Format(CultureInfo.InvariantCulture, "FFmpeg error {0}", errorCode);
+                }
+            }
 
-        internal static string PtrToString(byte* value)
-        {
-            return value == null
-                ? string.Empty
-                : Marshal.PtrToStringAnsi((IntPtr)value) ?? string.Empty;
+            var terminatorIndex = buffer.IndexOf((byte)0);
+            var messageBytes = terminatorIndex >= 0 ? buffer[..terminatorIndex] : buffer;
+            return Encoding.UTF8.GetString(messageBytes);
         }
 
         internal static string GetCodecName(AVCodecID codecId)
@@ -151,6 +154,11 @@ namespace FramePlayer.Engines.FFmpeg
 
         internal static int OpenInput(AVFormatContext** formatContext, string filePath, AVInputFormat* inputFormat, AVDictionary** options)
         {
+            if (formatContext == null)
+            {
+                throw new ArgumentNullException(nameof(formatContext));
+            }
+
             if (string.IsNullOrWhiteSpace(filePath))
             {
                 throw new ArgumentException("A media file path is required.", nameof(filePath));

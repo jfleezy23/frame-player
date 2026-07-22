@@ -10,40 +10,69 @@ namespace FramePlayer.Avalonia.Services
     {
         public static WriteableBitmap? PresentBitmap(DecodedFrameBuffer frameBuffer, PaneViewportSnapshot? viewportSnapshot, ref WriteableBitmap? reusableBitmap)
         {
-            if (frameBuffer == null || !frameBuffer.HasPixelBuffer)
+            if (frameBuffer == null)
             {
                 return null;
             }
 
-            var descriptor = frameBuffer.Descriptor;
-            if (descriptor == null || descriptor.PixelWidth <= 0 || descriptor.PixelHeight <= 0)
+            DecodedFrameBuffer retainedFrameBuffer;
+            try
+            {
+                retainedFrameBuffer = frameBuffer.Retain();
+            }
+            catch (ObjectDisposedException)
             {
                 return null;
             }
 
-            var crop = ResolveCrop(descriptor.PixelWidth, descriptor.PixelHeight, viewportSnapshot);
-            var bitmap = ResolveOrCreateBitmap(crop.Width, crop.Height, ref reusableBitmap);
-
-            using (var locked = bitmap.Lock())
+            using (retainedFrameBuffer)
             {
-                unsafe
+                if (!retainedFrameBuffer.HasPixelBuffer)
                 {
-                    if (frameBuffer.TryGetPixelBufferPointer(out var nativePixelBufferPointer))
+                    return null;
+                }
+
+                var descriptor = retainedFrameBuffer.Descriptor;
+                if (descriptor == null || descriptor.PixelWidth <= 0 || descriptor.PixelHeight <= 0)
+                {
+                    return null;
+                }
+
+                var crop = ResolveCrop(descriptor.PixelWidth, descriptor.PixelHeight, viewportSnapshot);
+                if (!HasValidSourceLayout(retainedFrameBuffer, crop))
+                {
+                    return null;
+                }
+
+                var bitmap = ResolveOrCreateBitmap(crop.Width, crop.Height, ref reusableBitmap);
+
+                using (var locked = bitmap.Lock())
+                {
+                    var requiredDestinationRowBytes = checked(crop.Width * 4);
+                    if (locked.Address == IntPtr.Zero || locked.RowBytes < requiredDestinationRowBytes)
                     {
-                        CopyRows((byte*)nativePixelBufferPointer, frameBuffer.Stride, crop, locked.Address, locked.RowBytes);
+                        throw new InvalidOperationException("Avalonia returned an invalid writable frame buffer.");
                     }
-                    else
+
+                    unsafe
                     {
-                        fixed (byte* sourceStart = frameBuffer.PixelBuffer)
+                        if (retainedFrameBuffer.TryGetPixelBufferPointer(out var nativePixelBufferPointer))
                         {
-                            CopyRows(sourceStart, frameBuffer.Stride, crop, locked.Address, locked.RowBytes);
+                            CopyRows((byte*)nativePixelBufferPointer, retainedFrameBuffer.Stride, crop, locked.Address, locked.RowBytes);
+                        }
+                        else
+                        {
+                            fixed (byte* sourceStart = retainedFrameBuffer.PixelBuffer)
+                            {
+                                CopyRows(sourceStart, retainedFrameBuffer.Stride, crop, locked.Address, locked.RowBytes);
+                            }
                         }
                     }
                 }
-            }
 
-            reusableBitmap = bitmap;
-            return bitmap;
+                reusableBitmap = bitmap;
+                return bitmap;
+            }
         }
 
         public static WriteableBitmap? CreateBitmap(DecodedFrameBuffer frameBuffer)
@@ -86,13 +115,39 @@ namespace FramePlayer.Avalonia.Services
             int destinationStride)
         {
             const int bytesPerPixel = 4;
-            var copyBytesPerRow = Math.Min(crop.Width * bytesPerPixel, destinationStride);
+            var copyBytesPerRow = Math.Min(checked(crop.Width * bytesPerPixel), destinationStride);
             for (var y = 0; y < crop.Height; y++)
             {
-                var sourceRow = sourceStart + ((crop.Y + y) * sourceStride) + (crop.X * bytesPerPixel);
-                var destinationRow = (byte*)destinationStart + (y * destinationStride);
+                var sourceOffset = checked(((crop.Y + y) * sourceStride) + (crop.X * bytesPerPixel));
+                var destinationOffset = checked(y * destinationStride);
+                var sourceRow = sourceStart + sourceOffset;
+                var destinationRow = (byte*)destinationStart + destinationOffset;
                 Buffer.MemoryCopy(sourceRow, destinationRow, destinationStride, copyBytesPerRow);
             }
+        }
+
+        private static bool HasValidSourceLayout(DecodedFrameBuffer frameBuffer, PixelRect crop)
+        {
+            const int bytesPerPixel = 4;
+            if (frameBuffer.Stride <= 0 ||
+                frameBuffer.PixelBufferLength <= 0 ||
+                crop.X < 0 ||
+                crop.Y < 0 ||
+                crop.Width <= 0 ||
+                crop.Height <= 0)
+            {
+                return false;
+            }
+
+            var sourceRowEnd = ((long)crop.X + crop.Width) * bytesPerPixel;
+            if (sourceRowEnd > frameBuffer.Stride)
+            {
+                return false;
+            }
+
+            var lastSourceRow = (long)crop.Y + crop.Height - 1L;
+            var requiredSourceBytes = (lastSourceRow * frameBuffer.Stride) + sourceRowEnd;
+            return requiredSourceBytes > 0L && requiredSourceBytes <= frameBuffer.PixelBufferLength;
         }
 
         private static PixelRect ResolveCrop(int sourceWidth, int sourceHeight, PaneViewportSnapshot? viewportSnapshot)
