@@ -195,7 +195,7 @@ namespace FramePlayer.Core.Coordination
             return null;
         }
 
-        private static IReadOnlyList<ReviewWorkspacePaneOperationResult> SnapshotPaneResults(
+        private static ReviewWorkspacePaneOperationResult[] SnapshotPaneResults(
             IReadOnlyList<ReviewWorkspacePaneOperationResult> paneResults)
         {
             if (paneResults == null || paneResults.Count == 0)

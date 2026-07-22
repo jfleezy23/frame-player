@@ -13,6 +13,9 @@ namespace FramePlayer.Avalonia.Tests
 {
     public sealed class ExportHostCliTests
     {
+        private static readonly string[] OtherArguments = { "--other", "request.json" };
+        private static readonly string[] EmptyRequestPathArguments = { "--run-export-request", " " };
+
         [Fact]
         public void TryGetRequestPath_ReturnsNormalizedAbsolutePath()
         {
@@ -44,10 +47,10 @@ namespace FramePlayer.Avalonia.Tests
             Assert.Empty(nullPath);
             Assert.False(ExportHostCli.TryGetRequestPath(Array.Empty<string>(), out var emptyPath));
             Assert.Empty(emptyPath);
-            Assert.False(ExportHostCli.TryGetRequestPath(new[] { "--other", "request.json" }, out var otherPath));
+            Assert.False(ExportHostCli.TryGetRequestPath(OtherArguments, out var otherPath));
             Assert.Empty(otherPath);
             Assert.Throws<ArgumentException>(() => ExportHostCli.TryGetRequestPath(
-                new[] { "--run-export-request", " " },
+                EmptyRequestPathArguments,
                 out _));
         }
 
