@@ -10,15 +10,15 @@ function Test-RuntimeDirectory {
         [string]$DirectoryPath
     )
 
-    if (-not (Test-Path $DirectoryPath)) {
+    if (-not (Test-Path -LiteralPath $DirectoryPath)) {
         return $false
     }
 
-    return (Get-ChildItem $DirectoryPath -Filter "avcodec*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1) -and
-        (Get-ChildItem $DirectoryPath -Filter "avformat*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1) -and
-        (Get-ChildItem $DirectoryPath -Filter "avutil*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1) -and
-        (Get-ChildItem $DirectoryPath -Filter "swresample*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1) -and
-        (Get-ChildItem $DirectoryPath -Filter "swscale*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1)
+    return (Get-ChildItem -LiteralPath $DirectoryPath -Filter "avcodec*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1) -and
+        (Get-ChildItem -LiteralPath $DirectoryPath -Filter "avformat*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1) -and
+        (Get-ChildItem -LiteralPath $DirectoryPath -Filter "avutil*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1) -and
+        (Get-ChildItem -LiteralPath $DirectoryPath -Filter "swresample*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1) -and
+        (Get-ChildItem -LiteralPath $DirectoryPath -Filter "swscale*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1)
 }
 
 function Get-ManifestFileHashes {
@@ -110,7 +110,7 @@ function Test-RuntimeIntegrity {
 
     foreach ($entry in $ExpectedHashes.GetEnumerator()) {
         $filePath = Join-Path $DirectoryPath $entry.Key
-        if (-not (Test-Path $filePath)) {
+        if (-not (Test-Path -LiteralPath $filePath)) {
             return $false
         }
 
@@ -131,11 +131,11 @@ else {
     $ManifestPath
 }
 
-if (-not (Test-Path $resolvedManifestPath)) {
+if (-not (Test-Path -LiteralPath $resolvedManifestPath)) {
     throw "Runtime manifest not found at '$resolvedManifestPath'."
 }
 
-$manifest = Get-Content $resolvedManifestPath -Raw | ConvertFrom-Json
+$manifest = Get-Content -LiteralPath $resolvedManifestPath -Raw | ConvertFrom-Json
 $expectedFileHashes = Get-ManifestFileHashes -Manifest $manifest
 
 if (-not [string]::IsNullOrWhiteSpace($manifest.assetName) -and -not (Test-ManifestLeafName -Value $manifest.assetName)) {
@@ -175,9 +175,11 @@ if ((Test-RuntimeDirectory -DirectoryPath $runtimeDirectory) -and (Test-RuntimeI
 
 if ((Test-RuntimeDirectory -DirectoryPath $candidateRuntimeDirectory) -and (Test-RuntimeIntegrity -DirectoryPath $candidateRuntimeDirectory -ExpectedHashes $expectedFileHashes)) {
     Write-Host "Restoring FFmpeg runtime from local source-built candidate at '$candidateRuntimeDirectory'."
-    Remove-Item $runtimeDirectory -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $runtimeDirectory -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $runtimeDirectory | Out-Null
-    Copy-Item (Join-Path $candidateRuntimeDirectory "*.dll") -Destination $runtimeDirectory -Force
+    Get-ChildItem -LiteralPath $candidateRuntimeDirectory -Filter "*.dll" -File | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination $runtimeDirectory -Force
+    }
 
     if (-not (Test-RuntimeIntegrity -DirectoryPath $runtimeDirectory -ExpectedHashes $expectedFileHashes)) {
         throw "The local FFmpeg 8.1-line candidate runtime failed integrity validation after restore."
@@ -202,10 +204,12 @@ if (-not [string]::IsNullOrWhiteSpace($manifest.assetName)) {
     $archiveCandidatePaths += (Join-Path $artifactsRoot $manifest.assetName)
 }
 $archiveCandidatePaths = $archiveCandidatePaths | Select-Object -Unique
-$archivePath = $archiveCandidatePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+$archivePath = $archiveCandidatePaths | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
 
 $hasArchiveHash = -not [string]::IsNullOrWhiteSpace($manifest.assetSha256)
-$extractRoot = Join-Path $env:TEMP ("frameplayer-runtime-" + [Guid]::NewGuid().ToString("N"))
+$temporaryDirectory = [System.IO.Path]::GetTempPath()
+$extractRoot = Join-Path $temporaryDirectory ("frameplayer-runtime-" + [Guid]::NewGuid().ToString("N"))
+$downloadedArchivePath = $null
 
 New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $extractRoot | Out-Null
@@ -227,9 +231,10 @@ try {
             "https://github.com/jfleezy23/frame-player/releases/download/{0}/{1}" -f $manifest.tag, $manifest.assetName
         }
 
-        $archivePath = Join-Path $env:TEMP (([Guid]::NewGuid().ToString("N")) + "-" + $manifest.assetName)
+        $downloadedArchivePath = Join-Path $temporaryDirectory (([Guid]::NewGuid().ToString("N")) + "-" + $manifest.assetName)
+        $archivePath = $downloadedArchivePath
         Write-Host "Downloading FFmpeg runtime from $downloadUrl"
-        Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath -UseBasicParsing
     }
     else {
         Write-Host "Restoring FFmpeg runtime from local archive '$archivePath'."
@@ -243,14 +248,14 @@ try {
     }
 
     Write-Host "Extracting runtime archive"
-    Expand-Archive -Path $archivePath -DestinationPath $extractRoot -Force
+    Expand-Archive -LiteralPath $archivePath -DestinationPath $extractRoot -Force
 
     $sourceDirectory = Join-Path $extractRoot "ffmpeg"
     if (Test-RuntimeDirectory -DirectoryPath $extractRoot) {
         $sourceDirectory = $extractRoot
     }
-    elseif (-not (Test-Path $sourceDirectory)) {
-        $nestedFfmpegDirectory = Get-ChildItem $extractRoot -Directory -Recurse |
+    elseif (-not (Test-Path -LiteralPath $sourceDirectory)) {
+        $nestedFfmpegDirectory = Get-ChildItem -LiteralPath $extractRoot -Directory -Recurse |
             Where-Object { $_.Name -ieq "ffmpeg" } |
             Select-Object -First 1
 
@@ -261,9 +266,11 @@ try {
         $sourceDirectory = $nestedFfmpegDirectory.FullName
     }
 
-    Remove-Item $runtimeDirectory -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $runtimeDirectory -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $runtimeDirectory | Out-Null
-    Copy-Item (Join-Path $sourceDirectory "*.dll") -Destination $runtimeDirectory -Force
+    Get-ChildItem -LiteralPath $sourceDirectory -Filter "*.dll" -File | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination $runtimeDirectory -Force
+    }
 
     if (-not (Test-RuntimeIntegrity -DirectoryPath $runtimeDirectory -ExpectedHashes $expectedFileHashes)) {
         throw "The downloaded runtime failed integrity validation."
@@ -272,8 +279,8 @@ try {
     Write-Host "Runtime ready at '$runtimeDirectory'."
 }
 finally {
-    Remove-Item $extractRoot -Recurse -Force -ErrorAction SilentlyContinue
-    if ($archivePath -like (Join-Path $env:TEMP "*")) {
-        Remove-Item $archivePath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $extractRoot -Recurse -Force -ErrorAction SilentlyContinue
+    if ($null -ne $downloadedArchivePath) {
+        Remove-Item -LiteralPath $downloadedArchivePath -Force -ErrorAction SilentlyContinue
     }
 }

@@ -168,7 +168,9 @@ if ((Test-Path -LiteralPath $candidateRuntimeDirectory) -and
     Write-Host "Restoring FFmpeg export runtime from local source-built candidate at '$candidateRuntimeDirectory'."
     Remove-Item -LiteralPath $runtimeDirectory -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $runtimeDirectory | Out-Null
-    Copy-Item -Path (Join-Path $candidateRuntimeDirectory "*") -Destination $runtimeDirectory -Recurse -Force
+    Get-ChildItem -LiteralPath $candidateRuntimeDirectory -Force | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination $runtimeDirectory -Recurse -Force
+    }
 
     if (-not (Test-ExportRuntimeIntegrity -DirectoryPath $runtimeDirectory -ExpectedHashes $expectedFileHashes)) {
         throw "The local FFmpeg export runtime candidate failed integrity validation after restore."
@@ -197,7 +199,9 @@ if ([string]::IsNullOrWhiteSpace($manifest.assetSha256)) {
     Complete-BestEffort "Export-runtime manifest is missing assetSha256 for archive validation."
 }
 
-$extractRoot = Join-Path $env:TEMP ("frameplayer-export-runtime-" + [Guid]::NewGuid().ToString("N"))
+$temporaryDirectory = [System.IO.Path]::GetTempPath()
+$extractRoot = Join-Path $temporaryDirectory ("frameplayer-export-runtime-" + [Guid]::NewGuid().ToString("N"))
+$downloadedArchivePath = $null
 
 New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $extractRoot | Out-Null
@@ -211,9 +215,10 @@ try {
             "https://github.com/jfleezy23/frame-player/releases/download/{0}/{1}" -f $manifest.tag, $manifest.assetName
         }
 
-        $archivePath = Join-Path $env:TEMP (([Guid]::NewGuid().ToString("N")) + "-" + $manifest.assetName)
+        $downloadedArchivePath = Join-Path $temporaryDirectory (([Guid]::NewGuid().ToString("N")) + "-" + $manifest.assetName)
+        $archivePath = $downloadedArchivePath
         Write-Host "Downloading FFmpeg export runtime from $downloadUrl"
-        Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath -UseBasicParsing
     }
     else {
         Write-Host "Restoring FFmpeg export runtime from local archive '$archivePath'."
@@ -224,7 +229,7 @@ try {
         throw "The FFmpeg export-runtime archive failed SHA256 validation."
     }
 
-    Expand-Archive -Path $archivePath -DestinationPath $extractRoot -Force
+    Expand-Archive -LiteralPath $archivePath -DestinationPath $extractRoot -Force
 
     $sourceDirectory = Join-Path $extractRoot "ffmpeg-export"
     if ((Test-Path -LiteralPath $extractRoot) -and
@@ -245,7 +250,9 @@ try {
 
     Remove-Item -LiteralPath $runtimeDirectory -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $runtimeDirectory | Out-Null
-    Copy-Item -Path (Join-Path $sourceDirectory "*") -Destination $runtimeDirectory -Recurse -Force
+    Get-ChildItem -LiteralPath $sourceDirectory -Force | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination $runtimeDirectory -Recurse -Force
+    }
 
     if (-not (Test-ExportRuntimeIntegrity -DirectoryPath $runtimeDirectory -ExpectedHashes $expectedFileHashes)) {
         throw "The restored FFmpeg export runtime failed integrity validation."
@@ -255,7 +262,7 @@ try {
 }
 finally {
     Remove-Item -LiteralPath $extractRoot -Recurse -Force -ErrorAction SilentlyContinue
-    if ($archivePath -like (Join-Path $env:TEMP "*")) {
-        Remove-Item -LiteralPath $archivePath -Force -ErrorAction SilentlyContinue
+    if ($null -ne $downloadedArchivePath) {
+        Remove-Item -LiteralPath $downloadedArchivePath -Force -ErrorAction SilentlyContinue
     }
 }
