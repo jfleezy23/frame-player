@@ -120,11 +120,12 @@ namespace FramePlayer.Services
                     codecParameters != null && codecParameters->format >= 0
                         ? (AVPixelFormat)codecParameters->format
                         : AVPixelFormat.AV_PIX_FMT_NONE);
+                var containerBitRate = formatContext->bit_rate > 0
+                    ? (long?)formatContext->bit_rate
+                    : null;
                 var videoBitRate = codecParameters != null && codecParameters->bit_rate > 0
                     ? (long?)codecParameters->bit_rate
-                    : formatContext->bit_rate > 0
-                        ? (long?)formatContext->bit_rate
-                        : null;
+                    : containerBitRate;
 
                 mediaInfo = new VideoMediaInfo(
                     filePath,

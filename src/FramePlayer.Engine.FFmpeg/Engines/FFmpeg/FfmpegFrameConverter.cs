@@ -26,17 +26,15 @@ namespace FramePlayer.Engines.FFmpeg
                 maxFrameBytes);
 
             var converterMode = ResolveConverterMode();
-            if (converterMode != FfmpegFrameConverterMode.Managed)
-            {
-                if (TryConvertWithRust(
+            if (converterMode != FfmpegFrameConverterMode.Managed &&
+                TryConvertWithRust(
                     sourceFrame,
                     descriptor,
                     converterMode,
                     maxFrameBytes,
                     out var frameBuffer))
-                {
-                    return frameBuffer;
-                }
+            {
+                return frameBuffer;
             }
 
             return ConvertManaged(sourceFrame, descriptor, maxFrameBytes);

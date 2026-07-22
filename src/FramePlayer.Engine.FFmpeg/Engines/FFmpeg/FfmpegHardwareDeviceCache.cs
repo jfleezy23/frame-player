@@ -58,6 +58,7 @@ namespace FramePlayer.Engines.FFmpeg
                 }
                 catch (AggregateException)
                 {
+                    // A failed shared warmup is handled by the synchronous initialization fallback below.
                 }
 
                 lock (VulkanDeviceSync)

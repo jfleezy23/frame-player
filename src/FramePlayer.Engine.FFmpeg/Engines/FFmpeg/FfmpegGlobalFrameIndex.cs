@@ -348,10 +348,7 @@ namespace FramePlayer.Engines.FFmpeg
             RustFfmpegGlobalFrameIndexBuildMode buildMode,
             RustFfmpegGlobalFrameIndexResult rustIndex)
         {
-            if (rustIndex == null)
-            {
-                throw new ArgumentNullException(nameof(rustIndex));
-            }
+            ArgumentNullException.ThrowIfNull(rustIndex);
 
             return buildMode == RustFfmpegGlobalFrameIndexBuildMode.Auto &&
                 !rustIndex.Succeeded &&
@@ -363,10 +360,7 @@ namespace FramePlayer.Engines.FFmpeg
             CancellationToken cancellationToken,
             Stopwatch indexStopwatch)
         {
-            if (rustIndex == null)
-            {
-                throw new ArgumentNullException(nameof(rustIndex));
-            }
+            ArgumentNullException.ThrowIfNull(rustIndex);
 
             var timeBase = new AVRational
             {
