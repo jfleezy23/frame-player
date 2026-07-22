@@ -14,6 +14,7 @@ permissions:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   SONAR_SCANNER_VERSION: '11.2.1'
+  DOTNET_COVERAGE_VERSION: '18.9.0'
 
 jobs:
   analyze:
@@ -89,6 +90,21 @@ jobs:
           New-Item -Path .\.sonar\scanner -ItemType Directory -Force | Out-Null
           dotnet tool install dotnet-sonarscanner --tool-path .\.sonar\scanner --version $env:SONAR_SCANNER_VERSION
 
+      - name: Cache .NET coverage tool
+        if: steps.sonar_config.outputs.enabled == 'true'
+        id: cache-dotnet-coverage
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: .sonar/coverage-tool
+          key: ${{ runner.os }}-dotnet-coverage-${{ env.DOTNET_COVERAGE_VERSION }}
+
+      - name: Install .NET coverage tool
+        if: steps.sonar_config.outputs.enabled == 'true' && steps.cache-dotnet-coverage.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          New-Item -Path .\.sonar\coverage-tool -ItemType Directory -Force | Out-Null
+          dotnet tool install dotnet-coverage --tool-path .\.sonar\coverage-tool --version $env:DOTNET_COVERAGE_VERSION
+
       - name: Restore pinned FFmpeg runtime
         if: steps.sonar_config.outputs.enabled == 'true'
         shell: pwsh
@@ -119,11 +135,51 @@ jobs:
             /o:"${{ steps.sonar_config.outputs.organization }}" `
             /d:sonar.token="$env:SONAR_TOKEN" `
             /d:sonar.coverage.exclusions="$coverageExclusions" `
+            /d:sonar.cs.vscoveragexml.reportsPaths=".sonar/coverage/coverage.xml" `
             /d:sonar.cpd.exclusions="$duplicationExclusions" `
             /d:sonar.qualitygate.wait=true `
             /d:sonar.qualitygate.timeout=300
 
           dotnet build .\src\FramePlayer.Avalonia\FramePlayer.Avalonia.csproj -c Release
+
+          $coverageDirectory = ".\.sonar\coverage"
+          $coverageTool = ".\.sonar\coverage-tool\dotnet-coverage.exe"
+          $coreCoverage = Join-Path $coverageDirectory "core.coverage"
+          $avaloniaCoverage = Join-Path $coverageDirectory "avalonia.coverage"
+          $mergedCoverage = Join-Path $coverageDirectory "coverage.xml"
+          $coreTestResults = Join-Path $coverageDirectory "core-test-results"
+          $avaloniaTestResults = Join-Path $coverageDirectory "avalonia-test-results"
+          New-Item -Path $coverageDirectory -ItemType Directory -Force | Out-Null
+
+          & $coverageTool collect --output $coreCoverage --output-format coverage -- `
+            dotnet test .\tests\FramePlayer.Core.Tests\FramePlayer.Core.Tests.csproj `
+              -c Release --logger trx --results-directory $coreTestResults
+          & $coverageTool collect --output $avaloniaCoverage --output-format coverage -- `
+            dotnet test .\tests\FramePlayer.Avalonia.Tests\FramePlayer.Avalonia.Tests.csproj `
+              -c Release --filter "Category!=ReleaseCandidate" --logger trx `
+              --results-directory $avaloniaTestResults
+
+          foreach ($testRun in @(
+            @{ Name = "Core"; ResultsDirectory = $coreTestResults }
+            @{ Name = "Avalonia"; ResultsDirectory = $avaloniaTestResults }
+          )) {
+            $trxFiles = @(Get-ChildItem -LiteralPath $testRun.ResultsDirectory -Filter *.trx -File)
+            if ($trxFiles.Count -ne 1) {
+              throw "$($testRun.Name) coverage run produced $($trxFiles.Count) TRX files; expected exactly one."
+            }
+
+            [xml]$trx = Get-Content -LiteralPath $trxFiles[0].FullName -Raw
+            $executed = [int]$trx.TestRun.ResultSummary.Counters.executed
+            if ($executed -lt 1) {
+              throw "$($testRun.Name) coverage run did not execute any tests."
+            }
+          }
+
+          & $coverageTool merge $coreCoverage $avaloniaCoverage --output $mergedCoverage --output-format xml
+          $coverageXml = Get-Content -LiteralPath $mergedCoverage -Raw
+          if ($coverageXml -notmatch '<module\b') {
+            throw "Merged .NET coverage report did not contain any instrumented modules."
+          }
 
           .\.sonar\scanner\dotnet-sonarscanner end `
             /d:sonar.token="$env:SONAR_TOKEN"
