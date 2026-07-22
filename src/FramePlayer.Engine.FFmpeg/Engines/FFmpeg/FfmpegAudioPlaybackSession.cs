@@ -110,6 +110,7 @@ namespace FramePlayer.Engines.FFmpeg
                 }
                 catch (OperationCanceledException)
                 {
+                    // Cancellation is the expected shutdown signal during disposal.
                 }
                 catch (Exception ex)
                 {
@@ -338,6 +339,7 @@ namespace FramePlayer.Engines.FFmpeg
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                // The decode loop exits normally when its owning session is cancelled.
             }
             catch (Exception ex)
             {
@@ -375,11 +377,12 @@ namespace FramePlayer.Engines.FFmpeg
                 return;
             }
 
+            var codecSampleRate = _codecContext->sample_rate > 0
+                ? _codecContext->sample_rate
+                : _outputSampleRate;
             var inputSampleRate = frame->sample_rate > 0
                 ? frame->sample_rate
-                : _codecContext->sample_rate > 0
-                    ? _codecContext->sample_rate
-                    : _outputSampleRate;
+                : codecSampleRate;
             var outputSampleCount = checked((int)ffmpeg.av_rescale_rnd(
                 ffmpeg.swr_get_delay(_resampler, inputSampleRate) + frame->nb_samples,
                 _outputSampleRate,

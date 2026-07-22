@@ -960,17 +960,15 @@ namespace FramePlayer.Engines.FFmpeg
             FfmpegGlobalFrameIndexEntry indexedTargetEntry = null;
             bool wasClampedToLastIndexedFrame = false;
 
-            if (IsGlobalFrameIndexAvailable)
+            if (IsGlobalFrameIndexAvailable &&
+                !_globalFrameIndex.TryGetByAbsoluteFrameIndex(targetFrameIndex, out indexedTargetEntry))
             {
-                if (!_globalFrameIndex.TryGetByAbsoluteFrameIndex(targetFrameIndex, out indexedTargetEntry))
+                FfmpegGlobalFrameIndexEntry lastIndexedFrame;
+                if (_globalFrameIndex.TryGetLastEntry(out lastIndexedFrame))
                 {
-                    FfmpegGlobalFrameIndexEntry lastIndexedFrame;
-                    if (_globalFrameIndex.TryGetLastEntry(out lastIndexedFrame))
-                    {
-                        indexedTargetEntry = lastIndexedFrame;
-                        targetFrameIndex = lastIndexedFrame.AbsoluteFrameIndex;
-                        wasClampedToLastIndexedFrame = requestedFrameIndex > targetFrameIndex;
-                    }
+                    indexedTargetEntry = lastIndexedFrame;
+                    targetFrameIndex = lastIndexedFrame.AbsoluteFrameIndex;
+                    wasClampedToLastIndexedFrame = requestedFrameIndex > targetFrameIndex;
                 }
             }
 
@@ -1022,17 +1020,27 @@ namespace FramePlayer.Engines.FFmpeg
                 afterLanding: true);
             SetOperationInstrumentation(
                 indexedTargetEntry != null,
-                indexedTargetEntry != null
-                    ? (wasClampedToLastIndexedFrame
-                        ? indexedTargetEntry.SeekAnchorStrategy + "-clamped"
-                        : indexedTargetEntry.SeekAnchorStrategy)
-                    : StreamStartAnchorStrategy,
+                ResolveIndexedSeekAnchorStrategy(indexedTargetEntry, wasClampedToLastIndexedFrame),
                 indexedTargetEntry != null
                     ? (long?)indexedTargetEntry.SeekAnchorFrameIndex
                     : null);
             OnStateChanged();
             OnFramePresented(_currentFrame);
             return Task.CompletedTask;
+        }
+
+        private static string ResolveIndexedSeekAnchorStrategy(
+            FfmpegGlobalFrameIndexEntry indexedTargetEntry,
+            bool wasClampedToLastIndexedFrame)
+        {
+            if (indexedTargetEntry == null)
+            {
+                return StreamStartAnchorStrategy;
+            }
+
+            return wasClampedToLastIndexedFrame
+                ? indexedTargetEntry.SeekAnchorStrategy + "-clamped"
+                : indexedTargetEntry.SeekAnchorStrategy;
         }
 
         private static string ResolveCacheSeekInstrumentationMode(
@@ -1135,9 +1143,12 @@ namespace FramePlayer.Engines.FFmpeg
                         var exception = buildTask.Exception != null
                             ? buildTask.Exception.GetBaseException()
                             : null;
+                        var failureMessage = exception != null
+                            ? exception.Message
+                            : "unknown error";
                         _globalFrameIndexStatus = exception is FfmpegMediaResourceLimitException
                             ? "resource-limited"
-                            : "failed: " + (exception != null ? exception.Message : "unknown error");
+                            : "failed: " + failureMessage;
                     }
                     else
                     {
@@ -1306,6 +1317,7 @@ namespace FramePlayer.Engines.FFmpeg
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                // Playback cancellation is an expected control-flow signal.
             }
             catch (Exception ex)
             {
@@ -1355,6 +1367,7 @@ namespace FramePlayer.Engines.FFmpeg
                 }
                 catch (OperationCanceledException)
                 {
+                    // StopPlayback cancels this task before synchronously joining it.
                 }
             }
 
@@ -1412,6 +1425,7 @@ namespace FramePlayer.Engines.FFmpeg
                 }
                 catch (OperationCanceledException)
                 {
+                    // Disposal cancels this task before synchronously joining it.
                 }
             }
 
@@ -1888,14 +1902,11 @@ namespace FramePlayer.Engines.FFmpeg
             IsGpuActive = false;
             _hardwarePixelFormat = AVPixelFormat.AV_PIX_FMT_NONE;
 
-            if (_codecContext != null)
+            if (_codecContext != null && _codecContext->hw_device_ctx != null)
             {
-                if (_codecContext->hw_device_ctx != null)
-                {
-                    var deviceContext = _codecContext->hw_device_ctx;
-                    ffmpeg.av_buffer_unref(&deviceContext);
-                    _codecContext->hw_device_ctx = null;
-                }
+                var deviceContext = _codecContext->hw_device_ctx;
+                ffmpeg.av_buffer_unref(&deviceContext);
+                _codecContext->hw_device_ctx = null;
             }
 
             if (_hardwareDeviceContext != null)
@@ -3100,11 +3111,9 @@ namespace FramePlayer.Engines.FFmpeg
                 : FfmpegNativeHelpers.AsNullableTimestamp(decodedFrame->duration);
             _nominalFrameRate = FfmpegNativeHelpers.GetNominalFrameRate(_formatContext, _videoStream, decodedFrame);
             var indexedEntry = ResolveIndexedFrameIdentity(presentationTimestamp, decodeTimestamp);
-            var resolvedPresentationTime = indexedEntry != null
-                ? indexedEntry.PresentationTime
-                : presentationTimestamp.HasValue
-                    ? FfmpegNativeHelpers.ToTimeSpan(presentationTimestamp.Value, _videoStreamTimeBase)
-                    : TimeSpan.Zero;
+            var resolvedPresentationTime = ResolveDecodedFramePresentationTime(
+                indexedEntry,
+                presentationTimestamp);
             var resolvedFrameIndex = indexedEntry != null
                 ? (long?)indexedEntry.AbsoluteFrameIndex
                 : _decodedSegmentFrameCount;
@@ -3288,6 +3297,20 @@ namespace FramePlayer.Engines.FFmpeg
             return _globalFrameIndex.TryResolve(presentationTimestamp, decodeTimestamp, out indexedEntry)
                 ? indexedEntry
                 : null;
+        }
+
+        private TimeSpan ResolveDecodedFramePresentationTime(
+            FfmpegGlobalFrameIndexEntry indexedEntry,
+            long? presentationTimestamp)
+        {
+            if (indexedEntry != null)
+            {
+                return indexedEntry.PresentationTime;
+            }
+
+            return presentationTimestamp.HasValue
+                ? FfmpegNativeHelpers.ToTimeSpan(presentationTimestamp.Value, _videoStreamTimeBase)
+                : TimeSpan.Zero;
         }
 
         private long FindBackwardReconstructionSeekTimestamp(DecodedFrameBuffer frame)
