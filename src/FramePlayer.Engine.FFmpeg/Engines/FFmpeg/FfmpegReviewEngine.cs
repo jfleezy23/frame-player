@@ -719,64 +719,16 @@ namespace FramePlayer.Engines.FFmpeg
                     false));
             }
 
-            DecodedFrameBuffer previousFrame;
-            if (_frameCache.TryMovePrevious(out previousFrame))
+            FrameStepResult stepResult;
+            if (TryStepBackwardFromCache(out stepResult))
             {
-                LastFrameAdvanceWasCacheHit = true;
-                SetCurrentFrame(previousFrame);
-                IsPlaying = false;
-                RecordNoCacheRefill("step-backward-cache-hit", afterLanding: true);
-                SetOperationInstrumentation(
-                    IsGlobalFrameIndexAvailable && previousFrame.Descriptor.IsFrameIndexAbsolute,
-                    "cache",
-                    previousFrame.Descriptor.IsFrameIndexAbsolute ? previousFrame.Descriptor.FrameIndex : null);
-                OnStateChanged();
-                OnFramePresented(_currentFrame);
-                return Task.FromResult(FrameStepResult.Succeeded(
-                    -1,
-                    _position,
-                    true,
-                    false,
-                    "Moved to the previous cached decoded frame."));
+                return Task.FromResult(stepResult);
             }
 
             var currentAbsoluteFrameIndex = GetAbsoluteFrameIndex(_currentFrame);
-            if (IsGlobalFrameIndexAvailable && currentAbsoluteFrameIndex.HasValue)
+            if (TryStepBackwardUsingGlobalIndex(currentAbsoluteFrameIndex, out stepResult, cancellationToken))
             {
-                if (currentAbsoluteFrameIndex.Value <= 0L)
-                {
-                    SetOperationInstrumentation(true, "global-index-first-frame", 0L);
-                    return Task.FromResult(FrameStepResult.Failed(
-                        -1,
-                        _position,
-                        "Already at the first displayable frame.",
-                        false,
-                        false));
-                }
-
-                FfmpegGlobalFrameIndexEntry previousEntry;
-                if (_globalFrameIndex.TryGetByAbsoluteFrameIndex(currentAbsoluteFrameIndex.Value - 1L, out previousEntry))
-                {
-                    var indexedWindow = MaterializeIndexedFrameWindow(previousEntry, cancellationToken);
-                    if (indexedWindow != null)
-                    {
-                        LoadFrameWindow(indexedWindow.WindowFrames, indexedWindow.CurrentIndex);
-                        SetCurrentFrame(_frameCache.Current);
-                        _playbackStartNeedsDecoderRealignment = indexedWindow.RequiresDecoderRealignment;
-                        LastFrameAdvanceWasCacheHit = false;
-                        IsPlaying = false;
-                        RecordNoCacheRefill("step-backward-indexed-window", afterLanding: true);
-                        SetOperationInstrumentation(true, previousEntry.SeekAnchorStrategy, previousEntry.SeekAnchorFrameIndex);
-                        OnStateChanged();
-                        OnFramePresented(_currentFrame);
-                        return Task.FromResult(FrameStepResult.Succeeded(
-                            -1,
-                            _position,
-                            false,
-                            true,
-                            "Moved to the previous decoded frame using the global frame index anchor."));
-                    }
-                }
+                return Task.FromResult(stepResult);
             }
 
             var originalCurrentFrame = _currentFrame;
@@ -825,6 +777,87 @@ namespace FramePlayer.Engines.FFmpeg
                 false,
                 true,
                 "Moved to the previous decoded frame by seeking backward and reconstructing forward."));
+        }
+
+        private bool TryStepBackwardFromCache(out FrameStepResult stepResult)
+        {
+            stepResult = null;
+            DecodedFrameBuffer previousFrame;
+            if (!_frameCache.TryMovePrevious(out previousFrame))
+            {
+                return false;
+            }
+
+            LastFrameAdvanceWasCacheHit = true;
+            SetCurrentFrame(previousFrame);
+            IsPlaying = false;
+            RecordNoCacheRefill("step-backward-cache-hit", afterLanding: true);
+            SetOperationInstrumentation(
+                IsGlobalFrameIndexAvailable && previousFrame.Descriptor.IsFrameIndexAbsolute,
+                "cache",
+                previousFrame.Descriptor.IsFrameIndexAbsolute ? previousFrame.Descriptor.FrameIndex : null);
+            OnStateChanged();
+            OnFramePresented(_currentFrame);
+            stepResult = FrameStepResult.Succeeded(
+                -1,
+                _position,
+                true,
+                false,
+                "Moved to the previous cached decoded frame.");
+            return true;
+        }
+
+        private bool TryStepBackwardUsingGlobalIndex(
+            long? currentAbsoluteFrameIndex,
+            out FrameStepResult stepResult,
+            CancellationToken cancellationToken)
+        {
+            stepResult = null;
+            if (!IsGlobalFrameIndexAvailable || !currentAbsoluteFrameIndex.HasValue)
+            {
+                return false;
+            }
+
+            if (currentAbsoluteFrameIndex.Value <= 0L)
+            {
+                SetOperationInstrumentation(true, "global-index-first-frame", 0L);
+                stepResult = FrameStepResult.Failed(
+                    -1,
+                    _position,
+                    "Already at the first displayable frame.",
+                    false,
+                    false);
+                return true;
+            }
+
+            FfmpegGlobalFrameIndexEntry previousEntry;
+            if (!_globalFrameIndex.TryGetByAbsoluteFrameIndex(currentAbsoluteFrameIndex.Value - 1L, out previousEntry))
+            {
+                return false;
+            }
+
+            var indexedWindow = MaterializeIndexedFrameWindow(previousEntry, cancellationToken);
+            if (indexedWindow == null)
+            {
+                return false;
+            }
+
+            LoadFrameWindow(indexedWindow.WindowFrames, indexedWindow.CurrentIndex);
+            SetCurrentFrame(_frameCache.Current);
+            _playbackStartNeedsDecoderRealignment = indexedWindow.RequiresDecoderRealignment;
+            LastFrameAdvanceWasCacheHit = false;
+            IsPlaying = false;
+            RecordNoCacheRefill("step-backward-indexed-window", afterLanding: true);
+            SetOperationInstrumentation(true, previousEntry.SeekAnchorStrategy, previousEntry.SeekAnchorFrameIndex);
+            OnStateChanged();
+            OnFramePresented(_currentFrame);
+            stepResult = FrameStepResult.Succeeded(
+                -1,
+                _position,
+                false,
+                true,
+                "Moved to the previous decoded frame using the global frame index anchor.");
+            return true;
         }
 
         public Task SeekToTimeAsync(TimeSpan position, CancellationToken cancellationToken = default(CancellationToken))
@@ -1134,29 +1167,7 @@ namespace FramePlayer.Engines.FFmpeg
                     _isGlobalFrameIndexBuildInProgress = false;
                     LastGlobalFrameIndexBuildMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
 
-                    if (buildTask.IsCanceled)
-                    {
-                        _globalFrameIndexStatus = "cancelled";
-                    }
-                    else if (buildTask.IsFaulted)
-                    {
-                        var exception = buildTask.Exception != null
-                            ? buildTask.Exception.GetBaseException()
-                            : null;
-                        var failureMessage = exception != null
-                            ? exception.Message
-                            : "unknown error";
-                        _globalFrameIndexStatus = exception is FfmpegMediaResourceLimitException
-                            ? "resource-limited"
-                            : "failed: " + failureMessage;
-                    }
-                    else
-                    {
-                        _globalFrameIndex = buildTask.Result;
-                        _globalFrameIndexStatus = IsGlobalFrameIndexAvailable
-                            ? "ready"
-                            : "empty";
-                    }
+                    ApplyGlobalFrameIndexBuildResult(buildTask);
 
                     ApplyEffectiveDecodedFrameCacheLimits();
 
@@ -1178,6 +1189,34 @@ namespace FramePlayer.Engines.FFmpeg
                     OnFramePresented(_currentFrame);
                 }
             }
+        }
+
+        private void ApplyGlobalFrameIndexBuildResult(Task<FfmpegGlobalFrameIndex> buildTask)
+        {
+            if (buildTask.IsCanceled)
+            {
+                _globalFrameIndexStatus = "cancelled";
+                return;
+            }
+
+            if (buildTask.IsFaulted)
+            {
+                var exception = buildTask.Exception != null
+                    ? buildTask.Exception.GetBaseException()
+                    : null;
+                var failureMessage = exception != null
+                    ? exception.Message
+                    : "unknown error";
+                _globalFrameIndexStatus = exception is FfmpegMediaResourceLimitException
+                    ? "resource-limited"
+                    : "failed: " + failureMessage;
+                return;
+            }
+
+            _globalFrameIndex = buildTask.Result;
+            _globalFrameIndexStatus = IsGlobalFrameIndexAvailable
+                ? "ready"
+                : "empty";
         }
 
         private void CancelGlobalFrameIndexBuild(bool resetStatus)
