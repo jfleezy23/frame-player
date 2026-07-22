@@ -7,6 +7,11 @@
 - Do not create or maintain separate platform product implementations, tests, packaging paths, release tracks, or documentation.
 - Shared libraries under `src/FramePlayer.Core` and `src/FramePlayer.Engine.FFmpeg` are part of the universal Avalonia product and should remain platform-neutral except where a native platform adapter is required.
 
+## Test Corpus
+
+- The canonical local media test corpus is stored at `C:\Projects\Video Test Files`.
+- Use this corpus for local corpus and release-candidate validation when it is available; do not copy its media files into the repository.
+
 ## Sonar Cleanup Policy
 
 - Do not start broad Sonar cleanup or refactoring by default.
