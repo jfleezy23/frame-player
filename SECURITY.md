@@ -24,7 +24,7 @@ This repository currently uses a mix of GitHub-native security tooling and workf
 - The `build` check from `Windows CI` is required before merges into `main`.
 - Merged branches are deleted automatically to reduce branch sprawl and stale release drift.
 - `Windows CI` runs on pushes and pull requests and verifies pinned runtime restore, the universal Release build, tests, and packaging.
-- GitHub code scanning is enabled through GitHub's default CodeQL setup for `actions` and `csharp`.
+- GitHub code scanning is enabled through GitHub's default CodeQL setup for `actions`, `csharp`, and `rust`.
 - GitHub secret scanning is enabled to detect known leaked secret patterns in repository history.
 - GitHub push protection is enabled to block many secrets before they are pushed.
 - The dependency graph and automatic dependency submission are enabled so GitHub can reason about shipped dependencies beyond just manifest files.
