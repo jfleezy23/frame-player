@@ -8,16 +8,7 @@ Frame Player is a frame-first video review tool for people who need to know exac
 | --- | --- | --- | --- |
 | Stable (Unified) | Windows x64 and Apple Silicon macOS | `v2.0.0` | [Frame Player v2.0.0](https://github.com/jfleezy23/frame-player/releases/tag/v2.0.0) |
 
-Frame Player `v2.0.0` is the new unified, cross-platform release built on Avalonia, fully superseding the legacy Windows WPF `v1.8.x` path.
-
-## Screenshot Gallery
-
-These are real app captures. The current checked-in shots show empty-state layouts because clean loaded-video Windows screenshots were not available in this docs pass.
-
-| Windows | macOS |
-| --- | --- |
-| ![Windows single-pane empty state](../assets/screenshots/windows-main.png) | ![macOS single-pane empty state](../assets/screenshots/macos-main.png) |
-| ![Windows two-pane compare empty state](../assets/screenshots/windows-compare.png) | ![macOS two-pane compare empty state](../assets/screenshots/macos-compare.png) |
+Frame Player `v2.0.0` is the cross-platform Avalonia release for Windows and macOS.
 
 ## What To Read Next
 

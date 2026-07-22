@@ -35,7 +35,7 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
-        public void UnifiedPreview_DoesNotBlockWindowsAudioMediaPlayback()
+        public void UnifiedApplication_DoesNotBlockWindowsAudioMediaPlayback()
         {
             var mainWindowSource = ReadRepositoryFile(
                 "src",
@@ -48,7 +48,7 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
-        public void UnifiedPreview_TimelineSeekPreservesActivePlayback()
+        public void UnifiedApplication_TimelineSeekPreservesActivePlayback()
         {
             var mainWindowSource = ReadRepositoryFile(
                 "src",
@@ -77,7 +77,11 @@ namespace FramePlayer.Avalonia.Tests
             var directory = new DirectoryInfo(startDirectory);
             while (directory != null)
             {
-                if (File.Exists(Path.Combine(directory.FullName, "FramePlayer.csproj")))
+                if (File.Exists(Path.Combine(
+                    directory.FullName,
+                    "src",
+                    "FramePlayer.Avalonia",
+                    "FramePlayer.Avalonia.csproj")))
                 {
                     return directory.FullName;
                 }

@@ -5,9 +5,12 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FFMPEG_TAG="n8.1.2"
 FFMPEG_COMMIT="38b88335f99e76ed89ff3c93f877fdefce736c13"
 X264_COMMIT="0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee"
+MACOS_DEPLOYMENT_TARGET="13.0"
 WORK_ROOT="${WORK_ROOT:-/tmp/frameplayer-ffmpeg-macos-8.1.2-source-build}"
 RUNTIME_DIR="${RUNTIME_DIR:-$ROOT_DIR/Runtime/macos/osx-arm64/ffmpeg}"
 JOBS="${JOBS:-$(sysctl -n hw.logicalcpu)}"
+
+export MACOSX_DEPLOYMENT_TARGET="$MACOS_DEPLOYMENT_TARGET"
 
 if [[ "$(uname -s)-$(uname -m)" != "Darwin-arm64" ]]; then
   echo "This build script currently supports only native Apple Silicon macOS hosts." >&2
@@ -27,7 +30,7 @@ if [[ "$runtime_parent" != "$ROOT_DIR/Runtime/macos/osx-arm64" && "$runtime_pare
   exit 2
 fi
 
-for tool in clang git install_name_tool make shasum; do
+for tool in clang git install_name_tool make otool shasum; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "Missing required build tool: $tool" >&2
     exit 2
@@ -115,6 +118,8 @@ configure_flags=(
   --disable-autodetect
   --disable-videotoolbox
   --disable-audiotoolbox
+  --extra-cflags=-mmacosx-version-min=$MACOS_DEPLOYMENT_TARGET
+  --extra-ldflags=-mmacosx-version-min=$MACOS_DEPLOYMENT_TARGET
   --extra-version=frameplayer-macos-source
 )
 
@@ -148,6 +153,14 @@ for required_dylib in "${required_dylibs[@]}"; do
   fi
 done
 
+for staged_dylib in "$STAGING_DIR"/*.dylib; do
+  dylib_minimum="$(otool -l "$staged_dylib" | awk '$1 == "minos" { print $2; exit }')"
+  if [[ "$dylib_minimum" != "$MACOS_DEPLOYMENT_TARGET" ]]; then
+    echo "Unexpected macOS deployment target for $(basename "$staged_dylib"): '$dylib_minimum' (expected '$MACOS_DEPLOYMENT_TARGET')." >&2
+    exit 4
+  fi
+done
+
 clang_version="$(clang --version | head -1)"
 make_version="$(make --version | head -1)"
 {
@@ -155,6 +168,7 @@ make_version="$(make --version | head -1)"
   echo "FFmpeg commit: $actual_ffmpeg_commit"
   echo "x264 commit: $X264_COMMIT"
   echo "Toolchain: macOS clang arm64"
+  echo "Deployment target: $MACOS_DEPLOYMENT_TARGET"
   echo "Clang: $clang_version"
   echo "Make: $make_version"
   echo "Configure flags:"

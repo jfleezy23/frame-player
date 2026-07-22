@@ -1,99 +1,57 @@
-# Frame Player Release Verification Notes
+# Frame Player Validation Notes
 
-Release: `1.8.4`
+Frame Player is one Avalonia application in `src/FramePlayer.Avalonia`. The same application sources are built and packaged for every supported operating system.
 
-## Current release focus
+## Automated validation
 
-- The app is now custom FFmpeg only; FFME has been removed from the active path and older FFME-era releases are legacy/deprecated.
-- Video playback, audio playback, basic A/V sync, seek-to-time, seek-to-frame, exact frame stepping, and opportunistic Vulkan decode with strict CPU fallback are implemented in the custom engine.
-- The current WPF shell includes the combined Play/Pause control, cache-status visibility, immediate post-frame-entry arrow-key stepping, a visible GPU toggle, pane-aware decoded-frame budgeting, shared Vulkan warmup, and backend-aware compare behavior without changing the frames-first review contract.
-- The current `v1.8.4` release keeps the `v1.8.3` release surface and adds a focused feedback pass for two-pane compare terminology and pane-local transport controls.
-- The current review surface includes single-pane `Audio Insertion > Replace Audio Track...` for H.264 `.mp4` sources, pane-local paused zoom/pan in both review layouts, zoom-aware pixel readout, `Playback > Reset Zoom`, pane context-menu zoom reset, and crop-aware clip/compare export rendering.
-- The shipped app output for this release line no longer includes `ffmpeg.exe`, `ffprobe.exe`, or an `ffmpeg-tools` directory; probe/export work runs through the DLL-only `ffmpeg-export` runtime in the headless export host.
+Run the supported build and test surface from the repository root:
 
-## Manual test checklist
+```powershell
+dotnet build .\src\FramePlayer.Avalonia\FramePlayer.Avalonia.csproj -c Release
+dotnet test .\tests\FramePlayer.Core.Tests\FramePlayer.Core.Tests.csproj -c Release
+dotnet test .\tests\FramePlayer.Avalonia.Tests\FramePlayer.Avalonia.Tests.csproj -c Release --filter "Category!=ReleaseCandidate"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Test-RepoHarnessScripts.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Test-WorkflowActionPinning.ps1
+```
 
-- Launch the app from `bin\TestDrop\FramePlayer.exe`.
-- Open a normal video file and verify the first displayed frame is frame `1`.
-- Press `Ctrl+N` and confirm a second blank Frame Player window opens without cloning the current media or compare session.
-- Watch the status bar after open: it should distinguish index building/ready from the decoded review-cache window, and eligible tiny clips should report `Cache: complete` after the complete decoded cache is loaded.
-- Open a representative HEVC file with `Playback > Use GPU Acceleration` enabled and confirm diagnostics/log output report `ffmpeg-vulkan` when the local machine supports the Vulkan path.
-- Disable `Playback > Use GPU Acceleration`, reopen the same file, and confirm the app stays correct on the CPU path.
-- Press Play, confirm visible playback advances, then press Pause.
-- Set `[` and `]` in single-pane mode, enable `Playback > Loop Playback`, and confirm playback loops the boxed range instead of the full clip.
-- Right-click the main timeline and confirm `Set Position A Here`, `Set Position B Here`, `Loop Playback`, and `Save Loop As Clip...` all work from the timeline menu.
-- On the main timeline, confirm `Set Position B Here` is blocked when the clicked target lands before position A, and that the menu enables once the clicked target is at or after A.
-- With a valid reviewed main-loop range, use `Playback > Save Loop As Clip...` and confirm an MP4 clip is written with duration close to the selected A/B window.
-- In single-pane mode with a loaded H.264 `.mp4`, open `Audio Insertion > Replace Audio Track...`, choose a `.wav`, save to a new `.mp4`, and confirm the output keeps the source video duration while replacing the original audio.
-- Repeat `Audio Insertion > Replace Audio Track...` with a `.mp3` replacement track and confirm the output stays an `.mp4`, the video stream is preserved, and the replacement audio is present.
-- Switch to two-pane compare and confirm `Audio Insertion > Replace Audio Track...` stays visible but disabled with a tooltip explaining audio insertion is unavailable there.
-- Load a non-`.mp4` source or a non-H.264 `.mp4` source and confirm `Audio Insertion > Replace Audio Track...` stays disabled with a reason that matches the source limitation.
-- Set a loop marker before indexing is ready on a large file and confirm the loop status stays visibly pending instead of pretending the range is finalized.
-- Seek by time and confirm playback/review state remains coherent.
-- On a large HEVC file, click-seek before indexing finishes and confirm the time lands while the frame number stays visibly pending instead of claiming a fake absolute frame.
-- Type a frame number, commit it, then press Left/Right immediately to verify frame stepping works without another play/pause cycle.
-- Step backward and forward repeatedly and confirm the frame counter moves exactly one frame at a time.
-- In single-pane mode while paused, use the mouse wheel to zoom, left-drag to pan, then play, pause, seek, and frame-step to confirm the zoomed viewport persists until `Playback > Reset Zoom` is used.
-- While zoomed, confirm the status-bar pixel readout tracks the zoomed crop rather than the original full-frame fit.
-- Open two panes and confirm both panes stay responsive while stepping and seeking together.
-- In two-pane mode, confirm the main transport controls both panes together while the pane-local sliders and frame boxes still operate on their own panes.
-- In two-pane mode, set different pane-local loop boxes on Primary and Compare and confirm each pane slider shows its own boxed range instead of sharing one loop box.
-- In two-pane mode, confirm only the Primary and Compare pane timelines expose pane-local `Set Position A Here`, `Set Position B Here`, `Loop Playback`, and `Save Loop As Clip...` actions.
-- In two-pane mode while paused, zoom and pan each pane independently, then confirm playback keeps each pane in its own zoomed state and `Reset Zoom` from the pane context menu only resets the targeted pane.
-- In two-pane mode, confirm `Link Zoom` is enabled by default, mirrors zoom/pan changes between panes, and can be disabled when independent pane review is needed.
-- In two-pane mode, confirm the compare toolbar uses `Sync Right to Left` and `Sync Left to Right`, then confirm each action syncs the target pane to the source pane.
-- In two-pane mode, confirm each pane-local transport row exposes previous frame, rewind 100 frames, play/pause, fast forward 100 frames, and next frame in the same order as the main transport.
-- In two-pane mode with the main transport applying to all panes, seek by time and confirm exact frame sync is used when indexed frame identity is available; if it is not available, confirm the notification area reports that presentation-time sync is being used.
-- In two-pane mode, right-click each pane and use `Save Loop As Clip...` to confirm Primary and Compare can each export their own pane-local loop as separate MP4 clips.
-- In single-pane mode with a zoomed viewport, export a reviewed loop clip and confirm the rendered MP4 reflects the zoomed crop while keeping the existing loop timing and audio behavior.
-- In two-pane mode, use `Playback > Export Side-by-Side Compare...`, choose `Loop`, select audio from both panes on separate runs, and confirm the merged MP4 keeps both panes at full reviewed raster size without downscaling.
-- In two-pane mode, use `Playback > Export Side-by-Side Compare...`, choose `Whole Video`, and confirm the merged MP4 preserves the current compare alignment by adding black lead-in to the earlier pane instead of trimming it away.
-- In two-pane mode with independent pane zoom/pan applied, run both `Loop` and `Whole Video` compare exports and confirm each pane's rendered side uses its own zoomed crop without changing loop timing, whole-video alignment, or audio-source selection rules.
-- If the selected side-by-side export audio source has no audio stream, confirm the merged MP4 still exports successfully as silent video.
-- Right-click the primary pane and the compare pane, open `Video Info...` from both, and confirm two inspector windows can stay open at once with the correct pane-specific FFmpeg metadata.
-- While zoomed, confirm simple click still focuses the pane, double-click still toggles fullscreen, and `Playback > Reset Zoom` returns the focused pane to the full-frame view without disturbing playback state.
-- Try at least one video with audio and confirm audio starts during playback.
-- If possible, try one video-only clip and confirm playback still works without audio errors.
+On Windows, build the self-contained package with:
 
-## Automated regression coverage
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Package-UnifiedWindows.ps1 -Version 2.0.0-rc.1
+```
 
-- The repository-carried PowerShell harness is still the primary product-level validation surface:
-  - `scripts\Run-RegressionSuite.ps1` for app-driven regression coverage
-  - `scripts\Run-ReviewEngine-ManualTests.ps1` for deterministic manual review-engine sweeps, launched headlessly through the app runtime
-  - `scripts\Build-TestDrop.ps1` for release-style runtime/test-drop validation
-- Small unit tests can complement these harnesses for cold-path service logic, but they do not replace the app-driven harness for frame-review behavior.
-- The supported full-corpus regression path now runs hidden-window timed playback, loop playback, clip export, side-by-side compare export, and audio insertion coverage for eligible H.264 `.mp4` files. Audio insertion checks cover WAV replacement, compare-mode disabled state, and MP3 replacement through a repo-local fixture generated by the outer PowerShell harness.
-- The packaged regression suite also includes the repo-carried `dist\Frame Player\sample-test.mp4` when present, so the final file count can be one higher than the external corpus count alone.
-- Crop-aware zoom/export and linked compare zoom are covered by the app-driven harness; keep manual spot checks for visible UI feel and release confidence.
-- Full-corpus trim/export coverage is expected on the active supported container set: `.avi`, `.m4v`, `.mp4`, `.mkv`, and `.wmv`.
-- `test_pattern_boundary.mp4` is back in the local supported corpus as a targeted short-clip boundary case. Its short duration can produce expected coverage warnings for repeated-wrap and pane-local loop checks; those warnings should not be treated as product failures when the correctness checks stay green.
-- `.ts` remains intentionally outside the active supported surface and is skipped by the full-corpus regression suite instead of counted as a product failure.
+On macOS, build the self-contained application bundle and archive with:
+
+```bash
+PACKAGE_VERSION=2.0.0-rc.1 script/package_unified_macos_release.sh --unsigned
+```
+
+Release-candidate corpus tests are tagged `Category=ReleaseCandidate` and require the platform-specific corpus environment documented in `docs/macos-release.md` or the Windows Rust corpus harness.
+
+## Manual product checks
+
+- Open a representative clip and confirm the first frame is displayed.
+- Exercise play, pause, time seek, exact frame seek, and single-frame stepping.
+- Set A/B markers and verify loop playback and loop clip export.
+- Verify a supported H.264 MP4 can replace its audio with WAV and MP3 inputs.
+- Open compare mode; verify synchronized and pane-local transport, independent loop ranges, linked and unlinked zoom, and side-by-side export.
+- Verify pixel inspection, zoom, pan, and reset behavior while paused and across transport operations.
+- Confirm a file with audio plays audio and a video-only file remains usable.
+- Exercise both the normal CPU path and opportunistic Vulkan acceleration where the local runtime, codec, device, and driver support it.
+- Confirm diagnostics identify the selected decode path and report actionable runtime failures.
+
+## Runtime and export checks
+
+- The application consumes the pinned FFmpeg DLL/dylib runtime described by `Runtime/runtime-manifest.json`.
+- Export work runs through the same application executable in headless host mode and the separately staged DLL/dylib runtime described by `Runtime/export-runtime-manifest.json`.
+- A shipped package must not contain `ffmpeg.exe`, `ffprobe.exe`, or an `ffmpeg-tools` directory.
+- Developer-only CLI tools may be restored locally by `scripts/Ensure-DevExportTools.ps1`; they are not distribution inputs.
+- Windows packages must contain `libwinpthread-1.dll` beside the FFmpeg libraries and `FramePlayer.Avalonia.exe`.
 
 ## Known limitations
 
-- GPU decode is opportunistic, not guaranteed: unsupported runtime, codec, driver, or device combinations must stay on CPU decode.
-- The current GPU path still performs hardware decode plus CPU readback and BGRA conversion for the existing WPF presentation path.
-- Playback is still an MVP path: no audio device selection, volume controls, advanced drift correction, or frame dropping/catch-up behavior.
-- Cache/index status may change quickly on short clips; complete decoded-cache state is shown after the cache has actually loaded.
-- Large files still require a full-file frame index scan, but that work now happens in the background after the first frame is visible.
-- The pinned FFmpeg runtime is `n8.1-frameplayer-source`, recorded in `Runtime\runtime-manifest.json`.
-- The runtime was built from the official FFmpeg source tag `n8.1` and is restored locally from the self-built candidate/archive produced by `scripts\ffmpeg\Build-FFmpeg-8.1.ps1`.
-- The bundled runtime also requires `libwinpthread-1.dll`; it must ship beside `FramePlayer.exe` with the FFmpeg DLL set.
-- Export work uses a separate `ffmpeg-export` folder beside the app output and depends on the hashes recorded in `Runtime\export-runtime-manifest.json`.
-- The `ffmpeg-tools` bundle remains a local/dev harness asset only and is not expected in the shipped app output.
-- Clean-runner bootstrap restores from the verified runtime-only `v1.5.0` release asset recorded in `Runtime\runtime-manifest.json`.
-
-## Build and shortcut
-
-- Test drop executable: `bin\TestDrop\FramePlayer.exe`
-- Startup-open helper for visible UI automation: `bin\TestDrop\FramePlayer.exe --open-file <absolute-media-path>`
-- Test-drop build script: `scripts\Build-TestDrop.ps1`
-- Live visible loop verifier: `scripts\ui_loop_visible_test.py`
-- Desktop shortcut name: `Frame Player`
-- Shortcut refresh script: `scripts\Create-Comparison-Shortcuts.ps1`
-
-To refresh the shortcut after rebuilding:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Create-Comparison-Shortcuts.ps1"
-```
+- Hardware decode is opportunistic and must fall back cleanly to CPU decode.
+- Hardware frames are currently read back and converted to BGRA before presentation.
+- Playback has no audio-device selection, volume controls, advanced drift correction, or frame-dropping catch-up policy.
+- Large files require a background full-file frame-index scan after the first frame becomes visible.
+- The checked-in macOS runtime is Apple Silicon focused. An Intel or universal2 artifact requires pinned and validated `osx-x64` FFmpeg and Rust libraries.

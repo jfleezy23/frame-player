@@ -267,7 +267,7 @@ namespace FramePlayer.Services
             }
         }
 
-        [SuppressMessage("Critical Code Smell", "S3776:Cognitive Complexity of methods should not be too high", Justification = "Budget recalculation is covered by release-candidate validation; refactoring during preview stabilization risks playback/cache regressions.")]
+        [SuppressMessage("Critical Code Smell", "S3776:Cognitive Complexity of methods should not be too high", Justification = "Budget recalculation is covered by release-candidate validation; refactoring this behavior-sensitive path risks playback/cache regressions.")]
         private List<PaneBudgetAllocation> RecalculateAllocationsLocked()
         {
             var changedAllocations = new List<PaneBudgetAllocation>();

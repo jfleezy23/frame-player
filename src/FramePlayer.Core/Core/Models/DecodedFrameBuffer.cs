@@ -4,7 +4,7 @@ using System.Threading;
 
 namespace FramePlayer.Core.Models
 {
-    // Platform-neutral raw frame payload for future non-WPF rendering surfaces.
+    // Platform-neutral raw frame payload for universal rendering surfaces.
     public sealed class DecodedFrameBuffer : IDisposable
     {
         public DecodedFrameBuffer(

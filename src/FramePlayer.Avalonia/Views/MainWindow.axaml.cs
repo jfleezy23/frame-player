@@ -262,19 +262,19 @@ namespace FramePlayer.Avalonia.Views
             }
         }
 
-        [SuppressMessage("Major Code Smell", "S1144:Unused private types or members", Justification = "Invoked by the desktop parity harness through reflection.")]
+        [SuppressMessage("Major Code Smell", "S1144:Unused private types or members", Justification = "Invoked by the universal parity harness through reflection.")]
         private Task OpenMediaAsync(string filePath)
         {
             return OpenMediaAsync(filePath, PanePrimaryId);
         }
 
-        [SuppressMessage("Major Code Smell", "S1144:Unused private types or members", Justification = "Invoked by the desktop parity harness through reflection.")]
+        [SuppressMessage("Major Code Smell", "S1144:Unused private types or members", Justification = "Invoked by the universal parity harness through reflection.")]
         private Task OpenMediaAsync(string filePath, string paneId)
         {
             return OpenPathAsync(filePath, ResolvePane(paneId));
         }
 
-        [SuppressMessage("Major Code Smell", "S1144:Unused private types or members", Justification = "Invoked by the desktop parity harness through reflection.")]
+        [SuppressMessage("Major Code Smell", "S1144:Unused private types or members", Justification = "Invoked by the universal parity harness through reflection.")]
         private Task CloseMediaAsync()
         {
             return CloseVideosAsync();
@@ -602,6 +602,7 @@ namespace FramePlayer.Avalonia.Views
                 : Pane.Primary;
             UpdatePaneSelectionVisuals();
             UpdateCacheStatusFromEngine();
+            UpdateCommandStates();
         }
 
         private void UpdatePaneSelectionVisuals()
@@ -1254,7 +1255,7 @@ namespace FramePlayer.Avalonia.Views
             return pane == Pane.Primary ? _primaryEngine : _compareEngine;
         }
 
-        [SuppressMessage("Major Code Smell", "S1144:Unused private types or members", Justification = "Invoked by the desktop parity harness through reflection.")]
+        [SuppressMessage("Major Code Smell", "S1144:Unused private types or members", Justification = "Invoked by the universal parity harness through reflection.")]
         private async Task CommitSliderSeekAsync(string interactionName, TimeSpan target)
         {
             _ = interactionName;
@@ -3332,7 +3333,7 @@ namespace FramePlayer.Avalonia.Views
             {
                 resolvedOutputPath = await PromptForSavePathAsync(
                     "Export Diagnostic Report",
-                    "frame-player-desktop-diagnostics.txt",
+                    "frame-player-diagnostics.txt",
                     "Text File",
                     "*.txt");
                 if (string.IsNullOrWhiteSpace(resolvedOutputPath))
@@ -3536,7 +3537,7 @@ namespace FramePlayer.Avalonia.Views
         {
             var header = new List<string>
             {
-                "Frame Player desktop diagnostics",
+                "Frame Player diagnostics",
                 "Generated: " + DateTimeOffset.Now.ToString("O", CultureInfo.InvariantCulture),
                 "Version: " + GetDisplayVersion(),
                 "OS: " + RuntimeInformation.OSDescription,

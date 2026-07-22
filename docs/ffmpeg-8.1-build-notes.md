@@ -1,8 +1,6 @@
 # FFmpeg 8.1.2 Source Build Notes
 
-This file records the isolated source-build workflow for the FFmpeg 8.1 release line. The source-build entrypoints now target the 8.1.2 security release. Build output is staged separately first, then restored into `Runtime\ffmpeg\` through `scripts\Ensure-DevRuntime.ps1` after the matching manifest hashes are updated.
-
-For the current `v1.8.4` release, use `docs\release-v1.8.4-feedback.md` as the maintainer-facing product summary and keep this file as the runtime/build provenance source of truth.
+This file records the isolated source-build workflow for FFmpeg 8.1.2. Build output is staged separately and promoted only after its archive and per-file hashes are recorded in the runtime manifests.
 
 ## Build Command
 
@@ -28,7 +26,7 @@ The default source/build scratch path is `%TEMP%\frameplayer-ffmpeg-8.1.2-source
 
 ## Configure Scope
 
-The initial candidate build is intentionally app-focused:
+The initial candidate build is intentionally scoped to the universal Avalonia application:
 
 - `--enable-shared`
 - `--disable-static`
@@ -50,7 +48,7 @@ The MinGW-w64 build can also require `libwinpthread-1.dll` at runtime. The build
 
 - The source-build script now configures FFmpeg with `--enable-vulkan` so the runtime can expose FFmpeg's Vulkan hardware-device path to the app.
 - The source-build script verifies that FFmpeg `configure` actually enabled `CONFIG_VULKAN`, `CONFIG_H264_VULKAN_HWACCEL`, `CONFIG_HEVC_VULKAN_HWACCEL`, and `CONFIG_AV1_VULKAN_HWACCEL` before compiling the runtime.
-- Frame Player phase 1 still uses GPU decode plus CPU readback into the existing WPF presentation path. The runtime archive does not bundle a verified Vulkan loader.
+- Frame Player uses GPU decode plus CPU readback into its Avalonia rendering path. The runtime archive does not bundle a verified Vulkan loader.
 - Actual GPU acceleration therefore depends on a working system Vulkan loader/driver on the target machine. Unsupported hardware, unsupported codecs, or failed Vulkan device creation must fall back to CPU decode.
 
 ## Candidate Output
@@ -64,32 +62,35 @@ Runtime\ffmpeg-8.1.2-candidate\
 The script also stages a local runtime bundle in:
 
 ```text
-artifacts\FramePlayer-ffmpeg-runtime-x64.bundle
+artifacts\FramePlayer-ffmpeg-runtime-x64.zip
 ```
 
 Both paths are intentionally ignored by git. `scripts\Ensure-DevRuntime.ps1` restores the active `Runtime\ffmpeg\` directory from this self-built candidate or staged bundle instead of a third-party prebuilt bundle.
 
 ## Current Restore Model
 
-- `Runtime\runtime-manifest.json` records the expected FFmpeg DLL hashes, archive filename, archive SHA256, and source-build provenance. It remains on the prior `n8.1` Windows archive until the 8.1.2 Windows runtime is built and hash-verified.
+- `Runtime\runtime-manifest.json` records the expected FFmpeg 8.1.2 DLL hashes, archive filename, archive SHA256, and source-build provenance.
 - `scripts\Ensure-DevRuntime.ps1` restores `Runtime\ffmpeg\` from `Runtime\ffmpeg-8.1.2-candidate\` or the staged local runtime archive before attempting any remote download path.
-- If neither local source exists, the script downloads the pinned runtime from the verified runtime-only `v1.5.0` release asset currently declared in the manifest and validates both the archive SHA256 and extracted DLL hashes.
+- If neither local source exists, the script downloads the immutable 8.1.2 archive declared in the manifest and validates both the archive SHA256 and extracted DLL hashes.
 - `Runtime\runtime-manifest.json` now also records that the current source-built runtime targets FFmpeg Vulkan hardware-device support while still requiring a system Vulkan loader at runtime.
 
-## Windows CI
+## Windows-Target CI
 
-GitHub Actions Windows CI now runs compile validation only on clean runners:
+GitHub Actions stages the pinned playback and export runtimes, builds and tests the universal Avalonia project, and packages its Windows target on clean runners. The relevant build command is:
 
 ```powershell
 .\scripts\Ensure-DevRuntime.ps1
-dotnet build .\FramePlayer.csproj -c Release -p:Platform=x64
+.\scripts\Ensure-DevExportTools.ps1
+.\scripts\Ensure-DevExportRuntime.ps1 -Required
+dotnet build .\src\FramePlayer.Avalonia\FramePlayer.Avalonia.csproj -c Release
+.\scripts\Package-UnifiedWindows.ps1
 ```
 
-This is intentional and now supported. Clean GitHub runners do not have staged local FFmpeg runtime artifacts, so the workflow restores the runtime from the verified runtime-only `v1.5.0` release asset currently recorded in `Runtime\runtime-manifest.json`.
+Clean GitHub runners restore the verified 8.1.2 playback, export-runtime, and developer-tool archives recorded by the manifests. The same application project is built and packaged for every supported platform target.
 
 ## Still Needed Beyond Clean-Runner Restore
 
 - Keep the published runtime archive, `assetSha256`, and per-DLL SHA256 entries aligned whenever the pinned runtime changes.
-- Build the Windows playback, export-runtime, and export-tools candidates from `n8.1.2`, then update all three manifests only after their archive and per-file hashes are available.
+- Rebuild and revalidate all affected archives before changing a source tag or build configuration.
 - Do not retarget the manifest to any future published archive unless the archive SHA256 and extracted DLL hashes are proven to match the pinned runtime.
 - If the pinned runtime ever changes again, update `tag`/`assetUrl`, archive SHA256, and CI expectations together after the new asset is live and hash-verified.
