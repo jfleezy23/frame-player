@@ -1,0 +1,12 @@
+{
+  "runtimeSource": "Self-built Apple Silicon runtime produced by scripts/ffmpeg/Build-FFmpeg-macOS-8.1.sh on GitHub's macos-15 runner",
+  "sourceRepository": "https://git.ffmpeg.org/ffmpeg.git",
+  "sourceTag": "n8.1.2",
+  "sourceCommit": "38b88335f99e76ed89ff3c93f877fdefce736c13",
+  "x264Commit": "0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee",
+  "ffmpegVersion": "n8.1.2-frameplayer-macos-source",
+  "assetName": "FramePlayer-ffmpeg-runtime-osx-arm64-8.1.2.zip",
+  "tag": "v2.0.0",
+  "assetUrl": "https://github.com/jfleezy23/frame-player/releases/download/v2.0.0/FramePlayer-ffmpeg-runtime-osx-arm64-8.1.2.zip",
+  "assetSha256": "dc27d2333f39cd195cd520854f15f5e99d76f851561462c04ea46fe3cbc4bd1d"
+}

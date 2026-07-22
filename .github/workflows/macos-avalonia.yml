@@ -31,33 +31,39 @@ jobs:
           rustup toolchain install stable --profile minimal
           cargo --version
 
-      - name: Build pinned FFmpeg runtime candidate
+      - name: Restore pinned FFmpeg runtime
         run: |
-          work_root="$RUNNER_TEMP/frameplayer-ffmpeg-macos-8.1.2-source-build"
-          mkdir -p "$work_root"
-          WORK_ROOT="$work_root" RUNTIME_DIR="$work_root/runtime" \
-            scripts/ffmpeg/Build-FFmpeg-macOS-8.1.sh
-          cp "$work_root/runtime/"* Runtime/macos/osx-arm64/ffmpeg/
+          manifest_path="Runtime/macos/osx-arm64/ffmpeg-runtime-manifest.json"
+          runtime_dir="Runtime/macos/osx-arm64/ffmpeg"
+          extract_dir="$RUNNER_TEMP/frameplayer-ffmpeg-runtime"
+          asset_name="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["assetName"])' "$manifest_path")"
+          asset_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["assetUrl"])' "$manifest_path")"
+          asset_sha256="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["assetSha256"])' "$manifest_path")"
 
-      - name: Validate pinned FFmpeg runtime candidate
-        run: |
-          runtime_dir="$RUNNER_TEMP/frameplayer-ffmpeg-macos-8.1.2-source-build/runtime"
-          cd "$runtime_dir"
-          shasum -a 256 -c SHA256SUMS.txt
-          grep -Fx 'FFmpeg tag: n8.1.2' build-provenance.txt
-          grep -Fx 'FFmpeg commit: 38b88335f99e76ed89ff3c93f877fdefce736c13' build-provenance.txt
-          grep -Fx 'Deployment target: 13.0' build-provenance.txt
-          for dylib in *.dylib; do
-            test "$(otool -l "$dylib" | awk '$1 == "minos" { print $2; exit }')" = '13.0'
-          done
+          case "$asset_name" in
+            ""|*/*|*\\*) echo "Invalid runtime asset name: $asset_name" >&2; exit 2 ;;
+          esac
+          case "$asset_url" in
+            "https://github.com/jfleezy23/frame-player/releases/download/v2.0.0/$asset_name") ;;
+            *) echo "Unexpected runtime asset URL: $asset_url" >&2; exit 2 ;;
+          esac
 
-      - name: Upload pinned FFmpeg runtime candidate
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: FramePlayer-ffmpeg-runtime-osx-arm64-8.1.2
-          path: ${{ runner.temp }}/frameplayer-ffmpeg-macos-8.1.2-source-build/runtime
-          if-no-files-found: error
-          retention-days: 1
+          archive_path="$RUNNER_TEMP/$asset_name"
+          curl --fail --location --proto '=https' --tlsv1.2 "$asset_url" --output "$archive_path"
+          printf '%s  %s\n' "$asset_sha256" "$archive_path" | shasum -a 256 -c -
+
+          rm -rf "$extract_dir"
+          mkdir -p "$extract_dir" "$runtime_dir"
+          /usr/bin/ditto -x -k "$archive_path" "$extract_dir"
+          (
+            cd "$extract_dir"
+            shasum -a 256 -c "$GITHUB_WORKSPACE/$runtime_dir/SHA256SUMS.txt"
+            cmp -s build-provenance.txt "$GITHUB_WORKSPACE/$runtime_dir/build-provenance.txt"
+            for dylib in *.dylib; do
+              test "$(otool -l "$dylib" | awk '$1 == "minos" { print $2; exit }')" = '13.0'
+            done
+          )
+          cp "$extract_dir/"*.dylib "$runtime_dir/"
 
       - name: Restore
         run: |
@@ -109,6 +115,7 @@ jobs:
             "$app_path/Contents/MacOS/libframeplayer_ffmpeg_probe.dylib" \
             "$app_path/Contents/MacOS/Runtime/runtime-manifest.json" \
             "$app_path/Contents/MacOS/Runtime/export-runtime-manifest.json" \
+            "$app_path/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg-runtime-manifest.json" \
             "$app_path/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/SHA256SUMS.txt" \
             "$app_path/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/build-provenance.txt"; do
             if [[ ! -f "$required_path" ]]; then

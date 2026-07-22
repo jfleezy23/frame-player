@@ -4,7 +4,9 @@ The macOS package is built from `src/FramePlayer.Avalonia`, the same application
 
 ## Build and test
 
-Stage the pinned FFmpeg runtime under `Runtime/macos/osx-arm64/ffmpeg`, then run:
+Hosted CI restores that runtime from `Runtime/macos/osx-arm64/ffmpeg-runtime-manifest.json` and validates the archive, every dylib, and the provenance record before building.
+
+For local validation, stage the pinned FFmpeg runtime under `Runtime/macos/osx-arm64/ffmpeg`, then run:
 
 ```bash
 dotnet build src/FramePlayer.Avalonia/FramePlayer.Avalonia.csproj -c Release

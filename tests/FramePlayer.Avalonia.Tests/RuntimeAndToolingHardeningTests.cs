@@ -72,13 +72,21 @@ namespace FramePlayer.Avalonia.Tests
             var buildScript = File.ReadAllText(Path.Combine(root, "scripts", "ffmpeg", "Build-FFmpeg-macOS-8.1.sh"));
             var provenance = File.ReadAllText(Path.Combine(root, "Runtime", "macos", "osx-arm64", "ffmpeg", "build-provenance.txt"));
             var checksums = File.ReadAllText(Path.Combine(root, "Runtime", "macos", "osx-arm64", "ffmpeg", "SHA256SUMS.txt"));
+            var manifest = File.ReadAllText(Path.Combine(root, "Runtime", "macos", "osx-arm64", "ffmpeg-runtime-manifest.json"));
 
             Assert.Contains("FFMPEG_TAG=\"n8.1.2\"", buildScript, StringComparison.Ordinal);
             Assert.Contains("FFMPEG_COMMIT=\"38b88335f99e76ed89ff3c93f877fdefce736c13\"", buildScript, StringComparison.Ordinal);
+            Assert.Contains("MACOS_DEPLOYMENT_TARGET=\"13.0\"", buildScript, StringComparison.Ordinal);
+            Assert.Contains("--extra-cflags=-mmacosx-version-min=$MACOS_DEPLOYMENT_TARGET", buildScript, StringComparison.Ordinal);
+            Assert.Contains("otool -l", buildScript, StringComparison.Ordinal);
             Assert.Contains("FFmpeg tag: n8.1.2", provenance, StringComparison.Ordinal);
             Assert.Contains("FFmpeg commit: 38b88335f99e76ed89ff3c93f877fdefce736c13", provenance, StringComparison.Ordinal);
             Assert.Contains("libavcodec.62.28.102.dylib", checksums, StringComparison.Ordinal);
             Assert.DoesNotContain(".100.dylib", checksums, StringComparison.Ordinal);
+            Assert.Contains("\"sourceTag\": \"n8.1.2\"", manifest, StringComparison.Ordinal);
+            Assert.Contains("\"sourceCommit\": \"38b88335f99e76ed89ff3c93f877fdefce736c13\"", manifest, StringComparison.Ordinal);
+            Assert.Contains("\"assetName\": \"FramePlayer-ffmpeg-runtime-osx-arm64-8.1.2.zip\"", manifest, StringComparison.Ordinal);
+            Assert.Contains("\"assetSha256\": \"dc27d2333f39cd195cd520854f15f5e99d76f851561462c04ea46fe3cbc4bd1d\"", manifest, StringComparison.Ordinal);
         }
 
         [Theory]

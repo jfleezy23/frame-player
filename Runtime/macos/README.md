@@ -4,7 +4,7 @@ The macOS target of the universal Avalonia application uses pinned FFmpeg runtim
 
 - `Runtime/macos/osx-arm64/ffmpeg`
 
-Tracked files in this area are limited to provenance and hash records. The actual `.dylib` files are intentionally ignored by git and must be staged locally before packaging or release-candidate validation.
+Tracked files in this area are limited to the immutable archive manifest, provenance, and per-library hash records. The actual `.dylib` files are intentionally ignored by git and restored from the pinned archive before hosted packaging or release-candidate validation.
 Packaging also stages the first-party Rust FFmpeg native library under `Runtime/rust/osx-arm64/`; that generated `.dylib` is ignored and copied beside `FramePlayer.Avalonia` in the application bundle. It contains the runtime probe, exact decoded-frame global index builder, indexed decode-window helper, and BGRA frame converter.
 
 Build and stage the pinned Apple Silicon runtime with:

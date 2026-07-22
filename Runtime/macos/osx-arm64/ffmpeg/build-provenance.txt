@@ -2,7 +2,8 @@ FFmpeg tag: n8.1.2
 FFmpeg commit: 38b88335f99e76ed89ff3c93f877fdefce736c13
 x264 commit: 0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee
 Toolchain: macOS clang arm64
-Clang: Apple clang version 21.0.0 (clang-2100.1.1.101)
+Deployment target: 13.0
+Clang: Apple clang version 17.0.0 (clang-1700.0.13.5)
 Make: GNU Make 3.81
 Configure flags:
-  /tmp/frameplayer-ffmpeg-macos-8.1.2-source-build/ffmpeg-n8.1.2/configure  --prefix=/tmp/frameplayer-ffmpeg-macos-8.1.2-source-build/install-osx-arm64-shared  --cc=clang  --pkg-config=/tmp/frameplayer-ffmpeg-macos-8.1.2-source-build/pkg-config-x264  --arch=arm64  --target-os=darwin  --install-name-dir=@loader_path  --enable-shared  --disable-static  --enable-gpl  --enable-libx264  --disable-programs  --disable-doc  --disable-debug  --disable-avdevice  --disable-network  --disable-autodetect  --disable-videotoolbox  --disable-audiotoolbox  --extra-version=frameplayer-macos-source
+  /Users/runner/work/_temp/frameplayer-ffmpeg-macos-8.1.2-source-build/ffmpeg-n8.1.2/configure  --prefix=/Users/runner/work/_temp/frameplayer-ffmpeg-macos-8.1.2-source-build/install-osx-arm64-shared  --cc=clang  --pkg-config=/Users/runner/work/_temp/frameplayer-ffmpeg-macos-8.1.2-source-build/pkg-config-x264  --arch=arm64  --target-os=darwin  --install-name-dir=@loader_path  --enable-shared  --disable-static  --enable-gpl  --enable-libx264  --disable-programs  --disable-doc  --disable-debug  --disable-avdevice  --disable-network  --disable-autodetect  --disable-videotoolbox  --disable-audiotoolbox  --extra-cflags=-mmacosx-version-min=13.0  --extra-ldflags=-mmacosx-version-min=13.0  --extra-version=frameplayer-macos-source
