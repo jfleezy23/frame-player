@@ -29,6 +29,7 @@ namespace FramePlayer.Services
                     var outcome = NativeExportSupport.RunGraphExport(
                         plan.OutputFilePath,
                         BuildFilterGraph(plan, includeAudio),
+                        BuildFileSources(plan, includeAudio),
                         outputDimensions.Width,
                         outputDimensions.Height,
                         includeAudio,
@@ -65,7 +66,6 @@ namespace FramePlayer.Services
                 throw new InvalidOperationException("Clip export requires a positive duration.");
             }
 
-            var sourcePath = NativeExportSupport.EscapeFilterFilePath(plan.SourceFilePath);
             var startTime = NativeExportSupport.FormatFilterTime(plan.StartTime);
             var durationText = NativeExportSupport.FormatFilterTime(duration);
             var filterGraph = new StringBuilder();
@@ -74,8 +74,7 @@ namespace FramePlayer.Services
 
             filterGraph.AppendFormat(
                 System.Globalization.CultureInfo.InvariantCulture,
-                "movie=filename='{0}',trim=start={1}:duration={2},setpts=PTS-STARTPTS,",
-                sourcePath,
+                "movie@clipvsrc,trim=start={0}:duration={1},setpts=PTS-STARTPTS,",
                 startTime,
                 durationText);
 
@@ -109,13 +108,37 @@ namespace FramePlayer.Services
                 filterGraph.Append(';');
                 filterGraph.AppendFormat(
                     System.Globalization.CultureInfo.InvariantCulture,
-                    "amovie=filename='{0}',atrim=start={1}:duration={2},asetpts=PTS-STARTPTS,aformat=sample_fmts=fltp,asetnsamples=n=1024:p=0,abuffersink@outa",
-                    sourcePath,
+                    "amovie@clipasrc,atrim=start={0}:duration={1},asetpts=PTS-STARTPTS,aformat=sample_fmts=fltp,asetnsamples=n=1024:p=0,abuffersink@outa",
                     startTime,
                     durationText);
             }
 
             return filterGraph.ToString();
+        }
+
+        internal static NativeExportSupport.FilterFileSource[] BuildFileSources(
+            ClipExportPlan plan,
+            bool includeAudio)
+        {
+            ArgumentNullException.ThrowIfNull(plan);
+
+            var videoSource = new NativeExportSupport.FilterFileSource(
+                "clipvsrc",
+                "movie",
+                plan.SourceFilePath);
+            if (!includeAudio)
+            {
+                return new[] { videoSource };
+            }
+
+            return new[]
+            {
+                videoSource,
+                new NativeExportSupport.FilterFileSource(
+                    "clipasrc",
+                    "amovie",
+                    plan.SourceFilePath)
+            };
         }
 
         internal static (int Width, int Height) ResolveOutputDimensions(ClipExportPlan plan)

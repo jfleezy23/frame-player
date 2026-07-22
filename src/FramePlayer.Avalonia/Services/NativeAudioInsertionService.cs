@@ -55,29 +55,10 @@ namespace FramePlayer.Services
                         }
 
                         var audioGraph = BuildAudioFilterGraph(plan);
-                        AVFilterInOut* inputs = null;
-                        AVFilterInOut* outputs = null;
-                        try
-                        {
-                            FfmpegNativeHelpers.ThrowIfError(
-                                ffmpeg.avfilter_graph_parse_ptr(filterGraph, audioGraph, &inputs, &outputs, null),
-                                "Parse audio insertion filter graph");
-                            FfmpegNativeHelpers.ThrowIfError(
-                                ffmpeg.avfilter_graph_config(filterGraph, null),
-                                "Configure audio insertion filter graph");
-                        }
-                        finally
-                        {
-                            if (inputs != null)
-                            {
-                                ffmpeg.avfilter_inout_free(&inputs);
-                            }
-
-                            if (outputs != null)
-                            {
-                                ffmpeg.avfilter_inout_free(&outputs);
-                            }
-                        }
+                        NativeExportSupport.ConfigureFilterGraph(
+                            filterGraph,
+                            audioGraph,
+                            BuildFileSources(plan));
 
                         audioSinkContext = NativeExportSupport.ResolveFilterContext(filterGraph, "outa", "abuffersink");
                         if (audioSinkContext == null)
@@ -207,13 +188,25 @@ namespace FramePlayer.Services
                 cancellationToken);
         }
 
-        private static string BuildAudioFilterGraph(AudioInsertionPlan plan)
+        internal static string BuildAudioFilterGraph(AudioInsertionPlan plan)
         {
             return string.Format(
                 System.Globalization.CultureInfo.InvariantCulture,
-                "amovie=filename='{0}',apad=whole_dur={1},atrim=duration={1},asetpts=PTS-STARTPTS,aformat=sample_fmts=fltp,asetnsamples=n=1024:p=0,abuffersink@outa",
-                NativeExportSupport.EscapeFilterFilePath(plan.ReplacementAudioFilePath),
+                "amovie@insertionsrc,apad=whole_dur={0},atrim=duration={0},asetpts=PTS-STARTPTS,aformat=sample_fmts=fltp,asetnsamples=n=1024:p=0,abuffersink@outa",
                 NativeExportSupport.FormatFilterTime(plan.VideoDuration));
+        }
+
+        internal static NativeExportSupport.FilterFileSource[] BuildFileSources(AudioInsertionPlan plan)
+        {
+            ArgumentNullException.ThrowIfNull(plan);
+
+            return new[]
+            {
+                new NativeExportSupport.FilterFileSource(
+                    "insertionsrc",
+                    "amovie",
+                    plan.ReplacementAudioFilePath)
+            };
         }
     }
 }
