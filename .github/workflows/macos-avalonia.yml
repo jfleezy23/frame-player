@@ -41,10 +41,15 @@ jobs:
 
       - name: Validate pinned FFmpeg runtime candidate
         run: |
-          cd "$RUNNER_TEMP/frameplayer-ffmpeg-macos-8.1.2-source-build/runtime"
+          runtime_dir="$RUNNER_TEMP/frameplayer-ffmpeg-macos-8.1.2-source-build/runtime"
+          cd "$runtime_dir"
           shasum -a 256 -c SHA256SUMS.txt
           grep -Fx 'FFmpeg tag: n8.1.2' build-provenance.txt
           grep -Fx 'FFmpeg commit: 38b88335f99e76ed89ff3c93f877fdefce736c13' build-provenance.txt
+          grep -Fx 'Deployment target: 13.0' build-provenance.txt
+          for dylib in *.dylib; do
+            test "$(otool -l "$dylib" | awk '$1 == "minos" { print $2; exit }')" = '13.0'
+          done
 
       - name: Upload pinned FFmpeg runtime candidate
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
