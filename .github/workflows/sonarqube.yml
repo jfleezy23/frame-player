@@ -13,6 +13,7 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  SONAR_SCANNER_VERSION: '11.2.1'
 
 jobs:
   analyze:
@@ -79,15 +80,14 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: .\.sonar\scanner
-          key: ${{ runner.os }}-sonar-scanner
-          restore-keys: ${{ runner.os }}-sonar-scanner
+          key: ${{ runner.os }}-sonar-scanner-${{ env.SONAR_SCANNER_VERSION }}
 
       - name: Install SonarQube scanner
         if: steps.sonar_config.outputs.enabled == 'true' && steps.cache-sonar-scanner.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           New-Item -Path .\.sonar\scanner -ItemType Directory -Force | Out-Null
-          dotnet tool update dotnet-sonarscanner --tool-path .\.sonar\scanner
+          dotnet tool install dotnet-sonarscanner --tool-path .\.sonar\scanner --version $env:SONAR_SCANNER_VERSION
 
       - name: Restore pinned FFmpeg runtime
         if: steps.sonar_config.outputs.enabled == 'true'
@@ -112,27 +112,16 @@ jobs:
             "native/frameplayer_ffmpeg_probe/src/**"
           ) -join ","
 
-          $analysisExclusions = @(
-            "src/FramePlayer.Avalonia/Services/Native*.cs"
-            "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/FfmpegAudioPlaybackSession.cs"
-            "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/FfmpegFrameConverter.cs"
-            "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/FfmpegGlobalFrameIndex.cs"
-            "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/FfmpegHardwareDeviceCache.cs"
-            "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/FfmpegNativeHelpers.cs"
-            "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/FfmpegReviewEngine.cs"
-            "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/RustFfmpeg*.cs"
-            "src/FramePlayer.Engine.FFmpeg/Engines/FFmpeg/WinMmAudioOutput.cs"
-          ) -join ","
-
           $duplicationExclusions = "native/frameplayer_ffmpeg_probe/src/**"
 
           .\.sonar\scanner\dotnet-sonarscanner begin `
             /k:"${{ steps.sonar_config.outputs.project_key }}" `
             /o:"${{ steps.sonar_config.outputs.organization }}" `
             /d:sonar.token="$env:SONAR_TOKEN" `
-            /d:sonar.exclusions="$analysisExclusions" `
             /d:sonar.coverage.exclusions="$coverageExclusions" `
-            /d:sonar.cpd.exclusions="$duplicationExclusions"
+            /d:sonar.cpd.exclusions="$duplicationExclusions" `
+            /d:sonar.qualitygate.wait=true `
+            /d:sonar.qualitygate.timeout=300
 
           dotnet build .\src\FramePlayer.Avalonia\FramePlayer.Avalonia.csproj -c Release
 
