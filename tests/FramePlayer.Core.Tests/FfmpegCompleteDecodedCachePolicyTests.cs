@@ -124,7 +124,7 @@ namespace FramePlayer.Core.Tests
             Assert.NotNull(frame);
         }
 
-        private static IList<DecodedFrameBuffer> CreateFrames(int count)
+        private static List<DecodedFrameBuffer> CreateFrames(int count)
         {
             var frames = new List<DecodedFrameBuffer>(count);
             for (var index = 0; index < count; index++)

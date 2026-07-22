@@ -25,6 +25,32 @@ namespace FramePlayer.Avalonia.Tests
 {
     public sealed class MainWindowUiContractTests : IClassFixture<AvaloniaHeadlessFixture>
     {
+        private static readonly string[] TopLevelMenuHeaders = { "File", "Playback", "Audio Insertion", "Help" };
+        private static readonly string[] TransportButtonNames =
+        {
+            "PreviousFrameButton",
+            "RewindButton",
+            "PlayPauseButton",
+            "FastForwardButton",
+            "NextFrameButton",
+            "ToggleFullScreenButton",
+            "PrimaryPaneStepBackButton",
+            "PrimaryPaneSkipBackHundredFramesButton",
+            "PrimaryPanePlayPauseButton",
+            "PrimaryPaneSkipForwardHundredFramesButton",
+            "PrimaryPaneStepForwardButton",
+            "ComparePaneStepBackButton",
+            "ComparePaneSkipBackHundredFramesButton",
+            "ComparePanePlayPauseButton",
+            "ComparePaneSkipForwardHundredFramesButton",
+            "ComparePaneStepForwardButton"
+        };
+        private static readonly string[] TimelineSliderNames =
+        {
+            "PositionSlider",
+            "PrimaryPanePositionSlider",
+            "ComparePanePositionSlider"
+        };
         private readonly AvaloniaHeadlessFixture _fixture;
 
         public MainWindowUiContractTests(AvaloniaHeadlessFixture fixture)
@@ -64,7 +90,7 @@ namespace FramePlayer.Avalonia.Tests
                     var menuThemeScope = Assert.IsType<ThemeVariantScope>(visualMenu.Parent);
                     Assert.Equal(1, Grid.GetColumn(menuThemeScope));
                     Assert.Equal(
-                        new[] { "File", "Playback", "Audio Insertion", "Help" },
+                        TopLevelMenuHeaders,
                         visualMenu.Items
                             .OfType<MenuItem>()
                             .Select(item => item.Header?.ToString() ?? string.Empty)
@@ -111,7 +137,7 @@ namespace FramePlayer.Avalonia.Tests
                     .ToArray();
 
                 Assert.Equal(
-                    new[] { "File", "Playback", "Audio Insertion", "Help" },
+                    TopLevelMenuHeaders,
                     topLevelHeaders);
                 }
                 finally
@@ -813,25 +839,7 @@ namespace FramePlayer.Avalonia.Tests
                 var window = new MainWindow();
                 try
                 {
-                    foreach (var buttonName in new[]
-                    {
-                        "PreviousFrameButton",
-                        "RewindButton",
-                        "PlayPauseButton",
-                        "FastForwardButton",
-                        "NextFrameButton",
-                        "ToggleFullScreenButton",
-                        "PrimaryPaneStepBackButton",
-                        "PrimaryPaneSkipBackHundredFramesButton",
-                        "PrimaryPanePlayPauseButton",
-                        "PrimaryPaneSkipForwardHundredFramesButton",
-                        "PrimaryPaneStepForwardButton",
-                        "ComparePaneStepBackButton",
-                        "ComparePaneSkipBackHundredFramesButton",
-                        "ComparePanePlayPauseButton",
-                        "ComparePaneSkipForwardHundredFramesButton",
-                        "ComparePaneStepForwardButton"
-                    })
+                    foreach (var buttonName in TransportButtonNames)
                     {
                         var button = RequireControl<Button>(window, buttonName);
                         Assert.Equal(38, button.Width);
@@ -1007,12 +1015,7 @@ namespace FramePlayer.Avalonia.Tests
                 var window = new MainWindow();
                 try
                 {
-                    foreach (var sliderName in new[]
-                    {
-                        "PositionSlider",
-                        "PrimaryPanePositionSlider",
-                        "ComparePanePositionSlider"
-                    })
+                    foreach (var sliderName in TimelineSliderNames)
                     {
                         var slider = RequireControl<Slider>(window, sliderName);
                         Assert.Contains("timeline-slider", slider.Classes);
@@ -1116,12 +1119,7 @@ namespace FramePlayer.Avalonia.Tests
                         "Save Loop As Clip...",
                         "Export Side-by-Side Compare...");
 
-                    foreach (var sliderName in new[]
-                    {
-                        "PositionSlider",
-                        "PrimaryPanePositionSlider",
-                        "ComparePanePositionSlider"
-                    })
+                    foreach (var sliderName in TimelineSliderNames)
                     {
                         AssertContextMenuHeaders(
                             RequireControl<Slider>(window, sliderName).ContextMenu,
@@ -1151,12 +1149,7 @@ namespace FramePlayer.Avalonia.Tests
                     AssertContextMenuPalette(
                         RequireControl<Border>(window, "CompareVideoSurfaceHost").ContextMenu);
 
-                    foreach (var sliderName in new[]
-                    {
-                        "PositionSlider",
-                        "PrimaryPanePositionSlider",
-                        "ComparePanePositionSlider"
-                    })
+                    foreach (var sliderName in TimelineSliderNames)
                     {
                         AssertContextMenuPalette(
                             RequireControl<Slider>(window, sliderName).ContextMenu);

@@ -13,6 +13,7 @@ namespace FramePlayer.Avalonia.Tests
 {
     public sealed class ExportHostCliTests
     {
+        private static readonly string[] MissingRequestPathArguments = { "--run-export-request" };
         private static readonly string[] OtherArguments = { "--other", "request.json" };
         private static readonly string[] EmptyRequestPathArguments = { "--run-export-request", " " };
 
@@ -34,7 +35,7 @@ namespace FramePlayer.Avalonia.Tests
         {
             var exception = Assert.Throws<ArgumentException>(
                 () => ExportHostCli.TryGetRequestPath(
-                    new[] { "--run-export-request" },
+                    MissingRequestPathArguments,
                     out _));
 
             Assert.Contains("request path is missing", exception.Message, StringComparison.OrdinalIgnoreCase);

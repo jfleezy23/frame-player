@@ -12,6 +12,7 @@ namespace FramePlayer.Avalonia.Tests
 {
     public sealed class V2ReadinessCoverageTests : IClassFixture<AvaloniaHeadlessFixture>
     {
+        private static readonly string[] DiagnosticReportHeader = { "Frame Player diagnostics" };
         private readonly AvaloniaHeadlessFixture _fixture;
 
         public V2ReadinessCoverageTests(AvaloniaHeadlessFixture fixture)
@@ -82,7 +83,7 @@ namespace FramePlayer.Avalonia.Tests
             var service = new DiagnosticLogService();
 
             service.Info("Opened" + Environment.NewLine + "file");
-            var report = service.BuildReport(new[] { "Frame Player diagnostics" });
+            var report = service.BuildReport(DiagnosticReportHeader);
 
             Assert.Contains("Frame Player diagnostics", report, StringComparison.Ordinal);
             Assert.Contains("Event Log", report, StringComparison.Ordinal);
