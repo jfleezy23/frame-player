@@ -26,6 +26,24 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
+        public void DecodeCore_RejectsMissingRequestBeforeNativeLoad()
+        {
+            var decoded = RustFfmpegDecodeCore.TryDecodeIndexedWindow(
+                null!,
+                frames: out var frames,
+                currentIndex: out var currentIndex,
+                resourceLimitExceeded: out var resourceLimitExceeded,
+                errorMessage: out var errorMessage,
+                cancellationToken: CancellationToken.None);
+
+            Assert.False(decoded);
+            Assert.Null(frames);
+            Assert.Equal(-1, currentIndex);
+            Assert.False(resourceLimitExceeded);
+            Assert.Equal("Rust decode core arguments were invalid.", errorMessage);
+        }
+
+        [Fact]
         public void TryProbe_ReportsMissingRuntimeDirectoryWithoutLoadingNativeLibrary()
         {
             var result = RustFfmpegProbe.TryProbe(string.Empty);
@@ -173,21 +191,24 @@ namespace FramePlayer.Avalonia.Tests
                 Assert.True(index.TryGetByAbsoluteFrameIndex(targetFrameIndex, out var targetEntry));
 
                 var decoded = RustFfmpegDecodeCore.TryDecodeIndexedWindow(
-                    ffmpeg.RootPath,
-                    mediaPath,
-                    0,
-                    firstEntry,
-                    targetEntry,
-                    previousFrameLimit: 3,
-                    forwardFrameLimit: 1,
-                    maxFrameBytes: FfmpegMediaResourceLimits.AbsoluteDecodedFrameByteLimit,
-                    maxWindowBytes: FfmpegMediaResourceLimits.AbsoluteDecodedFrameByteLimit,
-                    videoStreamTimeBase: new AVRational { num = 1, den = 1000 },
-                    cancellationToken: CancellationToken.None,
+                    new RustFfmpegDecodeWindowRequest
+                    {
+                        RuntimeDirectory = ffmpeg.RootPath,
+                        FilePath = mediaPath,
+                        VideoStreamIndex = 0,
+                        AnchorEntry = firstEntry,
+                        TargetEntry = targetEntry,
+                        PreviousFrameLimit = 3,
+                        ForwardFrameLimit = 1,
+                        MaxFrameBytes = FfmpegMediaResourceLimits.AbsoluteDecodedFrameByteLimit,
+                        MaxWindowBytes = FfmpegMediaResourceLimits.AbsoluteDecodedFrameByteLimit,
+                        VideoStreamTimeBase = new AVRational { num = 1, den = 1000 }
+                    },
                     frames: out frames,
                     currentIndex: out var currentIndex,
                     resourceLimitExceeded: out var resourceLimitExceeded,
-                    errorMessage: out var errorMessage);
+                    errorMessage: out var errorMessage,
+                    cancellationToken: CancellationToken.None);
 
                 Assert.True(decoded, errorMessage);
                 Assert.False(resourceLimitExceeded, errorMessage);
@@ -244,21 +265,24 @@ namespace FramePlayer.Avalonia.Tests
                 Assert.True(index.TryGetByAbsoluteFrameIndex(0L, out var firstEntry));
 
                 var decoded = RustFfmpegDecodeCore.TryDecodeIndexedWindow(
-                    ffmpeg.RootPath,
-                    mediaPath,
-                    0,
-                    firstEntry,
-                    firstEntry,
-                    previousFrameLimit: 0,
-                    forwardFrameLimit: 0,
-                    maxFrameBytes: 1L,
-                    maxWindowBytes: 1L,
-                    videoStreamTimeBase: new AVRational { num = 1, den = 1000 },
-                    cancellationToken: CancellationToken.None,
+                    new RustFfmpegDecodeWindowRequest
+                    {
+                        RuntimeDirectory = ffmpeg.RootPath,
+                        FilePath = mediaPath,
+                        VideoStreamIndex = 0,
+                        AnchorEntry = firstEntry,
+                        TargetEntry = firstEntry,
+                        PreviousFrameLimit = 0,
+                        ForwardFrameLimit = 0,
+                        MaxFrameBytes = 1L,
+                        MaxWindowBytes = 1L,
+                        VideoStreamTimeBase = new AVRational { num = 1, den = 1000 }
+                    },
                     frames: out frames,
                     currentIndex: out var currentIndex,
                     resourceLimitExceeded: out var resourceLimitExceeded,
-                    errorMessage: out var errorMessage);
+                    errorMessage: out var errorMessage,
+                    cancellationToken: CancellationToken.None);
 
                 Assert.False(decoded);
                 Assert.True(resourceLimitExceeded, errorMessage);

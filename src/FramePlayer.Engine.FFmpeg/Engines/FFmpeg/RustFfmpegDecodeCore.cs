@@ -37,34 +37,19 @@ namespace FramePlayer.Engines.FFmpeg
         }
 
         public static bool TryDecodeIndexedWindow(
-            string runtimeDirectory,
-            string filePath,
-            int videoStreamIndex,
-            FfmpegGlobalFrameIndexEntry anchorEntry,
-            FfmpegGlobalFrameIndexEntry targetEntry,
-            int previousFrameLimit,
-            int forwardFrameLimit,
-            long maxFrameBytes,
-            long maxWindowBytes,
-            AVRational videoStreamTimeBase,
-            CancellationToken cancellationToken,
+            RustFfmpegDecodeWindowRequest request,
             out List<DecodedFrameBuffer> frames,
             out int currentIndex,
             out bool resourceLimitExceeded,
-            out string errorMessage)
+            out string errorMessage,
+            CancellationToken cancellationToken)
         {
             frames = null;
             currentIndex = -1;
             resourceLimitExceeded = false;
             errorMessage = string.Empty;
 
-            if (string.IsNullOrWhiteSpace(runtimeDirectory) ||
-                string.IsNullOrWhiteSpace(filePath) ||
-                anchorEntry == null ||
-                targetEntry == null ||
-                videoStreamIndex < 0 ||
-                maxFrameBytes <= 0L ||
-                maxWindowBytes <= 0L)
+            if (HasInvalidArguments(request))
             {
                 errorMessage = "Rust decode core arguments were invalid.";
                 return false;
@@ -83,15 +68,15 @@ namespace FramePlayer.Engines.FFmpeg
                 {
                     NativeDecodeWindowResult nativeResult;
                     var status = frameplayer_rust_ffmpeg_decode_window(
-                        runtimeDirectory,
-                        filePath,
-                        videoStreamIndex,
-                        ToNativeEntry(anchorEntry),
-                        ToNativeEntry(targetEntry),
-                        previousFrameLimit,
-                        forwardFrameLimit,
-                        checked((ulong)maxFrameBytes),
-                        checked((ulong)maxWindowBytes),
+                        request.RuntimeDirectory,
+                        request.FilePath,
+                        request.VideoStreamIndex,
+                        ToNativeEntry(request.AnchorEntry),
+                        ToNativeEntry(request.TargetEntry),
+                        request.PreviousFrameLimit,
+                        request.ForwardFrameLimit,
+                        checked((ulong)request.MaxFrameBytes),
+                        checked((ulong)request.MaxWindowBytes),
                         cancellationFlag.Pointer,
                         out nativeResult);
                     var nativeStatus = nativeResult.Status != 0 ? nativeResult.Status : status;
@@ -112,9 +97,9 @@ namespace FramePlayer.Engines.FFmpeg
 
                         frames = CopyFrames(
                             nativeResult,
-                            videoStreamTimeBase,
-                            maxFrameBytes,
-                            maxWindowBytes,
+                            request.VideoStreamTimeBase,
+                            request.MaxFrameBytes,
+                            request.MaxWindowBytes,
                             cancellationToken);
                         currentIndex = nativeResult.CurrentIndex;
                         return true;
@@ -166,6 +151,18 @@ namespace FramePlayer.Engines.FFmpeg
                 errorMessage = "native-decode-window-marshal-failed: " + ex.Message;
                 return false;
             }
+        }
+
+        private static bool HasInvalidArguments(RustFfmpegDecodeWindowRequest request)
+        {
+            return request == null ||
+                string.IsNullOrWhiteSpace(request.RuntimeDirectory) ||
+                string.IsNullOrWhiteSpace(request.FilePath) ||
+                request.AnchorEntry == null ||
+                request.TargetEntry == null ||
+                request.VideoStreamIndex < 0 ||
+                request.MaxFrameBytes <= 0L ||
+                request.MaxWindowBytes <= 0L;
         }
 
         private static void DisposeDecodedFrames(IEnumerable<DecodedFrameBuffer> frames)
@@ -382,6 +379,29 @@ namespace FramePlayer.Engines.FFmpeg
             public int CurrentIndex;
             public RustFfmpegNativeMessage Message;
         }
+    }
+
+    internal sealed class RustFfmpegDecodeWindowRequest
+    {
+        public string RuntimeDirectory { get; init; }
+
+        public string FilePath { get; init; }
+
+        public int VideoStreamIndex { get; init; }
+
+        public FfmpegGlobalFrameIndexEntry AnchorEntry { get; init; }
+
+        public FfmpegGlobalFrameIndexEntry TargetEntry { get; init; }
+
+        public int PreviousFrameLimit { get; init; }
+
+        public int ForwardFrameLimit { get; init; }
+
+        public long MaxFrameBytes { get; init; }
+
+        public long MaxWindowBytes { get; init; }
+
+        public AVRational VideoStreamTimeBase { get; init; }
     }
 
     internal enum RustFfmpegDecodeCoreMode

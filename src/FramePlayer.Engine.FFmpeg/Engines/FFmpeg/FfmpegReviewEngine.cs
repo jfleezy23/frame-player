@@ -2376,17 +2376,19 @@ namespace FramePlayer.Engines.FFmpeg
                 return null;
             }
 
-            if (TryDecodeIndexedWindowWithRust(
+            var decodeRequest = CreateRustDecodeWindowRequest(
                 anchorEntry,
                 targetEntry,
                 _maxPreviousCachedFrameCount,
                 primeForwardFrames ? _maxForwardCachedFrameCount : 0,
-                ResolveDecodedWindowByteLimit(),
-                cancellationToken,
+                ResolveDecodedWindowByteLimit());
+            if (TryDecodeIndexedWindowWithRust(
+                decodeRequest,
                 out var frames,
                 out var currentIndex,
                 out var resourceLimitExceeded,
-                out var errorMessage))
+                out var errorMessage,
+                cancellationToken))
             {
                 return new FrameSeekWindowResult(frames, currentIndex, requiresDecoderRealignment: true);
             }
@@ -2436,17 +2438,19 @@ namespace FramePlayer.Engines.FFmpeg
             if (decodeMode != RustFfmpegDecodeCoreMode.Managed &&
                 _globalFrameIndex.TryGetByAbsoluteFrameIndex(0L, out firstEntry))
             {
-                if (TryDecodeIndexedWindowWithRust(
+                var decodeRequest = CreateRustDecodeWindowRequest(
                     firstEntry,
                     targetEntry,
                     (int)targetEntry.AbsoluteFrameIndex,
                     (int)(indexedFrameCount - targetEntry.AbsoluteFrameIndex - 1L),
-                    completeCacheByteLimit,
-                    cancellationToken,
+                    completeCacheByteLimit);
+                if (TryDecodeIndexedWindowWithRust(
+                    decodeRequest,
                     out var rustFrames,
                     out var rustCurrentIndex,
                     out var resourceLimitExceeded,
-                    out var errorMessage))
+                    out var errorMessage,
+                    cancellationToken))
                 {
                     try
                     {
@@ -2577,34 +2581,43 @@ namespace FramePlayer.Engines.FFmpeg
             }
         }
 
-        private bool TryDecodeIndexedWindowWithRust(
+        private RustFfmpegDecodeWindowRequest CreateRustDecodeWindowRequest(
             FfmpegGlobalFrameIndexEntry anchorEntry,
             FfmpegGlobalFrameIndexEntry targetEntry,
             int previousFrameLimit,
             int forwardFrameLimit,
-            long maxWindowBytes,
-            CancellationToken cancellationToken,
+            long maxWindowBytes)
+        {
+            return new RustFfmpegDecodeWindowRequest
+            {
+                RuntimeDirectory = ffmpeg.RootPath,
+                FilePath = _currentFilePath,
+                VideoStreamIndex = _videoStreamIndex,
+                AnchorEntry = anchorEntry,
+                TargetEntry = targetEntry,
+                PreviousFrameLimit = previousFrameLimit,
+                ForwardFrameLimit = forwardFrameLimit,
+                MaxFrameBytes = FfmpegMediaResourceLimits.ResolveDecodedFrameByteLimit(_configuredCacheBudgetBytes),
+                MaxWindowBytes = maxWindowBytes,
+                VideoStreamTimeBase = _videoStreamTimeBase
+            };
+        }
+
+        private bool TryDecodeIndexedWindowWithRust(
+            RustFfmpegDecodeWindowRequest request,
             out List<DecodedFrameBuffer> frames,
             out int currentIndex,
             out bool resourceLimitExceeded,
-            out string errorMessage)
+            out string errorMessage,
+            CancellationToken cancellationToken)
         {
             if (!RustFfmpegDecodeCore.TryDecodeIndexedWindow(
-                ffmpeg.RootPath,
-                _currentFilePath,
-                _videoStreamIndex,
-                anchorEntry,
-                targetEntry,
-                previousFrameLimit,
-                forwardFrameLimit,
-                FfmpegMediaResourceLimits.ResolveDecodedFrameByteLimit(_configuredCacheBudgetBytes),
-                maxWindowBytes,
-                _videoStreamTimeBase,
-                cancellationToken,
+                request,
                 out frames,
                 out currentIndex,
                 out resourceLimitExceeded,
-                out errorMessage))
+                out errorMessage,
+                cancellationToken))
             {
                 return false;
             }
