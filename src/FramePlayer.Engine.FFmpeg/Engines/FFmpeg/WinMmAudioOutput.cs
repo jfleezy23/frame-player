@@ -5,7 +5,7 @@ using System.Threading;
 
 namespace FramePlayer.Engines.FFmpeg
 {
-    internal sealed class WinMmAudioOutput : IAudioOutput
+    internal sealed partial class WinMmAudioOutput : IAudioOutput
     {
         private const int WaveMapper = -1;
         private const int CallbackNull = 0;
@@ -20,6 +20,7 @@ namespace FramePlayer.Engines.FFmpeg
         private const uint CounterRolloverLowWatermark = 0x40000000;
 
         private readonly List<QueuedBuffer> _queuedBuffers = new List<QueuedBuffer>();
+        private readonly object _sync = new object();
         private readonly object _positionSync = new object();
         private readonly int _sampleRate;
         private readonly int _bytesPerSecond;
@@ -34,20 +35,9 @@ namespace FramePlayer.Engines.FFmpeg
 
         public WinMmAudioOutput(int sampleRate, int channelCount, int bitsPerSample)
         {
-            if (sampleRate <= 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(sampleRate));
-            }
-
-            if (channelCount <= 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(channelCount));
-            }
-
-            if (bitsPerSample <= 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(bitsPerSample));
-            }
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(sampleRate);
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(channelCount);
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bitsPerSample);
 
             var blockAlign = checked((ushort)(channelCount * bitsPerSample / 8));
             _sampleRate = sampleRate;
@@ -77,7 +67,13 @@ namespace FramePlayer.Engines.FFmpeg
 
         public bool IsOpen
         {
-            get { return _waveOutHandle != IntPtr.Zero && !_disposed; }
+            get
+            {
+                lock (_sync)
+                {
+                    return _waveOutHandle != IntPtr.Zero && !_disposed;
+                }
+            }
         }
 
         public long SubmittedBytes
@@ -89,58 +85,105 @@ namespace FramePlayer.Engines.FFmpeg
         {
             get
             {
-                if (!IsOpen)
+                lock (_sync)
                 {
-                    return TimeSpan.Zero;
-                }
+                    if (_waveOutHandle == IntPtr.Zero || _disposed)
+                    {
+                        return TimeSpan.Zero;
+                    }
 
-                var time = new MmTime
-                {
-                    wType = TimeBytes
-                };
-                var result = waveOutGetPosition(_waveOutHandle, ref time, Marshal.SizeOf(typeof(MmTime)));
-                if (result != 0)
-                {
-                    return TimeSpan.Zero;
-                }
+                    var time = new MmTime
+                    {
+                        wType = TimeBytes
+                    };
+                    var result = waveOutGetPosition(_waveOutHandle, ref time, Marshal.SizeOf<MmTime>());
+                    if (result != 0)
+                    {
+                        return TimeSpan.Zero;
+                    }
 
-                return MmTimeToDuration(time.wType, ExtendPositionCounter(time));
+                    return MmTimeToDuration(time.wType, ExtendPositionCounter(time));
+                }
             }
         }
 
         public void Write(byte[] buffer, CancellationToken cancellationToken)
         {
-            if (buffer == null)
-            {
-                throw new ArgumentNullException(nameof(buffer));
-            }
+            ArgumentNullException.ThrowIfNull(buffer);
 
             if (buffer.Length == 0)
             {
                 return;
             }
 
-            ThrowIfDisposed();
+            lock (_sync)
+            {
+                ThrowIfDisposed();
+            }
+
             WaitForQueueRoom(buffer.Length, cancellationToken);
-            QueueBuffer(buffer);
+
+            lock (_sync)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                ThrowIfDisposed();
+                QueueBuffer(buffer);
+            }
         }
 
         public void Dispose()
         {
-            if (_disposed)
+            bool released;
+            lock (_sync)
             {
-                return;
+                _disposed = true;
+                released = TryDisposeNativeState();
             }
 
-            _disposed = true;
-
-            if (_waveOutHandle != IntPtr.Zero)
+            if (released)
             {
-                waveOutReset(_waveOutHandle);
-                ReleaseAllBuffers();
-                waveOutClose(_waveOutHandle);
-                _waveOutHandle = IntPtr.Zero;
+                GC.SuppressFinalize(this);
             }
+        }
+
+        ~WinMmAudioOutput()
+        {
+            lock (_sync)
+            {
+                _disposed = true;
+                _ = TryDisposeNativeState();
+            }
+        }
+
+        private bool TryDisposeNativeState()
+        {
+            if (_waveOutHandle == IntPtr.Zero)
+            {
+                return true;
+            }
+
+            var resetResult = waveOutReset(_waveOutHandle);
+            if (resetResult != 0)
+            {
+                // The driver may still own queued buffers. Retain them and the handle for a later retry.
+                return false;
+            }
+
+            ReleaseAllBuffers();
+            if (_queuedBuffers.Count != 0)
+            {
+                // A header that could not be unprepared must not be freed or detached from its device handle.
+                return false;
+            }
+
+            var closeResult = waveOutClose(_waveOutHandle);
+            if (closeResult != 0)
+            {
+                return false;
+            }
+
+            _waveOutHandle = IntPtr.Zero;
+            return true;
         }
 
         private void WaitForQueueRoom(int nextBufferLength, CancellationToken cancellationToken)
@@ -148,11 +191,16 @@ namespace FramePlayer.Engines.FFmpeg
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                ReleaseCompletedBuffers();
 
-                if (_queuedBytes + nextBufferLength <= _maxQueuedBytes || _queuedBuffers.Count == 0)
+                lock (_sync)
                 {
-                    return;
+                    ThrowIfDisposed();
+                    ReleaseCompletedBuffers();
+
+                    if (_queuedBytes + nextBufferLength <= _maxQueuedBytes || _queuedBuffers.Count == 0)
+                    {
+                        return;
+                    }
                 }
 
                 cancellationToken.WaitHandle.WaitOne(PollMilliseconds);
@@ -165,7 +213,9 @@ namespace FramePlayer.Engines.FFmpeg
             var headerPointer = IntPtr.Zero;
             var headerPrepared = false;
             var headerSubmitted = false;
-            var headerSize = Marshal.SizeOf(typeof(WaveHeader));
+            var bufferTracked = false;
+            QueuedBuffer queuedBuffer = null;
+            var headerSize = Marshal.SizeOf<WaveHeader>();
             try
             {
                 Marshal.Copy(buffer, 0, dataPointer, buffer.Length);
@@ -183,30 +233,44 @@ namespace FramePlayer.Engines.FFmpeg
                     "Prepare audio output buffer");
                 headerPrepared = true;
 
+                queuedBuffer = new QueuedBuffer(headerPointer, dataPointer);
+                _queuedBuffers.Add(queuedBuffer);
+                bufferTracked = true;
+
                 ThrowIfWaveError(
                     waveOutWrite(_waveOutHandle, headerPointer, headerSize),
                     "Submit audio output buffer");
                 headerSubmitted = true;
 
-                _queuedBuffers.Add(new QueuedBuffer(headerPointer, dataPointer, buffer.Length));
+                queuedBuffer.MarkSubmitted(buffer.Length);
                 _queuedBytes += buffer.Length;
                 Interlocked.Add(ref _submittedBytes, buffer.Length);
             }
             catch
             {
+                var canFreePointers = !headerPrepared;
                 if (headerPrepared && !headerSubmitted && _waveOutHandle != IntPtr.Zero)
                 {
-                    waveOutUnprepareHeader(_waveOutHandle, headerPointer, headerSize);
+                    var unprepareResult = waveOutUnprepareHeader(_waveOutHandle, headerPointer, headerSize);
+                    canFreePointers = unprepareResult == 0;
                 }
 
-                if (headerPointer != IntPtr.Zero)
+                if (canFreePointers)
                 {
-                    Marshal.FreeHGlobal(headerPointer);
-                }
+                    if (bufferTracked)
+                    {
+                        _queuedBuffers.Remove(queuedBuffer);
+                    }
 
-                if (dataPointer != IntPtr.Zero)
-                {
-                    Marshal.FreeHGlobal(dataPointer);
+                    if (headerPointer != IntPtr.Zero)
+                    {
+                        Marshal.FreeHGlobal(headerPointer);
+                    }
+
+                    if (dataPointer != IntPtr.Zero)
+                    {
+                        Marshal.FreeHGlobal(dataPointer);
+                    }
                 }
 
                 throw;
@@ -218,14 +282,16 @@ namespace FramePlayer.Engines.FFmpeg
             for (var index = _queuedBuffers.Count - 1; index >= 0; index--)
             {
                 var queuedBuffer = _queuedBuffers[index];
-                var header = (WaveHeader)Marshal.PtrToStructure(queuedBuffer.HeaderPointer, typeof(WaveHeader));
+                var header = Marshal.PtrToStructure<WaveHeader>(queuedBuffer.HeaderPointer);
                 if ((header.dwFlags & WhdrDone) == 0)
                 {
                     continue;
                 }
 
-                ReleaseBuffer(queuedBuffer);
-                _queuedBuffers.RemoveAt(index);
+                if (TryReleaseBuffer(queuedBuffer))
+                {
+                    _queuedBuffers.RemoveAt(index);
+                }
             }
         }
 
@@ -233,18 +299,30 @@ namespace FramePlayer.Engines.FFmpeg
         {
             for (var index = _queuedBuffers.Count - 1; index >= 0; index--)
             {
-                ReleaseBuffer(_queuedBuffers[index]);
+                if (TryReleaseBuffer(_queuedBuffers[index]))
+                {
+                    _queuedBuffers.RemoveAt(index);
+                }
             }
-
-            _queuedBuffers.Clear();
-            _queuedBytes = 0;
         }
 
-        private void ReleaseBuffer(QueuedBuffer queuedBuffer)
+        private bool TryReleaseBuffer(QueuedBuffer queuedBuffer)
         {
-            if (_waveOutHandle != IntPtr.Zero && queuedBuffer.HeaderPointer != IntPtr.Zero)
+            if (queuedBuffer.HeaderPointer != IntPtr.Zero)
             {
-                waveOutUnprepareHeader(_waveOutHandle, queuedBuffer.HeaderPointer, Marshal.SizeOf(typeof(WaveHeader)));
+                if (_waveOutHandle == IntPtr.Zero)
+                {
+                    return false;
+                }
+
+                var unprepareResult = waveOutUnprepareHeader(
+                    _waveOutHandle,
+                    queuedBuffer.HeaderPointer,
+                    Marshal.SizeOf<WaveHeader>());
+                if (unprepareResult != 0)
+                {
+                    return false;
+                }
             }
 
             if (queuedBuffer.HeaderPointer != IntPtr.Zero)
@@ -257,7 +335,8 @@ namespace FramePlayer.Engines.FFmpeg
                 Marshal.FreeHGlobal(queuedBuffer.DataPointer);
             }
 
-            _queuedBytes = Math.Max(0, _queuedBytes - queuedBuffer.Length);
+            _queuedBytes = Math.Max(0, _queuedBytes - queuedBuffer.AccountedLength);
+            return true;
         }
 
         private TimeSpan BytesToDuration(long byteCount)
@@ -338,14 +417,11 @@ namespace FramePlayer.Engines.FFmpeg
 
         private void ThrowIfDisposed()
         {
-            if (_disposed)
-            {
-                throw new ObjectDisposedException(nameof(WinMmAudioOutput));
-            }
+            ObjectDisposedException.ThrowIf(_disposed, this);
         }
 
-        [DllImport("winmm.dll", SetLastError = false)]
-        private static extern int waveOutOpen(
+        [LibraryImport("winmm.dll", SetLastError = false)]
+        private static partial int waveOutOpen(
             out IntPtr hWaveOut,
             int uDeviceID,
             ref WaveFormatEx lpFormat,
@@ -353,23 +429,23 @@ namespace FramePlayer.Engines.FFmpeg
             IntPtr dwInstance,
             int fdwOpen);
 
-        [DllImport("winmm.dll", SetLastError = false)]
-        private static extern int waveOutPrepareHeader(IntPtr hWaveOut, IntPtr waveHeader, int waveHeaderSize);
+        [LibraryImport("winmm.dll", SetLastError = false)]
+        private static partial int waveOutPrepareHeader(IntPtr hWaveOut, IntPtr waveHeader, int waveHeaderSize);
 
-        [DllImport("winmm.dll", SetLastError = false)]
-        private static extern int waveOutWrite(IntPtr hWaveOut, IntPtr waveHeader, int waveHeaderSize);
+        [LibraryImport("winmm.dll", SetLastError = false)]
+        private static partial int waveOutWrite(IntPtr hWaveOut, IntPtr waveHeader, int waveHeaderSize);
 
-        [DllImport("winmm.dll", SetLastError = false)]
-        private static extern int waveOutUnprepareHeader(IntPtr hWaveOut, IntPtr waveHeader, int waveHeaderSize);
+        [LibraryImport("winmm.dll", SetLastError = false)]
+        private static partial int waveOutUnprepareHeader(IntPtr hWaveOut, IntPtr waveHeader, int waveHeaderSize);
 
-        [DllImport("winmm.dll", SetLastError = false)]
-        private static extern int waveOutReset(IntPtr hWaveOut);
+        [LibraryImport("winmm.dll", SetLastError = false)]
+        private static partial int waveOutReset(IntPtr hWaveOut);
 
-        [DllImport("winmm.dll", SetLastError = false)]
-        private static extern int waveOutClose(IntPtr hWaveOut);
+        [LibraryImport("winmm.dll", SetLastError = false)]
+        private static partial int waveOutClose(IntPtr hWaveOut);
 
-        [DllImport("winmm.dll", SetLastError = false)]
-        private static extern int waveOutGetPosition(IntPtr hWaveOut, ref MmTime time, int timeSize);
+        [LibraryImport("winmm.dll", SetLastError = false)]
+        private static partial int waveOutGetPosition(IntPtr hWaveOut, ref MmTime time, int timeSize);
 
         [StructLayout(LayoutKind.Sequential)]
         private struct WaveFormatEx
@@ -406,18 +482,22 @@ namespace FramePlayer.Engines.FFmpeg
 
         private sealed class QueuedBuffer
         {
-            public QueuedBuffer(IntPtr headerPointer, IntPtr dataPointer, int length)
+            public QueuedBuffer(IntPtr headerPointer, IntPtr dataPointer)
             {
                 HeaderPointer = headerPointer;
                 DataPointer = dataPointer;
-                Length = length;
             }
 
             public IntPtr HeaderPointer { get; }
 
             public IntPtr DataPointer { get; }
 
-            public int Length { get; }
+            public int AccountedLength { get; private set; }
+
+            public void MarkSubmitted(int length)
+            {
+                AccountedLength = length;
+            }
         }
     }
 }

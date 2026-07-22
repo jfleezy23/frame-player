@@ -170,15 +170,24 @@ namespace FramePlayer.Avalonia.Tests
                 return;
             }
 
-            ffmpeg.RootPath = Path.Combine(GetRepositoryRoot(), "Runtime", "ffmpeg");
-            var probed = MediaProbeService.TryProbeVideoMediaInfo(sampleFilePath, out var mediaInfo, out var errorMessage);
+            var previousRootPath = ffmpeg.RootPath;
+            try
+            {
+                ffmpeg.RootPath = FramePlayer.Engines.FFmpeg.FfmpegRuntimeBootstrap.ResolveRuntimeDirectory(
+                    GetRepositoryRoot());
+                var probed = MediaProbeService.TryProbeVideoMediaInfo(sampleFilePath, out var mediaInfo, out var errorMessage);
 
-            Assert.True(probed, errorMessage);
-            Assert.NotNull(mediaInfo);
-            Assert.True(mediaInfo.Duration > TimeSpan.Zero);
-            Assert.True(mediaInfo.PixelWidth > 0);
-            Assert.True(mediaInfo.PixelHeight > 0);
-            Assert.False(string.IsNullOrWhiteSpace(mediaInfo.VideoCodecName));
+                Assert.True(probed, errorMessage);
+                Assert.NotNull(mediaInfo);
+                Assert.True(mediaInfo.Duration > TimeSpan.Zero);
+                Assert.True(mediaInfo.PixelWidth > 0);
+                Assert.True(mediaInfo.PixelHeight > 0);
+                Assert.False(string.IsNullOrWhiteSpace(mediaInfo.VideoCodecName));
+            }
+            finally
+            {
+                ffmpeg.RootPath = previousRootPath;
+            }
         }
 
         private static string GetRepositoryRoot()
