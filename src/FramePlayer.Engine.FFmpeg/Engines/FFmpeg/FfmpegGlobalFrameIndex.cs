@@ -389,9 +389,10 @@ namespace FramePlayer.Engines.FFmpeg
                 entries.Add(new FfmpegGlobalFrameIndexEntry(
                     rustEntry.AbsoluteFrameIndex,
                     presentationTime,
-                    rustEntry.PresentationTimestamp,
-                    rustEntry.DecodeTimestamp,
-                    rustEntry.SearchTimestamp,
+                    new FfmpegGlobalFrameTimestamps(
+                        rustEntry.PresentationTimestamp,
+                        rustEntry.DecodeTimestamp,
+                        rustEntry.SearchTimestamp),
                     rustEntry.IsKeyFrame,
                     rustEntry.SeekAnchorFrameIndex,
                     rustEntry.SeekAnchorTimestamp,
@@ -563,9 +564,10 @@ namespace FramePlayer.Engines.FFmpeg
             return new FfmpegGlobalFrameIndexEntry(
                 absoluteFrameIndex,
                 presentationTime,
-                presentationTimestamp,
-                decodeTimestamp,
-                searchTimestamp,
+                new FfmpegGlobalFrameTimestamps(
+                    presentationTimestamp,
+                    decodeTimestamp,
+                    searchTimestamp),
                 isKeyFrame,
                 seekAnchorFrameIndex,
                 seekAnchorTimestamp,
@@ -615,14 +617,31 @@ namespace FramePlayer.Engines.FFmpeg
         }
     }
 
+    internal readonly struct FfmpegGlobalFrameTimestamps
+    {
+        public FfmpegGlobalFrameTimestamps(
+            long? presentationTimestamp,
+            long? decodeTimestamp,
+            long? searchTimestamp)
+        {
+            PresentationTimestamp = presentationTimestamp;
+            DecodeTimestamp = decodeTimestamp;
+            SearchTimestamp = searchTimestamp;
+        }
+
+        public long? PresentationTimestamp { get; }
+
+        public long? DecodeTimestamp { get; }
+
+        public long? SearchTimestamp { get; }
+    }
+
     internal sealed class FfmpegGlobalFrameIndexEntry
     {
         public FfmpegGlobalFrameIndexEntry(
             long absoluteFrameIndex,
             TimeSpan presentationTime,
-            long? presentationTimestamp,
-            long? decodeTimestamp,
-            long? searchTimestamp,
+            FfmpegGlobalFrameTimestamps timestamps,
             bool isKeyFrame,
             long seekAnchorFrameIndex,
             long seekAnchorTimestamp,
@@ -630,9 +649,9 @@ namespace FramePlayer.Engines.FFmpeg
         {
             AbsoluteFrameIndex = absoluteFrameIndex;
             PresentationTime = presentationTime;
-            PresentationTimestamp = presentationTimestamp;
-            DecodeTimestamp = decodeTimestamp;
-            SearchTimestamp = searchTimestamp;
+            PresentationTimestamp = timestamps.PresentationTimestamp;
+            DecodeTimestamp = timestamps.DecodeTimestamp;
+            SearchTimestamp = timestamps.SearchTimestamp;
             IsKeyFrame = isKeyFrame;
             SeekAnchorFrameIndex = seekAnchorFrameIndex;
             SeekAnchorTimestamp = seekAnchorTimestamp > 0L ? seekAnchorTimestamp : 0L;
