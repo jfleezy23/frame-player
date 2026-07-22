@@ -61,6 +61,25 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
+        public void TryProbe_DecodesNativeErrorMessageWhenRuntimeDirectoryIsMissing()
+        {
+            var runtimeDirectory = Environment.GetEnvironmentVariable("FRAMEPLAYER_FFMPEG_RUNTIME_DIR");
+            if (string.IsNullOrWhiteSpace(runtimeDirectory))
+            {
+                return;
+            }
+
+            var missingRuntimeDirectory = Path.Combine(
+                Path.GetTempPath(),
+                "frame-player-missing-rust-probe-runtime-" + Guid.NewGuid().ToString("N"));
+            var result = RustFfmpegProbe.TryProbe(missingRuntimeDirectory);
+
+            Assert.False(result.IsAvailable);
+            Assert.Equal("runtime-directory-missing", result.StatusName);
+            Assert.Contains("does not exist", result.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public void ExactGlobalFrameIndex_MatchesManagedIndexForSampleMedia()
         {
             if (!string.Equals(

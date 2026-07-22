@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
 using FFmpeg.AutoGen;
 using FramePlayer.Core.Models;
@@ -10,7 +9,6 @@ namespace FramePlayer.Engines.FFmpeg
 {
     internal static unsafe class RustFfmpegDecodeCore
     {
-        private const int MessageCapacity = 256;
         private const long NoTimestamp = long.MinValue;
         private const string DecodeModeEnvironmentVariable = "FRAMEPLAYER_FFMPEG_DECODE_CORE";
         private static readonly long NativeFrameMetadataBytes =
@@ -332,14 +330,7 @@ namespace FramePlayer.Engines.FFmpeg
 
         private static string ReadMessage(NativeDecodeWindowResult nativeResult)
         {
-            var message = nativeResult.Message;
-            var length = 0;
-            while (length < MessageCapacity && message[length] != 0)
-            {
-                length++;
-            }
-
-            return Encoding.UTF8.GetString(message, length);
+            return nativeResult.Message.ToString();
         }
 
         [DllImport("frameplayer_ffmpeg_probe", CallingConvention = CallingConvention.Cdecl)]
@@ -373,13 +364,13 @@ namespace FramePlayer.Engines.FFmpeg
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        private unsafe struct NativeDecodeWindowResult
+        internal struct NativeDecodeWindowResult
         {
             public int Status;
             public IntPtr Frames;
             public ulong FrameCount;
             public int CurrentIndex;
-            public fixed byte Message[MessageCapacity];
+            public RustFfmpegNativeMessage Message;
         }
     }
 

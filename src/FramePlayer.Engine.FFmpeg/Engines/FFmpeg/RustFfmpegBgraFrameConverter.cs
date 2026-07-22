@@ -1,6 +1,5 @@
 using System;
 using System.Runtime.InteropServices;
-using System.Text;
 using FFmpeg.AutoGen;
 using FramePlayer.Core.Models;
 using Microsoft.Win32.SafeHandles;
@@ -9,7 +8,6 @@ namespace FramePlayer.Engines.FFmpeg
 {
     internal unsafe sealed class RustFfmpegBgraFrameConverter : IDisposable
     {
-        private const int MessageCapacity = 256;
         private IntPtr _converter;
 
         private RustFfmpegBgraFrameConverter(IntPtr converter)
@@ -216,14 +214,7 @@ namespace FramePlayer.Engines.FFmpeg
 
         private static string ReadMessage(NativeFrameConvertResult nativeResult)
         {
-            var message = nativeResult.Message;
-            var length = 0;
-            while (length < MessageCapacity && message[length] != 0)
-            {
-                length++;
-            }
-
-            return Encoding.UTF8.GetString(message, length);
+            return nativeResult.Message.ToString();
         }
 
         [DllImport("frameplayer_ffmpeg_probe", CallingConvention = CallingConvention.Cdecl)]
@@ -265,11 +256,11 @@ namespace FramePlayer.Engines.FFmpeg
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        private unsafe struct NativeFrameConvertResult
+        internal struct NativeFrameConvertResult
         {
             public int Status;
             public NativeFrame Frame;
-            public fixed byte Message[MessageCapacity];
+            public RustFfmpegNativeMessage Message;
         }
 
         private sealed class RustFfmpegNativeFrameBufferHandle : SafeHandleZeroOrMinusOneIsInvalid

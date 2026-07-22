@@ -116,6 +116,57 @@ namespace FramePlayer.Core.Tests
         }
 
         [Fact]
+        public void RustInteropResultLayouts_MatchNativeReprCContracts()
+        {
+            Assert.True(Environment.Is64BitProcess);
+            Assert.Equal(256, Marshal.SizeOf<RustFfmpegNativeMessage>());
+
+            Assert.Equal(272, Marshal.SizeOf<RustFfmpegProbe.NativeProbeResult>());
+            Assert.Equal(
+                new IntPtr(16),
+                Marshal.OffsetOf<RustFfmpegProbe.NativeProbeResult>(
+                    nameof(RustFfmpegProbe.NativeProbeResult.Message)));
+
+            Assert.Equal(88, Marshal.SizeOf<RustFfmpegBgraFrameConverter.NativeFrame>());
+            Assert.Equal(352, Marshal.SizeOf<RustFfmpegBgraFrameConverter.NativeFrameConvertResult>());
+            Assert.Equal(
+                new IntPtr(96),
+                Marshal.OffsetOf<RustFfmpegBgraFrameConverter.NativeFrameConvertResult>(
+                    nameof(RustFfmpegBgraFrameConverter.NativeFrameConvertResult.Message)));
+
+            Assert.Equal(288, Marshal.SizeOf<RustFfmpegDecodeCore.NativeDecodeWindowResult>());
+            Assert.Equal(
+                new IntPtr(28),
+                Marshal.OffsetOf<RustFfmpegDecodeCore.NativeDecodeWindowResult>(
+                    nameof(RustFfmpegDecodeCore.NativeDecodeWindowResult.Message)));
+
+            Assert.Equal(288, Marshal.SizeOf<RustFfmpegGlobalFrameIndexBuilder.NativeGlobalFrameIndexResult>());
+            Assert.Equal(
+                new IntPtr(32),
+                Marshal.OffsetOf<RustFfmpegGlobalFrameIndexBuilder.NativeGlobalFrameIndexResult>(
+                    nameof(RustFfmpegGlobalFrameIndexBuilder.NativeGlobalFrameIndexResult.Message)));
+        }
+
+        [Fact]
+        public void RustInteropMessage_DecodesNullTerminatedAndFullCapacityUtf8()
+        {
+            var message = new RustFfmpegNativeMessage();
+            message[0] = (byte)'o';
+            message[1] = (byte)'k';
+            message[2] = 0;
+            message[3] = (byte)'x';
+
+            Assert.Equal("ok", message.ToString());
+
+            for (var index = 0; index < RustFfmpegNativeMessage.Capacity; index++)
+            {
+                message[index] = (byte)'a';
+            }
+
+            Assert.Equal(new string('a', RustFfmpegNativeMessage.Capacity), message.ToString());
+        }
+
+        [Fact]
         public void GlobalFrameIndex_AutoModeDoesNotBypassRustResourceLimit()
         {
             var resourceLimited = new RustFfmpegGlobalFrameIndexResult(

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
 using FFmpeg.AutoGen;
 
@@ -10,7 +9,6 @@ namespace FramePlayer.Engines.FFmpeg
 {
     internal static unsafe class RustFfmpegGlobalFrameIndexBuilder
     {
-        private const int MessageCapacity = 256;
         private const long NoTimestamp = long.MinValue;
         private const string BuilderModeEnvironmentVariable = "FRAMEPLAYER_FFMPEG_INDEX_BUILDER";
 
@@ -305,14 +303,7 @@ namespace FramePlayer.Engines.FFmpeg
 
         private static string ReadMessage(NativeGlobalFrameIndexResult nativeResult)
         {
-            var message = nativeResult.Message;
-            var length = 0;
-            while (length < MessageCapacity && message[length] != 0)
-            {
-                length++;
-            }
-
-            return Encoding.UTF8.GetString(message, length);
+            return nativeResult.Message.ToString();
         }
 
         [DllImport("frameplayer_ffmpeg_probe", CallingConvention = CallingConvention.Cdecl)]
@@ -332,14 +323,14 @@ namespace FramePlayer.Engines.FFmpeg
             UIntPtr entryCount);
 
         [StructLayout(LayoutKind.Sequential)]
-        private unsafe struct NativeGlobalFrameIndexResult
+        internal struct NativeGlobalFrameIndexResult
         {
             public int Status;
             public IntPtr Entries;
             public ulong EntryCount;
             public int TimeBaseNumerator;
             public int TimeBaseDenominator;
-            public fixed byte Message[MessageCapacity];
+            public RustFfmpegNativeMessage Message;
         }
 
         [StructLayout(LayoutKind.Sequential)]
