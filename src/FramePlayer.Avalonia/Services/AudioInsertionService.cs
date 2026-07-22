@@ -1,5 +1,4 @@
 using System;
-using System.Globalization;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -107,7 +106,7 @@ namespace FramePlayer.Services
                 outputFullPath,
                 request.DisplayLabel,
                 videoDuration,
-                BuildFfmpegArguments(sourceFullPath, replacementAudioFullPath, outputFullPath, videoDuration),
+                string.Empty,
                 string.Empty,
                 string.Empty);
         }
@@ -126,21 +125,6 @@ namespace FramePlayer.Services
         {
             ArgumentNullException.ThrowIfNull(plan);
             return await new ExportHostClient().InsertAudioAsync(plan, cancellationToken).ConfigureAwait(false);
-        }
-
-        private static string BuildFfmpegArguments(
-            string sourceFilePath,
-            string replacementAudioFilePath,
-            string outputFilePath,
-            TimeSpan videoDuration)
-        {
-            return string.Format(
-                CultureInfo.InvariantCulture,
-                "-v error -y -i \"{0}\" -i \"{1}\" -filter_complex \"[1:a]apad=whole_dur={2},atrim=duration={2}[aout]\" -map 0:v:0 -map \"[aout]\" -sn -dn -c:v copy -c:a aac -b:a 192k -movflags +faststart \"{3}\"",
-                sourceFilePath,
-                replacementAudioFilePath,
-                FfmpegExportTiming.FormatFfmpegTime(videoDuration),
-                outputFilePath);
         }
 
         private static bool IsH264Codec(string codecName)

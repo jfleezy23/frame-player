@@ -14,7 +14,7 @@ namespace FramePlayer.Core.Coordination
             OperationName = operationName ?? string.Empty;
             OperationScope = operationScope;
             FocusedPaneId = focusedPaneId ?? string.Empty;
-            PaneResults = paneResults ?? Array.Empty<ReviewWorkspacePaneOperationResult>();
+            PaneResults = SnapshotPaneResults(paneResults);
         }
 
         public string OperationName { get; }
@@ -193,6 +193,27 @@ namespace FramePlayer.Core.Coordination
             }
 
             return null;
+        }
+
+        private static ReviewWorkspacePaneOperationResult[] SnapshotPaneResults(
+            IReadOnlyList<ReviewWorkspacePaneOperationResult> paneResults)
+        {
+            if (paneResults == null || paneResults.Count == 0)
+            {
+                return Array.Empty<ReviewWorkspacePaneOperationResult>();
+            }
+
+            var snapshot = new List<ReviewWorkspacePaneOperationResult>(paneResults.Count);
+            for (var index = 0; index < paneResults.Count; index++)
+            {
+                var paneResult = paneResults[index];
+                if (paneResult != null)
+                {
+                    snapshot.Add(paneResult);
+                }
+            }
+
+            return snapshot.ToArray();
         }
     }
 }

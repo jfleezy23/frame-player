@@ -52,11 +52,6 @@ namespace FramePlayer.Services
             return ClampTime(loopOut.PresentationTime + positionStep, mediaDuration);
         }
 
-        public static string FormatFfmpegTime(TimeSpan value)
-        {
-            return value.TotalSeconds.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture);
-        }
-
         public static TimeSpan ClampTime(TimeSpan value, TimeSpan mediaDuration)
         {
             if (value < TimeSpan.Zero)
