@@ -1,16 +1,15 @@
 param(
     [string[]]$ScriptPaths = @(
-        "scripts\Build-TestDrop.ps1",
         "scripts\Build-RustFfmpegProbe.ps1",
         "scripts\ffmpeg\Build-FFmpeg-8.1.ps1",
         "scripts\ffmpeg\Build-FFmpeg-ExportRuntime-8.1.ps1",
         "scripts\ffmpeg\Build-FFmpeg-Tools-8.1.ps1",
         "scripts\Ensure-DevRuntime.ps1",
         "scripts\Ensure-DevExportTools.ps1",
+        "scripts\Ensure-DevExportRuntime.ps1",
         "scripts\Package-UnifiedWindows.ps1",
-        "scripts\Run-RegressionSuite.ps1",
         "scripts\Run-UnifiedWindowsRustCorpus.ps1",
-        "scripts\Run-ReviewEngine-ManualTests.ps1"
+        "scripts\Test-WorkflowActionPinning.ps1"
     )
 )
 

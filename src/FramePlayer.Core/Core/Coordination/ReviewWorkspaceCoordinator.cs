@@ -1051,7 +1051,7 @@ namespace FramePlayer.Core.Coordination
             return true;
         }
 
-        [SuppressMessage("Critical Code Smell", "S3776:Cognitive Complexity of methods should not be too high", Justification = "Shared loop-marker composition is behavior-sensitive and covered by parity tests; broader refactor is deferred until after the preview release.")]
+        [SuppressMessage("Critical Code Smell", "S3776:Cognitive Complexity of methods should not be too high", Justification = "Shared loop-marker composition is behavior-sensitive and covered by parity tests; broader refactoring requires dedicated regression work.")]
         private static LoopPlaybackRangeSnapshot CaptureSharedLoopMarker(
             LoopPlaybackRangeSnapshot existingRange,
             LoopPlaybackMarkerEndpoint endpoint,

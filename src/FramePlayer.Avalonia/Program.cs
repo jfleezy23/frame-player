@@ -90,7 +90,11 @@ namespace FramePlayer.Avalonia
                 : runtimeBase;
         }
 
-        [LibraryImport("kernel32", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [LibraryImport(
+            "kernel32.dll",
+            EntryPoint = "SetDllDirectoryW",
+            SetLastError = true,
+            StringMarshalling = StringMarshalling.Utf16)]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static partial bool SetDllDirectory(string lpPathName);
     }

@@ -12,7 +12,8 @@ if ($RuntimeIdentifier -ne "win-x64") {
     throw "Unsupported Rust FFmpeg probe runtime identifier for this script: $RuntimeIdentifier"
 }
 
-if (-not $IsWindows) {
+if (-not [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
+        [System.Runtime.InteropServices.OSPlatform]::Windows)) {
     throw "Building the win-x64 Rust FFmpeg probe must run on a Windows host."
 }
 

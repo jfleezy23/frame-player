@@ -7,7 +7,7 @@ using System.Threading;
 
 namespace FramePlayer.Engines.FFmpeg
 {
-    [SuppressMessage("Interoperability", "SYSLIB1054:Use LibraryImportAttribute instead of DllImportAttribute", Justification = "AudioQueue interop stays on DllImport for this preview to avoid changing native callback marshalling during release stabilization.")]
+    [SuppressMessage("Interoperability", "SYSLIB1054:Use LibraryImportAttribute instead of DllImportAttribute", Justification = "AudioQueue interop stays on DllImport because changing native callback marshalling requires dedicated platform validation.")]
     internal sealed class MacAudioQueueOutput : IAudioOutput
     {
         private const uint AudioFormatLinearPcm = 0x6C70636D;

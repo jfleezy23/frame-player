@@ -20,8 +20,8 @@ usage() {
   cat >&2 <<USAGE
 usage: $0 --corpus <folder-or-zip>
 
-Validates the macOS release candidate against the real Frame Player test corpus.
-This script intentionally does not download substitute sample videos.
+Builds the universal Avalonia application and validates its macOS package
+against the maintained Frame Player test corpus. No substitute media is downloaded.
 USAGE
 }
 
@@ -43,51 +43,19 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-resolve_dotnet() {
-  if [[ -n "${DOTNET_ROOT:-}" && -x "$DOTNET_ROOT/dotnet" ]]; then
-    printf '%s\n' "$DOTNET_ROOT/dotnet"
-    return 0
-  fi
-
-  if command -v dotnet >/dev/null 2>&1; then
-    command -v dotnet
-    return 0
-  fi
-
-  if [[ -x "$HOME/.dotnet/dotnet" ]]; then
-    printf '%s\n' "$HOME/.dotnet/dotnet"
-    return 0
-  fi
-
-  return 1
-}
-
 if [[ -z "$CORPUS_INPUT" && -d "$ROOT_DIR/Video Test Files" ]]; then
   CORPUS_INPUT="$ROOT_DIR/Video Test Files"
 fi
 
-if [[ -z "$CORPUS_INPUT" ]]; then
+if [[ -z "$CORPUS_INPUT" || ! -e "$CORPUS_INPUT" ]]; then
   echo "A real corpus path is required. Pass --corpus <folder-or-zip> or set FRAMEPLAYER_MAC_CORPUS." >&2
   exit 2
 fi
 
-if [[ ! -e "$CORPUS_INPUT" ]]; then
-  echo "Corpus path does not exist: $CORPUS_INPUT" >&2
-  exit 2
-fi
-
-DOTNET_BIN="$(resolve_dotnet)" || {
+command -v dotnet >/dev/null 2>&1 || {
   echo "dotnet SDK not found. Install the SDK pinned by global.json first." >&2
   exit 1
 }
-
-DOTNET_BIN_DIR="$(cd "$(dirname "$DOTNET_BIN")" && pwd)"
-if [[ -n "${DOTNET_ROOT:-}" ]]; then
-  export DOTNET_ROOT
-  export PATH="$DOTNET_ROOT:$PATH"
-else
-  export PATH="$DOTNET_BIN_DIR:$PATH"
-fi
 
 rm -rf "$RESULTS_DIR"
 mkdir -p "$WORK_ROOT" "$RESULTS_DIR"
@@ -98,9 +66,7 @@ else
   rm -rf "$CORPUS_DIR"
   mkdir -p "$CORPUS_DIR"
   case "$CORPUS_INPUT" in
-    *.zip)
-      /usr/bin/ditto -x -k "$CORPUS_INPUT" "$CORPUS_DIR"
-      ;;
+    *.zip) /usr/bin/ditto -x -k "$CORPUS_INPUT" "$CORPUS_DIR" ;;
     *)
       echo "Unsupported corpus archive. Provide a folder or .zip file: $CORPUS_INPUT" >&2
       exit 2
@@ -109,13 +75,8 @@ else
 fi
 
 find "$CORPUS_DIR" -type f \( \
-  -iname '*.avi' -o \
-  -iname '*.m4v' -o \
-  -iname '*.mkv' -o \
-  -iname '*.mov' -o \
-  -iname '*.mp4' -o \
-  -iname '*.ts' -o \
-  -iname '*.wmv' \
+  -iname '*.avi' -o -iname '*.m4v' -o -iname '*.mkv' -o -iname '*.mov' -o \
+  -iname '*.mp4' -o -iname '*.ts' -o -iname '*.wmv' \
 \) | sort > "$RESULTS_DIR/corpus-files.txt"
 
 if [[ ! -s "$RESULTS_DIR/corpus-files.txt" ]]; then
@@ -123,20 +84,14 @@ if [[ ! -s "$RESULTS_DIR/corpus-files.txt" ]]; then
   exit 1
 fi
 
-CONFIGURATION=Release "$ROOT_DIR/script/build_and_run.sh" --build-only
+PACKAGE_VERSION="${PACKAGE_VERSION:-2.0.0-rc.1}" \
+  "$ROOT_DIR/script/package_unified_macos_release.sh" --unsigned
 
-/usr/libexec/PlistBuddy -c "Print :CFBundleIconFile" "$APP_BUNDLE/Contents/Info.plist" > "$RESULTS_DIR/bundle-icon.txt"
 [[ -s "$APP_BUNDLE/Contents/Resources/FramePlayer.icns" ]]
-[[ -x "$APP_BUNDLE/Contents/MacOS/FramePlayer.Mac" ]]
+[[ -x "$APP_BUNDLE/Contents/MacOS/FramePlayer.Avalonia" ]]
+[[ -f "$APP_BUNDLE/Contents/MacOS/libframeplayer_ffmpeg_probe.dylib" ]]
 
 runtime_dir="$APP_BUNDLE/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg"
-if [[ ! -d "$runtime_dir" ]]; then
-  runtime_dir="$APP_BUNDLE/Contents/MacOS/Runtime/macos/osx-arm64"
-fi
-if [[ ! -d "$runtime_dir" ]]; then
-  runtime_dir="$APP_BUNDLE/Contents/MacOS"
-fi
-
 missing_dylibs=()
 for dylib in "${REQUIRED_DYLIBS[@]}"; do
   if [[ ! -f "$runtime_dir/$dylib" ]]; then
@@ -146,10 +101,8 @@ done
 
 if [[ ${#missing_dylibs[@]} -gt 0 ]]; then
   {
-    echo "Missing required macOS FFmpeg runtime dylibs in $runtime_dir:"
+    echo "Missing required macOS FFmpeg runtime libraries in $runtime_dir:"
     printf '  %s\n' "${missing_dylibs[@]}"
-    echo
-    echo "Stage the pinned macOS runtime under Runtime/macos/osx-arm64/ffmpeg before running corpus validation."
   } >&2
   exit 1
 fi
@@ -157,9 +110,13 @@ fi
 FRAMEPLAYER_MAC_CORPUS="$CORPUS_DIR" \
 FRAMEPLAYER_MAC_REQUIRE_CORPUS=1 \
 FRAMEPLAYER_MAC_APP_BUNDLE="$APP_BUNDLE" \
+FRAMEPLAYER_AVALONIA_RUNTIME_BASE="$APP_BUNDLE/Contents/MacOS" \
+FRAMEPLAYER_AVALONIA_APP_BASE_DIRECTORY="$APP_BUNDLE/Contents/MacOS" \
+FRAMEPLAYER_AVALONIA_EXPORT_HOST_EXECUTABLE="$APP_BUNDLE/Contents/MacOS/FramePlayer.Avalonia" \
 FRAMEPLAYER_GPU_BACKEND=cpu \
-"$DOTNET_BIN" test "$ROOT_DIR/tests/FramePlayer.Mac.Tests/FramePlayer.Mac.Tests.csproj" \
+dotnet test "$ROOT_DIR/tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj" \
   -c Release \
+  --filter "Category=ReleaseCandidate" \
   --logger "trx;LogFileName=macos-release-candidate.trx" \
   --results-directory "$RESULTS_DIR"
 

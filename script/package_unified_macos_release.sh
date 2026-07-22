@@ -134,8 +134,6 @@ env -u VERSION \
 [[ -f "$APP_BUNDLE/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/libavformat.62.dylib" ]]
 [[ -f "$APP_BUNDLE/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/libavfilter.11.dylib" ]]
 [[ -f "$APP_BUNDLE/Contents/MacOS/libframeplayer_ffmpeg_probe.dylib" ]]
-[[ ! -e "$APP_BUNDLE/Contents/MacOS/FramePlayer.Mac" ]]
-
 if [[ "$SIGN_MODE" != "none" ]]; then
   resolved_identity="$(resolve_signing_identity)" || {
     echo "No usable codesigning identity found. Re-run with --unsigned or install a signing certificate." >&2

@@ -1,6 +1,6 @@
 # Frame Player
 
-Frame Player is a frame-first desktop video review tool for exact stepping, seeking, compare review, loop review, and export workflows.
+Frame Player is a frame-first cross-platform video review tool for exact stepping, seeking, compare review, loop review, and export workflows.
 
 ## Downloads
 
@@ -8,7 +8,7 @@ Frame Player is a frame-first desktop video review tool for exact stepping, seek
 | --- | --- | --- | --- |
 | Stable (Unified) | Windows x64 and Apple Silicon macOS | `v2.0.0` | [Frame Player v2.0.0](https://github.com/jfleezy23/frame-player/releases/tag/v2.0.0) |
 
-Frame Player `v2.0` is the new unified, cross-platform release built on Avalonia, fully superseding the legacy Windows WPF `v1.8.x` path.
+Frame Player `v2.0` is the universal Avalonia application for Windows x64 and Apple Silicon macOS.
 
 ## Highlights
 
@@ -20,18 +20,9 @@ Frame Player `v2.0` is the new unified, cross-platform release built on Avalonia
 - Recent files, diagnostics export, Video Info, About, and Help surfaces.
 - Bundled pinned FFmpeg runtimes; no Homebrew or external FFmpeg install required for released apps.
 
-## Screenshots
-
-These screenshots are captured from the actual Windows app and the macOS app surface. They show the current empty-state layouts; loaded-video screenshots should replace or supplement them when clean corpus-backed captures are available.
-
-| Windows | macOS |
-| --- | --- |
-| ![Windows single-pane empty state](docs/assets/screenshots/windows-main.png) | ![macOS single-pane empty state](docs/assets/screenshots/macos-main.png) |
-| ![Windows two-pane compare empty state](docs/assets/screenshots/windows-compare.png) | ![macOS two-pane compare empty state](docs/assets/screenshots/macos-compare.png) |
-
 ## Documentation
 
-- [Wiki](https://github.com/jfleezy23/frame-player/wiki): user guide, screenshots, shortcuts, troubleshooting, build notes, validation, and security notes.
+- [Wiki](https://github.com/jfleezy23/frame-player/wiki): user guide, shortcuts, troubleshooting, build notes, validation, and security notes.
 - [All releases](https://github.com/jfleezy23/frame-player/releases): Current unified stable downloads and historical artifacts.
 - [Release checklist](docs/release-checklist.md): release validation steps.
 - [Security policy](SECURITY.md): supported versions and reporting process.
@@ -41,15 +32,15 @@ These screenshots are captured from the actual Windows app and the macOS app sur
 
 ```bash
 dotnet build src/FramePlayer.Avalonia/FramePlayer.Avalonia.csproj -c Release
-dotnet test tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj -c Release
+dotnet test tests/FramePlayer.Core.Tests/FramePlayer.Core.Tests.csproj -c Release
+dotnet test tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj -c Release --filter "Category!=ReleaseCandidate"
 ```
 
 See the [Wiki build guide](https://github.com/jfleezy23/frame-player/wiki/Build-From-Source) for runtime staging, corpus validation, signing, and notarization details.
 
 ## Release Tracks
 
-- Frame Player `v2.0` is the single unified cross-platform path based on Avalonia.
-- The legacy `v1.8.x` WPF application path has been officially deprecated and superseded.
+- Frame Player `v2.0` has one Avalonia codebase and one release line for both supported platforms.
 
 ## License
 

@@ -31,29 +31,44 @@ jobs:
           rustup toolchain install stable --profile minimal
           cargo --version
 
+      - name: Cache pinned FFmpeg runtime
+        id: cache_ffmpeg_runtime
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: Runtime/macos/osx-arm64/ffmpeg/*.dylib
+          key: macos-arm64-ffmpeg-n8.1.2-${{ hashFiles('scripts/ffmpeg/Build-FFmpeg-macOS-8.1.sh', 'Runtime/macos/osx-arm64/ffmpeg/SHA256SUMS.txt') }}
+
+      - name: Build pinned FFmpeg runtime
+        if: steps.cache_ffmpeg_runtime.outputs.cache-hit != 'true'
+        run: |
+          work_root="$RUNNER_TEMP/frameplayer-ffmpeg-macos-8.1.2-source-build"
+          mkdir -p "$work_root"
+          WORK_ROOT="$work_root" RUNTIME_DIR="$work_root/runtime" \
+            scripts/ffmpeg/Build-FFmpeg-macOS-8.1.sh
+          cp "$work_root/runtime/"*.dylib Runtime/macos/osx-arm64/ffmpeg/
+
+      - name: Validate pinned FFmpeg runtime
+        run: |
+          cd Runtime/macos/osx-arm64/ffmpeg
+          shasum -a 256 -c SHA256SUMS.txt
+
       - name: Restore
         run: |
-          dotnet restore src/FramePlayer.Mac/FramePlayer.Mac.csproj
-          dotnet restore tests/FramePlayer.Mac.Tests/FramePlayer.Mac.Tests.csproj
           dotnet restore src/FramePlayer.Avalonia/FramePlayer.Avalonia.csproj
+          dotnet restore tests/FramePlayer.Core.Tests/FramePlayer.Core.Tests.csproj
           dotnet restore tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj
 
       - name: Build
         run: |
-          dotnet build src/FramePlayer.Mac/FramePlayer.Mac.csproj -c Release --no-restore
           dotnet build src/FramePlayer.Avalonia/FramePlayer.Avalonia.csproj -c Release --no-restore
 
       - name: Test
         run: |
-          dotnet test tests/FramePlayer.Mac.Tests/FramePlayer.Mac.Tests.csproj -c Release --no-restore --filter "Category!=ReleaseCandidate"
-          dotnet test tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj -c Release --no-restore
+          dotnet test tests/FramePlayer.Core.Tests/FramePlayer.Core.Tests.csproj -c Release --no-restore
+          dotnet test tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj -c Release --no-restore --filter "Category!=ReleaseCandidate"
 
       - name: Bundle smoke test
         run: |
-          CONFIGURATION=Release script/build_and_run.sh --build-only
-          test -x "dist/Frame Player.app/Contents/MacOS/FramePlayer.Mac"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "dist/Frame Player.app/Contents/Info.plist"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "dist/Frame Player.app/Contents/Info.plist"
           PACKAGE_VERSION=2.0.0-rc.1 script/package_unified_macos_release.sh --unsigned
           zip_path="artifacts/2.0.0-rc.1/FramePlayer-macOS-arm64-2.0.0-rc.1.zip"
           sha_path="$zip_path.sha256"
