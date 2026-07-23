@@ -82,7 +82,11 @@ namespace FramePlayer.Avalonia.Tests
                 Assert.Equal(diagnosticsOutput, diagnosticsPath);
                 Assert.Contains("Frame Player diagnostics", File.ReadAllText(diagnosticsOutput));
 
-                SetCompareMode(window!, false);
+                await InvokeWindowTaskAsync(window!, "OpenMediaAsync", compareFile, "pane-primary");
+                var audioAvailabilityArguments = new object?[] { null };
+                Assert.True(
+                    InvokeWindowMethod<bool>(window!, "CanReplaceAudioTrack", audioAvailabilityArguments),
+                    audioAvailabilityArguments[0]?.ToString());
                 var wavPath = Path.Combine(temp.Path, "replacement.wav");
                 WriteSineWaveWav(wavPath, TimeSpan.FromSeconds(1));
                 var audioOutput = Path.Combine(temp.Path, "audio-inserted.mp4");
@@ -95,6 +99,26 @@ namespace FramePlayer.Avalonia.Tests
                 Assert.True(audioResult!.Succeeded, audioResult.Message);
                 Assert.True(File.Exists(audioOutput), "Audio insertion did not create an output file.");
                 AssertProbeSucceeds(audioOutput, expectAudio: true);
+
+                var hevcMp4 = files.FirstOrDefault(path =>
+                    string.Equals(Path.GetExtension(path), ".mp4", StringComparison.OrdinalIgnoreCase) &&
+                    Path.GetFileName(path).Contains("hevc", StringComparison.OrdinalIgnoreCase));
+                Assert.False(string.IsNullOrWhiteSpace(hevcMp4), "The corpus does not contain an HEVC MP4 needed to validate codec-agnostic audio insertion.");
+                await InvokeWindowTaskAsync(window!, "OpenMediaAsync", hevcMp4!, "pane-primary");
+                audioAvailabilityArguments[0] = null;
+                Assert.True(
+                    InvokeWindowMethod<bool>(window!, "CanReplaceAudioTrack", audioAvailabilityArguments),
+                    audioAvailabilityArguments[0]?.ToString());
+                var hevcAudioOutput = Path.Combine(temp.Path, "hevc-audio-inserted.mp4");
+                var hevcAudioResult = await InvokeWindowTaskAsync<AudioInsertionResult?>(
+                    window!,
+                    "ReplaceAudioTrackAsync",
+                    wavPath,
+                    hevcAudioOutput);
+                Assert.NotNull(hevcAudioResult);
+                Assert.True(hevcAudioResult!.Succeeded, hevcAudioResult.Message);
+                Assert.True(File.Exists(hevcAudioOutput), "HEVC audio insertion did not create an output file.");
+                AssertProbeSucceeds(hevcAudioOutput, expectAudio: true);
             }
             finally
             {
@@ -359,6 +383,36 @@ namespace FramePlayer.Avalonia.Tests
             }
 
             return await task;
+        }
+
+        private T InvokeWindowMethod<T>(MainWindow window, string methodName, object?[] args)
+        {
+            var method = FindMethod(window.GetType(), methodName, args.Length);
+            T? result = default;
+            var invoked = new ManualResetEventSlim(false);
+            Exception? invokeException = null;
+            _fixture.Run(() =>
+            {
+                try
+                {
+                    result = (T?)method.Invoke(window, args);
+                }
+                catch (Exception ex)
+                {
+                    invokeException = ex;
+                }
+                finally
+                {
+                    invoked.Set();
+                }
+            });
+            Assert.True(invoked.Wait(TimeSpan.FromSeconds(5)), "Timed out invoking " + methodName + ".");
+            if (invokeException != null)
+            {
+                throw invokeException;
+            }
+
+            return result ?? throw new InvalidOperationException(methodName + " returned no result.");
         }
 
         private static MethodInfo FindMethod(Type type, string name, int parameterCount)

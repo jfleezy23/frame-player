@@ -160,7 +160,7 @@ namespace FramePlayer.Avalonia.Tests
                         position <= loopEnd + frameStep + frameStep,
                         "Loop playback escaped the configured range. Position=" + position + " range=" + loopStart + ".." + loopEnd));
 
-                var loopStatus = GetTextBlockText(window!, "LoopStatusTextBlock");
+                var loopStatus = GetButtonText(window!, "LoopStatusButton");
                 Assert.StartsWith("Loop: ", loopStatus, StringComparison.Ordinal);
                 Assert.DoesNotContain("off", loopStatus, StringComparison.OrdinalIgnoreCase);
             }
@@ -409,13 +409,13 @@ namespace FramePlayer.Avalonia.Tests
             _fixture.Run(() => method.Invoke(window, new[] { pane }));
         }
 
-        private string GetTextBlockText(MainWindow window, string name)
+        private string GetButtonText(MainWindow window, string name)
         {
             var completed = new ManualResetEventSlim(false);
             var text = string.Empty;
             _fixture.Run(() =>
             {
-                text = window.FindControl<TextBlock>(name)?.Text ?? string.Empty;
+                text = (window.FindControl<Button>(name)?.Content as TextBlock)?.Text ?? string.Empty;
                 completed.Set();
             });
 

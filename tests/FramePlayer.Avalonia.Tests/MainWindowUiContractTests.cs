@@ -9,6 +9,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -19,6 +20,7 @@ using FramePlayer.Core.Abstractions;
 using FramePlayer.Core.Events;
 using FramePlayer.Core.Models;
 using FramePlayer.Avalonia.Views;
+using Microsoft.Win32.SafeHandles;
 using Xunit;
 
 namespace FramePlayer.Avalonia.Tests
@@ -888,7 +890,7 @@ namespace FramePlayer.Avalonia.Tests
                 var window = new MainWindow();
                 try
                 {
-                    var mainLoopStatus = RequireControl<TextBlock>(window, "LoopStatusTextBlock");
+                    var mainLoopStatus = RequireControl<Button>(window, "LoopStatusButton");
                     var mainTransportParent = Assert.IsType<StackPanel>(RequireControl<Button>(window, "PlayPauseButton").Parent);
                     Assert.Equal(240, mainLoopStatus.Width);
                     Assert.Equal(1, Grid.GetRow(mainLoopStatus));
@@ -896,8 +898,42 @@ namespace FramePlayer.Avalonia.Tests
                     Assert.Equal(2, Grid.GetRow(mainTransportParent));
                     Assert.Equal(2, Grid.GetColumnSpan(mainTransportParent));
 
-                    AssertLoopStatusPlacement(window, "PrimaryPaneLoopStatusTextBlock", "PrimaryPanePlayPauseButton", 176);
-                    AssertLoopStatusPlacement(window, "ComparePaneLoopStatusTextBlock", "ComparePanePlayPauseButton", 176);
+                    AssertLoopStatusPlacement(window, "PrimaryPaneLoopStatusButton", "PrimaryPanePlayPauseButton", 176);
+                    AssertLoopStatusPlacement(window, "ComparePaneLoopStatusButton", "ComparePanePlayPauseButton", 176);
+                    Assert.Equal("pane-primary", RequireControl<Button>(window, "PrimaryPaneLoopStatusButton").Tag);
+                    Assert.Equal("pane-compare", RequireControl<Button>(window, "ComparePaneLoopStatusButton").Tag);
+                    Assert.Equal("Toggle Loop Playback (L)", ToolTip.GetTip(mainLoopStatus));
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public void LoopStatusLabel_LeftClickTogglesLoopPlaybackForLoadedPane()
+        {
+            _fixture.Run(() =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    SetPrivateField(
+                        window,
+                        "_primaryEngine",
+                        new TestVideoReviewEngine
+                        {
+                            IsMediaOpen = true,
+                            CurrentFilePath = "/tmp/review.mp4"
+                        });
+                    InvokePrivate(window, "UpdateCommandStates");
+                    var loopStatus = RequireControl<Button>(window, "LoopStatusButton");
+
+                    loopStatus.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+                    Assert.Equal("Loop: full media", RequireControl<TextBlock>(window, "LoopStatusTextBlock").Text);
+                    Assert.True(RequireControl<MenuItem>(window, "LoopPlaybackMenuItem").IsChecked);
                 }
                 finally
                 {
@@ -1050,9 +1086,12 @@ namespace FramePlayer.Avalonia.Tests
                     Assert.Equal(16, RequireControl<TextBlock>(window, "CurrentFileTextBlock").FontSize);
                     Assert.Equal(11, RequireControl<TextBlock>(window, "PrimaryPaneFileTextBlock").FontSize);
                     Assert.Equal(11, RequireControl<TextBlock>(window, "ComparePaneFileTextBlock").FontSize);
-                    Assert.Equal(13, RequireControl<TextBlock>(window, "LoopStatusTextBlock").FontSize);
-                    Assert.Equal(11, RequireControl<TextBlock>(window, "PrimaryPaneLoopStatusTextBlock").FontSize);
-                    Assert.Equal(11, RequireControl<TextBlock>(window, "ComparePaneLoopStatusTextBlock").FontSize);
+                    Assert.Equal(13, RequireControl<Button>(window, "LoopStatusButton").FontSize);
+                    Assert.Equal(11, RequireControl<Button>(window, "PrimaryPaneLoopStatusButton").FontSize);
+                    Assert.Equal(11, RequireControl<Button>(window, "ComparePaneLoopStatusButton").FontSize);
+                    AssertLoopStatusTrimming(window, "LoopStatusButton");
+                    AssertLoopStatusTrimming(window, "PrimaryPaneLoopStatusButton");
+                    AssertLoopStatusTrimming(window, "ComparePaneLoopStatusButton");
                     Assert.Equal(30, RequireControl<TextBlock>(window, "PrimaryEmptyStateTitleTextBlock").FontSize);
                     Assert.Equal(20, RequireControl<TextBlock>(window, "CompareEmptyStateTitleTextBlock").FontSize);
 
@@ -1339,6 +1378,43 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
+        public void ZoomCommand_KeepsNativeFrameVisibleAfterCallerReleasesItsBuffer()
+        {
+            _fixture.Run(() =>
+            {
+                var window = new MainWindow();
+                HGlobalPixelBufferHandle? nativeHandle = null;
+                try
+                {
+                    var primarySurface = RequireControl<Image>(window, "CustomVideoSurface");
+                    var nativeMenu = NativeMenu.GetMenu(window)
+                        ?? throw new InvalidOperationException("Missing native menu.");
+                    var zoomIn = RequireNativeMenuItem(nativeMenu, "Zoom In");
+                    using (var nativeFrame = CreateNativeFrameBuffer(8, 4, out nativeHandle))
+                    {
+                        InvokePrivate(window, "SetPaneBitmap", ParsePane("Primary"), nativeFrame);
+                    }
+
+                    Assert.Equal(0, nativeHandle.ReleaseCount);
+                    Assert.Equal(new PixelSize(8, 4), RequireBitmap(primarySurface).PixelSize);
+
+                    zoomIn.Command!.Execute(null);
+
+                    Assert.NotNull(primarySurface.Source);
+                    Assert.True(RequireBitmap(primarySurface).PixelSize.Width < 8);
+                    Assert.Equal(0, nativeHandle.ReleaseCount);
+                }
+                finally
+                {
+                    window.Close();
+                }
+
+                Assert.NotNull(nativeHandle);
+                Assert.Equal(1, nativeHandle!.ReleaseCount);
+            });
+        }
+
+        [Fact]
         public async Task CloseVideosAsync_ReleasesReusablePaneBitmaps()
         {
             await _fixture.RunAsync(async () =>
@@ -1481,6 +1557,43 @@ namespace FramePlayer.Avalonia.Tests
                 "bgra");
         }
 
+        private static DecodedFrameBuffer CreateNativeFrameBuffer(
+            int width,
+            int height,
+            out HGlobalPixelBufferHandle handle)
+        {
+            var pixels = new byte[width * height * 4];
+            for (var index = 0; index < pixels.Length; index += 4)
+            {
+                pixels[index] = 0x40;
+                pixels[index + 1] = 0x80;
+                pixels[index + 2] = 0xC0;
+                pixels[index + 3] = 0xFF;
+            }
+
+            var pointer = Marshal.AllocHGlobal(pixels.Length);
+            Marshal.Copy(pixels, 0, pointer, pixels.Length);
+            handle = new HGlobalPixelBufferHandle(pointer);
+            return new DecodedFrameBuffer(
+                new FrameDescriptor(
+                    0,
+                    TimeSpan.Zero,
+                    false,
+                    true,
+                    width,
+                    height,
+                    "bgra",
+                    "bgra",
+                    null,
+                    null,
+                    null),
+                handle,
+                pointer,
+                pixels.Length,
+                width * 4,
+                "bgra");
+        }
+
         [Fact]
         public void CompareMode_FocusedUnloadedPaneDisablesMainTransportCommands()
         {
@@ -1554,13 +1667,21 @@ namespace FramePlayer.Avalonia.Tests
 
         private static void AssertLoopStatusPlacement(Window window, string loopStatusName, string transportButtonName, double expectedWidth)
         {
-            var loopStatus = RequireControl<TextBlock>(window, loopStatusName);
+            var loopStatus = RequireControl<Button>(window, loopStatusName);
             var transportParent = RequireControl<Button>(window, transportButtonName).Parent as Control;
             Assert.NotNull(transportParent);
             Assert.Equal(expectedWidth, loopStatus.Width);
             Assert.Equal(1, Grid.GetRow(loopStatus));
             Assert.Equal(2, Grid.GetColumn(loopStatus));
             Assert.Equal(2, Grid.GetRow(transportParent!));
+        }
+
+        private static void AssertLoopStatusTrimming(Window window, string loopStatusButtonName)
+        {
+            var loopStatusButton = RequireControl<Button>(window, loopStatusButtonName);
+            var loopStatusText = Assert.IsType<TextBlock>(loopStatusButton.Content);
+            Assert.Equal(TextTrimming.CharacterEllipsis, loopStatusText.TextTrimming);
+            Assert.Equal(TextWrapping.NoWrap, loopStatusText.TextWrapping);
         }
 
         private static void AssertFrameEntryRail(
@@ -1782,6 +1903,24 @@ namespace FramePlayer.Avalonia.Tests
 
             public void Dispose()
             {
+            }
+        }
+
+        private sealed class HGlobalPixelBufferHandle : SafeHandleZeroOrMinusOneIsInvalid
+        {
+            public HGlobalPixelBufferHandle(IntPtr pointer)
+                : base(ownsHandle: true)
+            {
+                SetHandle(pointer);
+            }
+
+            public int ReleaseCount { get; private set; }
+
+            protected override bool ReleaseHandle()
+            {
+                Marshal.FreeHGlobal(handle);
+                ReleaseCount++;
+                return true;
             }
         }
 
