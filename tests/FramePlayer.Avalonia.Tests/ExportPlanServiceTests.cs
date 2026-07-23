@@ -164,6 +164,16 @@ namespace FramePlayer.Avalonia.Tests
             Assert.Equal(Path.GetFullPath(files.PrimaryVideoPath), hevcPlan.SourceFilePath);
 
             Assert.Throws<ArgumentNullException>(() => AudioInsertionService.CreatePlan(null!));
+            var unsupportedSourcePath = Path.ChangeExtension(files.PrimaryVideoPath, ".mov");
+            File.Copy(files.PrimaryVideoPath, unsupportedSourcePath);
+            var unsupportedSourceException = Assert.Throws<InvalidOperationException>(() =>
+                AudioInsertionService.CreatePlan(new AudioInsertionRequest(
+                    unsupportedSourcePath,
+                    files.ReplacementAudioPath,
+                    files.AudioOutputPath,
+                    "Primary",
+                    CreateSession(unsupportedSourcePath, TimeSpan.FromSeconds(10), 1920, 1080, "prores"))));
+            Assert.Equal("Audio insertion requires an MP4 or M4V source file.", unsupportedSourceException.Message);
             Assert.Throws<InvalidOperationException>(() => AudioInsertionService.CreatePlan(new AudioInsertionRequest(
                 files.PrimaryVideoPath,
                 files.ReplacementAudioPath,
