@@ -845,7 +845,7 @@ namespace FramePlayer.Avalonia.Views
         {
             if (ShouldUseAllPaneTransport(operationScope))
             {
-                await StartAllPanePlaybackAsync();
+                await StartAllPanePlaybackAsync().ConfigureAwait(false);
                 return;
             }
 
@@ -874,7 +874,7 @@ namespace FramePlayer.Avalonia.Views
             _ = logAction;
             if (ShouldUseAllPaneTransport(operationScope))
             {
-                await PauseAllPanePlaybackAsync();
+                await PauseAllPanePlaybackAsync().ConfigureAwait(false);
                 return;
             }
 
@@ -938,9 +938,10 @@ namespace FramePlayer.Avalonia.Views
 
             await Task.WhenAll(
                 Task.Run(() => _primaryEngine.PlayAsync()),
-                Task.Run(() => compareEngine.PlayAsync()));
+                Task.Run(() => compareEngine.PlayAsync()))
+                .ConfigureAwait(false);
 
-            UpdateCommandStates();
+            UpdateCommandStatesOnUiThread();
         }
 
         private async Task PauseAllPanePlaybackAsync()
@@ -958,7 +959,7 @@ namespace FramePlayer.Avalonia.Views
 
             if (pauseTasks.Count > 0)
             {
-                await Task.WhenAll(pauseTasks);
+                await Task.WhenAll(pauseTasks).ConfigureAwait(false);
             }
         }
 
@@ -967,7 +968,7 @@ namespace FramePlayer.Avalonia.Views
             CancelQueuedSliderScrubs();
             if (IsAllPaneTransportEnabled)
             {
-                await SeekAllPaneRelativePreservingPlaybackAsync(offset);
+                await SeekAllPaneRelativePreservingPlaybackAsync(offset).ConfigureAwait(false);
                 return;
             }
 
@@ -1336,7 +1337,7 @@ namespace FramePlayer.Avalonia.Views
         {
             _ = interactionName;
             CancelQueuedSliderScrubs();
-            await SeekMasterTimelineAsync(target);
+            await SeekMasterTimelineAsync(target).ConfigureAwait(false);
         }
 
         private void PositionSlider_ValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
@@ -1483,7 +1484,7 @@ namespace FramePlayer.Avalonia.Views
         {
             if (IsAllPaneTransportEnabled)
             {
-                await SeekAllPaneToTimePreservingPlaybackAsync(target, cancellationToken);
+                await SeekAllPaneToTimePreservingPlaybackAsync(target, cancellationToken).ConfigureAwait(false);
                 return;
             }
 
@@ -1500,12 +1501,12 @@ namespace FramePlayer.Avalonia.Views
 
             var primaryTarget = ClampSeekTarget(_primaryEngine.Position.PresentationTime + offset);
             var compareTarget = ClampSeekTarget(compareEngine.Position.PresentationTime + offset);
-            await SeekAllPaneToTimesPreservingPlaybackAsync(primaryTarget, compareTarget);
+            await SeekAllPaneToTimesPreservingPlaybackAsync(primaryTarget, compareTarget).ConfigureAwait(false);
         }
 
         private async Task SeekAllPaneToTimePreservingPlaybackAsync(TimeSpan target, CancellationToken cancellationToken = default)
         {
-            await SeekAllPaneToTimesPreservingPlaybackAsync(target, target, cancellationToken);
+            await SeekAllPaneToTimesPreservingPlaybackAsync(target, target, cancellationToken).ConfigureAwait(false);
         }
 
         private async Task SeekAllPaneToTimesPreservingPlaybackAsync(TimeSpan primaryTarget, TimeSpan compareTarget, CancellationToken cancellationToken = default)
@@ -1520,34 +1521,40 @@ namespace FramePlayer.Avalonia.Views
             var resumeComparePlayback = compareEngine.IsPlaying;
             if (resumePrimaryPlayback || resumeComparePlayback)
             {
-                await PauseAllPanePlaybackAsync();
+                await PauseAllPanePlaybackAsync().ConfigureAwait(false);
             }
 
             try
             {
                 await Task.WhenAll(
                     Task.Run(() => _primaryEngine.SeekToTimeAsync(primaryTarget, cancellationToken), cancellationToken),
-                    Task.Run(() => compareEngine.SeekToTimeAsync(compareTarget, cancellationToken), cancellationToken));
+                    Task.Run(() => compareEngine.SeekToTimeAsync(compareTarget, cancellationToken), cancellationToken))
+                    .ConfigureAwait(false);
             }
             finally
             {
-                var resumeTasks = new List<Task>(2);
-                if (resumePrimaryPlayback && CanStartPlayback(_primaryEngine))
+                try
                 {
-                    resumeTasks.Add(Task.Run(() => _primaryEngine.PlayAsync(), CancellationToken.None));
-                }
+                    var resumeTasks = new List<Task>(2);
+                    if (resumePrimaryPlayback && CanStartPlayback(_primaryEngine))
+                    {
+                        resumeTasks.Add(Task.Run(() => _primaryEngine.PlayAsync(), CancellationToken.None));
+                    }
 
-                if (resumeComparePlayback && CanStartPlayback(compareEngine))
+                    if (resumeComparePlayback && CanStartPlayback(compareEngine))
+                    {
+                        resumeTasks.Add(Task.Run(() => compareEngine.PlayAsync(), CancellationToken.None));
+                    }
+
+                    if (resumeTasks.Count > 0)
+                    {
+                        await Task.WhenAll(resumeTasks).ConfigureAwait(false);
+                    }
+                }
+                finally
                 {
-                    resumeTasks.Add(Task.Run(() => compareEngine.PlayAsync(), CancellationToken.None));
+                    UpdateCommandStatesOnUiThread();
                 }
-
-                if (resumeTasks.Count > 0)
-                {
-                    await Task.WhenAll(resumeTasks);
-                }
-
-                UpdateCommandStates();
             }
         }
 
@@ -1602,30 +1609,46 @@ namespace FramePlayer.Avalonia.Views
             var resumeComparePlayback = compareEngine.IsPlaying;
             if (resumePrimaryPlayback || resumeComparePlayback)
             {
-                await PauseAllPanePlaybackAsync();
+                await PauseAllPanePlaybackAsync().ConfigureAwait(false);
             }
 
-            await Task.WhenAll(
-                Task.Run(() => _primaryEngine.SeekToFrameAsync(targetFrameIndex)),
-                Task.Run(() => compareEngine.SeekToFrameAsync(targetFrameIndex)));
-
-            var resumeTasks = new List<Task>(2);
-            if (resumePrimaryPlayback && CanStartPlayback(_primaryEngine))
+            try
             {
-                resumeTasks.Add(Task.Run(() => _primaryEngine.PlayAsync()));
+                await Task.WhenAll(
+                    Task.Run(() => _primaryEngine.SeekToFrameAsync(targetFrameIndex)),
+                    Task.Run(() => compareEngine.SeekToFrameAsync(targetFrameIndex)))
+                    .ConfigureAwait(false);
             }
-
-            if (resumeComparePlayback && CanStartPlayback(compareEngine))
+            finally
             {
-                resumeTasks.Add(Task.Run(() => compareEngine.PlayAsync()));
-            }
+                try
+                {
+                    var resumeTasks = new List<Task>(2);
+                    if (resumePrimaryPlayback && CanStartPlayback(_primaryEngine))
+                    {
+                        resumeTasks.Add(Task.Run(() => _primaryEngine.PlayAsync()));
+                    }
 
-            if (resumeTasks.Count > 0)
-            {
-                await Task.WhenAll(resumeTasks);
-            }
+                    if (resumeComparePlayback && CanStartPlayback(compareEngine))
+                    {
+                        resumeTasks.Add(Task.Run(() => compareEngine.PlayAsync()));
+                    }
 
-            UpdateCommandStates();
+                    if (resumeTasks.Count > 0)
+                    {
+                        await Task.WhenAll(resumeTasks).ConfigureAwait(false);
+                    }
+                }
+                finally
+                {
+                    UpdateCommandStatesOnUiThread();
+                }
+            }
+        }
+
+        private void UpdateCommandStatesOnUiThread()
+        {
+            Dispatcher.UIThread.Post(UpdateCommandStates);
         }
 
         private void SetLoopMarker(LoopPlaybackMarkerEndpoint endpoint)
