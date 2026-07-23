@@ -69,35 +69,63 @@ namespace FramePlayer.Engines.FFmpeg
 
             cancellationToken.ThrowIfCancellationRequested();
             var indexStopwatch = Stopwatch.StartNew();
+            var rustIndex = TryBuildWithRust(
+                filePath,
+                videoStreamIndex,
+                indexStopwatch,
+                cancellationToken);
+            return rustIndex ?? BuildManagedIndex(
+                filePath,
+                videoStreamIndex,
+                indexStopwatch,
+                cancellationToken);
+        }
+
+        private static FfmpegGlobalFrameIndex TryBuildWithRust(
+            string filePath,
+            int videoStreamIndex,
+            Stopwatch indexStopwatch,
+            CancellationToken cancellationToken)
+        {
             var buildMode = RustFfmpegGlobalFrameIndexBuilder.ResolveBuildMode();
-            if (buildMode != RustFfmpegGlobalFrameIndexBuildMode.Managed)
+            if (buildMode == RustFfmpegGlobalFrameIndexBuildMode.Managed)
             {
-                var rustIndex = RustFfmpegGlobalFrameIndexBuilder.TryBuild(
-                    ffmpeg.RootPath,
-                    filePath,
-                    videoStreamIndex,
-                    FfmpegMediaResourceLimits.GlobalFrameIndexTimeLimit - indexStopwatch.Elapsed,
-                    cancellationToken);
-                if (rustIndex.Succeeded)
-                {
-                    return FromRustIndex(rustIndex, indexStopwatch, cancellationToken);
-                }
-
-                if (!ShouldFallBackToManagedIndex(buildMode, rustIndex))
-                {
-                    if (rustIndex.ResourceLimitExceeded)
-                    {
-                        throw new FfmpegMediaResourceLimitException(
-                            "Exact frame indexing exceeded its resource limits: " + rustIndex.Message);
-                    }
-
-                    throw new InvalidOperationException("Rust FFmpeg exact frame index failed: " +
-                        rustIndex.StatusName + ": " + rustIndex.Message);
-                }
-
-                FfmpegMediaResourceLimits.EnsureGlobalFrameIndexCapacity(0, indexStopwatch.Elapsed);
+                return null;
             }
 
+            var rustIndex = RustFfmpegGlobalFrameIndexBuilder.TryBuild(
+                ffmpeg.RootPath,
+                filePath,
+                videoStreamIndex,
+                FfmpegMediaResourceLimits.GlobalFrameIndexTimeLimit - indexStopwatch.Elapsed,
+                cancellationToken);
+            if (rustIndex.Succeeded)
+            {
+                return FromRustIndex(rustIndex, indexStopwatch, cancellationToken);
+            }
+
+            if (ShouldFallBackToManagedIndex(buildMode, rustIndex))
+            {
+                FfmpegMediaResourceLimits.EnsureGlobalFrameIndexCapacity(0, indexStopwatch.Elapsed);
+                return null;
+            }
+
+            if (rustIndex.ResourceLimitExceeded)
+            {
+                throw new FfmpegMediaResourceLimitException(
+                    "Exact frame indexing exceeded its resource limits: " + rustIndex.Message);
+            }
+
+            throw new InvalidOperationException("Rust FFmpeg exact frame index failed: " +
+                rustIndex.StatusName + ": " + rustIndex.Message);
+        }
+
+        private static FfmpegGlobalFrameIndex BuildManagedIndex(
+            string filePath,
+            int videoStreamIndex,
+            Stopwatch indexStopwatch,
+            CancellationToken cancellationToken)
+        {
             AVFormatContext* formatContext = null;
             AVCodecContext* codecContext = null;
             AVPacket* packet = null;
@@ -129,12 +157,19 @@ namespace FramePlayer.Engines.FFmpeg
                     streamInfoResult,
                     "Probe media streams for frame index");
 
-                if (videoStreamIndex < 0 || videoStreamIndex >= formatContext->nb_streams)
+                if (videoStreamIndex < 0 ||
+                    videoStreamIndex >= formatContext->nb_streams ||
+                    formatContext->streams == null)
                 {
                     throw new InvalidOperationException("The requested primary video stream is not available for indexing.");
                 }
 
                 var videoStream = formatContext->streams[videoStreamIndex];
+                if (videoStream == null || videoStream->codecpar == null)
+                {
+                    throw new InvalidOperationException("The requested primary video stream is not available for indexing.");
+                }
+
                 var decoder = ffmpeg.avcodec_find_decoder(videoStream->codecpar->codec_id);
                 if (decoder == null)
                 {
@@ -173,122 +208,196 @@ namespace FramePlayer.Engines.FFmpeg
                     throw new InvalidOperationException("Could not allocate an FFmpeg frame for frame indexing.");
                 }
 
-                var entries = new List<FfmpegGlobalFrameIndexEntry>();
-                FfmpegGlobalFrameIndexEntry currentAnchorEntry = null;
-                bool hasPendingVideoPacket = false;
-                bool inputExhausted = false;
-                bool flushPacketSent = false;
-                long absoluteFrameIndex = 0L;
-
-                while (true)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    FfmpegMediaResourceLimits.EnsureGlobalFrameIndexCapacity(
-                        entries.Count,
-                        indexStopwatch.Elapsed);
-
-                    FfmpegGlobalFrameIndexEntry indexedFrame;
-                    if (TryReceiveIndexedFrame(
-                        videoStream,
-                        codecContext,
-                        decodedFrame,
-                        ref absoluteFrameIndex,
-                        ref currentAnchorEntry,
-                        interruptState,
-                        out indexedFrame))
-                    {
-                        entries.Add(indexedFrame);
-                        continue;
-                    }
-
-                    if (hasPendingVideoPacket)
-                    {
-                        var sendPendingResult = ffmpeg.avcodec_send_packet(codecContext, packet);
-                        if (sendPendingResult == ffmpeg.AVERROR(ffmpeg.EAGAIN))
-                        {
-                            continue;
-                        }
-
-                        FfmpegNativeHelpers.ThrowIfError(sendPendingResult, "Submit packet to decoder for frame index");
-                        hasPendingVideoPacket = false;
-                        ffmpeg.av_packet_unref(packet);
-                        continue;
-                    }
-
-                    if (inputExhausted)
-                    {
-                        if (flushPacketSent)
-                        {
-                            break;
-                        }
-
-                        var flushResult = ffmpeg.avcodec_send_packet(codecContext, null);
-                        if (flushResult == ffmpeg.AVERROR(ffmpeg.EAGAIN))
-                        {
-                            continue;
-                        }
-
-                        if (flushResult == ffmpeg.AVERROR_EOF)
-                        {
-                            break;
-                        }
-
-                        FfmpegNativeHelpers.ThrowIfError(flushResult, "Flush decoder for frame index");
-                        flushPacketSent = true;
-                        continue;
-                    }
-
-                    var readResult = ffmpeg.av_read_frame(formatContext, packet);
-                    ThrowIfIndexInterrupted(interruptState, entries.Count);
-                    if (readResult == ffmpeg.AVERROR_EOF)
-                    {
-                        inputExhausted = true;
-                        continue;
-                    }
-
-                    FfmpegNativeHelpers.ThrowIfError(readResult, "Read encoded packet for frame index");
-                    if (packet->stream_index != videoStreamIndex)
-                    {
-                        ffmpeg.av_packet_unref(packet);
-                        continue;
-                    }
-
-                    hasPendingVideoPacket = true;
-                }
+                var entries = DecodeManagedIndexEntries(
+                    formatContext,
+                    videoStream,
+                    codecContext,
+                    packet,
+                    decodedFrame,
+                    videoStreamIndex,
+                    interruptState);
 
                 EnsureIndexFinalizationActive(indexStopwatch, cancellationToken);
                 return new FfmpegGlobalFrameIndex(entries, indexStopwatch, cancellationToken);
             }
             finally
             {
-                if (decodedFrame != null)
+                ReleaseManagedIndexResources(
+                    decodedFrame,
+                    packet,
+                    codecContext,
+                    formatContext,
+                    indexInterruptHandle);
+            }
+        }
+
+        private static List<FfmpegGlobalFrameIndexEntry> DecodeManagedIndexEntries(
+            AVFormatContext* formatContext,
+            AVStream* videoStream,
+            AVCodecContext* codecContext,
+            AVPacket* packet,
+            AVFrame* decodedFrame,
+            int videoStreamIndex,
+            IndexInterruptState interruptState)
+        {
+            var entries = new List<FfmpegGlobalFrameIndexEntry>();
+            FfmpegGlobalFrameIndexEntry currentAnchorEntry = null;
+            var hasPendingVideoPacket = false;
+            var inputExhausted = false;
+            var flushPacketSent = false;
+            var absoluteFrameIndex = 0L;
+
+            while (true)
+            {
+                interruptState.CancellationToken.ThrowIfCancellationRequested();
+                FfmpegMediaResourceLimits.EnsureGlobalFrameIndexCapacity(
+                    entries.Count,
+                    interruptState.Stopwatch.Elapsed);
+
+                if (TryReceiveIndexedFrame(
+                    videoStream,
+                    codecContext,
+                    decodedFrame,
+                    ref absoluteFrameIndex,
+                    ref currentAnchorEntry,
+                    interruptState,
+                    out var indexedFrame))
                 {
-                    var frameToFree = decodedFrame;
-                    ffmpeg.av_frame_free(&frameToFree);
+                    entries.Add(indexedFrame);
+                    continue;
                 }
 
-                if (packet != null)
+                if (hasPendingVideoPacket)
                 {
-                    var packetToFree = packet;
-                    ffmpeg.av_packet_free(&packetToFree);
+                    SubmitPendingIndexPacket(codecContext, packet, ref hasPendingVideoPacket);
+                    continue;
                 }
 
-                if (codecContext != null)
+                if (inputExhausted)
                 {
-                    var codecContextToFree = codecContext;
-                    ffmpeg.avcodec_free_context(&codecContextToFree);
+                    if (FlushIndexDecoder(codecContext, ref flushPacketSent))
+                    {
+                        break;
+                    }
+
+                    continue;
                 }
 
-                if (formatContext != null)
-                {
-                    var formatContextToClose = formatContext;
-                    ffmpeg.avformat_close_input(&formatContextToClose);
-                }
+                ReadNextIndexPacket(
+                    formatContext,
+                    packet,
+                    videoStreamIndex,
+                    interruptState,
+                    entries.Count,
+                    ref inputExhausted,
+                    ref hasPendingVideoPacket);
+            }
 
-                if (indexInterruptHandle.IsAllocated)
-                {
-                    indexInterruptHandle.Free();
-                }
+            return entries;
+        }
+
+        private static void SubmitPendingIndexPacket(
+            AVCodecContext* codecContext,
+            AVPacket* packet,
+            ref bool hasPendingVideoPacket)
+        {
+            var sendPendingResult = ffmpeg.avcodec_send_packet(codecContext, packet);
+            if (sendPendingResult == ffmpeg.AVERROR(ffmpeg.EAGAIN))
+            {
+                return;
+            }
+
+            FfmpegNativeHelpers.ThrowIfError(sendPendingResult, "Submit packet to decoder for frame index");
+            hasPendingVideoPacket = false;
+            ffmpeg.av_packet_unref(packet);
+        }
+
+        private static bool FlushIndexDecoder(
+            AVCodecContext* codecContext,
+            ref bool flushPacketSent)
+        {
+            if (flushPacketSent)
+            {
+                return true;
+            }
+
+            var flushResult = ffmpeg.avcodec_send_packet(codecContext, null);
+            if (flushResult == ffmpeg.AVERROR(ffmpeg.EAGAIN))
+            {
+                return false;
+            }
+
+            if (flushResult == ffmpeg.AVERROR_EOF)
+            {
+                return true;
+            }
+
+            FfmpegNativeHelpers.ThrowIfError(flushResult, "Flush decoder for frame index");
+            flushPacketSent = true;
+            return false;
+        }
+
+        private static void ReadNextIndexPacket(
+            AVFormatContext* formatContext,
+            AVPacket* packet,
+            int videoStreamIndex,
+            IndexInterruptState interruptState,
+            int currentEntryCount,
+            ref bool inputExhausted,
+            ref bool hasPendingVideoPacket)
+        {
+            var readResult = ffmpeg.av_read_frame(formatContext, packet);
+            ThrowIfIndexInterrupted(interruptState, currentEntryCount);
+            if (readResult == ffmpeg.AVERROR_EOF)
+            {
+                inputExhausted = true;
+                return;
+            }
+
+            FfmpegNativeHelpers.ThrowIfError(readResult, "Read encoded packet for frame index");
+            if (packet->stream_index != videoStreamIndex)
+            {
+                ffmpeg.av_packet_unref(packet);
+                return;
+            }
+
+            hasPendingVideoPacket = true;
+        }
+
+        private static void ReleaseManagedIndexResources(
+            AVFrame* decodedFrame,
+            AVPacket* packet,
+            AVCodecContext* codecContext,
+            AVFormatContext* formatContext,
+            GCHandle indexInterruptHandle)
+        {
+            if (decodedFrame != null)
+            {
+                var frameToFree = decodedFrame;
+                ffmpeg.av_frame_free(&frameToFree);
+            }
+
+            if (packet != null)
+            {
+                var packetToFree = packet;
+                ffmpeg.av_packet_free(&packetToFree);
+            }
+
+            if (codecContext != null)
+            {
+                var codecContextToFree = codecContext;
+                ffmpeg.avcodec_free_context(&codecContextToFree);
+            }
+
+            if (formatContext != null)
+            {
+                var formatContextToClose = formatContext;
+                ffmpeg.avformat_close_input(&formatContextToClose);
+            }
+
+            if (indexInterruptHandle.IsAllocated)
+            {
+                indexInterruptHandle.Free();
             }
         }
 
