@@ -71,7 +71,7 @@ jobs:
         run: |
           .\scripts\Package-UnifiedWindows.ps1
 
-          $packageVersion = "2.0.0-rc.1"
+          $packageVersion = "2.1.0-rc.3"
           $artifactRoot = "artifacts\$packageVersion"
           $zipPath = Join-Path $artifactRoot "FramePlayer-Windows-x64-$packageVersion.zip"
           $shaPath = "$zipPath.sha256"

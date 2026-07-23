@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ARTIFACT_VERSION="${PACKAGE_VERSION:-${VERSION:-2.0.0-rc.1}}"
+ARTIFACT_VERSION="${PACKAGE_VERSION:-${VERSION:-2.1.0-rc.3}}"
 SIGN_MODE="${SIGN_MODE:-auto}"
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-}"
 DIST_DIR="$ROOT_DIR/dist"
@@ -17,7 +17,7 @@ usage() {
 usage: $0 [--unsigned|--sign [identity]]
 
 Environment:
-  PACKAGE_VERSION=<label>      Artifact version label. Default: 2.0.0-rc.1
+  PACKAGE_VERSION=<label>      Artifact version label. Default: 2.1.0-rc.3
   APP_VERSION=<version>        Bundle short version. Default: numeric segment from PACKAGE_VERSION
   SIGNING_IDENTITY=<identity>  codesign identity name/hash
 
@@ -122,6 +122,7 @@ env -u VERSION \
   CONFIGURATION=Release \
   APP_NAME=FramePlayer.Avalonia \
   APP_VERSION="$BUNDLE_SHORT_VERSION" \
+  APP_INFORMATIONAL_VERSION="$ARTIFACT_VERSION" \
   BUNDLE_ID=com.frameplayer \
   PROJECT="$ROOT_DIR/src/FramePlayer.Avalonia/FramePlayer.Avalonia.csproj" \
   APP_ICON_SOURCE="$ROOT_DIR/src/FramePlayer.Avalonia/Assets/FramePlayer.icns" \

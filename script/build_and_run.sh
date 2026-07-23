@@ -7,7 +7,9 @@ APP_NAME="${APP_NAME:-FramePlayer.Avalonia}"
 BUNDLE_NAME="${BUNDLE_NAME:-Frame Player}"
 BUNDLE_ID="${BUNDLE_ID:-com.frameplayer}"
 MIN_SYSTEM_VERSION="${MIN_SYSTEM_VERSION:-13.0}"
-APP_VERSION="${APP_VERSION:-0.1.0}"
+APP_VERSION_LABEL="${APP_VERSION:-0.1.0}"
+APP_INFORMATIONAL_VERSION="${APP_INFORMATIONAL_VERSION:-$APP_VERSION_LABEL}"
+APP_ASSEMBLY_VERSION="${APP_ASSEMBLY_VERSION:-}"
 APP_BUILD="${APP_BUILD:-}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -22,6 +24,25 @@ INFO_PLIST="$APP_CONTENTS/Info.plist"
 APP_ICON_SOURCE="${APP_ICON_SOURCE:-$ROOT_DIR/src/FramePlayer.Avalonia/Assets/FramePlayer.icns}"
 APP_ICON_NAME="${APP_ICON_NAME:-FramePlayer}"
 MAC_RUNTIME_SOURCE="${MAC_RUNTIME_SOURCE:-$ROOT_DIR/Runtime/macos}"
+
+bundle_short_version_from_label() {
+  local label="$1"
+  if [[ "$label" =~ ([0-9]+)(\.([0-9]+))?(\.([0-9]+))? ]]; then
+    local major="${BASH_REMATCH[1]}"
+    local minor="${BASH_REMATCH[3]:-0}"
+    local patch="${BASH_REMATCH[5]:-0}"
+    printf '%s.%s.%s\n' "$major" "$minor" "$patch"
+    return 0
+  fi
+
+  echo "Application version '$label' must contain a numeric version segment." >&2
+  return 1
+}
+
+APP_VERSION="$(bundle_short_version_from_label "$APP_VERSION_LABEL")"
+if [[ -z "$APP_ASSEMBLY_VERSION" ]]; then
+  APP_ASSEMBLY_VERSION="$APP_VERSION.0"
+fi
 
 resolve_dotnet() {
   if [[ -n "${DOTNET_ROOT:-}" && -x "$DOTNET_ROOT/dotnet" ]]; then
@@ -63,7 +84,14 @@ pkill -f -x "$APP_MACOS/$APP_NAME" >/dev/null 2>&1 || true
 
 build_app() {
   rm -rf "$PUBLISH_ROOT/osx-arm64"
-  "$DOTNET_BIN" publish "$PROJECT" -c "$CONFIGURATION" -r osx-arm64 --self-contained true -p:PublishSingleFile=false -o "$PUBLISH_ROOT/osx-arm64"
+  "$DOTNET_BIN" publish "$PROJECT" -c "$CONFIGURATION" -r osx-arm64 --self-contained true \
+    -p:PublishSingleFile=false \
+    -p:Version="$APP_VERSION" \
+    -p:AssemblyVersion="$APP_ASSEMBLY_VERSION" \
+    -p:FileVersion="$APP_ASSEMBLY_VERSION" \
+    -p:InformationalVersion="$APP_INFORMATIONAL_VERSION" \
+    -p:IncludeSourceRevisionInInformationalVersion=false \
+    -o "$PUBLISH_ROOT/osx-arm64"
   rm -rf "$APP_BUNDLE"
   mkdir -p "$APP_MACOS" "$APP_RESOURCES"
   cp -R "$PUBLISH_ROOT/osx-arm64/." "$APP_MACOS/"
