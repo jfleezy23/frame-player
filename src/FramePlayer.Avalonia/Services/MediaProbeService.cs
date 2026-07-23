@@ -21,6 +21,7 @@ namespace FramePlayer.Services
             AVFormatContext* formatContext = null;
             try
             {
+                FfmpegRuntimeBootstrap.EnsureConfiguredForCurrentPlatform(AppDomain.CurrentDomain.BaseDirectory);
                 FfmpegNativeHelpers.ThrowIfError(
                     FfmpegNativeHelpers.OpenInput(&formatContext, filePath, null, null),
                     "Open media container");

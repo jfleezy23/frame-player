@@ -3629,12 +3629,7 @@ namespace FramePlayer.Engines.FFmpeg
 
         private static void EnsureFfmpegRuntimePathConfigured()
         {
-            if (!string.IsNullOrWhiteSpace(ffmpeg.RootPath))
-            {
-                return;
-            }
-
-            FfmpegRuntimeBootstrap.ConfigureForCurrentPlatform(AppDomain.CurrentDomain.BaseDirectory);
+            FfmpegRuntimeBootstrap.EnsureConfiguredForCurrentPlatform(AppDomain.CurrentDomain.BaseDirectory);
         }
 
         private void CloseCore(bool clearFilePath, bool clearErrorMessage)

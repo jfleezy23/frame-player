@@ -550,7 +550,8 @@ namespace FramePlayer.Engines.FFmpeg
                     return IntPtr.Zero;
                 }
 
-                throw new InvalidOperationException("Could not find required FFmpeg runtime library " + libraryName + ".");
+                throw new InvalidOperationException(
+                    "Could not find required FFmpeg runtime library " + libraryName + " at " + dependencyPath + ".");
             }
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
