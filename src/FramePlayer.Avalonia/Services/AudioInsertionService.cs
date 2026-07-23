@@ -39,9 +39,9 @@ namespace FramePlayer.Services
                 throw new FileNotFoundException("The reviewed source file could not be found.", request.SourceFilePath);
             }
 
-            if (!string.Equals(Path.GetExtension(request.SourceFilePath), ".mp4", StringComparison.OrdinalIgnoreCase))
+            if (!IsSupportedSourceExtension(Path.GetExtension(request.SourceFilePath)))
             {
-                throw new InvalidOperationException("Audio insertion requires an MP4 source file.");
+                throw new InvalidOperationException("Audio insertion requires an MP4 or M4V source file.");
             }
 
             if (string.IsNullOrWhiteSpace(request.ReplacementAudioFilePath))
@@ -87,11 +87,6 @@ namespace FramePlayer.Services
 
             var sessionSnapshot = request.SessionSnapshot ?? ReviewSessionSnapshot.Empty;
             var mediaInfo = sessionSnapshot.MediaInfo ?? VideoMediaInfo.Empty;
-            if (!IsH264Codec(mediaInfo.VideoCodecName))
-            {
-                throw new InvalidOperationException("Audio insertion requires a loaded H.264 MP4 source.");
-            }
-
             var videoDuration = mediaInfo.Duration;
             if (videoDuration <= TimeSpan.Zero)
             {
@@ -111,6 +106,12 @@ namespace FramePlayer.Services
                 string.Empty);
         }
 
+        private static bool IsSupportedSourceExtension(string extension)
+        {
+            return string.Equals(extension, ".mp4", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(extension, ".m4v", StringComparison.OrdinalIgnoreCase);
+        }
+
         public async Task<AudioInsertionResult> InsertAsync(
             AudioInsertionRequest request,
             CancellationToken cancellationToken = default(CancellationToken))
@@ -127,15 +128,5 @@ namespace FramePlayer.Services
             return await new ExportHostClient().InsertAudioAsync(plan, cancellationToken).ConfigureAwait(false);
         }
 
-        private static bool IsH264Codec(string codecName)
-        {
-            if (string.IsNullOrWhiteSpace(codecName))
-            {
-                return false;
-            }
-
-            var normalizedCodec = codecName.Replace(".", string.Empty).Trim();
-            return string.Equals(normalizedCodec, "h264", StringComparison.OrdinalIgnoreCase);
-        }
     }
 }

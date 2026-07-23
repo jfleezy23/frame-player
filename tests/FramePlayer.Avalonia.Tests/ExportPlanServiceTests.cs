@@ -146,8 +146,34 @@ namespace FramePlayer.Avalonia.Tests
             var filterGraph = NativeAudioInsertionService.BuildAudioFilterGraph(plan);
             Assert.Contains("apad=whole_dur=12.5,atrim=duration=12.5", filterGraph, StringComparison.Ordinal);
             Assert.Contains("abuffersink@outa", filterGraph, StringComparison.Ordinal);
+            var m4vSourcePath = Path.ChangeExtension(files.PrimaryVideoPath, ".m4v");
+            File.Copy(files.PrimaryVideoPath, m4vSourcePath);
+            var m4vPlan = AudioInsertionService.CreatePlan(new AudioInsertionRequest(
+                m4vSourcePath,
+                files.ReplacementAudioPath,
+                files.AudioOutputPath,
+                "Primary",
+                CreateSession(m4vSourcePath, TimeSpan.FromSeconds(10), 1920, 1080, "mpeg4")));
+            Assert.Equal(Path.GetFullPath(m4vSourcePath), m4vPlan.SourceFilePath);
+            var hevcPlan = AudioInsertionService.CreatePlan(new AudioInsertionRequest(
+                files.PrimaryVideoPath,
+                files.ReplacementAudioPath,
+                files.AudioOutputPath,
+                "Primary",
+                CreateSession(files.PrimaryVideoPath, TimeSpan.FromSeconds(10), 1920, 1080, "hevc")));
+            Assert.Equal(Path.GetFullPath(files.PrimaryVideoPath), hevcPlan.SourceFilePath);
 
             Assert.Throws<ArgumentNullException>(() => AudioInsertionService.CreatePlan(null!));
+            var unsupportedSourcePath = Path.ChangeExtension(files.PrimaryVideoPath, ".mov");
+            File.Copy(files.PrimaryVideoPath, unsupportedSourcePath);
+            var unsupportedSourceException = Assert.Throws<InvalidOperationException>(() =>
+                AudioInsertionService.CreatePlan(new AudioInsertionRequest(
+                    unsupportedSourcePath,
+                    files.ReplacementAudioPath,
+                    files.AudioOutputPath,
+                    "Primary",
+                    CreateSession(unsupportedSourcePath, TimeSpan.FromSeconds(10), 1920, 1080, "prores"))));
+            Assert.Equal("Audio insertion requires an MP4 or M4V source file.", unsupportedSourceException.Message);
             Assert.Throws<InvalidOperationException>(() => AudioInsertionService.CreatePlan(new AudioInsertionRequest(
                 files.PrimaryVideoPath,
                 files.ReplacementAudioPath,
@@ -166,12 +192,6 @@ namespace FramePlayer.Avalonia.Tests
                 files.AudioOutputPath,
                 "Primary",
                 session)));
-            Assert.Throws<InvalidOperationException>(() => AudioInsertionService.CreatePlan(new AudioInsertionRequest(
-                files.PrimaryVideoPath,
-                files.ReplacementAudioPath,
-                files.AudioOutputPath,
-                "Primary",
-                CreateSession(files.PrimaryVideoPath, TimeSpan.FromSeconds(10), 1920, 1080, "hevc"))));
             Assert.Throws<InvalidOperationException>(() => AudioInsertionService.CreatePlan(new AudioInsertionRequest(
                 files.PrimaryVideoPath,
                 files.ReplacementAudioPath,

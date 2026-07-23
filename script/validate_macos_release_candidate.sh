@@ -84,7 +84,7 @@ if [[ ! -s "$RESULTS_DIR/corpus-files.txt" ]]; then
   exit 1
 fi
 
-PACKAGE_VERSION="${PACKAGE_VERSION:-2.0.0-rc.1}" \
+PACKAGE_VERSION="${PACKAGE_VERSION:-2.1.0-rc.3}" \
   "$ROOT_DIR/script/package_unified_macos_release.sh" --unsigned
 
 [[ -s "$APP_BUNDLE/Contents/Resources/FramePlayer.icns" ]]
@@ -116,6 +116,7 @@ FRAMEPLAYER_AVALONIA_EXPORT_HOST_EXECUTABLE="$APP_BUNDLE/Contents/MacOS/FramePla
 FRAMEPLAYER_GPU_BACKEND=cpu \
 dotnet test "$ROOT_DIR/tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj" \
   -c Release \
+  -r osx-arm64 \
   --filter "Category=ReleaseCandidate" \
   --logger "trx;LogFileName=macos-release-candidate.trx" \
   --results-directory "$RESULTS_DIR"

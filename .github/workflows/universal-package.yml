@@ -47,7 +47,7 @@ jobs:
         run: |
           $version = '${{ github.event.release.tag_name }}'.TrimStart('v')
           if ([string]::IsNullOrWhiteSpace($version)) {
-            $version = '2.0.0-rc.1'
+            $version = '2.1.0-rc.3'
           }
 
           .\scripts\Package-UnifiedWindows.ps1 -Version $version

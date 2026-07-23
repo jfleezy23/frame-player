@@ -27,7 +27,7 @@ script/validate_macos_release_candidate.sh --corpus "Video Test Files"
 Package a local signed release candidate:
 
 ```bash
-PACKAGE_VERSION=2.0.0 script/package_unified_macos_release.sh --sign
+PACKAGE_VERSION=2.1.0 script/package_unified_macos_release.sh --sign
 codesign --verify --deep --verbose=2 "dist/Frame Player.app"
 ```
 

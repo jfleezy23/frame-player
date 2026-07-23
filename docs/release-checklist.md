@@ -26,7 +26,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Test-WorkflowActio
 ## Windows package gate
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Package-UnifiedWindows.ps1 -Version 2.0.0
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Package-UnifiedWindows.ps1 -Version 2.1.0
 ```
 
 - Verify the ZIP and SHA256 output.
@@ -38,7 +38,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Package-UnifiedWin
 ## macOS package gate
 
 ```bash
-PACKAGE_VERSION=2.0.0 script/package_unified_macos_release.sh --sign "Developer ID Application: <Team Name> (<TEAMID>)"
+PACKAGE_VERSION=2.1.0 script/package_unified_macos_release.sh --sign "Developer ID Application: <Team Name> (<TEAMID>)"
 codesign --verify --strict --deep --verbose=2 "dist/Frame Player.app"
 codesign -dvvv --entitlements :- "dist/Frame Player.app"
 ```

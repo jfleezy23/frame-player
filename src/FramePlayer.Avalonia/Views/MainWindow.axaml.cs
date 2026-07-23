@@ -68,6 +68,7 @@ namespace FramePlayer.Avalonia.Views
         private const string PaneCompareLabel = "Compare";
         private const string Mp4Pattern = "*.mp4";
         private const string Mp4Extension = ".mp4";
+        private const string M4vExtension = ".m4v";
         private const string UnknownRawValue = "unknown";
         private const string CompareExportSecondaryTextColor = "#B7BDC6";
         private static readonly string[] VideoFilePatterns = new[] { "*.avi", "*.m4v", Mp4Pattern, "*.mkv", "*.wmv", "*.mov" };
@@ -565,24 +566,61 @@ namespace FramePlayer.Avalonia.Views
             var retainedFrameBuffer = frameBuffer.Retain();
             if (pane == Pane.Compare)
             {
+                WriteableBitmap? bitmap;
+                try
+                {
+                    bitmap = AvaloniaFrameBufferPresenter.PresentBitmap(
+                        retainedFrameBuffer,
+                        viewport,
+                        ref _compareReusableBitmap);
+                }
+                catch
+                {
+                    retainedFrameBuffer.Dispose();
+                    throw;
+                }
+
+                if (bitmap == null)
+                {
+                    retainedFrameBuffer.Dispose();
+                    return;
+                }
+
                 var previousFrameBuffer = _compareFrameBuffer;
                 _compareFrameBuffer = retainedFrameBuffer;
                 previousFrameBuffer?.Dispose();
-                var bitmap = AvaloniaFrameBufferPresenter.PresentBitmap(frameBuffer, viewport, ref _compareReusableBitmap);
                 CompareVideoSurface.Source = bitmap;
                 CompareVideoSurface.InvalidateVisual();
                 CompareEmptyStateOverlay.IsVisible = false;
+                return;
             }
-            else
+
+            WriteableBitmap? primaryBitmap;
+            try
             {
-                var previousFrameBuffer = _primaryFrameBuffer;
-                _primaryFrameBuffer = retainedFrameBuffer;
-                previousFrameBuffer?.Dispose();
-                var bitmap = AvaloniaFrameBufferPresenter.PresentBitmap(frameBuffer, viewport, ref _primaryReusableBitmap);
-                CustomVideoSurface.Source = bitmap;
-                CustomVideoSurface.InvalidateVisual();
-                PrimaryEmptyStateOverlay.IsVisible = false;
+                primaryBitmap = AvaloniaFrameBufferPresenter.PresentBitmap(
+                    retainedFrameBuffer,
+                    viewport,
+                    ref _primaryReusableBitmap);
             }
+            catch
+            {
+                retainedFrameBuffer.Dispose();
+                throw;
+            }
+
+            if (primaryBitmap == null)
+            {
+                retainedFrameBuffer.Dispose();
+                return;
+            }
+
+            var previousPrimaryFrameBuffer = _primaryFrameBuffer;
+            _primaryFrameBuffer = retainedFrameBuffer;
+            previousPrimaryFrameBuffer?.Dispose();
+            CustomVideoSurface.Source = primaryBitmap;
+            CustomVideoSurface.InvalidateVisual();
+            PrimaryEmptyStateOverlay.IsVisible = false;
         }
 
         private Pane GetFileOpenTargetPane()
@@ -981,6 +1019,18 @@ namespace FramePlayer.Avalonia.Views
             {
                 OpenContextMenuOnRightClick(control, e);
             }
+        }
+
+        private void LoopStatusButton_Click(object? sender, RoutedEventArgs e)
+        {
+            var pane = ResolvePaneFromSender(sender);
+            var engine = TryGetExistingEngine(pane);
+            if (engine == null || !engine.IsMediaOpen)
+            {
+                return;
+            }
+
+            SetLoopPlaybackEnabled(!_isLoopPlaybackEnabled);
         }
 
         private void TimelineSlider_PointerPressed(object? sender, PointerPressedEventArgs e)
@@ -1773,6 +1823,9 @@ namespace FramePlayer.Avalonia.Views
             SetControlEnabled(ZoomOutMenuItem, canZoomOut);
             SetControlEnabled(ResetZoomMenuItem, canZoomOut);
             SetControlEnabled(ReplaceAudioTrackMenuItem, canReplaceAudioTrack);
+            SetControlEnabled(LoopStatusButton, focusedPaneLoaded);
+            SetControlEnabled(PrimaryPaneLoopStatusButton, primaryLoaded);
+            SetControlEnabled(ComparePaneLoopStatusButton, compareLoaded);
 
             SetControlEnabled(PositionSlider, primaryLoaded);
             SetControlEnabled(FrameNumberTextBox, primaryLoaded);
@@ -3291,39 +3344,28 @@ namespace FramePlayer.Avalonia.Views
                 return false;
             }
 
-            if (IsCompareModeEnabled)
-            {
-                status = "Audio insertion is unavailable while two-pane compare mode is enabled.";
-                return false;
-            }
-
             if (!_primaryEngine.IsMediaOpen || string.IsNullOrWhiteSpace(_primaryEngine.CurrentFilePath))
             {
-                status = "Load a single-pane H.264 MP4 before replacing the audio track.";
+                status = "Load a primary MP4 or M4V before replacing the audio track.";
                 return false;
             }
 
-            if (!string.Equals(Path.GetExtension(_primaryEngine.CurrentFilePath), Mp4Extension, StringComparison.OrdinalIgnoreCase))
+            if (!IsAudioInsertionSourceExtension(Path.GetExtension(_primaryEngine.CurrentFilePath)))
             {
-                status = "Audio insertion is available only for loaded H.264 MP4 sources.";
+                status = "Audio insertion is available only for loaded MP4 or M4V sources.";
                 return false;
             }
 
-            if (string.IsNullOrWhiteSpace(_primaryEngine.MediaInfo.VideoCodecName) ||
-                !IsH264Codec(_primaryEngine.MediaInfo.VideoCodecName))
-            {
-                status = "Audio insertion is available only for loaded MP4 sources with H.264 video.";
-                return false;
-            }
-
-            status = "Replace the reviewed source audio with a WAV or MP3 track and write a new MP4 copy.";
+            status = IsCompareModeEnabled
+                ? "Replace the primary pane's audio with a WAV or MP3 track and write a new MP4 copy."
+                : "Replace the reviewed source audio with a WAV or MP3 track and write a new MP4 copy.";
             return true;
         }
 
-        private static bool IsH264Codec(string codecName)
+        private static bool IsAudioInsertionSourceExtension(string? extension)
         {
-            return codecName.Contains("h264", StringComparison.OrdinalIgnoreCase) ||
-                codecName.Contains("avc", StringComparison.OrdinalIgnoreCase);
+            return string.Equals(extension, Mp4Extension, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(extension, M4vExtension, StringComparison.OrdinalIgnoreCase);
         }
 
         private async Task<string?> ExportDiagnosticsAsync(string? outputPath)
