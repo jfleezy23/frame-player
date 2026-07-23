@@ -93,8 +93,10 @@ namespace FramePlayer.Avalonia.Views
         private NativeMenuItem? _nativeReplaceAudioTrackMenuItem;
         private LoopPlaybackPaneRangeSnapshot _primaryLoopRange;
         private LoopPlaybackPaneRangeSnapshot _compareLoopRange;
-        private bool _isLoopPlaybackEnabled;
-        private bool _isLoopRestartInFlight;
+        private bool _isPrimaryLoopPlaybackEnabled;
+        private bool _isCompareLoopPlaybackEnabled;
+        private int _primaryLoopRestartInFlight;
+        private int _compareLoopRestartInFlight;
         private bool _isUpdatingSliders;
         private Pane _focusedPane = Pane.Primary;
         private TimeSpan _masterTimelineContextTarget = TimeSpan.Zero;
@@ -1023,14 +1025,20 @@ namespace FramePlayer.Avalonia.Views
 
         private void LoopStatusButton_Click(object? sender, RoutedEventArgs e)
         {
-            var pane = ResolvePaneFromSender(sender);
+            if (!TryResolvePaneFromSender(sender, out var pane))
+            {
+                ToggleUnifiedLoopPlayback();
+                return;
+            }
+
+            SelectPane(pane);
             var engine = TryGetExistingEngine(pane);
             if (engine == null || !engine.IsMediaOpen)
             {
                 return;
             }
 
-            SetLoopPlaybackEnabled(!_isLoopPlaybackEnabled);
+            SetPaneLoopPlaybackEnabled(pane, !IsLoopPlaybackEnabled(pane));
         }
 
         private void TimelineSlider_PointerPressed(object? sender, PointerPressedEventArgs e)
@@ -1160,7 +1168,23 @@ namespace FramePlayer.Avalonia.Views
 
             var loopPlaybackItem = CreateFrameContextMenuItem("Loop Playback");
             loopPlaybackItem.ToggleType = MenuItemToggleType.CheckBox;
-            loopPlaybackItem.Click += (_, _) => SetLoopPlaybackEnabled(!_isLoopPlaybackEnabled);
+            loopPlaybackItem.Click += (_, _) =>
+            {
+                if (IsSharedTimelineContextDisabled(explicitPane))
+                {
+                    return;
+                }
+
+                if (explicitPane.HasValue)
+                {
+                    SetPaneLoopPlaybackEnabled(
+                        explicitPane.Value,
+                        !IsLoopPlaybackEnabled(explicitPane.Value));
+                    return;
+                }
+
+                ToggleUnifiedLoopPlayback();
+            };
 
             var saveLoopItem = CreateFrameContextMenuItem("Save Loop As Clip...");
             saveLoopItem.Click += async (_, _) =>
@@ -1189,7 +1213,7 @@ namespace FramePlayer.Avalonia.Views
                     setPositionAItem.IsEnabled = false;
                     setPositionBItem.IsEnabled = false;
                     loopPlaybackItem.IsEnabled = false;
-                    loopPlaybackItem.IsChecked = _isLoopPlaybackEnabled;
+                    loopPlaybackItem.IsChecked = IsUnifiedLoopPlaybackEnabled();
                     saveLoopItem.IsEnabled = false;
                     return;
                 }
@@ -1200,7 +1224,9 @@ namespace FramePlayer.Avalonia.Views
                 setPositionAItem.IsEnabled = CanSetTimelineLoopMarker(pane, LoopPlaybackMarkerEndpoint.In, target);
                 setPositionBItem.IsEnabled = CanSetTimelineLoopMarker(pane, LoopPlaybackMarkerEndpoint.Out, target);
                 loopPlaybackItem.IsEnabled = true;
-                loopPlaybackItem.IsChecked = _isLoopPlaybackEnabled;
+                loopPlaybackItem.IsChecked = explicitPane.HasValue
+                    ? IsLoopPlaybackEnabled(pane)
+                    : IsUnifiedLoopPlaybackEnabled();
                 saveLoopItem.IsEnabled = CanExportLoopClip(pane);
             };
 
@@ -1661,16 +1687,73 @@ namespace FramePlayer.Avalonia.Views
             UpdateLoopUi();
         }
 
-        private void SetLoopPlaybackEnabled(bool isEnabled)
+        private bool IsLoopPlaybackEnabled(Pane pane)
         {
-            _isLoopPlaybackEnabled = isEnabled;
-            if (_nativeLoopPlaybackMenuItem != null)
+            return pane == Pane.Compare
+                ? _isCompareLoopPlaybackEnabled
+                : _isPrimaryLoopPlaybackEnabled;
+        }
+
+        private void SetPaneLoopPlaybackEnabled(Pane pane, bool isEnabled)
+        {
+            if (pane == Pane.Compare)
             {
-                _nativeLoopPlaybackMenuItem.IsChecked = isEnabled;
+                _isCompareLoopPlaybackEnabled = isEnabled;
+            }
+            else
+            {
+                _isPrimaryLoopPlaybackEnabled = isEnabled;
             }
 
-            LoopPlaybackMenuItem.IsChecked = isEnabled;
             UpdateLoopUi();
+        }
+
+        private void ToggleUnifiedLoopPlayback()
+        {
+            SetUnifiedLoopPlaybackEnabled(!IsUnifiedLoopPlaybackEnabled());
+        }
+
+        private void SetUnifiedLoopPlaybackEnabled(bool isEnabled)
+        {
+            if (_primaryEngine.IsMediaOpen)
+            {
+                _isPrimaryLoopPlaybackEnabled = isEnabled;
+            }
+
+            if (IsCompareModeEnabled &&
+                _compareEngine != null &&
+                _compareEngine.IsMediaOpen)
+            {
+                _isCompareLoopPlaybackEnabled = isEnabled;
+            }
+
+            UpdateLoopUi();
+        }
+
+        private bool IsUnifiedLoopPlaybackEnabled()
+        {
+            var hasLoadedTarget = false;
+            if (_primaryEngine.IsMediaOpen)
+            {
+                hasLoadedTarget = true;
+                if (!_isPrimaryLoopPlaybackEnabled)
+                {
+                    return false;
+                }
+            }
+
+            if (IsCompareModeEnabled &&
+                _compareEngine != null &&
+                _compareEngine.IsMediaOpen)
+            {
+                hasLoadedTarget = true;
+                if (!_isCompareLoopPlaybackEnabled)
+                {
+                    return false;
+                }
+            }
+
+            return hasLoadedTarget;
         }
 
         private void CompareModeCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)
@@ -1695,6 +1778,7 @@ namespace FramePlayer.Avalonia.Views
             CompareToolbarBorder.IsVisible = true;
             UpdatePaneSelectionVisuals();
             UpdateCompareOptionState();
+            UpdateLoopUi();
             UpdateCacheStatusFromEngine();
         }
 
@@ -1709,6 +1793,7 @@ namespace FramePlayer.Avalonia.Views
             CompareToolbarBorder.IsVisible = false;
             UpdatePaneSelectionVisuals();
             UpdateCompareOptionState();
+            UpdateLoopUi();
             UpdateCacheStatusFromEngine();
             _ = PauseHiddenComparePlaybackAsync();
         }
@@ -1795,7 +1880,7 @@ namespace FramePlayer.Avalonia.Views
             SetNativeMenuEnabled(_nativeFastForwardMenuItem, focusedPaneLoaded);
             SetNativeMenuEnabled(_nativePreviousFrameMenuItem, focusedPaneLoaded);
             SetNativeMenuEnabled(_nativeNextFrameMenuItem, focusedPaneLoaded);
-            SetNativeMenuEnabled(_nativeLoopPlaybackMenuItem, focusedPaneLoaded);
+            SetNativeMenuEnabled(_nativeLoopPlaybackMenuItem, anyMediaLoaded);
             SetNativeMenuEnabled(_nativeSetLoopInMenuItem, focusedPaneLoaded);
             SetNativeMenuEnabled(_nativeSetLoopOutMenuItem, focusedPaneLoaded);
             SetNativeMenuEnabled(_nativeClearLoopPointsMenuItem, canClearLoopPoints);
@@ -1813,7 +1898,7 @@ namespace FramePlayer.Avalonia.Views
             SetControlEnabled(FastForwardMenuItem, focusedPaneLoaded);
             SetControlEnabled(PreviousFrameMenuItem, focusedPaneLoaded);
             SetControlEnabled(NextFrameMenuItem, focusedPaneLoaded);
-            SetControlEnabled(LoopPlaybackMenuItem, focusedPaneLoaded);
+            SetControlEnabled(LoopPlaybackMenuItem, anyMediaLoaded);
             SetControlEnabled(SetLoopInMenuItem, focusedPaneLoaded);
             SetControlEnabled(SetLoopOutMenuItem, focusedPaneLoaded);
             SetControlEnabled(ClearLoopPointsMenuItem, canClearLoopPoints);
@@ -1823,7 +1908,7 @@ namespace FramePlayer.Avalonia.Views
             SetControlEnabled(ZoomOutMenuItem, canZoomOut);
             SetControlEnabled(ResetZoomMenuItem, canZoomOut);
             SetControlEnabled(ReplaceAudioTrackMenuItem, canReplaceAudioTrack);
-            SetControlEnabled(LoopStatusButton, focusedPaneLoaded);
+            SetControlEnabled(LoopStatusButton, anyMediaLoaded);
             SetControlEnabled(PrimaryPaneLoopStatusButton, primaryLoaded);
             SetControlEnabled(ComparePaneLoopStatusButton, compareLoaded);
 
@@ -2313,18 +2398,64 @@ namespace FramePlayer.Avalonia.Views
 
         private void UpdateLoopUi()
         {
-            var primaryStatus = BuildLoopStatusText(_primaryLoopRange);
-            var compareStatus = BuildLoopStatusText(_compareLoopRange);
-            LoopStatusTextBlock.Text = primaryStatus;
+            var primaryStatus = BuildLoopStatusText(_primaryLoopRange, _isPrimaryLoopPlaybackEnabled);
+            var compareStatus = BuildLoopStatusText(_compareLoopRange, _isCompareLoopPlaybackEnabled);
+            LoopStatusTextBlock.Text = BuildUnifiedLoopStatusText();
             PrimaryPaneLoopStatusTextBlock.Text = primaryStatus;
             ComparePaneLoopStatusTextBlock.Text = compareStatus;
+            var unifiedLoopEnabled = IsUnifiedLoopPlaybackEnabled();
+            if (_nativeLoopPlaybackMenuItem != null)
+            {
+                _nativeLoopPlaybackMenuItem.IsChecked = unifiedLoopEnabled;
+            }
+
+            LoopPlaybackMenuItem.IsChecked = unifiedLoopEnabled;
         }
 
-        private string BuildLoopStatusText(LoopPlaybackPaneRangeSnapshot range)
+        private string BuildUnifiedLoopStatusText()
+        {
+            if (!IsCompareModeEnabled)
+            {
+                return BuildLoopStatusText(_primaryLoopRange, _isPrimaryLoopPlaybackEnabled);
+            }
+
+            var primaryLoaded = _primaryEngine.IsMediaOpen;
+            var compareLoaded = _compareEngine != null && _compareEngine.IsMediaOpen;
+            if (primaryLoaded && compareLoaded)
+            {
+                if (_isPrimaryLoopPlaybackEnabled && _isCompareLoopPlaybackEnabled)
+                {
+                    return "Loop: both on";
+                }
+
+                if (_isPrimaryLoopPlaybackEnabled)
+                {
+                    return "Loop: left only";
+                }
+
+                if (_isCompareLoopPlaybackEnabled)
+                {
+                    return "Loop: right only";
+                }
+
+                return "Loop: off";
+            }
+
+            if (primaryLoaded)
+            {
+                return BuildLoopStatusText(_primaryLoopRange, _isPrimaryLoopPlaybackEnabled);
+            }
+
+            return compareLoaded
+                ? BuildLoopStatusText(_compareLoopRange, _isCompareLoopPlaybackEnabled)
+                : "Loop: off";
+        }
+
+        private string BuildLoopStatusText(LoopPlaybackPaneRangeSnapshot range, bool isEnabled)
         {
             if (range == null || !range.HasAnyMarkers)
             {
-                return _isLoopPlaybackEnabled ? "Loop: full media" : "Loop: off";
+                return isEnabled ? "Loop: full media" : "Loop: off";
             }
 
             var rangeText = FormatTime(range.EffectiveStartTime) + " -> " + FormatTime(range.EffectiveEndTime);
@@ -2333,13 +2464,12 @@ namespace FramePlayer.Avalonia.Views
                 return "Loop: invalid";
             }
 
-            return _isLoopPlaybackEnabled ? "Loop: " + rangeText : "Loop: off (" + rangeText + ")";
+            return isEnabled ? "Loop: " + rangeText : "Loop: off (" + rangeText + ")";
         }
 
         private void RestartLoopPlaybackIfNeeded(Pane pane, VideoReviewEngineStateChangedEventArgs state)
         {
-            if (!_isLoopPlaybackEnabled ||
-                _isLoopRestartInFlight ||
+            if (!IsLoopPlaybackEnabled(pane) ||
                 state == null ||
                 !state.IsPlaying ||
                 !state.IsMediaOpen)
@@ -2376,11 +2506,18 @@ namespace FramePlayer.Avalonia.Views
             }
 
             var restartRange = range ?? CreateLoopRange(pane, null, null);
-            _isLoopRestartInFlight = true;
-            _ = Task.Run(() => RestartLoopPlaybackAsync(engine, restartRange));
+            if (!TryBeginLoopRestart(pane))
+            {
+                return;
+            }
+
+            _ = Task.Run(() => RestartLoopPlaybackAsync(pane, engine, restartRange));
         }
 
-        private async Task RestartLoopPlaybackAsync(IVideoReviewEngine engine, LoopPlaybackPaneRangeSnapshot range)
+        private async Task RestartLoopPlaybackAsync(
+            Pane pane,
+            IVideoReviewEngine engine,
+            LoopPlaybackPaneRangeSnapshot range)
         {
             try
             {
@@ -2399,8 +2536,26 @@ namespace FramePlayer.Avalonia.Views
             }
             finally
             {
-                _isLoopRestartInFlight = false;
+                EndLoopRestart(pane);
             }
+        }
+
+        private bool TryBeginLoopRestart(Pane pane)
+        {
+            return pane == Pane.Compare
+                ? Interlocked.CompareExchange(ref _compareLoopRestartInFlight, 1, 0) == 0
+                : Interlocked.CompareExchange(ref _primaryLoopRestartInFlight, 1, 0) == 0;
+        }
+
+        private void EndLoopRestart(Pane pane)
+        {
+            if (pane == Pane.Compare)
+            {
+                Volatile.Write(ref _compareLoopRestartInFlight, 0);
+                return;
+            }
+
+            Volatile.Write(ref _primaryLoopRestartInFlight, 0);
         }
 
         private LoopPlaybackPaneRangeSnapshot CreateLoopRange(
@@ -2602,7 +2757,7 @@ namespace FramePlayer.Avalonia.Views
 
             if (e.Key == Key.L)
             {
-                SetLoopPlaybackEnabled(!_isLoopPlaybackEnabled);
+                ToggleUnifiedLoopPlayback();
                 return true;
             }
 
@@ -2778,7 +2933,7 @@ namespace FramePlayer.Avalonia.Views
 
         private void LoopPlaybackMenuItem_Click(object? sender, RoutedEventArgs e)
         {
-            SetLoopPlaybackEnabled(!_isLoopPlaybackEnabled);
+            ToggleUnifiedLoopPlayback();
         }
 
         private void SetLoopInMenuItem_Click(object? sender, RoutedEventArgs e)
@@ -3593,8 +3748,8 @@ namespace FramePlayer.Avalonia.Views
                 AppendEngineDiagnostics(builder, PaneCompareLabel, _compareEngine);
             }
 
-            builder.AppendLine("Loop primary: " + BuildLoopStatusText(_primaryLoopRange));
-            builder.AppendLine("Loop compare: " + BuildLoopStatusText(_compareLoopRange));
+            builder.AppendLine("Loop primary: " + BuildLoopStatusText(_primaryLoopRange, _isPrimaryLoopPlaybackEnabled));
+            builder.AppendLine("Loop compare: " + BuildLoopStatusText(_compareLoopRange, _isCompareLoopPlaybackEnabled));
             builder.AppendLine("Runtime base: " + AppContext.BaseDirectory);
             builder.AppendLine("Export runtime: " + (ExportHostClient.IsBundledRuntimeAvailable
                 ? "available"
@@ -4116,7 +4271,7 @@ namespace FramePlayer.Avalonia.Views
             _nativeGpuAccelerationMenuItem.IsChecked = useGpuAcceleration;
 
             _nativeLoopPlaybackMenuItem = CreateToggleMenuItem("Loop Playback", new KeyGesture(Key.L));
-            _nativeLoopPlaybackMenuItem.Click += (_, _) => SetLoopPlaybackEnabled(!_isLoopPlaybackEnabled);
+            _nativeLoopPlaybackMenuItem.Click += (_, _) => ToggleUnifiedLoopPlayback();
             _nativeRewindMenuItem = CreateMenuItem("Rewind 5s", (sender, _) => RewindButton_Click(sender, new RoutedEventArgs()), new KeyGesture(Key.OemComma));
             _nativeFastForwardMenuItem = CreateMenuItem("Fast Forward 5s", (sender, _) => FastForwardButton_Click(sender, new RoutedEventArgs()), new KeyGesture(Key.OemPeriod));
             _nativePreviousFrameMenuItem = CreateMenuItem("Previous Frame", (sender, _) => PreviousFrameButton_Click(sender, new RoutedEventArgs()), new KeyGesture(Key.Left));

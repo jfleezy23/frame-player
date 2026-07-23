@@ -83,6 +83,10 @@ namespace FramePlayer.Avalonia.Tests
             {
                 if (window != null)
                 {
+                    SetUnifiedLoopPlaybackEnabled(window, false);
+                    await Task.Delay(TimeSpan.FromMilliseconds(250));
+                    await InvokeWindowTaskAsync(window, "PausePlaybackAsync", true)
+                        .WaitAsync(TimeSpan.FromSeconds(10));
                     _fixture.Run(() => window.Close());
                 }
             }
@@ -137,7 +141,7 @@ namespace FramePlayer.Avalonia.Tests
                     loopEnd);
                 Assert.True(inSet && outSet, "Mac loop harness did not set both loop markers.");
 
-                SetLoopPlaybackEnabled(window!, true);
+                SetUnifiedLoopPlaybackEnabled(window!, true);
                 await InvokeWindowTaskAsync(window!, "CommitSliderSeekAsync", "test", loopStart);
                 await InvokeWindowTaskAsync(
                     window!,
@@ -163,6 +167,109 @@ namespace FramePlayer.Avalonia.Tests
                 var loopStatus = GetButtonText(window!, "LoopStatusButton");
                 Assert.StartsWith("Loop: ", loopStatus, StringComparison.Ordinal);
                 Assert.DoesNotContain("off", loopStatus, StringComparison.OrdinalIgnoreCase);
+            }
+            finally
+            {
+                if (window != null)
+                {
+                    SetUnifiedLoopPlaybackEnabled(window, false);
+                    await Task.Delay(TimeSpan.FromMilliseconds(250));
+                    await InvokeWindowTaskAsync(
+                            window,
+                            "PausePlaybackAsync",
+                            true,
+                            (SynchronizedOperationScope?)SynchronizedOperationScope.AllPanes)
+                        .WaitAsync(TimeSpan.FromSeconds(10));
+                    _fixture.Run(() => window.Close());
+                }
+            }
+        }
+
+        [Fact]
+        [Trait("Category", "ReleaseCandidate")]
+        public async Task CompareWindow_AllPaneLoopPlaybackStaysInsideBothHarnessRanges()
+        {
+            ConfigureRuntime();
+            var files = FindCorpusFiles();
+            var file = files.FirstOrDefault(path =>
+                string.Equals(Path.GetFileName(path), "sample-test.mp4", StringComparison.OrdinalIgnoreCase)) ?? files[0];
+
+            MainWindow? window = null;
+            try
+            {
+                window = CreateWindow();
+                SetCompareMode(window!, true);
+                await InvokeWindowTaskAsync(window!, "OpenMediaAsync", file, "pane-primary")
+                    .WaitAsync(TimeSpan.FromSeconds(10));
+                await InvokeWindowTaskAsync(window!, "OpenMediaAsync", file, "pane-compare")
+                    .WaitAsync(TimeSpan.FromSeconds(10));
+
+                var primaryEngine = GetPrimaryEngine(window!);
+                var compareEngine = GetCompareEngine(window!);
+                await WaitForIndexAsync(primaryEngine);
+                await WaitForIndexAsync(compareEngine);
+                var frameStep = primaryEngine.MediaInfo.PositionStep > TimeSpan.Zero
+                    ? primaryEngine.MediaInfo.PositionStep
+                    : TimeSpan.FromSeconds(1d / Math.Max(primaryEngine.MediaInfo.FramesPerSecond, 24d));
+                var loopStart = TimeSpan.FromTicks(Math.Max(frameStep.Ticks * 6, TimeSpan.FromMilliseconds(250).Ticks));
+                var loopEnd = loopStart + TimeSpan.FromTicks(frameStep.Ticks * 8);
+
+                foreach (var paneId in new[] { "pane-primary", "pane-compare" })
+                {
+                    Assert.True(await InvokeWindowTaskAsync<bool>(
+                            window!,
+                            "SetTimelineLoopMarkerAtAsync",
+                            paneId,
+                            LoopPlaybackMarkerEndpoint.In,
+                            loopStart)
+                        .WaitAsync(TimeSpan.FromSeconds(10)));
+                    Assert.True(await InvokeWindowTaskAsync<bool>(
+                            window!,
+                            "SetTimelineLoopMarkerAtAsync",
+                            paneId,
+                            LoopPlaybackMarkerEndpoint.Out,
+                            loopEnd)
+                        .WaitAsync(TimeSpan.FromSeconds(10)));
+                }
+
+                SetAllPanesTransport(window!, true);
+                SetUnifiedLoopPlaybackEnabled(window!, true);
+                await InvokeWindowTaskAsync(window!, "CommitSliderSeekAsync", "test", loopStart)
+                    .WaitAsync(TimeSpan.FromSeconds(10));
+                await InvokeWindowTaskAsync(
+                        window!,
+                        "StartPlaybackAsync",
+                        (SynchronizedOperationScope?)SynchronizedOperationScope.AllPanes,
+                        "pane-primary")
+                    .WaitAsync(TimeSpan.FromSeconds(10));
+
+                var primaryObservations = new List<TimeSpan>();
+                var compareObservations = new List<TimeSpan>();
+                for (var index = 0; index < 10; index++)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(180));
+                    primaryObservations.Add(primaryEngine.Position.PresentationTime);
+                    compareObservations.Add(compareEngine.Position.PresentationTime);
+                }
+
+                await InvokeWindowTaskAsync(
+                        window!,
+                        "PausePlaybackAsync",
+                        true,
+                        (SynchronizedOperationScope?)SynchronizedOperationScope.AllPanes)
+                    .WaitAsync(TimeSpan.FromSeconds(10));
+
+                var maximumAllowed = loopEnd + frameStep + frameStep;
+                Assert.All(
+                    primaryObservations,
+                    position => Assert.True(
+                        position <= maximumAllowed,
+                        "Left pane escaped the configured loop range. Position=" + position + " range=" + loopStart + ".." + loopEnd));
+                Assert.All(
+                    compareObservations,
+                    position => Assert.True(
+                        position <= maximumAllowed,
+                        "Right pane escaped the configured loop range. Position=" + position + " range=" + loopStart + ".." + loopEnd));
             }
             finally
             {
@@ -384,9 +491,9 @@ namespace FramePlayer.Avalonia.Tests
                 ?? throw new MissingMethodException(type.FullName, name);
         }
 
-        private void SetLoopPlaybackEnabled(MainWindow window, bool enabled)
+        private void SetUnifiedLoopPlaybackEnabled(MainWindow window, bool enabled)
         {
-            var method = RequireMethod(window.GetType(), "SetLoopPlaybackEnabled", typeof(bool));
+            var method = RequireMethod(window.GetType(), "SetUnifiedLoopPlaybackEnabled", typeof(bool));
             _fixture.Run(() => method.Invoke(window, new object?[] { enabled }));
         }
 
@@ -397,6 +504,16 @@ namespace FramePlayer.Avalonia.Tests
                 var compareMode = window.FindControl<CheckBox>("CompareModeCheckBox")
                     ?? throw new InvalidOperationException("Missing CompareModeCheckBox.");
                 compareMode.IsChecked = enabled;
+            });
+        }
+
+        private void SetAllPanesTransport(MainWindow window, bool enabled)
+        {
+            _fixture.Run(() =>
+            {
+                var allPanes = window.FindControl<CheckBox>("AllPanesCheckBox")
+                    ?? throw new InvalidOperationException("Missing AllPanesCheckBox.");
+                allPanes.IsChecked = enabled;
             });
         }
 

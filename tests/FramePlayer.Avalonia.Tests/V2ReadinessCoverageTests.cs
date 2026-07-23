@@ -156,7 +156,7 @@ namespace FramePlayer.Avalonia.Tests
             Assert.Contains("private async Task PauseHiddenComparePlaybackAsync()", source, StringComparison.Ordinal);
             Assert.Contains("private void RestartLoopPlaybackIfNeeded(", source, StringComparison.Ordinal);
             Assert.Contains("var engine = TryGetExistingEngine(pane);", source, StringComparison.Ordinal);
-            Assert.Contains("Task.Run(() => RestartLoopPlaybackAsync(engine, restartRange));", source, StringComparison.Ordinal);
+            Assert.Contains("Task.Run(() => RestartLoopPlaybackAsync(pane, engine, restartRange));", source, StringComparison.Ordinal);
             Assert.Contains("_diagnosticLogService.Info(\"File opened: \" + BuildDiagnosticFileIdentifier(filePath));", source, StringComparison.Ordinal);
             Assert.Contains("private void CancelQueuedSliderScrubs()", source, StringComparison.Ordinal);
             Assert.Contains("_hasPendingSliderScrubTarget = false;", source, StringComparison.Ordinal);

@@ -273,7 +273,7 @@
                   <TextBlock x:Name="PrimaryPaneCurrentPositionTextBlock" Text="00:00:00.000" Foreground="#B7BDC6" VerticalAlignment="Center" />
                   <Slider x:Name="PrimaryPanePositionSlider" Grid.Column="1" Classes="timeline-slider" Margin="10,0" Minimum="0" Maximum="1" Tag="pane-primary" PointerPressed="TimelineSlider_PointerPressed" ValueChanged="PanePositionSlider_ValueChanged" />
                   <TextBlock x:Name="PrimaryPaneDurationTextBlock" Grid.Column="2" Text="00:00:00.000" Foreground="#B7BDC6" HorizontalAlignment="Right" TextAlignment="Right" VerticalAlignment="Center" />
-                  <Button x:Name="PrimaryPaneLoopStatusButton" Grid.Row="1" Grid.Column="2" Classes="loop-status pane-loop-status" Tag="pane-primary" Click="LoopStatusButton_Click" ToolTip.Tip="Toggle Loop Playback (L)">
+                  <Button x:Name="PrimaryPaneLoopStatusButton" Grid.Row="1" Grid.Column="2" Classes="loop-status pane-loop-status" Tag="pane-primary" Click="LoopStatusButton_Click" ToolTip.Tip="Toggle Left Loop Playback">
                     <TextBlock x:Name="PrimaryPaneLoopStatusTextBlock" Text="Loop: off" TextAlignment="Right" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
                   </Button>
                   <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,6,0,0">
@@ -360,7 +360,7 @@
                   <TextBlock x:Name="ComparePaneCurrentPositionTextBlock" Text="00:00:00.000" Foreground="#B7BDC6" VerticalAlignment="Center" />
                   <Slider x:Name="ComparePanePositionSlider" Grid.Column="1" Classes="timeline-slider" Margin="10,0" Minimum="0" Maximum="1" Tag="pane-compare" PointerPressed="TimelineSlider_PointerPressed" ValueChanged="PanePositionSlider_ValueChanged" />
                   <TextBlock x:Name="ComparePaneDurationTextBlock" Grid.Column="2" Text="00:00:00.000" Foreground="#B7BDC6" HorizontalAlignment="Right" TextAlignment="Right" VerticalAlignment="Center" />
-                  <Button x:Name="ComparePaneLoopStatusButton" Grid.Row="1" Grid.Column="2" Classes="loop-status pane-loop-status" Tag="pane-compare" Click="LoopStatusButton_Click" ToolTip.Tip="Toggle Loop Playback (L)">
+                  <Button x:Name="ComparePaneLoopStatusButton" Grid.Row="1" Grid.Column="2" Classes="loop-status pane-loop-status" Tag="pane-compare" Click="LoopStatusButton_Click" ToolTip.Tip="Toggle Right Loop Playback">
                     <TextBlock x:Name="ComparePaneLoopStatusTextBlock" Text="Loop: off" TextAlignment="Right" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
                   </Button>
                   <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,6,0,0">
@@ -430,7 +430,7 @@
             <Slider x:Name="PositionSlider" Grid.Column="1" Classes="timeline-slider" Margin="16,0" Minimum="0" Maximum="1" PointerPressed="TimelineSlider_PointerPressed" ValueChanged="PositionSlider_ValueChanged" />
             <TextBlock x:Name="DurationTextBlock" Grid.Column="2" Text="00:00:00.000" Foreground="#B7BDC6" Height="34" HorizontalAlignment="Right" TextAlignment="Right" VerticalAlignment="Center" />
           </Grid>
-          <Button x:Name="LoopStatusButton" Grid.Row="1" Grid.Column="1" Classes="loop-status main-loop-status" Click="LoopStatusButton_Click" ToolTip.Tip="Toggle Loop Playback (L)">
+          <Button x:Name="LoopStatusButton" Grid.Row="1" Grid.Column="1" Classes="loop-status main-loop-status" Click="LoopStatusButton_Click" ToolTip.Tip="Toggle Unified Loop Playback (L)">
             <TextBlock x:Name="LoopStatusTextBlock" Text="Loop: off" TextAlignment="Right" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
           </Button>
           <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">

@@ -600,6 +600,86 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
+        public void CompareLoopPlayback_RestartsLeftPaneWhileRightRestartIsInFlight()
+        {
+            _fixture.Run(() =>
+            {
+                var window = new MainWindow();
+                var primaryPauseCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                var comparePauseCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                try
+                {
+                    var mediaInfo = new VideoMediaInfo(
+                        "compare-loop.mp4",
+                        TimeSpan.FromSeconds(10),
+                        TimeSpan.FromSeconds(1d / 30d),
+                        30d,
+                        1920,
+                        1080,
+                        "h264",
+                        0,
+                        30,
+                        1,
+                        1,
+                        90_000);
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        CurrentFilePath = "left.mp4",
+                        MediaInfo = mediaInfo,
+                        PauseCompletion = primaryPauseCompletion
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        CurrentFilePath = "right.mp4",
+                        MediaInfo = mediaInfo,
+                        PauseCompletion = comparePauseCompletion
+                    };
+                    var state = new VideoReviewEngineStateChangedEventArgs(
+                        isMediaOpen: true,
+                        isPlaying: true,
+                        currentFilePath: "compare-loop.mp4",
+                        lastErrorMessage: string.Empty,
+                        mediaInfo: mediaInfo,
+                        position: new ReviewPosition(
+                            TimeSpan.FromSeconds(2),
+                            60,
+                            isFrameAccurate: true,
+                            isFrameIndexAbsolute: true,
+                            presentationTimestamp: 180_000,
+                            decodeTimestamp: 180_000));
+
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_primaryLoopRange", CreateLoopRange("pane-primary", "left.mp4"));
+                    SetPrivateField(window, "_compareLoopRange", CreateLoopRange("pane-compare", "right.mp4"));
+                    SetPrivateField(window, "_isPrimaryLoopPlaybackEnabled", true);
+                    SetPrivateField(window, "_isCompareLoopPlaybackEnabled", true);
+
+                    InvokePrivate(window, "RestartLoopPlaybackIfNeeded", ParsePane("Compare"), state);
+                    Assert.True(
+                        SpinWait.SpinUntil(() => compareEngine.PauseCallCount == 1, TimeSpan.FromSeconds(2)),
+                        "The right pane did not begin its loop restart.");
+
+                    InvokePrivate(window, "RestartLoopPlaybackIfNeeded", ParsePane("Primary"), state);
+
+                    Assert.True(
+                        SpinWait.SpinUntil(() => primaryEngine.PauseCallCount == 1, TimeSpan.FromSeconds(2)),
+                        "The left pane loop restart was blocked by the right pane restart.");
+                }
+                finally
+                {
+                    primaryPauseCompletion.TrySetResult(true);
+                    comparePauseCompletion.TrySetResult(true);
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
         public void MainSharedTransport_MasterVisualTracksAllPanePauseRule()
         {
             var mainWindowSource = ReadRepositoryFile(
@@ -902,7 +982,9 @@ namespace FramePlayer.Avalonia.Tests
                     AssertLoopStatusPlacement(window, "ComparePaneLoopStatusButton", "ComparePanePlayPauseButton", 176);
                     Assert.Equal("pane-primary", RequireControl<Button>(window, "PrimaryPaneLoopStatusButton").Tag);
                     Assert.Equal("pane-compare", RequireControl<Button>(window, "ComparePaneLoopStatusButton").Tag);
-                    Assert.Equal("Toggle Loop Playback (L)", ToolTip.GetTip(mainLoopStatus));
+                    Assert.Equal("Toggle Unified Loop Playback (L)", ToolTip.GetTip(mainLoopStatus));
+                    Assert.Equal("Toggle Left Loop Playback", ToolTip.GetTip(RequireControl<Button>(window, "PrimaryPaneLoopStatusButton")));
+                    Assert.Equal("Toggle Right Loop Playback", ToolTip.GetTip(RequireControl<Button>(window, "ComparePaneLoopStatusButton")));
                 }
                 finally
                 {
@@ -912,7 +994,7 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
-        public void LoopStatusLabel_LeftClickTogglesLoopPlaybackForLoadedPane()
+        public void MainLoopStatus_TogglesLoopPlaybackForLoadedSinglePane()
         {
             _fixture.Run(() =>
             {
@@ -934,6 +1016,114 @@ namespace FramePlayer.Avalonia.Tests
 
                     Assert.Equal("Loop: full media", RequireControl<TextBlock>(window, "LoopStatusTextBlock").Text);
                     Assert.True(RequireControl<MenuItem>(window, "LoopPlaybackMenuItem").IsChecked);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public void ComparePaneLoopStatuses_ToggleLeftAndRightIndependently()
+        {
+            _fixture.Run(() =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    SetPrivateField(
+                        window,
+                        "_primaryEngine",
+                        new TestVideoReviewEngine
+                        {
+                            IsMediaOpen = true,
+                            CurrentFilePath = "/tmp/left.mp4"
+                        });
+                    SetPrivateField(
+                        window,
+                        "_compareEngine",
+                        new TestVideoReviewEngine
+                        {
+                            IsMediaOpen = true,
+                            CurrentFilePath = "/tmp/right.mp4"
+                        });
+                    RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+                    InvokePrivate(window, "UpdateCommandStates");
+                    var primaryLoopStatus = RequireControl<Button>(window, "PrimaryPaneLoopStatusButton");
+                    var compareLoopStatus = RequireControl<Button>(window, "ComparePaneLoopStatusButton");
+
+                    primaryLoopStatus.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+                    Assert.True(GetPrivateField<bool>(window, "_isPrimaryLoopPlaybackEnabled"));
+                    Assert.False(GetPrivateField<bool>(window, "_isCompareLoopPlaybackEnabled"));
+                    Assert.Equal("Loop: full media", RequireControl<TextBlock>(window, "PrimaryPaneLoopStatusTextBlock").Text);
+                    Assert.Equal("Loop: off", RequireControl<TextBlock>(window, "ComparePaneLoopStatusTextBlock").Text);
+                    Assert.Equal("Loop: left only", RequireControl<TextBlock>(window, "LoopStatusTextBlock").Text);
+                    Assert.False(RequireControl<MenuItem>(window, "LoopPlaybackMenuItem").IsChecked);
+
+                    compareLoopStatus.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+                    Assert.True(GetPrivateField<bool>(window, "_isPrimaryLoopPlaybackEnabled"));
+                    Assert.True(GetPrivateField<bool>(window, "_isCompareLoopPlaybackEnabled"));
+                    Assert.Equal("Loop: both on", RequireControl<TextBlock>(window, "LoopStatusTextBlock").Text);
+                    Assert.True(RequireControl<MenuItem>(window, "LoopPlaybackMenuItem").IsChecked);
+
+                    primaryLoopStatus.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+                    Assert.False(GetPrivateField<bool>(window, "_isPrimaryLoopPlaybackEnabled"));
+                    Assert.True(GetPrivateField<bool>(window, "_isCompareLoopPlaybackEnabled"));
+                    Assert.Equal("Loop: right only", RequireControl<TextBlock>(window, "LoopStatusTextBlock").Text);
+                    Assert.False(RequireControl<MenuItem>(window, "LoopPlaybackMenuItem").IsChecked);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public void CompareMainLoopStatus_UnifiesBothLoadedPanes()
+        {
+            _fixture.Run(() =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    SetPrivateField(
+                        window,
+                        "_primaryEngine",
+                        new TestVideoReviewEngine
+                        {
+                            IsMediaOpen = true,
+                            CurrentFilePath = "/tmp/left.mp4"
+                        });
+                    SetPrivateField(
+                        window,
+                        "_compareEngine",
+                        new TestVideoReviewEngine
+                        {
+                            IsMediaOpen = true,
+                            CurrentFilePath = "/tmp/right.mp4"
+                        });
+                    RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+                    InvokePrivate(window, "UpdateCommandStates");
+                    var mainLoopStatus = RequireControl<Button>(window, "LoopStatusButton");
+
+                    mainLoopStatus.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+                    Assert.True(GetPrivateField<bool>(window, "_isPrimaryLoopPlaybackEnabled"));
+                    Assert.True(GetPrivateField<bool>(window, "_isCompareLoopPlaybackEnabled"));
+                    Assert.Equal("Loop: both on", RequireControl<TextBlock>(window, "LoopStatusTextBlock").Text);
+                    Assert.True(RequireControl<MenuItem>(window, "LoopPlaybackMenuItem").IsChecked);
+
+                    mainLoopStatus.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+                    Assert.False(GetPrivateField<bool>(window, "_isPrimaryLoopPlaybackEnabled"));
+                    Assert.False(GetPrivateField<bool>(window, "_isCompareLoopPlaybackEnabled"));
+                    Assert.Equal("Loop: off", RequireControl<TextBlock>(window, "LoopStatusTextBlock").Text);
+                    Assert.False(RequireControl<MenuItem>(window, "LoopPlaybackMenuItem").IsChecked);
                 }
                 finally
                 {
@@ -1812,6 +2002,28 @@ namespace FramePlayer.Avalonia.Tests
             var field = typeof(MainWindow).GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic)
                 ?? throw new MissingFieldException(typeof(MainWindow).FullName, fieldName);
             field.SetValue(window, value);
+        }
+
+        private static LoopPlaybackPaneRangeSnapshot CreateLoopRange(string paneId, string filePath)
+        {
+            return new LoopPlaybackPaneRangeSnapshot(
+                paneId,
+                paneId,
+                paneId,
+                filePath,
+                TimeSpan.FromSeconds(10),
+                new LoopPlaybackAnchorSnapshot(
+                    paneId,
+                    paneId,
+                    paneId,
+                    TimeSpan.FromSeconds(1),
+                    new LoopPlaybackFrameIdentitySnapshot(30, true, 90_000, 90_000)),
+                new LoopPlaybackAnchorSnapshot(
+                    paneId,
+                    paneId,
+                    paneId,
+                    TimeSpan.FromSeconds(2),
+                    new LoopPlaybackFrameIdentitySnapshot(60, true, 180_000, 180_000)));
         }
 
         private static T? GetPrivateField<T>(MainWindow window, string fieldName)
