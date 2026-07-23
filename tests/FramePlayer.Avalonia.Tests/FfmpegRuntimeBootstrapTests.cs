@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using FFmpeg.AutoGen;
 using FramePlayer.Engines.FFmpeg;
 using Xunit;
 
@@ -52,6 +53,94 @@ namespace FramePlayer.Avalonia.Tests
                     Directory.Delete(root, recursive: true);
                 }
             }
+        }
+
+        [Fact]
+        public void ConfigureForCurrentPlatform_DoesNotChangeRootPathWhenRuntimeValidationFails()
+        {
+            var root = Path.Combine(Path.GetTempPath(), "frame-player-invalid-runtime-" + Guid.NewGuid().ToString("N"));
+            var previousRootPath = ffmpeg.RootPath;
+            var configuredRootPath = Path.Combine(root, "previous-runtime");
+            try
+            {
+                Directory.CreateDirectory(configuredRootPath);
+                ffmpeg.RootPath = configuredRootPath;
+
+                var exception = Assert.Throws<DirectoryNotFoundException>(() =>
+                    FfmpegRuntimeBootstrap.ConfigureForCurrentPlatform(root));
+                Assert.Equal(configuredRootPath, ffmpeg.RootPath);
+                Assert.Contains(root, exception.Message, StringComparison.Ordinal);
+            }
+            finally
+            {
+                ffmpeg.RootPath = previousRootPath;
+                if (Directory.Exists(root))
+                {
+                    Directory.Delete(root, recursive: true);
+                }
+            }
+        }
+
+        [Fact]
+        public void EnsureConfiguredForCurrentPlatform_ReplacesInvalidRootWithRuntimeOverride()
+        {
+            var repositoryRoot = FindRepositoryRoot();
+            var runtimeDirectory = FfmpegRuntimeBootstrap.ResolveRuntimeDirectory(repositoryRoot);
+            if (!File.Exists(Path.Combine(runtimeDirectory, "libavutil.60.dylib")) &&
+                !File.Exists(Path.Combine(runtimeDirectory, "libavutil.so.60")) &&
+                !File.Exists(Path.Combine(runtimeDirectory, "avutil-60.dll")))
+            {
+                return;
+            }
+
+            var invalidRootPath = Path.Combine(Path.GetTempPath(), "frame-player-invalid-root-" + Guid.NewGuid().ToString("N"));
+            var previousRootPath = ffmpeg.RootPath;
+            var previousRuntimeOverride = Environment.GetEnvironmentVariable(
+                FfmpegRuntimeBootstrap.RuntimeDirectoryEnvironmentVariable);
+            try
+            {
+                Directory.CreateDirectory(invalidRootPath);
+                ffmpeg.RootPath = invalidRootPath;
+                Environment.SetEnvironmentVariable(
+                    FfmpegRuntimeBootstrap.RuntimeDirectoryEnvironmentVariable,
+                    runtimeDirectory);
+
+                var configuredRootPath = FfmpegRuntimeBootstrap.EnsureConfiguredForCurrentPlatform(invalidRootPath);
+
+                Assert.Equal(runtimeDirectory, configuredRootPath);
+                Assert.Equal(runtimeDirectory, ffmpeg.RootPath);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(
+                    FfmpegRuntimeBootstrap.RuntimeDirectoryEnvironmentVariable,
+                    previousRuntimeOverride);
+                ffmpeg.RootPath = previousRootPath;
+                if (Directory.Exists(invalidRootPath))
+                {
+                    Directory.Delete(invalidRootPath, recursive: true);
+                }
+            }
+        }
+
+        private static string FindRepositoryRoot()
+        {
+            var directory = new DirectoryInfo(AppContext.BaseDirectory);
+            while (directory != null)
+            {
+                if (File.Exists(Path.Combine(
+                    directory.FullName,
+                    "src",
+                    "FramePlayer.Avalonia",
+                    "FramePlayer.Avalonia.csproj")))
+                {
+                    return directory.FullName;
+                }
+
+                directory = directory.Parent;
+            }
+
+            throw new InvalidOperationException("Could not locate the repository root from the test output directory.");
         }
     }
 }

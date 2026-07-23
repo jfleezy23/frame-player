@@ -9,6 +9,8 @@ namespace FramePlayer.Engines.FFmpeg
     public static class FfmpegRuntimeBootstrap
     {
         private const string RuntimeFolderName = "Runtime";
+        private static readonly object RuntimeConfigurationLock = new object();
+        internal const string RuntimeDirectoryEnvironmentVariable = "FRAMEPLAYER_FFMPEG_RUNTIME_DIR";
 
         public static RustFfmpegProbeResult LastRustProbeResult { get; private set; } =
             RustFfmpegProbeResult.NotRun();
@@ -20,19 +22,54 @@ namespace FramePlayer.Engines.FFmpeg
                 throw new ArgumentException("A base directory is required.", nameof(baseDirectory));
             }
 
-            var runtimeDirectory = ResolveRuntimeDirectory(baseDirectory);
-            ffmpeg.RootPath = runtimeDirectory;
-            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            lock (RuntimeConfigurationLock)
             {
-                if (!HasRequiredRuntimeLibraries(runtimeDirectory))
+                return ConfigureRuntimeDirectory(ResolveRuntimeDirectory(baseDirectory));
+            }
+        }
+
+        internal static string EnsureConfiguredForCurrentPlatform(string fallbackBaseDirectory)
+        {
+            lock (RuntimeConfigurationLock)
+            {
+                if (!string.IsNullOrWhiteSpace(ffmpeg.RootPath) && HasRequiredRuntimeLibraries(ffmpeg.RootPath))
                 {
-                    throw new DirectoryNotFoundException("The resolved FFmpeg runtime directory does not contain the required macOS/Linux shared libraries: " + runtimeDirectory);
+                    return ffmpeg.RootPath;
                 }
 
-                DynamicallyLoadedBindings.Initialize();
+                var runtimeDirectoryOverride = Environment.GetEnvironmentVariable(RuntimeDirectoryEnvironmentVariable);
+                return ConfigureRuntimeDirectory(string.IsNullOrWhiteSpace(runtimeDirectoryOverride)
+                    ? ResolveRuntimeDirectory(fallbackBaseDirectory)
+                    : runtimeDirectoryOverride);
+            }
+        }
+
+        private static string ConfigureRuntimeDirectory(string runtimeDirectory)
+        {
+            var missingLibraryName = GetMissingRequiredRuntimeLibrary(runtimeDirectory);
+            if (!string.IsNullOrEmpty(missingLibraryName))
+            {
+                throw new DirectoryNotFoundException(
+                    "The resolved FFmpeg runtime directory does not contain the required shared library " +
+                    Path.Combine(runtimeDirectory, missingLibraryName) + ".");
             }
 
-            LastRustProbeResult = RustFfmpegProbe.TryProbe(runtimeDirectory);
+            var previousRootPath = ffmpeg.RootPath;
+            ffmpeg.RootPath = runtimeDirectory;
+            try
+            {
+                if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    DynamicallyLoadedBindings.Initialize();
+                }
+
+                LastRustProbeResult = RustFfmpegProbe.TryProbe(runtimeDirectory);
+            }
+            catch
+            {
+                ffmpeg.RootPath = previousRootPath;
+                throw;
+            }
 
             return runtimeDirectory;
         }
@@ -104,26 +141,52 @@ namespace FramePlayer.Engines.FFmpeg
 
         private static bool HasRequiredRuntimeLibraries(string runtimeDirectory)
         {
+            return string.IsNullOrEmpty(GetMissingRequiredRuntimeLibrary(runtimeDirectory));
+        }
+
+        private static string GetMissingRequiredRuntimeLibrary(string runtimeDirectory)
+        {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             {
-                return File.Exists(Path.Combine(runtimeDirectory, "libavutil.60.dylib")) &&
-                    File.Exists(Path.Combine(runtimeDirectory, "libswresample.6.dylib")) &&
-                    File.Exists(Path.Combine(runtimeDirectory, "libswscale.9.dylib")) &&
-                    File.Exists(Path.Combine(runtimeDirectory, "libavfilter.11.dylib")) &&
-                    File.Exists(Path.Combine(runtimeDirectory, "libavcodec.62.dylib")) &&
-                    File.Exists(Path.Combine(runtimeDirectory, "libavformat.62.dylib"));
+                return GetFirstMissingLibrary(
+                    runtimeDirectory,
+                    "libavutil.60.dylib",
+                    "libswresample.6.dylib",
+                    "libswscale.9.dylib",
+                    "libavfilter.11.dylib",
+                    "libavcodec.62.dylib",
+                    "libavformat.62.dylib");
             }
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
-                return File.Exists(Path.Combine(runtimeDirectory, "libavutil.so.60")) &&
-                    File.Exists(Path.Combine(runtimeDirectory, "libswresample.so.6")) &&
-                    File.Exists(Path.Combine(runtimeDirectory, "libswscale.so.9")) &&
-                    File.Exists(Path.Combine(runtimeDirectory, "libavcodec.so.62")) &&
-                    File.Exists(Path.Combine(runtimeDirectory, "libavformat.so.62"));
+                return GetFirstMissingLibrary(
+                    runtimeDirectory,
+                    "libavutil.so.60",
+                    "libswresample.so.6",
+                    "libswscale.so.9",
+                    "libavcodec.so.62",
+                    "libavformat.so.62");
             }
 
-            return true;
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                return GetFirstMissingLibrary(
+                    runtimeDirectory,
+                    "avutil-60.dll",
+                    "swresample-6.dll",
+                    "swscale-9.dll",
+                    "avcodec-62.dll",
+                    "avformat-62.dll");
+            }
+
+            return string.Empty;
+        }
+
+        private static string GetFirstMissingLibrary(string runtimeDirectory, params string[] libraryNames)
+        {
+            return libraryNames.FirstOrDefault(libraryName =>
+                !File.Exists(Path.Combine(runtimeDirectory, libraryName))) ?? string.Empty;
         }
     }
 }
