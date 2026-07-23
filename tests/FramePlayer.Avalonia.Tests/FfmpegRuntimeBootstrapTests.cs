@@ -9,6 +9,17 @@ namespace FramePlayer.Avalonia.Tests
     public sealed class FfmpegRuntimeBootstrapTests
     {
         [Theory]
+        [InlineData("")]
+        [InlineData(" ")]
+        public void ConfigureForCurrentPlatform_RejectsMissingBaseDirectory(string baseDirectory)
+        {
+            var exception = Assert.Throws<ArgumentException>(() =>
+                FfmpegRuntimeBootstrap.ConfigureForCurrentPlatform(baseDirectory));
+
+            Assert.Equal("baseDirectory", exception.ParamName);
+        }
+
+        [Theory]
         [InlineData("avutil-60.dll", "libavutil.60.dylib")]
         [InlineData("swresample-6.dll", "libswresample.6.dylib")]
         [InlineData("swscale-9.dll", "libswscale.9.dylib")]
@@ -18,6 +29,20 @@ namespace FramePlayer.Avalonia.Tests
         public void MapWindowsRuntimeLibraryName_ReturnsMacDylibName(string windowsName, string expectedMacName)
         {
             Assert.Equal(expectedMacName, FfmpegRuntimeBootstrap.MapWindowsRuntimeLibraryName(windowsName));
+        }
+
+        [Theory]
+        [InlineData("")]
+        [InlineData(" ")]
+        public void MapWindowsRuntimeLibraryName_ReturnsEmptyForMissingName(string libraryName)
+        {
+            Assert.Equal(string.Empty, FfmpegRuntimeBootstrap.MapWindowsRuntimeLibraryName(libraryName));
+        }
+
+        [Fact]
+        public void MapWindowsRuntimeLibraryName_PreservesUnknownName()
+        {
+            Assert.Equal("custom.dll", FfmpegRuntimeBootstrap.MapWindowsRuntimeLibraryName("custom.dll"));
         }
 
         [Fact]
