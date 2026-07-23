@@ -130,6 +130,34 @@ namespace FramePlayer.Avalonia.Tests
             Assert.Contains("bundle_short_version_from_artifact", script, StringComparison.Ordinal);
             Assert.Contains("APP_VERSION=\"$BUNDLE_SHORT_VERSION\"", script, StringComparison.Ordinal);
             Assert.Contains("APP_INFORMATIONAL_VERSION=\"$ARTIFACT_VERSION\"", script, StringComparison.Ordinal);
+            Assert.Contains("while read -r expected_hash file_name || [[ -n \"${expected_hash:-}\" || -n \"${file_name:-}\" ]]", script, StringComparison.Ordinal);
+            Assert.Contains("expected_hash=\"${expected_hash%$'\\r'}\"", script, StringComparison.Ordinal);
+            Assert.Contains("file_name=\"${file_name%$'\\r'}\"", script, StringComparison.Ordinal);
+            Assert.Contains("printf '%s' \"$signed_checksums\" > \"$runtime_checksums\"", script, StringComparison.Ordinal);
+            Assert.Contains("codesign --force \"${timestamp_args[@]}\" --options runtime --sign \"$identity\" \"$runtime_checksums\"", script, StringComparison.Ordinal);
+            Assert.Contains("rm -f \"$ZIP_PATH\" \"$ZIP_PATH.sha256\"", script, StringComparison.Ordinal);
+            var artifactCleanupIndex = script.IndexOf("rm -f \"$ZIP_PATH\" \"$ZIP_PATH.sha256\"", StringComparison.Ordinal);
+            var validationCallIndex = script.IndexOf("\nvalidate_macos_runtime_checksums\n", StringComparison.Ordinal);
+            Assert.True(
+                artifactCleanupIndex >
+                script.IndexOf("BUNDLE_SHORT_VERSION=\"${APP_VERSION:-$(bundle_short_version_from_artifact \"$ARTIFACT_VERSION\")}\"", StringComparison.Ordinal),
+                "Existing package outputs must not be removed before argument and version validation.");
+            Assert.True(
+                artifactCleanupIndex <
+                script.IndexOf("env -u VERSION", StringComparison.Ordinal),
+                "Existing package outputs must be removed before the first fallible build step.");
+            Assert.True(
+                script.IndexOf("printf '%s' \"$signed_checksums\" > \"$runtime_checksums\"", StringComparison.Ordinal) <
+                script.IndexOf("codesign --force \"${timestamp_args[@]}\" --options runtime --entitlements \"$entitlements\" --sign \"$identity\" \"$APP_BUNDLE\"", StringComparison.Ordinal),
+                "Signed FFmpeg hashes must be refreshed before the outer app bundle is sealed.");
+            Assert.True(
+                validationCallIndex >
+                script.IndexOf("sign_app_bundle \"$resolved_identity\"", StringComparison.Ordinal),
+                "Signed FFmpeg hashes must be validated after the app is sealed.");
+            Assert.True(
+                validationCallIndex <
+                script.IndexOf("/usr/bin/ditto -c -k --keepParent", StringComparison.Ordinal),
+                "Signed FFmpeg hashes must be validated before the release ZIP is created.");
             var buildScript = File.ReadAllText(Path.Combine(root, "script", "build_and_run.sh"));
             Assert.Contains("APP_VERSION_LABEL=\"${APP_VERSION:-0.1.0}\"", buildScript, StringComparison.Ordinal);
             Assert.Contains("bundle_short_version_from_label", buildScript, StringComparison.Ordinal);

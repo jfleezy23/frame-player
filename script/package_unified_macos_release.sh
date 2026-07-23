@@ -97,6 +97,8 @@ sign_app_bundle() {
   local identity="$1"
   local entitlements="$ROOT_DIR/src/FramePlayer.Avalonia/FramePlayer.Avalonia.entitlements"
   local main_executable="$APP_BUNDLE/Contents/MacOS/FramePlayer.Avalonia"
+  local runtime_dir="$APP_BUNDLE/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg"
+  local runtime_checksums="$runtime_dir/SHA256SUMS.txt"
   local timestamp_args=(--timestamp=none)
 
   if [[ "$identity" == Developer\ ID\ Application:* ]]; then
@@ -111,9 +113,50 @@ sign_app_bundle() {
     codesign --force "${timestamp_args[@]}" --options runtime --sign "$identity" "$item"
   done < <(find "$APP_BUNDLE/Contents/MacOS" -type f | sort -r)
 
+  local signed_checksums=""
+  while read -r expected_hash file_name || [[ -n "${expected_hash:-}" || -n "${file_name:-}" ]]; do
+    expected_hash="${expected_hash%$'\r'}"
+    if [[ -z "${expected_hash:-}" || "$expected_hash" == \#* ]]; then
+      continue
+    fi
+
+    file_name="${file_name%$'\r'}"
+    if [[ -z "${file_name:-}" || "$file_name" == */* || "$file_name" == "." || "$file_name" == ".." ]]; then
+      echo "Invalid macOS runtime checksum entry: ${file_name:-<missing>}" >&2
+      return 1
+    fi
+
+    local runtime_file="$runtime_dir/$file_name"
+    [[ -f "$runtime_file" ]] || {
+      echo "Missing signed macOS runtime file: $file_name" >&2
+      return 1
+    }
+
+    local signed_hash
+    signed_hash="$(shasum -a 256 "$runtime_file")"
+    signed_checksums+="${signed_hash%% *}  $file_name"$'\n'
+  done < "$runtime_checksums"
+
+  [[ -n "$signed_checksums" ]] || {
+    echo "The macOS runtime checksum file did not contain any file entries." >&2
+    return 1
+  }
+  printf '%s' "$signed_checksums" > "$runtime_checksums"
+  chmod 0644 "$runtime_checksums"
+  codesign --force "${timestamp_args[@]}" --options runtime --sign "$identity" "$runtime_checksums"
   codesign --force "${timestamp_args[@]}" --options runtime --entitlements "$entitlements" --sign "$identity" "$APP_BUNDLE"
   codesign --verify --deep --verbose=2 "$APP_BUNDLE"
 }
+
+validate_macos_runtime_checksums() {
+  local runtime_dir="$APP_BUNDLE/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg"
+  (
+    cd "$runtime_dir"
+    shasum -a 256 -c SHA256SUMS.txt
+  )
+}
+
+rm -f "$ZIP_PATH" "$ZIP_PATH.sha256"
 
 env -u VERSION \
   "$ROOT_DIR/scripts/Build-RustFfmpegProbe.sh" osx-arm64
@@ -144,8 +187,8 @@ if [[ "$SIGN_MODE" != "none" ]]; then
   echo "Signing app bundle with: $resolved_identity"
   sign_app_bundle "$resolved_identity"
 fi
+validate_macos_runtime_checksums
 
-rm -f "$ZIP_PATH"
 (
   cd "$DIST_DIR"
   /usr/bin/ditto -c -k --keepParent "Frame Player.app" "$ZIP_PATH"
