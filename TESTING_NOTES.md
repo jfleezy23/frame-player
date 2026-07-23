@@ -17,13 +17,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Test-WorkflowActio
 On Windows, build the self-contained package with:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Package-UnifiedWindows.ps1 -Version 2.0.0-rc.1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Package-UnifiedWindows.ps1 -Version 2.1.0-rc.3
 ```
 
 On macOS, build the self-contained application bundle and archive with:
 
 ```bash
-PACKAGE_VERSION=2.0.0-rc.1 script/package_unified_macos_release.sh --unsigned
+PACKAGE_VERSION=2.1.0-rc.3 script/package_unified_macos_release.sh --unsigned
 ```
 
 Release-candidate corpus tests are tagged `Category=ReleaseCandidate` and require the platform-specific corpus environment documented in `docs/macos-release.md` or the Windows Rust corpus harness.
@@ -32,10 +32,12 @@ Release-candidate corpus tests are tagged `Category=ReleaseCandidate` and requir
 
 - Open a representative clip and confirm the first frame is displayed.
 - Exercise play, pause, time seek, exact frame seek, and single-frame stepping.
-- Set A/B markers and verify loop playback and loop clip export.
-- Verify a supported H.264 MP4 can replace its audio with WAV and MP3 inputs.
+- Set A/B markers, click the visible loop status to toggle playback, and verify loop clip export.
+- Verify audio replacement with WAV and MP3 inputs on H.264 and HEVC MP4 sources.
+- In compare mode, verify audio replacement targets the primary pane and accepts the maintained MPEG-4 M4V corpus source.
 - Open compare mode; verify synchronized and pane-local transport, independent loop ranges, linked and unlinked zoom, and side-by-side export.
-- Verify pixel inspection, zoom, pan, and reset behavior while paused and across transport operations.
+- Verify pixel inspection, zoom, pan, and reset behavior while paused and across transport operations; the image must remain visible after every zoom change.
+- Confirm Help > About displays the exact package label being tested.
 - Confirm a file with audio plays audio and a video-only file remains usable.
 - Exercise both the normal CPU path and opportunistic Vulkan acceleration where the local runtime, codec, device, and driver support it.
 - Confirm diagnostics identify the selected decode path and report actionable runtime failures.

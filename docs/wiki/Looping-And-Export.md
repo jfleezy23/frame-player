@@ -21,4 +21,6 @@ Two-pane compare sessions can export side-by-side MP4 output. The export can use
 
 ## Audio Insertion
 
-Audio insertion is available from the `Audio Insertion` menu. Use it when a review workflow needs to combine a video stream with an external or alternate audio stream.
+Audio insertion is available from the `Audio Insertion` menu for `.mp4` and `.m4v` sources, including HEVC video. It combines the reviewed video stream with a WAV or MP3 track and writes a new MP4 copy.
+
+In compare mode, audio insertion targets the primary (left) pane.
