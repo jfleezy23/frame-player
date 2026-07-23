@@ -4,11 +4,11 @@ Frame Player depends on third-party libraries and runtime components that are no
 
 ## Managed Dependencies
 
-### FFmpeg.AutoGen 8.0.0.1
+### FFmpeg.AutoGen 8.1.0
 
 - Project: <https://github.com/Ruslan-B/FFmpeg.AutoGen>
-- Package metadata source: `packages/ffmpeg.autogen/8.0.0.1/*.nuspec`
-- Package license file source: `packages/ffmpeg.autogen/8.0.0.1/LICENSE.txt`
+- Package metadata source: `packages/ffmpeg.autogen/8.1.0/*.nuspec`
+- Package license file source: `packages/ffmpeg.autogen/8.1.0/LICENSE.txt`
 - License: MIT
 
 ## Native Runtime
