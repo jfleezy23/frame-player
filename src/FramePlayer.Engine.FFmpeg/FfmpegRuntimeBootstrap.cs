@@ -46,6 +46,25 @@ namespace FramePlayer.Engines.FFmpeg
 
         private static string ConfigureRuntimeDirectory(string runtimeDirectory)
         {
+            return ConfigureRuntimeDirectory(runtimeDirectory, RustFfmpegProbe.TryProbe);
+        }
+
+        internal static string ConfigureRuntimeDirectory(
+            string runtimeDirectory,
+            Func<string, RustFfmpegProbeResult> runtimeProbe)
+        {
+            ArgumentNullException.ThrowIfNull(runtimeProbe);
+
+            lock (RuntimeConfigurationLock)
+            {
+                return ConfigureRuntimeDirectoryCore(runtimeDirectory, runtimeProbe);
+            }
+        }
+
+        private static string ConfigureRuntimeDirectoryCore(
+            string runtimeDirectory,
+            Func<string, RustFfmpegProbeResult> runtimeProbe)
+        {
             var missingLibraryName = GetMissingRequiredRuntimeLibrary(runtimeDirectory);
             if (!string.IsNullOrEmpty(missingLibraryName))
             {
@@ -55,6 +74,7 @@ namespace FramePlayer.Engines.FFmpeg
             }
 
             var previousRootPath = ffmpeg.RootPath;
+            var previousRustProbeResult = LastRustProbeResult;
             ffmpeg.RootPath = runtimeDirectory;
             try
             {
@@ -63,11 +83,12 @@ namespace FramePlayer.Engines.FFmpeg
                     DynamicallyLoadedBindings.Initialize();
                 }
 
-                LastRustProbeResult = RustFfmpegProbe.TryProbe(runtimeDirectory);
+                LastRustProbeResult = runtimeProbe(runtimeDirectory);
             }
             catch
             {
                 ffmpeg.RootPath = previousRootPath;
+                LastRustProbeResult = previousRustProbeResult;
                 throw;
             }
 

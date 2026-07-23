@@ -107,6 +107,54 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
+        public void ConfigureRuntimeDirectory_RestoresRootPathWhenProbeThrows()
+        {
+            var repositoryRoot = FindRepositoryRoot();
+            var runtimeDirectory = FfmpegRuntimeBootstrap.ResolveRuntimeDirectory(repositoryRoot);
+            if (!File.Exists(Path.Combine(runtimeDirectory, "libavutil.60.dylib")) &&
+                !File.Exists(Path.Combine(runtimeDirectory, "libavutil.so.60")) &&
+                !File.Exists(Path.Combine(runtimeDirectory, "avutil-60.dll")))
+            {
+                return;
+            }
+
+            var previousRootPath = ffmpeg.RootPath;
+            var previousRustProbeResult = FfmpegRuntimeBootstrap.LastRustProbeResult;
+            var configuredRootPath = Path.Combine(
+                Path.GetTempPath(),
+                "frame-player-previous-runtime-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                ffmpeg.RootPath = configuredRootPath;
+
+                var exception = Assert.Throws<InvalidOperationException>(() =>
+                    FfmpegRuntimeBootstrap.ConfigureRuntimeDirectory(
+                        runtimeDirectory,
+                        _ => throw new InvalidOperationException("Expected probe failure.")));
+
+                Assert.Equal("Expected probe failure.", exception.Message);
+                Assert.Equal(configuredRootPath, ffmpeg.RootPath);
+                Assert.Same(previousRustProbeResult, FfmpegRuntimeBootstrap.LastRustProbeResult);
+            }
+            finally
+            {
+                ffmpeg.RootPath = previousRootPath;
+            }
+        }
+
+        [Fact]
+        public void ConfigureRuntimeDirectory_RejectsMissingProbeBeforeChangingRootPath()
+        {
+            var previousRootPath = ffmpeg.RootPath;
+
+            var exception = Assert.Throws<ArgumentNullException>(() =>
+                FfmpegRuntimeBootstrap.ConfigureRuntimeDirectory("unused-runtime", null!));
+
+            Assert.Equal("runtimeProbe", exception.ParamName);
+            Assert.Equal(previousRootPath, ffmpeg.RootPath);
+        }
+
+        [Fact]
         public void EnsureConfiguredForCurrentPlatform_ReplacesInvalidRootWithRuntimeOverride()
         {
             var repositoryRoot = FindRepositoryRoot();
