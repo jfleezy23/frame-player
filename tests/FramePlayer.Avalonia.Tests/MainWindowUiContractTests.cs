@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -17,6 +18,7 @@ using Avalonia.Platform;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using FramePlayer.Core.Abstractions;
+using FramePlayer.Core.Coordination;
 using FramePlayer.Core.Events;
 using FramePlayer.Core.Models;
 using FramePlayer.Avalonia.Views;
@@ -793,6 +795,168 @@ namespace FramePlayer.Avalonia.Tests
                     window.Close();
                 }
             });
+        }
+
+        [Fact]
+        public void CompareLoopPlayback_PaneAndAllPaneRestartsHaveExclusiveOwnership()
+        {
+            _fixture.Run(() =>
+            {
+                var window = new MainWindow();
+                var primaryPane = ParsePane("Primary");
+                var comparePane = ParsePane("Compare");
+                try
+                {
+                    Assert.True((bool)InvokePrivate(window, "TryBeginLoopRestart", primaryPane));
+                    Assert.False((bool)InvokePrivate(window, "TryBeginAllPaneLoopRestart"));
+                    InvokePrivate(window, "EndLoopRestart", primaryPane);
+
+                    Assert.True((bool)InvokePrivate(window, "TryBeginAllPaneLoopRestart"));
+                    Assert.False((bool)InvokePrivate(window, "TryBeginLoopRestart", primaryPane));
+                    Assert.False((bool)InvokePrivate(window, "TryBeginLoopRestart", comparePane));
+                }
+                finally
+                {
+                    InvokePrivate(window, "EndLoopRestart", primaryPane);
+                    InvokePrivate(window, "EndLoopRestart", comparePane);
+                    InvokePrivate(window, "EndAllPaneLoopRestart");
+                    window.Close();
+                }
+            });
+        }
+
+        [Theory]
+        [InlineData(SynchronizedOperationScope.FocusedPane, 1)]
+        [InlineData(SynchronizedOperationScope.AllPanes, 0)]
+        public async Task CompareLoopPlayback_InterruptedAllPaneRestartHonorsCommandScope(
+            SynchronizedOperationScope operationScope,
+            int expectedComparePlayCount)
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var primaryPauseCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                var comparePauseCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                try
+                {
+                    var mediaInfo = new VideoMediaInfo(
+                        "compare-loop.mp4",
+                        TimeSpan.FromSeconds(10),
+                        TimeSpan.FromSeconds(1d / 30d),
+                        30d,
+                        1920,
+                        1080,
+                        "h264",
+                        0,
+                        30,
+                        1,
+                        1,
+                        90_000);
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        CurrentFilePath = "left.mp4",
+                        MediaInfo = mediaInfo,
+                        PauseCompletion = primaryPauseCompletion
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        CurrentFilePath = "right.mp4",
+                        MediaInfo = mediaInfo,
+                        PauseCompletion = comparePauseCompletion
+                    };
+                    var state = new VideoReviewEngineStateChangedEventArgs(
+                        isMediaOpen: true,
+                        isPlaying: true,
+                        currentFilePath: "left.mp4",
+                        lastErrorMessage: string.Empty,
+                        mediaInfo: mediaInfo,
+                        position: new ReviewPosition(
+                            TimeSpan.FromSeconds(2),
+                            60,
+                            isFrameAccurate: true,
+                            isFrameIndexAbsolute: true,
+                            presentationTimestamp: 180_000,
+                            decodeTimestamp: 180_000));
+
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_primaryLoopRange", CreateLoopRange("pane-primary", "left.mp4"));
+                    SetPrivateField(window, "_compareLoopRange", CreateLoopRange("pane-compare", "right.mp4"));
+                    SetPrivateField(window, "_isPrimaryLoopPlaybackEnabled", true);
+                    SetPrivateField(window, "_isCompareLoopPlaybackEnabled", true);
+                    SetPrivateField(window, "_focusedPane", ParsePane("Primary"));
+                    RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+                    RequireControl<CheckBox>(window, "AllPanesCheckBox").IsChecked = true;
+
+                    InvokePrivate(window, "RestartLoopPlaybackIfNeeded", ParsePane("Primary"), state);
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => primaryEngine.PauseCallCount == 1 && compareEngine.PauseCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "The synchronized loop restart did not begin on both panes.");
+
+                    var explicitPauseTask = InvokePrivateTask(
+                        window,
+                        "PausePlaybackAsync",
+                        new[] { typeof(bool), typeof(SynchronizedOperationScope?) },
+                        true,
+                        operationScope);
+                    var expectedPrimaryPauseCount = 2;
+                    var expectedComparePauseCount = operationScope == SynchronizedOperationScope.AllPanes ? 2 : 1;
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => primaryEngine.PauseCallCount == expectedPrimaryPauseCount &&
+                                compareEngine.PauseCallCount == expectedComparePauseCount,
+                            TimeSpan.FromSeconds(2)),
+                        "The explicit pause did not reach its requested transport scope.");
+
+                    primaryPauseCompletion.TrySetResult(true);
+                    comparePauseCompletion.TrySetResult(true);
+                    await explicitPauseTask;
+
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => GetPrivateField<int>(window, "_allPaneLoopRestartInFlight") == 0,
+                            TimeSpan.FromSeconds(2)),
+                        "The interrupted all-pane loop restart did not finish.");
+                    Assert.Equal(0, primaryEngine.PlayCallCount);
+                    Assert.Equal(expectedComparePlayCount, compareEngine.PlayCallCount);
+                    Assert.False(primaryEngine.IsPlaying);
+                    Assert.Equal(
+                        operationScope == SynchronizedOperationScope.FocusedPane,
+                        compareEngine.IsPlaying);
+                }
+                finally
+                {
+                    primaryPauseCompletion.TrySetResult(true);
+                    comparePauseCompletion.TrySetResult(true);
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public void CompareLoopPlayback_CrossThreadLoopStateIsVolatile()
+        {
+            var fieldNames = new[]
+            {
+                "_primaryLoopRange",
+                "_compareLoopRange",
+                "_isPrimaryLoopPlaybackEnabled",
+                "_isCompareLoopPlaybackEnabled"
+            };
+
+            foreach (var fieldName in fieldNames)
+            {
+                var field = typeof(MainWindow).GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic)
+                    ?? throw new MissingFieldException(typeof(MainWindow).FullName, fieldName);
+
+                Assert.Contains(typeof(IsVolatile), field.GetRequiredCustomModifiers());
+            }
         }
 
         [Fact]

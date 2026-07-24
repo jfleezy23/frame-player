@@ -91,10 +91,11 @@ namespace FramePlayer.Avalonia.Views
         private NativeMenuItem? _nativeZoomOutMenuItem;
         private NativeMenuItem? _nativeResetZoomMenuItem;
         private NativeMenuItem? _nativeReplaceAudioTrackMenuItem;
-        private LoopPlaybackPaneRangeSnapshot _primaryLoopRange;
-        private LoopPlaybackPaneRangeSnapshot _compareLoopRange;
-        private bool _isPrimaryLoopPlaybackEnabled;
-        private bool _isCompareLoopPlaybackEnabled;
+        private volatile LoopPlaybackPaneRangeSnapshot _primaryLoopRange;
+        private volatile LoopPlaybackPaneRangeSnapshot _compareLoopRange;
+        private volatile bool _isPrimaryLoopPlaybackEnabled;
+        private volatile bool _isCompareLoopPlaybackEnabled;
+        private readonly object _loopRestartGate = new object();
         private int _primaryLoopRestartInFlight;
         private int _compareLoopRestartInFlight;
         private int _allPaneLoopRestartInFlight;
@@ -2583,11 +2584,6 @@ namespace FramePlayer.Avalonia.Views
                 return;
             }
 
-            if (Volatile.Read(ref _allPaneLoopRestartInFlight) != 0)
-            {
-                return;
-            }
-
             var restartRange = range ?? CreateLoopRange(pane, null, null);
             var restartGeneration = GetLoopRestartGeneration(pane);
             if (!TryBeginLoopRestart(pane))
@@ -2622,7 +2618,7 @@ namespace FramePlayer.Avalonia.Views
 
         private void StartAllPaneLoopRestart()
         {
-            if (Interlocked.CompareExchange(ref _allPaneLoopRestartInFlight, 1, 0) != 0)
+            if (!TryBeginAllPaneLoopRestart())
             {
                 return;
             }
@@ -2631,7 +2627,7 @@ namespace FramePlayer.Avalonia.Views
             var compareEngine = _compareEngine;
             if (compareEngine == null)
             {
-                Volatile.Write(ref _allPaneLoopRestartInFlight, 0);
+                EndAllPaneLoopRestart();
                 return;
             }
 
@@ -2705,7 +2701,7 @@ namespace FramePlayer.Avalonia.Views
             }
             finally
             {
-                Volatile.Write(ref _allPaneLoopRestartInFlight, 0);
+                EndAllPaneLoopRestart();
             }
         }
 
@@ -2748,20 +2744,70 @@ namespace FramePlayer.Avalonia.Views
 
         private bool TryBeginLoopRestart(Pane pane)
         {
-            return pane == Pane.Compare
-                ? Interlocked.CompareExchange(ref _compareLoopRestartInFlight, 1, 0) == 0
-                : Interlocked.CompareExchange(ref _primaryLoopRestartInFlight, 1, 0) == 0;
+            lock (_loopRestartGate)
+            {
+                if (_allPaneLoopRestartInFlight != 0)
+                {
+                    return false;
+                }
+
+                if (pane == Pane.Compare)
+                {
+                    if (_compareLoopRestartInFlight != 0)
+                    {
+                        return false;
+                    }
+
+                    _compareLoopRestartInFlight = 1;
+                    return true;
+                }
+
+                if (_primaryLoopRestartInFlight != 0)
+                {
+                    return false;
+                }
+
+                _primaryLoopRestartInFlight = 1;
+                return true;
+            }
+        }
+
+        private bool TryBeginAllPaneLoopRestart()
+        {
+            lock (_loopRestartGate)
+            {
+                if (_allPaneLoopRestartInFlight != 0 ||
+                    _primaryLoopRestartInFlight != 0 ||
+                    _compareLoopRestartInFlight != 0)
+                {
+                    return false;
+                }
+
+                _allPaneLoopRestartInFlight = 1;
+                return true;
+            }
         }
 
         private void EndLoopRestart(Pane pane)
         {
-            if (pane == Pane.Compare)
+            lock (_loopRestartGate)
             {
-                Volatile.Write(ref _compareLoopRestartInFlight, 0);
-                return;
-            }
+                if (pane == Pane.Compare)
+                {
+                    Volatile.Write(ref _compareLoopRestartInFlight, 0);
+                    return;
+                }
 
-            Volatile.Write(ref _primaryLoopRestartInFlight, 0);
+                Volatile.Write(ref _primaryLoopRestartInFlight, 0);
+            }
+        }
+
+        private void EndAllPaneLoopRestart()
+        {
+            lock (_loopRestartGate)
+            {
+                Volatile.Write(ref _allPaneLoopRestartInFlight, 0);
+            }
         }
 
         private int GetLoopRestartGeneration(Pane pane)
