@@ -362,7 +362,7 @@ namespace FramePlayer.Avalonia.Tests
                         maximumEngineDelta = engineDelta;
                     }
 
-                    var presentedTimes = GetPresentedFrameTimes(window!);
+                    var presentedTimes = GetPresentedFrameTimesAndValidateReadouts(window!);
                     primaryPresentedTimes.Add(presentedTimes.Primary);
                     comparePresentedTimes.Add(presentedTimes.Compare);
                     var presentedDelta = (presentedTimes.Primary - presentedTimes.Compare).Duration();
@@ -381,6 +381,7 @@ namespace FramePlayer.Avalonia.Tests
                         true,
                         (SynchronizedOperationScope?)SynchronizedOperationScope.AllPanes)
                     .WaitAsync(TimeSpan.FromSeconds(10));
+                GetPresentedFrameTimesAndValidateReadouts(window!);
 
                 Assert.True(primaryEngine.LastAudioSubmittedBytes > 0, "Left pane did not submit audio bytes.");
                 Assert.True(compareEngine.LastAudioSubmittedBytes > 0, "Right pane did not submit audio bytes.");
@@ -464,7 +465,7 @@ namespace FramePlayer.Avalonia.Tests
                 for (var index = 0; index < 60; index++)
                 {
                     await Task.Delay(TimeSpan.FromMilliseconds(50));
-                    var presentedTimes = GetPresentedFrameTimes(window!);
+                    var presentedTimes = GetPresentedFrameTimesAndValidateReadouts(window!);
                     loopPresentedTimes.Add(presentedTimes.Primary);
                     var presentedDelta = (presentedTimes.Primary - presentedTimes.Compare).Duration();
                     if (presentedDelta > loopMaximumPresentedDelta)
@@ -487,6 +488,7 @@ namespace FramePlayer.Avalonia.Tests
                         true,
                         (SynchronizedOperationScope?)SynchronizedOperationScope.AllPanes)
                     .WaitAsync(TimeSpan.FromSeconds(10));
+                GetPresentedFrameTimesAndValidateReadouts(window!);
 
                 Console.WriteLine(
                     "Short-loop presentation samples=" +
@@ -649,7 +651,8 @@ namespace FramePlayer.Avalonia.Tests
             return (T)field.GetValue(window)!;
         }
 
-        private (TimeSpan Primary, TimeSpan Compare) GetPresentedFrameTimes(MainWindow window)
+        private (TimeSpan Primary, TimeSpan Compare) GetPresentedFrameTimesAndValidateReadouts(
+            MainWindow window)
         {
             var primaryField = typeof(MainWindow).GetField("_primaryFrameBuffer", BindingFlags.Instance | BindingFlags.NonPublic)
                 ?? throw new InvalidOperationException("Missing _primaryFrameBuffer field.");
@@ -661,11 +664,71 @@ namespace FramePlayer.Avalonia.Tests
             {
                 var primaryFrame = (DecodedFrameBuffer?)primaryField.GetValue(window);
                 var compareFrame = (DecodedFrameBuffer?)compareField.GetValue(window);
+                Assert.NotNull(primaryFrame);
+                Assert.NotNull(compareFrame);
                 primaryTime = primaryFrame?.Descriptor.PresentationTime ?? TimeSpan.Zero;
                 compareTime = compareFrame?.Descriptor.PresentationTime ?? TimeSpan.Zero;
+                var primaryTimeText = FormatTime(primaryTime);
+                var compareTimeText = FormatTime(compareTime);
+                var primaryFrameText = FormatFrameNumber(primaryFrame?.Descriptor.FrameIndex);
+                var compareFrameText = FormatFrameNumber(compareFrame?.Descriptor.FrameIndex);
+
+                Assert.Equal(
+                    primaryTimeText,
+                    window.FindControl<TextBlock>("CurrentPositionTextBlock")!.Text);
+                Assert.Equal(
+                    primaryTimeText,
+                    window.FindControl<TextBlock>("PrimaryPaneCurrentPositionTextBlock")!.Text);
+                Assert.Equal(
+                    compareTimeText,
+                    window.FindControl<TextBlock>("ComparePaneCurrentPositionTextBlock")!.Text);
+                Assert.Equal(
+                    primaryFrameText,
+                    window.FindControl<TextBox>("FrameNumberTextBox")!.Text);
+                Assert.Equal(
+                    primaryFrameText,
+                    window.FindControl<TextBox>("PrimaryPaneFrameNumberTextBox")!.Text);
+                Assert.Equal(
+                    compareFrameText,
+                    window.FindControl<TextBox>("ComparePaneFrameNumberTextBox")!.Text);
+                Assert.Equal(
+                    primaryTime.TotalSeconds,
+                    window.FindControl<Slider>("PositionSlider")!.Value,
+                    precision: 3);
+                Assert.Equal(
+                    primaryTime.TotalSeconds,
+                    window.FindControl<Slider>("PrimaryPanePositionSlider")!.Value,
+                    precision: 3);
+                Assert.Equal(
+                    compareTime.TotalSeconds,
+                    window.FindControl<Slider>("ComparePanePositionSlider")!.Value,
+                    precision: 3);
             });
 
             return (primaryTime, compareTime);
+        }
+
+        private static string FormatFrameNumber(long? frameIndex)
+        {
+            return frameIndex.HasValue
+                ? (frameIndex.Value + 1).ToString(System.Globalization.CultureInfo.InvariantCulture)
+                : string.Empty;
+        }
+
+        private static string FormatTime(TimeSpan time)
+        {
+            if (time < TimeSpan.Zero)
+            {
+                time = TimeSpan.Zero;
+            }
+
+            return string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "{0:00}:{1:00}:{2:00}.{3:000}",
+                (int)time.TotalHours,
+                time.Minutes,
+                time.Seconds,
+                time.Milliseconds);
         }
 
         private MainWindow CreateWindow()
