@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Media.Imaging;
 using FramePlayer.Core.Coordination;
 using FramePlayer.Core.Models;
 using FramePlayer.Engines.FFmpeg;
@@ -330,6 +332,17 @@ namespace FramePlayer.Avalonia.Tests
                 var frameStep = primaryEngine.MediaInfo.PositionStep > TimeSpan.Zero
                     ? primaryEngine.MediaInfo.PositionStep
                     : TimeSpan.FromSeconds(1d / Math.Max(primaryEngine.MediaInfo.FramesPerSecond, 24d));
+                Console.WriteLine(
+                    "Compare sync corpus metadata: duration=" +
+                    primaryEngine.MediaInfo.Duration +
+                    " fps=" +
+                    primaryEngine.MediaInfo.FramesPerSecond +
+                    " step=" +
+                    frameStep +
+                    " time-base=" +
+                    primaryEngine.MediaInfo.StreamTimeBaseNumerator +
+                    "/" +
+                    primaryEngine.MediaInfo.StreamTimeBaseDenominator);
 
                 SetAllPanesTransport(window!, true);
                 SetUnifiedLoopPlaybackEnabled(window!, true);
@@ -443,17 +456,25 @@ namespace FramePlayer.Avalonia.Tests
                     compareEngine.LastPlaybackUsedAudioClock,
                     "Right pane did not use its audio clock.");
 
-                var pausedAlignmentTarget = TimeSpan.FromTicks(
-                    Math.Min(
-                        frameStep.Ticks * 24,
-                        primaryEngine.MediaInfo.Duration.Ticks / 3));
                 await InvokeWindowTaskAsync(
                         window!,
-                        "CommitSliderSeekAsync",
-                        "test-paused-alignment",
-                        pausedAlignmentTarget)
+                        "SeekAllPaneToFramePreservingPlaybackAsync",
+                        24L)
                     .WaitAsync(TimeSpan.FromSeconds(10));
-                GetPresentedFrameTimesAndValidateReadouts(window!);
+                Assert.True(primaryEngine.Position.IsFrameIndexAbsolute);
+                Assert.True(compareEngine.Position.IsFrameIndexAbsolute);
+                Assert.Equal(24L, primaryEngine.Position.FrameIndex);
+                Assert.Equal(24L, compareEngine.Position.FrameIndex);
+                Assert.Equal(
+                    TimeSpan.FromMilliseconds(1001),
+                    primaryEngine.Position.PresentationTime);
+                Assert.Equal(
+                    TimeSpan.FromMilliseconds(1001),
+                    compareEngine.Position.PresentationTime);
+                await AssertPresentedMarkerFrameAndPixelsMatchAsync(
+                    window!,
+                    expectedFrameIndex: 24,
+                    expectedPresentationTime: TimeSpan.FromMilliseconds(1001));
 
                 var pausedAlignment = await InvokeAlignmentAsync(
                     window!,
@@ -469,6 +490,10 @@ namespace FramePlayer.Avalonia.Tests
                         compareEngine));
                 Assert.False(primaryEngine.IsPlaying);
                 Assert.False(compareEngine.IsPlaying);
+                await AssertPresentedMarkerFrameAndPixelsMatchAsync(
+                    window!,
+                    expectedFrameIndex: 24,
+                    expectedPresentationTime: TimeSpan.FromMilliseconds(1001));
 
                 await InvokeWindowTaskAsync(
                         window!,
@@ -964,6 +989,103 @@ namespace FramePlayer.Avalonia.Tests
             });
 
             return (primaryTime, compareTime);
+        }
+
+        private async Task AssertPresentedMarkerFrameAndPixelsMatchAsync(
+            MainWindow window,
+            long expectedFrameIndex,
+            TimeSpan expectedPresentationTime)
+        {
+            var markerPresented = false;
+            var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(2);
+            while (!markerPresented && DateTimeOffset.UtcNow < deadline)
+            {
+                _fixture.Run(() =>
+                {
+                    var primaryFrame = GetPrivateField<DecodedFrameBuffer?>(
+                        window,
+                        "_primaryFrameBuffer");
+                    var compareFrame = GetPrivateField<DecodedFrameBuffer?>(
+                        window,
+                        "_compareFrameBuffer");
+                    markerPresented =
+                        primaryFrame?.Descriptor.FrameIndex == expectedFrameIndex &&
+                        compareFrame?.Descriptor.FrameIndex == expectedFrameIndex &&
+                        primaryFrame?.Descriptor.PresentationTime == expectedPresentationTime &&
+                        compareFrame?.Descriptor.PresentationTime == expectedPresentationTime;
+                });
+                if (!markerPresented)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(10));
+                }
+            }
+
+            var presentedTimes = GetPresentedFrameTimesAndValidateReadouts(window);
+            Assert.Equal(expectedPresentationTime, presentedTimes.Primary);
+            Assert.Equal(expectedPresentationTime, presentedTimes.Compare);
+
+            _fixture.Run(() =>
+            {
+                var primaryFrame = GetPrivateField<DecodedFrameBuffer>(
+                    window,
+                    "_primaryFrameBuffer");
+                var compareFrame = GetPrivateField<DecodedFrameBuffer>(
+                    window,
+                    "_compareFrameBuffer");
+                Assert.NotNull(primaryFrame);
+                Assert.NotNull(compareFrame);
+                Assert.Equal(expectedFrameIndex, primaryFrame!.Descriptor.FrameIndex);
+                Assert.Equal(expectedFrameIndex, compareFrame!.Descriptor.FrameIndex);
+
+                var primaryBitmap = Assert.IsType<WriteableBitmap>(
+                    window.FindControl<Image>("CustomVideoSurface")!.Source);
+                var compareBitmap = Assert.IsType<WriteableBitmap>(
+                    window.FindControl<Image>("CompareVideoSurface")!.Source);
+                Assert.Equal(primaryBitmap.PixelSize, compareBitmap.PixelSize);
+
+                using var primaryLocked = primaryBitmap.Lock();
+                using var compareLocked = compareBitmap.Lock();
+                var bytesPerRow = checked(primaryBitmap.PixelSize.Width * 4);
+                Assert.True(primaryLocked.RowBytes >= bytesPerRow);
+                Assert.True(compareLocked.RowBytes >= bytesPerRow);
+
+                var primaryRow = new byte[bytesPerRow];
+                var compareRow = new byte[bytesPerRow];
+                var greenDominantPixelCount = 0;
+                for (var row = 0; row < primaryBitmap.PixelSize.Height; row++)
+                {
+                    Marshal.Copy(
+                        IntPtr.Add(primaryLocked.Address, row * primaryLocked.RowBytes),
+                        primaryRow,
+                        0,
+                        bytesPerRow);
+                    Marshal.Copy(
+                        IntPtr.Add(compareLocked.Address, row * compareLocked.RowBytes),
+                        compareRow,
+                        0,
+                        bytesPerRow);
+                    Assert.Equal(primaryRow, compareRow);
+                    for (var offset = 0; offset < bytesPerRow; offset += 4)
+                    {
+                        var blue = primaryRow[offset];
+                        var green = primaryRow[offset + 1];
+                        var red = primaryRow[offset + 2];
+                        if (green >= 128 &&
+                            green >= red + 40 &&
+                            green >= blue + 40)
+                        {
+                            greenDominantPixelCount++;
+                        }
+                    }
+                }
+
+                Assert.True(
+                    greenDominantPixelCount >=
+                        (primaryBitmap.PixelSize.Width *
+                            primaryBitmap.PixelSize.Height) / 100,
+                    "The known synchronization marker frame did not contain the expected green visual cue. Green-dominant pixels=" +
+                    greenDominantPixelCount);
+            });
         }
 
         private static object ParsePane(MainWindow window, string paneName)
