@@ -1322,6 +1322,16 @@ namespace FramePlayer.Avalonia.Tests
                         GetPrivateField<DecodedFrameBuffer>(
                             window,
                             "_compareFrameBuffer")!.Descriptor.PresentationTime);
+                    Assert.Equal(
+                        -1,
+                        GetPrivateField<int>(
+                            window,
+                            "_primaryPendingSeekResumeGeneration"));
+                    Assert.Equal(
+                        -1,
+                        GetPrivateField<int>(
+                            window,
+                            "_comparePendingSeekResumeGeneration"));
                 }
                 finally
                 {
@@ -2046,6 +2056,16 @@ namespace FramePlayer.Avalonia.Tests
                     Assert.Null(GetPrivateField<DecodedFrameBuffer>(
                         window,
                         "_pendingSynchronizedCompareFrame"));
+                    Assert.Equal(
+                        -1,
+                        GetPrivateField<int>(
+                            window,
+                            "_primaryPendingSeekResumeGeneration"));
+                    Assert.Equal(
+                        -1,
+                        GetPrivateField<int>(
+                            window,
+                            "_comparePendingSeekResumeGeneration"));
                 }
                 finally
                 {
