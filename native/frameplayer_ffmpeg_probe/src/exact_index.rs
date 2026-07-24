@@ -1408,7 +1408,7 @@ mod tests {
         let cancel_flag = 0;
         let mut deadline_state = IndexInterruptState {
             cancel_flag: &cancel_flag,
-            started_at: Instant::now(),
+            started_at: Instant::now() - Duration::from_secs(1),
             max_elapsed: Duration::ZERO,
         };
         assert_eq!(1, unsafe {
