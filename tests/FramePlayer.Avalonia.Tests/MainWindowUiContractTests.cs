@@ -689,6 +689,274 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
+        public void CompareLoopPlayback_AllPaneTransportRestartsBothPanesFromFirstBoundary()
+        {
+            _fixture.Run(() =>
+            {
+                var window = new MainWindow();
+                var primaryPauseCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                var comparePauseCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                var primarySeekCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                var compareSeekCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                try
+                {
+                    var mediaInfo = new VideoMediaInfo(
+                        "compare-loop.mp4",
+                        TimeSpan.FromSeconds(10),
+                        TimeSpan.FromSeconds(1d / 30d),
+                        30d,
+                        1920,
+                        1080,
+                        "h264",
+                        0,
+                        30,
+                        1,
+                        1,
+                        90_000);
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        CurrentFilePath = "left.mp4",
+                        MediaInfo = mediaInfo,
+                        PauseCompletion = primaryPauseCompletion,
+                        SeekTimeCompletion = primarySeekCompletion
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        CurrentFilePath = "right.mp4",
+                        MediaInfo = mediaInfo,
+                        PauseCompletion = comparePauseCompletion,
+                        SeekTimeCompletion = compareSeekCompletion
+                    };
+                    var state = new VideoReviewEngineStateChangedEventArgs(
+                        isMediaOpen: true,
+                        isPlaying: true,
+                        currentFilePath: "left.mp4",
+                        lastErrorMessage: string.Empty,
+                        mediaInfo: mediaInfo,
+                        position: new ReviewPosition(
+                            TimeSpan.FromSeconds(2),
+                            60,
+                            isFrameAccurate: true,
+                            isFrameIndexAbsolute: true,
+                            presentationTimestamp: 180_000,
+                            decodeTimestamp: 180_000));
+
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_primaryLoopRange", CreateLoopRange("pane-primary", "left.mp4"));
+                    SetPrivateField(window, "_compareLoopRange", CreateLoopRange("pane-compare", "right.mp4"));
+                    SetPrivateField(window, "_isPrimaryLoopPlaybackEnabled", true);
+                    SetPrivateField(window, "_isCompareLoopPlaybackEnabled", true);
+                    RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+                    RequireControl<CheckBox>(window, "AllPanesCheckBox").IsChecked = true;
+
+                    InvokePrivate(window, "RestartLoopPlaybackIfNeeded", ParsePane("Primary"), state);
+
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => primaryEngine.PauseCallCount == 1 && compareEngine.PauseCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "The first all-pane loop boundary did not start a synchronized restart for both panes.");
+
+                    primaryPauseCompletion.TrySetResult(true);
+                    comparePauseCompletion.TrySetResult(true);
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => primaryEngine.SeekToTimeCallCount == 1 && compareEngine.SeekToTimeCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "The synchronized restart did not seek both panes.");
+
+                    primarySeekCompletion.TrySetResult(true);
+                    Assert.False(
+                        SpinWait.SpinUntil(
+                            () => primaryEngine.PlayCallCount > 0 || compareEngine.PlayCallCount > 0,
+                            TimeSpan.FromMilliseconds(150)),
+                        "A pane resumed before both synchronized loop seeks completed.");
+
+                    compareSeekCompletion.TrySetResult(true);
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => primaryEngine.PlayCallCount == 1 && compareEngine.PlayCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "The synchronized restart did not resume both panes.");
+                }
+                finally
+                {
+                    primaryPauseCompletion.TrySetResult(true);
+                    comparePauseCompletion.TrySetResult(true);
+                    primarySeekCompletion.TrySetResult(true);
+                    compareSeekCompletion.TrySetResult(true);
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task LoopPlayback_ExplicitPausePreventsInFlightRestartFromResumingPane()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var pauseCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                try
+                {
+                    var mediaInfo = new VideoMediaInfo(
+                        "left-loop.mp4",
+                        TimeSpan.FromSeconds(10),
+                        TimeSpan.FromSeconds(1d / 30d),
+                        30d,
+                        1920,
+                        1080,
+                        "h264",
+                        0,
+                        30,
+                        1,
+                        1,
+                        90_000);
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        CurrentFilePath = "left-loop.mp4",
+                        MediaInfo = mediaInfo,
+                        PauseCompletion = pauseCompletion
+                    };
+                    var state = new VideoReviewEngineStateChangedEventArgs(
+                        isMediaOpen: true,
+                        isPlaying: true,
+                        currentFilePath: "left-loop.mp4",
+                        lastErrorMessage: string.Empty,
+                        mediaInfo: mediaInfo,
+                        position: new ReviewPosition(
+                            TimeSpan.FromSeconds(2),
+                            60,
+                            isFrameAccurate: true,
+                            isFrameIndexAbsolute: true,
+                            presentationTimestamp: 180_000,
+                            decodeTimestamp: 180_000));
+
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_primaryLoopRange", CreateLoopRange("pane-primary", "left-loop.mp4"));
+                    SetPrivateField(window, "_isPrimaryLoopPlaybackEnabled", true);
+
+                    InvokePrivate(window, "RestartLoopPlaybackIfNeeded", ParsePane("Primary"), state);
+                    Assert.True(
+                        SpinWait.SpinUntil(() => primaryEngine.PauseCallCount == 1, TimeSpan.FromSeconds(2)),
+                        "The left pane did not begin its loop restart.");
+
+                    var explicitPauseTask = InvokePrivateTask(window, "PausePlaybackAsync", new[] { typeof(bool) }, true);
+                    Assert.True(
+                        SpinWait.SpinUntil(() => primaryEngine.PauseCallCount == 2, TimeSpan.FromSeconds(2)),
+                        "The explicit pause did not reach the left pane.");
+
+                    pauseCompletion.TrySetResult(true);
+                    await explicitPauseTask;
+
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => GetPrivateField<int>(window, "_primaryLoopRestartInFlight") == 0,
+                            TimeSpan.FromSeconds(2)),
+                        "The canceled left-pane loop restart did not finish.");
+                    Assert.False(primaryEngine.IsPlaying);
+                    Assert.Equal(0, primaryEngine.PlayCallCount);
+                }
+                finally
+                {
+                    pauseCompletion.TrySetResult(true);
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task LoopPlayback_RightPanePauseDoesNotCancelLeftPaneRestart()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var primaryPauseCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                try
+                {
+                    var mediaInfo = new VideoMediaInfo(
+                        "left-loop.mp4",
+                        TimeSpan.FromSeconds(10),
+                        TimeSpan.FromSeconds(1d / 30d),
+                        30d,
+                        1920,
+                        1080,
+                        "h264",
+                        0,
+                        30,
+                        1,
+                        1,
+                        90_000);
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        CurrentFilePath = "left-loop.mp4",
+                        MediaInfo = mediaInfo,
+                        PauseCompletion = primaryPauseCompletion
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        CurrentFilePath = "right.mp4",
+                        MediaInfo = mediaInfo
+                    };
+                    var state = new VideoReviewEngineStateChangedEventArgs(
+                        isMediaOpen: true,
+                        isPlaying: true,
+                        currentFilePath: "left-loop.mp4",
+                        lastErrorMessage: string.Empty,
+                        mediaInfo: mediaInfo,
+                        position: new ReviewPosition(
+                            TimeSpan.FromSeconds(2),
+                            60,
+                            isFrameAccurate: true,
+                            isFrameIndexAbsolute: true,
+                            presentationTimestamp: 180_000,
+                            decodeTimestamp: 180_000));
+
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+                    SetPrivateField(window, "_focusedPane", ParsePane("Compare"));
+                    SetPrivateField(window, "_primaryLoopRange", CreateLoopRange("pane-primary", "left-loop.mp4"));
+                    SetPrivateField(window, "_isPrimaryLoopPlaybackEnabled", true);
+
+                    InvokePrivate(window, "RestartLoopPlaybackIfNeeded", ParsePane("Primary"), state);
+                    Assert.True(
+                        SpinWait.SpinUntil(() => primaryEngine.PauseCallCount == 1, TimeSpan.FromSeconds(2)),
+                        "The left pane did not begin its loop restart.");
+
+                    await (Task)InvokePrivate(window, "ToggleFocusedPanePlaybackAsync");
+                    Assert.False(compareEngine.IsPlaying);
+
+                    primaryPauseCompletion.TrySetResult(true);
+
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => GetPrivateField<int>(window, "_primaryLoopRestartInFlight") == 0,
+                            TimeSpan.FromSeconds(2)),
+                        "The left-pane loop restart did not finish.");
+                    Assert.True(primaryEngine.IsPlaying);
+                    Assert.Equal(1, primaryEngine.PlayCallCount);
+                }
+                finally
+                {
+                    primaryPauseCompletion.TrySetResult(true);
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
         public void MainSharedTransport_MasterVisualTracksAllPanePauseRule()
         {
             var mainWindowSource = ReadRepositoryFile(
@@ -2005,6 +2273,23 @@ namespace FramePlayer.Avalonia.Tests
             return method.Invoke(window, args) ?? new object();
         }
 
+        private static Task InvokePrivateTask(
+            MainWindow window,
+            string methodName,
+            Type[] parameterTypes,
+            params object[] args)
+        {
+            var method = typeof(MainWindow).GetMethod(
+                methodName,
+                BindingFlags.Instance | BindingFlags.NonPublic,
+                binder: null,
+                types: parameterTypes,
+                modifiers: null)
+                ?? throw new MissingMethodException(typeof(MainWindow).FullName, methodName);
+            return (Task)(method.Invoke(window, args)
+                ?? throw new InvalidOperationException("Missing task result for " + methodName + "."));
+        }
+
         private static T InvokePrivateStatic<T>(string methodName, params object[] args)
         {
             var method = typeof(MainWindow)
@@ -2062,6 +2347,8 @@ namespace FramePlayer.Avalonia.Tests
 
             public TaskCompletionSource<bool>? PauseCompletion { get; set; }
 
+            public TaskCompletionSource<bool>? SeekTimeCompletion { get; set; }
+
             public string LastErrorMessage { get; set; } = string.Empty;
 
             public VideoMediaInfo MediaInfo { get; set; } = VideoMediaInfo.Empty;
@@ -2071,6 +2358,8 @@ namespace FramePlayer.Avalonia.Tests
             public int PauseCallCount { get; private set; }
 
             public int PlayCallCount { get; private set; }
+
+            public int SeekToTimeCallCount { get; private set; }
 
             public event EventHandler<VideoReviewEngineStateChangedEventArgs> StateChanged
             {
@@ -2124,7 +2413,8 @@ namespace FramePlayer.Avalonia.Tests
 
             public Task SeekToTimeAsync(TimeSpan position, CancellationToken cancellationToken = default(CancellationToken))
             {
-                return Task.CompletedTask;
+                SeekToTimeCallCount++;
+                return SeekTimeCompletion == null ? Task.CompletedTask : SeekTimeCompletion.Task;
             }
 
             public Task SeekToFrameAsync(long frameIndex, CancellationToken cancellationToken = default(CancellationToken))
