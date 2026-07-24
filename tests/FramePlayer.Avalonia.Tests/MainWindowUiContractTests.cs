@@ -3111,6 +3111,153 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
+        public async Task ComparePlayback_SharedPauseKeepsUnmatchedFinalFrameOffScreenUntilBothPanesStop()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var primaryPauseCompletion =
+                    new TaskCompletionSource<bool>(
+                        TaskCreationOptions.RunContinuationsAsynchronously);
+                var comparePauseCompletion =
+                    new TaskCompletionSource<bool>(
+                        TaskCreationOptions.RunContinuationsAsynchronously);
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        PauseCompletion = primaryPauseCompletion
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        PauseCompletion = comparePauseCompletion
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    RequireControl<CheckBox>(
+                        window,
+                        "CompareModeCheckBox").IsChecked = true;
+                    SetPrivateField(window, "_isCompareModeSelected", true);
+                    SetPrivateField(window, "_isAllPaneTransportSelected", true);
+
+                    using var initialPrimary = CreateFrameBuffer(
+                        8,
+                        4,
+                        TimeSpan.FromSeconds(1));
+                    using var initialCompare = CreateFrameBuffer(
+                        8,
+                        4,
+                        TimeSpan.FromSeconds(1));
+                    InvokePrivate(
+                        window,
+                        "SetPaneBitmap",
+                        ParsePane("Primary"),
+                        initialPrimary);
+                    InvokePrivate(
+                        window,
+                        "SetPaneBitmap",
+                        ParsePane("Compare"),
+                        initialCompare);
+                    Assert.True((bool)InvokePrivate(
+                        window,
+                        "TryBeginSynchronizedFramePresentation",
+                        GetPrivateField<int>(
+                            window,
+                            "_allPaneTransportIntentGeneration")));
+
+                    var displayedPrimaryDescriptor =
+                        GetPrivateField<DecodedFrameBuffer>(
+                            window,
+                            "_primaryFrameBuffer")!.Descriptor;
+                    var displayedCompareDescriptor =
+                        GetPrivateField<DecodedFrameBuffer>(
+                            window,
+                            "_compareFrameBuffer")!.Descriptor;
+                    var pauseTask = InvokePrivateTask(
+                        window,
+                        "PausePlaybackAsync",
+                        new[]
+                        {
+                            typeof(bool),
+                            typeof(SynchronizedOperationScope?)
+                        },
+                        true,
+                        (SynchronizedOperationScope?)
+                            SynchronizedOperationScope.AllPanes);
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => primaryEngine.PauseCallCount == 1 &&
+                                compareEngine.PauseCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "Shared pause did not reach both engines.");
+                    Assert.False(pauseTask.IsCompleted);
+                    Assert.True(GetPrivateField<bool>(
+                        window,
+                        "_isSynchronizedFramePresentationActive"));
+
+                    using var unmatchedPrimary = CreateFrameBuffer(
+                        8,
+                        4,
+                        TimeSpan.FromSeconds(2));
+                    InvokePrivate(
+                        window,
+                        "PrimaryEngine_FramePresented",
+                        null!,
+                        new FramePresentedEventArgs(unmatchedPrimary));
+                    InvokePrivate(
+                        window,
+                        "PresentPendingFrame",
+                        ParsePane("Primary"));
+
+                    Assert.Same(
+                        displayedPrimaryDescriptor,
+                        GetPrivateField<DecodedFrameBuffer>(
+                            window,
+                            "_primaryFrameBuffer")!.Descriptor);
+                    Assert.Same(
+                        displayedCompareDescriptor,
+                        GetPrivateField<DecodedFrameBuffer>(
+                            window,
+                            "_compareFrameBuffer")!.Descriptor);
+                    Assert.NotNull(GetPrivateField<DecodedFrameBuffer>(
+                        window,
+                        "_pendingSynchronizedPrimaryFrame"));
+
+                    primaryPauseCompletion.SetResult(true);
+                    comparePauseCompletion.SetResult(true);
+                    await pauseTask.WaitAsync(TimeSpan.FromSeconds(2));
+
+                    Assert.False(GetPrivateField<bool>(
+                        window,
+                        "_isSynchronizedFramePresentationActive"));
+                    Assert.Null(GetPrivateField<DecodedFrameBuffer>(
+                        window,
+                        "_pendingSynchronizedPrimaryFrame"));
+                    Assert.Same(
+                        displayedPrimaryDescriptor,
+                        GetPrivateField<DecodedFrameBuffer>(
+                            window,
+                            "_primaryFrameBuffer")!.Descriptor);
+                    Assert.Same(
+                        displayedCompareDescriptor,
+                        GetPrivateField<DecodedFrameBuffer>(
+                            window,
+                            "_compareFrameBuffer")!.Descriptor);
+                }
+                finally
+                {
+                    primaryPauseCompletion.TrySetResult(true);
+                    comparePauseCompletion.TrySetResult(true);
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
         public async Task ComparePlayback_AllPaneStartInvalidatesQueuedLoopRestartsBeforeWaiting()
         {
             await _fixture.RunAsync(async () =>
