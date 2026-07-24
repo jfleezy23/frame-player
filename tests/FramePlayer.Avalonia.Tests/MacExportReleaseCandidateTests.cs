@@ -13,12 +13,13 @@ using Xunit;
 
 namespace FramePlayer.Avalonia.Tests
 {
-    public sealed class MacExportReleaseCandidateTests : IClassFixture<AvaloniaHeadlessFixture>
+    [Collection(MacReleaseCandidateTestGroup.Name)]
+    public sealed class MacExportReleaseCandidateTests
     {
         private static readonly string[] SupportedExtensions = { ".avi", ".m4v", ".mkv", ".mov", ".mp4", ".ts", ".wmv" };
-        private readonly AvaloniaHeadlessFixture _fixture;
+        private readonly MacReleaseCandidateHeadlessFixture _fixture;
 
-        public MacExportReleaseCandidateTests(AvaloniaHeadlessFixture fixture)
+        public MacExportReleaseCandidateTests(MacReleaseCandidateHeadlessFixture fixture)
         {
             _fixture = fixture;
         }
