@@ -9,7 +9,7 @@ using FramePlayer.Avalonia;
 
 namespace FramePlayer.Avalonia.Tests
 {
-    public sealed class AvaloniaHeadlessFixture : IDisposable
+    public class AvaloniaHeadlessFixture : IDisposable
     {
         private static readonly TimeSpan DefaultDispatchTimeout = TimeSpan.FromSeconds(10d);
         private readonly string? _previousSkipRuntimeBootstrap;
@@ -17,10 +17,17 @@ namespace FramePlayer.Avalonia.Tests
         private bool _dispatchTimedOut;
 
         public AvaloniaHeadlessFixture()
+            : this(AvaloniaTestIsolationLevel.PerTest)
+        {
+        }
+
+        protected AvaloniaHeadlessFixture(AvaloniaTestIsolationLevel isolationLevel)
         {
             _previousSkipRuntimeBootstrap = Environment.GetEnvironmentVariable("FRAMEPLAYER_AVALONIA_SKIP_RUNTIME_BOOTSTRAP");
             Environment.SetEnvironmentVariable("FRAMEPLAYER_AVALONIA_SKIP_RUNTIME_BOOTSTRAP", "1");
-            _session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp));
+            _session = HeadlessUnitTestSession.StartNew(
+                typeof(HeadlessTestApp),
+                isolationLevel);
         }
 
         public void Run(Action action)
@@ -130,6 +137,7 @@ namespace FramePlayer.Avalonia.Tests
             finally
             {
                 Environment.SetEnvironmentVariable("FRAMEPLAYER_AVALONIA_SKIP_RUNTIME_BOOTSTRAP", _previousSkipRuntimeBootstrap);
+                GC.SuppressFinalize(this);
             }
         }
     }
