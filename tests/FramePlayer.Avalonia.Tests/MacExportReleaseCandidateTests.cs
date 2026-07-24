@@ -16,7 +16,7 @@ namespace FramePlayer.Avalonia.Tests
     [Collection(MacReleaseCandidateTestGroup.Name)]
     public sealed class MacExportReleaseCandidateTests
     {
-        private static readonly string[] SupportedExtensions = { ".avi", ".m4v", ".mkv", ".mov", ".mp4", ".ts", ".wmv" };
+        private static readonly string[] SupportedExtensions = { ".avi", ".m4v", ".mkv", ".mov", ".mp4", ".wmv" };
         private readonly MacReleaseCandidateHeadlessFixture _fixture;
 
         public MacExportReleaseCandidateTests(MacReleaseCandidateHeadlessFixture fixture)

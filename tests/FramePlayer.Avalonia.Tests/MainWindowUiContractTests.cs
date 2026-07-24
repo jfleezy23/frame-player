@@ -683,6 +683,204 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
+        public void ComparePlayback_ReadoutsFollowPresentedFramesAcrossSynchronization()
+        {
+            _fixture.Run(() =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var frameStep = TimeSpan.FromSeconds(1d / 30d);
+                    var mediaInfo = new VideoMediaInfo(
+                        "readout-sync.mp4",
+                        TimeSpan.FromSeconds(10),
+                        frameStep,
+                        30d,
+                        1920,
+                        1080,
+                        "h264",
+                        0,
+                        30,
+                        1,
+                        1,
+                        90_000);
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        CurrentFilePath = "readout-sync.mp4",
+                        MediaInfo = mediaInfo
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        CurrentFilePath = "readout-sync.mp4",
+                        MediaInfo = mediaInfo
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+
+                    var initialPrimaryState = new VideoReviewEngineStateChangedEventArgs(
+                        isMediaOpen: true,
+                        isPlaying: false,
+                        currentFilePath: "readout-sync.mp4",
+                        lastErrorMessage: string.Empty,
+                        mediaInfo: mediaInfo,
+                        position: new ReviewPosition(
+                            TimeSpan.FromSeconds(2),
+                            60,
+                            isFrameAccurate: true,
+                            isFrameIndexAbsolute: true,
+                            presentationTimestamp: 180_000,
+                            decodeTimestamp: 180_000));
+                    var initialCompareState = new VideoReviewEngineStateChangedEventArgs(
+                        isMediaOpen: true,
+                        isPlaying: false,
+                        currentFilePath: "readout-sync.mp4",
+                        lastErrorMessage: string.Empty,
+                        mediaInfo: mediaInfo,
+                        position: new ReviewPosition(
+                            TimeSpan.FromSeconds(5),
+                            150,
+                            isFrameAccurate: true,
+                            isFrameIndexAbsolute: true,
+                            presentationTimestamp: 450_000,
+                            decodeTimestamp: 450_000));
+                    InvokePrivate(window, "ApplyState", ParsePane("Primary"), initialPrimaryState);
+                    InvokePrivate(window, "ApplyState", ParsePane("Compare"), initialCompareState);
+
+                    SetPrivateField(window, "_synchronizedFramePresentationTimeOffset", TimeSpan.FromSeconds(-3));
+                    SetPrivateField(window, "_isSynchronizedFramePresentationActive", true);
+                    using var primaryPairFrame = CreateFrameBuffer(
+                        8,
+                        4,
+                        TimeSpan.FromSeconds(2.2));
+                    using var comparePairFrame = CreateFrameBuffer(
+                        8,
+                        4,
+                        TimeSpan.FromSeconds(5.2));
+                    InvokePrivate(
+                        window,
+                        "PrimaryEngine_FramePresented",
+                        null!,
+                        new FramePresentedEventArgs(primaryPairFrame));
+                    InvokePrivate(
+                        window,
+                        "CompareEngine_FramePresented",
+                        null!,
+                        new FramePresentedEventArgs(comparePairFrame));
+                    InvokePrivate(
+                        window,
+                        "PresentPendingSynchronizedFrames",
+                        GetPrivateField<long>(
+                            window,
+                            "_synchronizedFramePresentationGeneration"));
+
+                    Assert.Equal(2.2d, RequireControl<Slider>(window, "PositionSlider").Value);
+                    Assert.Equal(2.2d, RequireControl<Slider>(window, "PrimaryPanePositionSlider").Value);
+                    Assert.Equal("00:00:02.200", RequireControl<TextBlock>(window, "CurrentPositionTextBlock").Text);
+                    Assert.Equal("00:00:02.200", RequireControl<TextBlock>(window, "PrimaryPaneCurrentPositionTextBlock").Text);
+                    Assert.Equal("Frame 67", RequireControl<TextBlock>(window, "CurrentFrameTextBlock").Text);
+                    Assert.Equal("00:00:02.200 / 00:00:10.000", RequireControl<TextBlock>(window, "TimecodeTextBlock").Text);
+                    Assert.Equal("67", RequireControl<TextBox>(window, "FrameNumberTextBox").Text);
+                    Assert.Equal("67", RequireControl<TextBox>(window, "PrimaryPaneFrameNumberTextBox").Text);
+                    Assert.Equal(5.2d, RequireControl<Slider>(window, "ComparePanePositionSlider").Value);
+                    Assert.Equal("00:00:05.200", RequireControl<TextBlock>(window, "ComparePaneCurrentPositionTextBlock").Text);
+                    Assert.Equal("157", RequireControl<TextBox>(window, "ComparePaneFrameNumberTextBox").Text);
+
+                    var stalePrimaryState = new VideoReviewEngineStateChangedEventArgs(
+                        isMediaOpen: true,
+                        isPlaying: true,
+                        currentFilePath: "readout-sync.mp4",
+                        lastErrorMessage: string.Empty,
+                        mediaInfo: mediaInfo,
+                        position: new ReviewPosition(
+                            TimeSpan.FromSeconds(9),
+                            270,
+                            isFrameAccurate: true,
+                            isFrameIndexAbsolute: true,
+                            presentationTimestamp: 810_000,
+                            decodeTimestamp: 810_000));
+                    var staleCompareState = new VideoReviewEngineStateChangedEventArgs(
+                        isMediaOpen: true,
+                        isPlaying: false,
+                        currentFilePath: "readout-sync.mp4",
+                        lastErrorMessage: string.Empty,
+                        mediaInfo: mediaInfo,
+                        position: new ReviewPosition(
+                            TimeSpan.FromSeconds(1),
+                            30,
+                            isFrameAccurate: true,
+                            isFrameIndexAbsolute: true,
+                            presentationTimestamp: 90_000,
+                            decodeTimestamp: 90_000));
+                    InvokePrivate(window, "ApplyState", ParsePane("Primary"), stalePrimaryState);
+                    InvokePrivate(window, "ApplyState", ParsePane("Compare"), staleCompareState);
+
+                    Assert.Equal(
+                        TimeSpan.FromSeconds(2.2),
+                        GetPrivateField<DecodedFrameBuffer>(
+                            window,
+                            "_primaryFrameBuffer")!.Descriptor.PresentationTime);
+                    Assert.Equal(
+                        TimeSpan.FromSeconds(5.2),
+                        GetPrivateField<DecodedFrameBuffer>(
+                            window,
+                            "_compareFrameBuffer")!.Descriptor.PresentationTime);
+                    Assert.Equal(2.2d, RequireControl<Slider>(window, "PositionSlider").Value);
+                    Assert.Equal(2.2d, RequireControl<Slider>(window, "PrimaryPanePositionSlider").Value);
+                    Assert.Equal(5.2d, RequireControl<Slider>(window, "ComparePanePositionSlider").Value);
+                    Assert.Equal("00:00:02.200", RequireControl<TextBlock>(window, "CurrentPositionTextBlock").Text);
+                    Assert.Equal("00:00:02.200", RequireControl<TextBlock>(window, "PrimaryPaneCurrentPositionTextBlock").Text);
+                    Assert.Equal("Frame 67", RequireControl<TextBlock>(window, "CurrentFrameTextBlock").Text);
+                    Assert.Equal("00:00:02.200 / 00:00:10.000", RequireControl<TextBlock>(window, "TimecodeTextBlock").Text);
+                    Assert.Equal("67", RequireControl<TextBox>(window, "FrameNumberTextBox").Text);
+                    Assert.Equal("67", RequireControl<TextBox>(window, "PrimaryPaneFrameNumberTextBox").Text);
+                    Assert.Equal("00:00:05.200", RequireControl<TextBlock>(window, "ComparePaneCurrentPositionTextBlock").Text);
+                    Assert.Equal("157", RequireControl<TextBox>(window, "ComparePaneFrameNumberTextBox").Text);
+                    Assert.False(GetPrivateField<bool>(window, "_hasPendingSliderScrubTarget"));
+                    Assert.False(GetPrivateField<bool>(window, "_hasPendingPaneSliderScrubTarget"));
+                    Assert.True(RequireControl<Control>(window, "PrimaryPanePlayPausePauseIcon").IsVisible);
+                    Assert.True(RequireControl<Control>(window, "ComparePanePlayPausePlayIcon").IsVisible);
+
+                    SetPrivateField(window, "_isSynchronizedFramePresentationActive", false);
+                    InvokePrivate(window, "ApplyState", ParsePane("Primary"), stalePrimaryState);
+                    InvokePrivate(window, "ApplyState", ParsePane("Compare"), staleCompareState);
+
+                    Assert.Equal(2.2d, RequireControl<Slider>(window, "PositionSlider").Value);
+                    Assert.Equal(2.2d, RequireControl<Slider>(window, "PrimaryPanePositionSlider").Value);
+                    Assert.Equal(5.2d, RequireControl<Slider>(window, "ComparePanePositionSlider").Value);
+                    Assert.Equal("00:00:02.200", RequireControl<TextBlock>(window, "PrimaryPaneCurrentPositionTextBlock").Text);
+                    Assert.Equal("67", RequireControl<TextBox>(window, "PrimaryPaneFrameNumberTextBox").Text);
+                    Assert.Equal("00:00:05.200", RequireControl<TextBlock>(window, "ComparePaneCurrentPositionTextBlock").Text);
+                    Assert.Equal("157", RequireControl<TextBox>(window, "ComparePaneFrameNumberTextBox").Text);
+                    Assert.False(GetPrivateField<bool>(window, "_hasPendingSliderScrubTarget"));
+                    Assert.False(GetPrivateField<bool>(window, "_hasPendingPaneSliderScrubTarget"));
+
+                    using var independentPrimaryFrame = CreateFrameBuffer(
+                        8,
+                        4,
+                        TimeSpan.FromSeconds(7));
+                    InvokePrivate(
+                        window,
+                        "PrimaryEngine_FramePresented",
+                        null!,
+                        new FramePresentedEventArgs(independentPrimaryFrame));
+                    InvokePrivate(window, "PresentPendingFrame", ParsePane("Primary"));
+
+                    Assert.Equal("00:00:07.000", RequireControl<TextBlock>(window, "PrimaryPaneCurrentPositionTextBlock").Text);
+                    Assert.Equal("211", RequireControl<TextBox>(window, "PrimaryPaneFrameNumberTextBox").Text);
+                    Assert.Equal("00:00:05.200", RequireControl<TextBlock>(window, "ComparePaneCurrentPositionTextBlock").Text);
+                    Assert.Equal("157", RequireControl<TextBox>(window, "ComparePaneFrameNumberTextBox").Text);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
         public async Task ComparePlayback_SynchronizedPresentationPreservesPausedPaneOffset()
         {
             await _fixture.RunAsync(async () =>

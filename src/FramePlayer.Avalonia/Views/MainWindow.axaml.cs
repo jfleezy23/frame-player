@@ -3705,6 +3705,8 @@ namespace FramePlayer.Avalonia.Views
         private void PresentPendingSynchronizedFrames(long generation)
         {
             (DecodedFrameBuffer? Primary, DecodedFrameBuffer? Compare) pair = (null, null);
+            FrameDescriptor? presentedPrimaryDescriptor = null;
+            FrameDescriptor? presentedCompareDescriptor = null;
 
             try
             {
@@ -3723,6 +3725,17 @@ namespace FramePlayer.Avalonia.Views
 
                     SetPaneBitmap(Pane.Primary, pair.Primary);
                     SetPaneBitmap(Pane.Compare, pair.Compare);
+                    var primaryPresented = ReferenceEquals(
+                        _primaryFrameBuffer?.Descriptor,
+                        pair.Primary.Descriptor);
+                    var comparePresented = ReferenceEquals(
+                        _compareFrameBuffer?.Descriptor,
+                        pair.Compare.Descriptor);
+                    if (primaryPresented && comparePresented)
+                    {
+                        presentedPrimaryDescriptor = pair.Primary.Descriptor;
+                        presentedCompareDescriptor = pair.Compare.Descriptor;
+                    }
                 }
             }
             catch (Exception ex)
@@ -3733,6 +3746,17 @@ namespace FramePlayer.Avalonia.Views
             {
                 pair.Primary?.Dispose();
                 pair.Compare?.Dispose();
+            }
+
+            if (presentedPrimaryDescriptor != null &&
+                presentedCompareDescriptor != null)
+            {
+                ApplyPresentedFramePosition(
+                    Pane.Primary,
+                    presentedPrimaryDescriptor);
+                ApplyPresentedFramePosition(
+                    Pane.Compare,
+                    presentedCompareDescriptor);
             }
         }
 
@@ -3850,6 +3874,7 @@ namespace FramePlayer.Avalonia.Views
                 return;
             }
 
+            FrameDescriptor? presentedDescriptor = null;
             try
             {
                 lock (_synchronizedFramePresentationLock)
@@ -3863,6 +3888,15 @@ namespace FramePlayer.Avalonia.Views
                     }
 
                     SetPaneBitmap(pane, frameBuffer);
+                    var presentedFrameBuffer = pane == Pane.Compare
+                        ? _compareFrameBuffer
+                        : _primaryFrameBuffer;
+                    if (ReferenceEquals(
+                            presentedFrameBuffer?.Descriptor,
+                            frameBuffer.Descriptor))
+                    {
+                        presentedDescriptor = frameBuffer.Descriptor;
+                    }
                 }
             }
             catch (Exception ex)
@@ -3874,6 +3908,11 @@ namespace FramePlayer.Avalonia.Views
             finally
             {
                 frameBuffer.Dispose();
+            }
+
+            if (presentedDescriptor != null)
+            {
+                ApplyPresentedFramePosition(pane, presentedDescriptor);
             }
         }
 
@@ -3949,24 +3988,30 @@ namespace FramePlayer.Avalonia.Views
 
         private void ApplyState(Pane pane, VideoReviewEngineStateChangedEventArgs state)
         {
+            var wasUpdatingSliders = _isUpdatingSliders;
             _isUpdatingSliders = true;
             try
             {
                 var durationSeconds = Math.Max(1d, state.MediaInfo.Duration.TotalSeconds);
-                var positionSeconds = Math.Max(0d, Math.Min(durationSeconds, state.Position.PresentationTime.TotalSeconds));
-                var positionText = FormatTime(state.Position.PresentationTime);
                 var durationText = FormatTime(state.MediaInfo.Duration);
-                var frameText = state.Position.FrameIndex.HasValue
-                    ? "Frame " + (state.Position.FrameIndex.Value + 1).ToString(CultureInfo.InvariantCulture)
-                    : "Frame --";
+                var presentedPosition = ResolvePresentedPosition(pane, state);
 
                 if (pane == Pane.Primary)
                 {
-                    ApplyPrimaryState(state, durationSeconds, positionSeconds, positionText, durationText, frameText);
+                    ApplyPrimaryState(state, durationSeconds, durationText);
                 }
                 else
                 {
-                    ApplyCompareState(state, durationSeconds, positionSeconds, positionText, durationText);
+                    ApplyCompareState(state, durationSeconds, durationText);
+                }
+
+                if (presentedPosition != null)
+                {
+                    ApplyPanePosition(
+                        pane,
+                        presentedPosition,
+                        durationSeconds,
+                        durationText);
                 }
 
                 if (!string.IsNullOrWhiteSpace(state.LastErrorMessage))
@@ -3978,30 +4023,19 @@ namespace FramePlayer.Avalonia.Views
             }
             finally
             {
-                _isUpdatingSliders = false;
+                _isUpdatingSliders = wasUpdatingSliders;
             }
         }
 
         private void ApplyPrimaryState(
             VideoReviewEngineStateChangedEventArgs state,
             double durationSeconds,
-            double positionSeconds,
-            string positionText,
-            string durationText,
-            string frameText)
+            string durationText)
         {
             PositionSlider.Maximum = durationSeconds;
-            PositionSlider.Value = positionSeconds;
             PrimaryPanePositionSlider.Maximum = durationSeconds;
-            PrimaryPanePositionSlider.Value = positionSeconds;
-            CurrentPositionTextBlock.Text = positionText;
-            PrimaryPaneCurrentPositionTextBlock.Text = positionText;
             DurationTextBlock.Text = durationText;
             PrimaryPaneDurationTextBlock.Text = durationText;
-            CurrentFrameTextBlock.Text = frameText;
-            TimecodeTextBlock.Text = positionText + " / " + durationText;
-            FrameNumberTextBox.Text = FormatFrameNumberEntry(state.Position);
-            PrimaryPaneFrameNumberTextBox.Text = FrameNumberTextBox.Text;
             PrimaryPanePlayPausePlayIcon.IsVisible = !state.IsPlaying;
             PrimaryPanePlayPausePauseIcon.IsVisible = state.IsPlaying;
             UpdateMainPlayPauseVisual();
@@ -4011,18 +4045,98 @@ namespace FramePlayer.Avalonia.Views
         private void ApplyCompareState(
             VideoReviewEngineStateChangedEventArgs state,
             double durationSeconds,
-            double positionSeconds,
-            string positionText,
             string durationText)
         {
             ComparePanePositionSlider.Maximum = durationSeconds;
-            ComparePanePositionSlider.Value = positionSeconds;
-            ComparePaneCurrentPositionTextBlock.Text = positionText;
             ComparePaneDurationTextBlock.Text = durationText;
-            ComparePaneFrameNumberTextBox.Text = FormatFrameNumberEntry(state.Position);
             ComparePanePlayPausePlayIcon.IsVisible = !state.IsPlaying;
             ComparePanePlayPausePauseIcon.IsVisible = state.IsPlaying;
             UpdateMainPlayPauseVisual();
+        }
+
+        private ReviewPosition? ResolvePresentedPosition(
+            Pane pane,
+            VideoReviewEngineStateChangedEventArgs state)
+        {
+            if (state.IsMediaOpen)
+            {
+                var frameBuffer = pane == Pane.Compare
+                    ? _compareFrameBuffer
+                    : _primaryFrameBuffer;
+                if (frameBuffer != null)
+                {
+                    return CreateReviewPosition(frameBuffer.Descriptor);
+                }
+
+                if (IsSynchronizedFramePresentationActive())
+                {
+                    return null;
+                }
+            }
+
+            return state.Position;
+        }
+
+        private void ApplyPresentedFramePosition(Pane pane, FrameDescriptor descriptor)
+        {
+            var wasUpdatingSliders = _isUpdatingSliders;
+            _isUpdatingSliders = true;
+            try
+            {
+                var duration = TryGetExistingEngine(pane)?.MediaInfo.Duration ?? TimeSpan.Zero;
+                ApplyPanePosition(
+                    pane,
+                    CreateReviewPosition(descriptor),
+                    Math.Max(1d, duration.TotalSeconds),
+                    FormatTime(duration));
+            }
+            finally
+            {
+                _isUpdatingSliders = wasUpdatingSliders;
+            }
+        }
+
+        private void ApplyPanePosition(
+            Pane pane,
+            ReviewPosition position,
+            double durationSeconds,
+            string durationText)
+        {
+            var positionSeconds = Math.Max(
+                0d,
+                Math.Min(durationSeconds, position.PresentationTime.TotalSeconds));
+            var positionText = FormatTime(position.PresentationTime);
+            var frameNumberText = FormatFrameNumberEntry(position);
+
+            if (pane == Pane.Compare)
+            {
+                ComparePanePositionSlider.Value = positionSeconds;
+                ComparePaneCurrentPositionTextBlock.Text = positionText;
+                ComparePaneFrameNumberTextBox.Text = frameNumberText;
+                return;
+            }
+
+            PositionSlider.Value = positionSeconds;
+            PrimaryPanePositionSlider.Value = positionSeconds;
+            CurrentPositionTextBlock.Text = positionText;
+            PrimaryPaneCurrentPositionTextBlock.Text = positionText;
+            CurrentFrameTextBlock.Text = position.FrameIndex.HasValue
+                ? "Frame " + frameNumberText
+                : "Frame --";
+            TimecodeTextBlock.Text = positionText + " / " + durationText;
+            FrameNumberTextBox.Text = frameNumberText;
+            PrimaryPaneFrameNumberTextBox.Text = frameNumberText;
+        }
+
+        private static ReviewPosition CreateReviewPosition(FrameDescriptor descriptor)
+        {
+            return new ReviewPosition(
+                descriptor.PresentationTime,
+                descriptor.FrameIndex,
+                isFrameAccurate: true,
+                descriptor.IsFrameIndexAbsolute,
+                descriptor.PresentationTimestamp,
+                descriptor.DecodeTimestamp);
         }
 
         private void UpdateMainPlayPauseVisual()
