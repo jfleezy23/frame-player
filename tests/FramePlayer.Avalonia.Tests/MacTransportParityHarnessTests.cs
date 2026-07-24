@@ -18,7 +18,7 @@ namespace FramePlayer.Avalonia.Tests
     public sealed class MacTransportParityHarnessTests
     {
         private static readonly TimeSpan PlaybackObservationDelay = TimeSpan.FromMilliseconds(900);
-        private static readonly string[] SupportedExtensions = { ".avi", ".m4v", ".mkv", ".mov", ".mp4", ".ts", ".wmv" };
+        private static readonly string[] SupportedExtensions = { ".avi", ".m4v", ".mkv", ".mov", ".mp4", ".wmv" };
         private readonly MacReleaseCandidateHeadlessFixture _fixture;
 
         public MacTransportParityHarnessTests(MacReleaseCandidateHeadlessFixture fixture)

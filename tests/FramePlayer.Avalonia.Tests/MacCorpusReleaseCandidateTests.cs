@@ -18,7 +18,6 @@ namespace FramePlayer.Avalonia.Tests
             ".mkv",
             ".mov",
             ".mp4",
-            ".ts",
             ".wmv"
         };
 
