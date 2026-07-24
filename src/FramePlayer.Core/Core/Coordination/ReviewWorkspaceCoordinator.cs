@@ -36,14 +36,16 @@ namespace FramePlayer.Core.Coordination
         {
             ArgumentNullException.ThrowIfNull(sessionCoordinator);
             SessionCoordinator = sessionCoordinator;
-            _paneBindings = new List<WorkspacePaneBinding>();
             var primaryBinding = new WorkspacePaneBinding(
                 PrimaryPaneId,
                 "Primary",
                 TimeSpan.Zero,
                 true,
                 SessionCoordinator);
-            _paneBindings.Add(primaryBinding);
+            _paneBindings = new List<WorkspacePaneBinding>
+            {
+                primaryBinding
+            };
             SessionCoordinator.SessionChanged += SessionCoordinator_SessionChanged;
             _primaryPaneId = primaryBinding.PaneId;
             _activePaneId = _primaryPaneId;
@@ -1333,8 +1335,10 @@ namespace FramePlayer.Core.Coordination
             }
 
             var focusedBinding = GetFocusedBinding();
-            var bindings = new List<WorkspacePaneBinding>(_paneBindings.Count);
-            bindings.Add(focusedBinding);
+            var bindings = new List<WorkspacePaneBinding>(_paneBindings.Count)
+            {
+                focusedBinding
+            };
             for (var index = 0; index < _paneBindings.Count; index++)
             {
                 var binding = _paneBindings[index];
