@@ -29,7 +29,15 @@ jobs:
         shell: pwsh
         run: |
           rustup toolchain install stable --profile minimal
+          rustup component add clippy rustfmt
           cargo --version
+
+      - name: Check spelling
+        uses: crate-ci/typos@f8a58b6b53f2279f71eb605f03a4ae4d10608f45 # v1.47.0
+
+      - name: Validate repository text and path casing
+        shell: pwsh
+        run: .\scripts\Test-RepositoryTextHygiene.ps1
 
       - name: Enforce workflow action pinning
         shell: pwsh
@@ -38,6 +46,75 @@ jobs:
       - name: Validate harness scripts
         shell: pwsh
         run: .\scripts\Test-RepoHarnessScripts.ps1
+
+      - name: Analyze PowerShell scripts
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Scope CurrentUser -Force
+          $findings = @(
+              Invoke-ScriptAnalyzer -Path .\scripts -Recurse -Settings .\.psscriptanalyzer.psd1
+          )
+          if ($findings.Count -gt 0) {
+              $findings | Format-Table -AutoSize | Out-String | Write-Host
+              throw "PSScriptAnalyzer reported $($findings.Count) error or warning findings."
+          }
+
+      - name: Install pinned shell linters
+        shell: pwsh
+        run: |
+          $toolsDirectory = Join-Path $env:RUNNER_TEMP "frameplayer-hygiene-tools"
+          New-Item -ItemType Directory -Force -Path $toolsDirectory | Out-Null
+          $tools = @(
+              @{
+                  Name = "shellcheck"
+                  Uri = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.zip"
+                  Sha256 = "8a4e35ab0b331c85d73567b12f2a444df187f483e5079ceffa6bda1faa2e740e"
+                  Executable = "shellcheck.exe"
+              },
+              @{
+                  Name = "actionlint"
+                  Uri = "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_windows_amd64.zip"
+                  Sha256 = "6e7241b51e6817ea6a047693d8e6fed13b31819c9a0dd6c5a726e1592d22f6e9"
+                  Executable = "actionlint.exe"
+              }
+          )
+          foreach ($tool in $tools) {
+              $archivePath = Join-Path $toolsDirectory "$($tool.Name).zip"
+              $extractPath = Join-Path $toolsDirectory $tool.Name
+              Invoke-WebRequest -Uri $tool.Uri -OutFile $archivePath
+              $actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+              if ($actualHash -ne $tool.Sha256) {
+                  throw "$($tool.Name) archive hash mismatch. Expected $($tool.Sha256), got $actualHash."
+              }
+
+              Expand-Archive -LiteralPath $archivePath -DestinationPath $extractPath -Force
+              $executable = Get-ChildItem -LiteralPath $extractPath -Filter $tool.Executable -File -Recurse |
+                  Select-Object -First 1
+              if ($null -eq $executable) {
+                  throw "$($tool.Executable) was not found in the verified $($tool.Name) archive."
+              }
+
+              Copy-Item -LiteralPath $executable.FullName -Destination $toolsDirectory -Force
+          }
+
+          $toolsDirectory >> $env:GITHUB_PATH
+
+      - name: Analyze shell scripts and workflows
+        shell: pwsh
+        run: |
+          shellcheck --version
+          actionlint -version
+          $shellScripts = @(git ls-files "*.sh")
+          if ($shellScripts.Count -gt 0) {
+              shellcheck --severity=warning $shellScripts
+          }
+          actionlint -shellcheck "shellcheck"
+
+      - name: Validate Rust formatting and lints
+        shell: pwsh
+        run: |
+          cargo fmt --manifest-path .\native\frameplayer_ffmpeg_probe\Cargo.toml --all -- --check
+          cargo clippy --manifest-path .\native\frameplayer_ffmpeg_probe\Cargo.toml --all-targets --all-features --locked -- -D warnings
 
       - name: Restore pinned FFmpeg runtime
         shell: pwsh
@@ -59,6 +136,16 @@ jobs:
         shell: pwsh
         run: |
           dotnet build .\src\FramePlayer.Avalonia\FramePlayer.Avalonia.csproj -c Release -r win-x64
+
+      - name: Verify C# formatting
+        shell: pwsh
+        run: |
+          dotnet format .\src\FramePlayer.Avalonia\FramePlayer.Avalonia.csproj whitespace --verify-no-changes --no-restore
+          dotnet format .\tests\FramePlayer.Core.Tests\FramePlayer.Core.Tests.csproj whitespace --verify-no-changes --no-restore
+          dotnet format .\tests\FramePlayer.Avalonia.Tests\FramePlayer.Avalonia.Tests.csproj whitespace --verify-no-changes --no-restore
+          dotnet format .\src\FramePlayer.Avalonia\FramePlayer.Avalonia.csproj analyzers --diagnostics IDE1006 --severity warn --verify-no-changes --no-restore
+          dotnet format .\tests\FramePlayer.Core.Tests\FramePlayer.Core.Tests.csproj analyzers --diagnostics IDE1006 --severity warn --verify-no-changes --no-restore
+          dotnet format .\tests\FramePlayer.Avalonia.Tests\FramePlayer.Avalonia.Tests.csproj analyzers --diagnostics IDE1006 --severity warn --verify-no-changes --no-restore
 
       - name: Run cold-path unit tests
         shell: pwsh

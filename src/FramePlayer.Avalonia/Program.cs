@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using Avalonia;
@@ -58,7 +59,7 @@ namespace FramePlayer.Avalonia
 
             if (!SetDllDirectory(exportRuntimeDirectory))
             {
-                throw new InvalidOperationException("The bundled FFmpeg export runtime directory could not be activated for native DLL loading. Win32 error: " + Marshal.GetLastWin32Error().ToString());
+                throw new InvalidOperationException("The bundled FFmpeg export runtime directory could not be activated for native DLL loading. Win32 error: " + Marshal.GetLastWin32Error().ToString(CultureInfo.InvariantCulture));
             }
 
             ffmpeg.RootPath = exportRuntimeDirectory;

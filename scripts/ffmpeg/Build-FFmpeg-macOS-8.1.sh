@@ -119,8 +119,8 @@ configure_flags=(
   --disable-autodetect
   --disable-videotoolbox
   --disable-audiotoolbox
-  --extra-cflags=-mmacosx-version-min=$MACOS_DEPLOYMENT_TARGET
-  --extra-ldflags=-mmacosx-version-min=$MACOS_DEPLOYMENT_TARGET
+  "--extra-cflags=-mmacosx-version-min=$MACOS_DEPLOYMENT_TARGET"
+  "--extra-ldflags=-mmacosx-version-min=$MACOS_DEPLOYMENT_TARGET"
   --extra-version=frameplayer-macos-source
 )
 

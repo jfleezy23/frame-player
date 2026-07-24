@@ -28,12 +28,12 @@ foreach ($relativePath in $ScriptPaths) {
     $errors = $null
     [void][System.Management.Automation.Language.Parser]::ParseFile($resolvedPath, [ref]$tokens, [ref]$errors)
 
-    foreach ($error in @($errors)) {
+    foreach ($parseError in @($errors)) {
         [void]$parseErrors.Add([pscustomobject]@{
             File = $resolvedPath
-            Message = $error.Message
-            Line = $error.Extent.StartLineNumber
-            Column = $error.Extent.StartColumnNumber
+            Message = $parseError.Message
+            Line = $parseError.Extent.StartLineNumber
+            Column = $parseError.Extent.StartColumnNumber
         })
     }
 }

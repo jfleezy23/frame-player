@@ -10,9 +10,20 @@ Run the supported build and test surface from the repository root:
 dotnet build .\src\FramePlayer.Avalonia\FramePlayer.Avalonia.csproj -c Release
 dotnet test .\tests\FramePlayer.Core.Tests\FramePlayer.Core.Tests.csproj -c Release
 dotnet test .\tests\FramePlayer.Avalonia.Tests\FramePlayer.Avalonia.Tests.csproj -c Release --filter "Category!=ReleaseCandidate"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Test-RepositoryTextHygiene.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Test-RepoHarnessScripts.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Test-WorkflowActionPinning.ps1
+dotnet format .\src\FramePlayer.Avalonia\FramePlayer.Avalonia.csproj whitespace --verify-no-changes --no-restore
+dotnet format .\tests\FramePlayer.Core.Tests\FramePlayer.Core.Tests.csproj whitespace --verify-no-changes --no-restore
+dotnet format .\tests\FramePlayer.Avalonia.Tests\FramePlayer.Avalonia.Tests.csproj whitespace --verify-no-changes --no-restore
+dotnet format .\src\FramePlayer.Avalonia\FramePlayer.Avalonia.csproj analyzers --diagnostics IDE1006 --severity warn --verify-no-changes --no-restore
+dotnet format .\tests\FramePlayer.Core.Tests\FramePlayer.Core.Tests.csproj analyzers --diagnostics IDE1006 --severity warn --verify-no-changes --no-restore
+dotnet format .\tests\FramePlayer.Avalonia.Tests\FramePlayer.Avalonia.Tests.csproj analyzers --diagnostics IDE1006 --severity warn --verify-no-changes --no-restore
+cargo fmt --manifest-path .\native\frameplayer_ffmpeg_probe\Cargo.toml --all -- --check
+cargo clippy --manifest-path .\native\frameplayer_ffmpeg_probe\Cargo.toml --all-targets --all-features --locked -- -D warnings
 ```
+
+The required Windows CI job also runs pinned typos, PSScriptAnalyzer, ShellCheck, and actionlint versions. Their accepted false positives are documented in `_typos.toml` and `.psscriptanalyzer.psd1`.
 
 On Windows, build the self-contained package with:
 

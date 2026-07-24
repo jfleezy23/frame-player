@@ -69,78 +69,78 @@ namespace FramePlayer.Avalonia.Tests
                 try
                 {
 
-                var nativeMenu = NativeMenu.GetMenu(window);
-                Assert.NotNull(nativeMenu);
-                var menuPanel = RequireControl<Border>(window, "MenuPanel");
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                {
-                    Assert.Equal(WindowDecorations.Full, window.WindowDecorations);
-                    Assert.False(menuPanel.IsVisible);
-                    Assert.Empty(window.GetVisualDescendants().OfType<Menu>());
-                }
-                else
-                {
-                    Assert.Equal(WindowDecorations.None, window.WindowDecorations);
-                    Assert.NotNull(window.Icon);
+                    var nativeMenu = NativeMenu.GetMenu(window);
+                    Assert.NotNull(nativeMenu);
+                    var menuPanel = RequireControl<Border>(window, "MenuPanel");
+                    if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                    {
+                        Assert.Equal(WindowDecorations.Full, window.WindowDecorations);
+                        Assert.False(menuPanel.IsVisible);
+                        Assert.Empty(window.GetVisualDescendants().OfType<Menu>());
+                    }
+                    else
+                    {
+                        Assert.Equal(WindowDecorations.None, window.WindowDecorations);
+                        Assert.NotNull(window.Icon);
 
-                    Assert.Equal(0, Grid.GetRow(menuPanel));
-                    Assert.Equal(new Thickness(0, 0, 0, 1), menuPanel.BorderThickness);
-                    AssertBrushColor("#FFFFFF", menuPanel.Background);
-                    AssertBrushColor("#D1D5DB", menuPanel.BorderBrush);
+                        Assert.Equal(0, Grid.GetRow(menuPanel));
+                        Assert.Equal(new Thickness(0, 0, 0, 1), menuPanel.BorderThickness);
+                        AssertBrushColor("#FFFFFF", menuPanel.Background);
+                        AssertBrushColor("#D1D5DB", menuPanel.BorderBrush);
 
-                    var visualMenu = RequireControl<Menu>(window, "WindowsMenuBar");
-                    var menuThemeScope = Assert.IsType<ThemeVariantScope>(visualMenu.Parent);
-                    Assert.Equal(1, Grid.GetColumn(menuThemeScope));
+                        var visualMenu = RequireControl<Menu>(window, "WindowsMenuBar");
+                        var menuThemeScope = Assert.IsType<ThemeVariantScope>(visualMenu.Parent);
+                        Assert.Equal(1, Grid.GetColumn(menuThemeScope));
+                        Assert.Equal(
+                            TopLevelMenuHeaders,
+                            visualMenu.Items
+                                .OfType<MenuItem>()
+                                .Select(item => item.Header?.ToString() ?? string.Empty)
+                                .ToArray());
+                        AssertMenuItemHeaders(
+                            RequireControl<MenuItem>(window, "FileRootMenuItem"),
+                            "New Window",
+                            "Open Video...",
+                            "Open Recent",
+                            "Close Video",
+                            "Video Info...",
+                            "Export Diagnostic Report...",
+                            "Exit");
+                        AssertMenuItemHeaders(
+                            RequireControl<MenuItem>(window, "PlaybackRootMenuItem"),
+                            "Play",
+                            "Rewind 5s",
+                            "Fast Forward 5s",
+                            "Previous Frame",
+                            "Next Frame",
+                            "Loop Playback",
+                            "Set Loop In",
+                            "Set Loop Out",
+                            "Clear Loop Points",
+                            "Save Loop As Clip...",
+                            "Export Side-by-Side Compare...",
+                            "Zoom In",
+                            "Zoom Out",
+                            "Reset Zoom",
+                            "Use GPU Acceleration",
+                            "Toggle Full Screen");
+                        AssertMenuItemHeaders(
+                            RequireControl<MenuItem>(window, "AudioInsertionRootMenuItem"),
+                            "Replace Audio Track...");
+                        AssertMenuItemHeaders(
+                            RequireControl<MenuItem>(window, "HelpRootMenuItem"),
+                            "Controls and Shortcuts...",
+                            "About Frame Player");
+                    }
+
+                    var topLevelHeaders = nativeMenu.Items
+                        .OfType<NativeMenuItem>()
+                        .Select(item => item.Header)
+                        .ToArray();
+
                     Assert.Equal(
                         TopLevelMenuHeaders,
-                        visualMenu.Items
-                            .OfType<MenuItem>()
-                            .Select(item => item.Header?.ToString() ?? string.Empty)
-                            .ToArray());
-                    AssertMenuItemHeaders(
-                        RequireControl<MenuItem>(window, "FileRootMenuItem"),
-                        "New Window",
-                        "Open Video...",
-                        "Open Recent",
-                        "Close Video",
-                        "Video Info...",
-                        "Export Diagnostic Report...",
-                        "Exit");
-                    AssertMenuItemHeaders(
-                        RequireControl<MenuItem>(window, "PlaybackRootMenuItem"),
-                        "Play",
-                        "Rewind 5s",
-                        "Fast Forward 5s",
-                        "Previous Frame",
-                        "Next Frame",
-                        "Loop Playback",
-                        "Set Loop In",
-                        "Set Loop Out",
-                        "Clear Loop Points",
-                        "Save Loop As Clip...",
-                        "Export Side-by-Side Compare...",
-                        "Zoom In",
-                        "Zoom Out",
-                        "Reset Zoom",
-                        "Use GPU Acceleration",
-                        "Toggle Full Screen");
-                    AssertMenuItemHeaders(
-                        RequireControl<MenuItem>(window, "AudioInsertionRootMenuItem"),
-                        "Replace Audio Track...");
-                    AssertMenuItemHeaders(
-                        RequireControl<MenuItem>(window, "HelpRootMenuItem"),
-                        "Controls and Shortcuts...",
-                        "About Frame Player");
-                }
-
-                var topLevelHeaders = nativeMenu.Items
-                    .OfType<NativeMenuItem>()
-                    .Select(item => item.Header)
-                    .ToArray();
-
-                Assert.Equal(
-                    TopLevelMenuHeaders,
-                    topLevelHeaders);
+                        topLevelHeaders);
                 }
                 finally
                 {
@@ -158,23 +158,23 @@ namespace FramePlayer.Avalonia.Tests
                 try
                 {
 
-                var header = RequireControl<Border>(window, "HeaderPanel");
-                var primaryPaneHeader = RequireControl<Border>(window, "PrimaryPaneHeaderBorder");
-                var primaryPaneFooter = RequireControl<Border>(window, "PrimaryPaneFooterBorder");
-                var primaryPaneLayout = RequireControl<Grid>(window, "PrimaryPaneLayoutGrid");
-                var videoPaneGrid = RequireControl<Grid>(window, "VideoPaneGrid");
-                var comparePaneBorder = RequireControl<Border>(window, "ComparePaneBorder");
-                var compareToolbar = RequireControl<Border>(window, "CompareToolbarBorder");
+                    var header = RequireControl<Border>(window, "HeaderPanel");
+                    var primaryPaneHeader = RequireControl<Border>(window, "PrimaryPaneHeaderBorder");
+                    var primaryPaneFooter = RequireControl<Border>(window, "PrimaryPaneFooterBorder");
+                    var primaryPaneLayout = RequireControl<Grid>(window, "PrimaryPaneLayoutGrid");
+                    var videoPaneGrid = RequireControl<Grid>(window, "VideoPaneGrid");
+                    var comparePaneBorder = RequireControl<Border>(window, "ComparePaneBorder");
+                    var compareToolbar = RequireControl<Border>(window, "CompareToolbarBorder");
 
-                Assert.Equal(1, Grid.GetRow(header));
-                Assert.False(primaryPaneHeader.IsVisible);
-                Assert.False(primaryPaneFooter.IsVisible);
-                Assert.Equal(0, primaryPaneLayout.RowDefinitions[0].Height.Value);
-                Assert.Equal(0, primaryPaneLayout.RowDefinitions[2].Height.Value);
-                Assert.Equal(0, videoPaneGrid.ColumnDefinitions[1].Width.Value);
-                Assert.Equal(0, videoPaneGrid.ColumnSpacing);
-                Assert.False(comparePaneBorder.IsVisible);
-                Assert.False(compareToolbar.IsVisible);
+                    Assert.Equal(1, Grid.GetRow(header));
+                    Assert.False(primaryPaneHeader.IsVisible);
+                    Assert.False(primaryPaneFooter.IsVisible);
+                    Assert.Equal(0, primaryPaneLayout.RowDefinitions[0].Height.Value);
+                    Assert.Equal(0, primaryPaneLayout.RowDefinitions[2].Height.Value);
+                    Assert.Equal(0, videoPaneGrid.ColumnDefinitions[1].Width.Value);
+                    Assert.Equal(0, videoPaneGrid.ColumnSpacing);
+                    Assert.False(comparePaneBorder.IsVisible);
+                    Assert.False(compareToolbar.IsVisible);
                 }
                 finally
                 {
@@ -223,35 +223,35 @@ namespace FramePlayer.Avalonia.Tests
                 try
                 {
 
-                var compareMode = RequireControl<CheckBox>(window, "CompareModeCheckBox");
-                var primaryPaneHeader = RequireControl<Border>(window, "PrimaryPaneHeaderBorder");
-                var primaryPaneFooter = RequireControl<Border>(window, "PrimaryPaneFooterBorder");
-                var primaryPaneLayout = RequireControl<Grid>(window, "PrimaryPaneLayoutGrid");
-                var videoPaneGrid = RequireControl<Grid>(window, "VideoPaneGrid");
-                var comparePaneBorder = RequireControl<Border>(window, "ComparePaneBorder");
-                var compareToolbar = RequireControl<Border>(window, "CompareToolbarBorder");
+                    var compareMode = RequireControl<CheckBox>(window, "CompareModeCheckBox");
+                    var primaryPaneHeader = RequireControl<Border>(window, "PrimaryPaneHeaderBorder");
+                    var primaryPaneFooter = RequireControl<Border>(window, "PrimaryPaneFooterBorder");
+                    var primaryPaneLayout = RequireControl<Grid>(window, "PrimaryPaneLayoutGrid");
+                    var videoPaneGrid = RequireControl<Grid>(window, "VideoPaneGrid");
+                    var comparePaneBorder = RequireControl<Border>(window, "ComparePaneBorder");
+                    var compareToolbar = RequireControl<Border>(window, "CompareToolbarBorder");
 
-                compareMode.IsChecked = true;
+                    compareMode.IsChecked = true;
 
-                Assert.True(primaryPaneHeader.IsVisible);
-                Assert.True(primaryPaneFooter.IsVisible);
-                Assert.Equal(46, primaryPaneLayout.RowDefinitions[0].Height.Value);
-                Assert.Equal(118, primaryPaneLayout.RowDefinitions[2].Height.Value);
-                Assert.Equal(GridUnitType.Star, videoPaneGrid.ColumnDefinitions[1].Width.GridUnitType);
-                Assert.Equal(12, videoPaneGrid.ColumnSpacing);
-                Assert.True(comparePaneBorder.IsVisible);
-                Assert.True(compareToolbar.IsVisible);
+                    Assert.True(primaryPaneHeader.IsVisible);
+                    Assert.True(primaryPaneFooter.IsVisible);
+                    Assert.Equal(46, primaryPaneLayout.RowDefinitions[0].Height.Value);
+                    Assert.Equal(118, primaryPaneLayout.RowDefinitions[2].Height.Value);
+                    Assert.Equal(GridUnitType.Star, videoPaneGrid.ColumnDefinitions[1].Width.GridUnitType);
+                    Assert.Equal(12, videoPaneGrid.ColumnSpacing);
+                    Assert.True(comparePaneBorder.IsVisible);
+                    Assert.True(compareToolbar.IsVisible);
 
-                compareMode.IsChecked = false;
+                    compareMode.IsChecked = false;
 
-                Assert.False(primaryPaneHeader.IsVisible);
-                Assert.False(primaryPaneFooter.IsVisible);
-                Assert.Equal(0, primaryPaneLayout.RowDefinitions[0].Height.Value);
-                Assert.Equal(0, primaryPaneLayout.RowDefinitions[2].Height.Value);
-                Assert.Equal(0, videoPaneGrid.ColumnDefinitions[1].Width.Value);
-                Assert.Equal(0, videoPaneGrid.ColumnSpacing);
-                Assert.False(comparePaneBorder.IsVisible);
-                Assert.False(compareToolbar.IsVisible);
+                    Assert.False(primaryPaneHeader.IsVisible);
+                    Assert.False(primaryPaneFooter.IsVisible);
+                    Assert.Equal(0, primaryPaneLayout.RowDefinitions[0].Height.Value);
+                    Assert.Equal(0, primaryPaneLayout.RowDefinitions[2].Height.Value);
+                    Assert.Equal(0, videoPaneGrid.ColumnDefinitions[1].Width.Value);
+                    Assert.Equal(0, videoPaneGrid.ColumnSpacing);
+                    Assert.False(comparePaneBorder.IsVisible);
+                    Assert.False(compareToolbar.IsVisible);
                 }
                 finally
                 {
@@ -1686,46 +1686,46 @@ namespace FramePlayer.Avalonia.Tests
                 var window = new MainWindow();
                 try
                 {
-                var nativeMenu = NativeMenu.GetMenu(window);
-                Assert.NotNull(nativeMenu);
+                    var nativeMenu = NativeMenu.GetMenu(window);
+                    Assert.NotNull(nativeMenu);
 
-                var newWindow = RequireNativeMenuItem(nativeMenu, "New Window");
-                var openVideo = RequireNativeMenuItem(nativeMenu, "Open Video...");
-                var closeVideo = RequireNativeMenuItem(nativeMenu, "Close Video");
-                var exportDiagnostics = RequireNativeMenuItem(nativeMenu, "Export Diagnostic Report...");
-                var play = RequireNativeMenuItem(nativeMenu, "Play");
-                var rewind = RequireNativeMenuItem(nativeMenu, "Rewind 5s");
-                var fastForward = RequireNativeMenuItem(nativeMenu, "Fast Forward 5s");
-                var previousFrame = RequireNativeMenuItem(nativeMenu, "Previous Frame");
-                var nextFrame = RequireNativeMenuItem(nativeMenu, "Next Frame");
-                var loopPlayback = RequireNativeMenuItem(nativeMenu, "Loop Playback");
-                var setLoopIn = RequireNativeMenuItem(nativeMenu, "Set Loop In");
-                var setLoopOut = RequireNativeMenuItem(nativeMenu, "Set Loop Out");
-                var zoomIn = RequireNativeMenuItem(nativeMenu, "Zoom In");
-                var zoomOut = RequireNativeMenuItem(nativeMenu, "Zoom Out");
-                var resetZoom = RequireNativeMenuItem(nativeMenu, "Reset Zoom");
-                var fullScreen = RequireNativeMenuItem(nativeMenu, "Toggle Full Screen");
-                var audioInsertion = RequireNativeMenuItem(nativeMenu, "Replace Audio Track...");
-                var help = RequireNativeMenuItem(nativeMenu, "Controls and Shortcuts...");
+                    var newWindow = RequireNativeMenuItem(nativeMenu, "New Window");
+                    var openVideo = RequireNativeMenuItem(nativeMenu, "Open Video...");
+                    var closeVideo = RequireNativeMenuItem(nativeMenu, "Close Video");
+                    var exportDiagnostics = RequireNativeMenuItem(nativeMenu, "Export Diagnostic Report...");
+                    var play = RequireNativeMenuItem(nativeMenu, "Play");
+                    var rewind = RequireNativeMenuItem(nativeMenu, "Rewind 5s");
+                    var fastForward = RequireNativeMenuItem(nativeMenu, "Fast Forward 5s");
+                    var previousFrame = RequireNativeMenuItem(nativeMenu, "Previous Frame");
+                    var nextFrame = RequireNativeMenuItem(nativeMenu, "Next Frame");
+                    var loopPlayback = RequireNativeMenuItem(nativeMenu, "Loop Playback");
+                    var setLoopIn = RequireNativeMenuItem(nativeMenu, "Set Loop In");
+                    var setLoopOut = RequireNativeMenuItem(nativeMenu, "Set Loop Out");
+                    var zoomIn = RequireNativeMenuItem(nativeMenu, "Zoom In");
+                    var zoomOut = RequireNativeMenuItem(nativeMenu, "Zoom Out");
+                    var resetZoom = RequireNativeMenuItem(nativeMenu, "Reset Zoom");
+                    var fullScreen = RequireNativeMenuItem(nativeMenu, "Toggle Full Screen");
+                    var audioInsertion = RequireNativeMenuItem(nativeMenu, "Replace Audio Track...");
+                    var help = RequireNativeMenuItem(nativeMenu, "Controls and Shortcuts...");
 
-                AssertGesture(newWindow.Gesture, Key.N, ExpectedCommandModifier);
-                AssertGesture(openVideo.Gesture, Key.O, ExpectedCommandModifier);
-                AssertGesture(closeVideo.Gesture, Key.W, ExpectedCommandModifier);
-                AssertGesture(exportDiagnostics.Gesture, Key.E, ExpectedCommandShiftModifier);
-                AssertGesture(play.Gesture, Key.Space, KeyModifiers.None);
-                AssertGesture(rewind.Gesture, Key.OemComma, KeyModifiers.None);
-                AssertGesture(fastForward.Gesture, Key.OemPeriod, KeyModifiers.None);
-                AssertGesture(previousFrame.Gesture, Key.Left, KeyModifiers.None);
-                AssertGesture(nextFrame.Gesture, Key.Right, KeyModifiers.None);
-                AssertGesture(loopPlayback.Gesture, Key.L, KeyModifiers.None);
-                AssertGesture(setLoopIn.Gesture, Key.OemOpenBrackets, KeyModifiers.None);
-                AssertGesture(setLoopOut.Gesture, Key.OemCloseBrackets, KeyModifiers.None);
-                AssertGesture(fullScreen.Gesture, Key.F11, KeyModifiers.None);
-                AssertGesture(help.Gesture, Key.F1, KeyModifiers.None);
-                Assert.NotNull(zoomIn);
-                Assert.NotNull(zoomOut);
-                Assert.NotNull(resetZoom);
-                Assert.NotNull(audioInsertion);
+                    AssertGesture(newWindow.Gesture, Key.N, ExpectedCommandModifier);
+                    AssertGesture(openVideo.Gesture, Key.O, ExpectedCommandModifier);
+                    AssertGesture(closeVideo.Gesture, Key.W, ExpectedCommandModifier);
+                    AssertGesture(exportDiagnostics.Gesture, Key.E, ExpectedCommandShiftModifier);
+                    AssertGesture(play.Gesture, Key.Space, KeyModifiers.None);
+                    AssertGesture(rewind.Gesture, Key.OemComma, KeyModifiers.None);
+                    AssertGesture(fastForward.Gesture, Key.OemPeriod, KeyModifiers.None);
+                    AssertGesture(previousFrame.Gesture, Key.Left, KeyModifiers.None);
+                    AssertGesture(nextFrame.Gesture, Key.Right, KeyModifiers.None);
+                    AssertGesture(loopPlayback.Gesture, Key.L, KeyModifiers.None);
+                    AssertGesture(setLoopIn.Gesture, Key.OemOpenBrackets, KeyModifiers.None);
+                    AssertGesture(setLoopOut.Gesture, Key.OemCloseBrackets, KeyModifiers.None);
+                    AssertGesture(fullScreen.Gesture, Key.F11, KeyModifiers.None);
+                    AssertGesture(help.Gesture, Key.F1, KeyModifiers.None);
+                    Assert.NotNull(zoomIn);
+                    Assert.NotNull(zoomOut);
+                    Assert.NotNull(resetZoom);
+                    Assert.NotNull(audioInsertion);
                 }
                 finally
                 {

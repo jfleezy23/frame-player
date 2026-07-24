@@ -1,6 +1,7 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -265,7 +266,7 @@ namespace FramePlayer.Services
             using (var sha256 = SHA256.Create())
             {
                 var hashBytes = sha256.ComputeHash(stream);
-                return string.Concat(hashBytes.Select(hashByte => hashByte.ToString("x2")));
+                return string.Concat(hashBytes.Select(hashByte => hashByte.ToString("x2", CultureInfo.InvariantCulture)));
             }
         }
 
