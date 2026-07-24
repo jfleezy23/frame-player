@@ -290,7 +290,7 @@ namespace FramePlayer.Services
             public string AssetName { get; set; } = string.Empty;
 
             [DataMember(Name = "files")]
-            public Dictionary<string, string> Files { get; set; } = [];
+            public Dictionary<string, string>? Files { get; set; }
         }
     }
 }

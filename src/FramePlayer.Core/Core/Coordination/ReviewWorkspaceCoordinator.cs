@@ -36,16 +36,14 @@ namespace FramePlayer.Core.Coordination
         {
             ArgumentNullException.ThrowIfNull(sessionCoordinator);
             SessionCoordinator = sessionCoordinator;
+            _paneBindings = new List<WorkspacePaneBinding>();
             var primaryBinding = new WorkspacePaneBinding(
                 PrimaryPaneId,
                 "Primary",
                 TimeSpan.Zero,
                 true,
                 SessionCoordinator);
-            _paneBindings = new List<WorkspacePaneBinding>
-            {
-                primaryBinding
-            };
+            _paneBindings.Add(primaryBinding);
             SessionCoordinator.SessionChanged += SessionCoordinator_SessionChanged;
             _primaryPaneId = primaryBinding.PaneId;
             _activePaneId = _primaryPaneId;
