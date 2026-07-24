@@ -1381,7 +1381,7 @@ namespace FramePlayer.Avalonia.Views
                 return;
             }
 
-            var transportIntentGeneration = BeginAllPaneTransportIntent();
+            var transportIntentGeneration = AdvanceAllPaneTransportIntent();
             InvalidateAllLoopRestarts();
             await WaitForAllPaneTransportOperationAsync().ConfigureAwait(false);
             try
@@ -1408,6 +1408,7 @@ namespace FramePlayer.Avalonia.Views
             }
             finally
             {
+                EndSynchronizedFramePresentation(transportIntentGeneration);
                 ReleaseAllPaneTransportOperation();
             }
         }
@@ -3839,6 +3840,13 @@ namespace FramePlayer.Avalonia.Views
 
         private int BeginAllPaneTransportIntent()
         {
+            var transportIntentGeneration = AdvanceAllPaneTransportIntent();
+            EndSynchronizedFramePresentation(transportIntentGeneration);
+            return transportIntentGeneration;
+        }
+
+        private int AdvanceAllPaneTransportIntent()
+        {
             int transportIntentGeneration;
             lock (_transportIntentLock)
             {
@@ -3849,7 +3857,6 @@ namespace FramePlayer.Avalonia.Views
                 _comparePendingSeekResumeGeneration = -1;
             }
 
-            EndSynchronizedFramePresentation(transportIntentGeneration);
             return transportIntentGeneration;
         }
 

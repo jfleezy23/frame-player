@@ -300,10 +300,12 @@ namespace FramePlayer.Avalonia.Tests
             ConfigureRuntime();
             var files = FindCorpusFiles();
             var file = files.FirstOrDefault(path =>
-                string.Equals(
-                    Path.GetFileName(path),
-                    "hevc-2398-20s.mp4",
-                    StringComparison.OrdinalIgnoreCase)) ?? files[0];
+                Path.GetFileName(path).StartsWith(
+                    "Audio_Video_Sync_",
+                    StringComparison.OrdinalIgnoreCase));
+            Assert.False(
+                string.IsNullOrWhiteSpace(file),
+                "The compare synchronization test requires the Audio_Video_Sync corpus clip.");
 
             MainWindow? window = null;
             try
@@ -421,6 +423,11 @@ namespace FramePlayer.Avalonia.Tests
                         true,
                         (SynchronizedOperationScope?)SynchronizedOperationScope.AllPanes)
                     .WaitAsync(TimeSpan.FromSeconds(10));
+                Assert.False(
+                    GetPrivateField<bool>(
+                        window!,
+                        "_isSynchronizedFramePresentationActive"),
+                    "Shared pause left paired frame presentation active after both panes stopped.");
                 GetPresentedFrameTimesAndValidateReadouts(window!);
 
                 Assert.True(
@@ -435,6 +442,18 @@ namespace FramePlayer.Avalonia.Tests
                 Assert.True(
                     compareEngine.LastPlaybackUsedAudioClock,
                     "Right pane did not use its audio clock.");
+
+                var pausedAlignmentTarget = TimeSpan.FromTicks(
+                    Math.Min(
+                        frameStep.Ticks * 24,
+                        primaryEngine.MediaInfo.Duration.Ticks / 3));
+                await InvokeWindowTaskAsync(
+                        window!,
+                        "CommitSliderSeekAsync",
+                        "test-paused-alignment",
+                        pausedAlignmentTarget)
+                    .WaitAsync(TimeSpan.FromSeconds(10));
+                GetPresentedFrameTimesAndValidateReadouts(window!);
 
                 var pausedAlignment = await InvokeAlignmentAsync(
                     window!,
@@ -460,7 +479,8 @@ namespace FramePlayer.Avalonia.Tests
                     .WaitAsync(TimeSpan.FromSeconds(10));
                 var postPausePrimaryTimes = new HashSet<TimeSpan>();
                 var postPauseCompareTimes = new HashSet<TimeSpan>();
-                for (var index = 0; index < 60; index++)
+                var postPauseObservationStartedAt = DateTime.UtcNow;
+                do
                 {
                     await Task.Delay(TimeSpan.FromMilliseconds(50));
                     var presentedTimes =
@@ -468,6 +488,12 @@ namespace FramePlayer.Avalonia.Tests
                     postPausePrimaryTimes.Add(presentedTimes.Primary);
                     postPauseCompareTimes.Add(presentedTimes.Compare);
                 }
+                while (DateTime.UtcNow - postPauseObservationStartedAt <
+                        TimeSpan.FromSeconds(3) ||
+                    ((postPausePrimaryTimes.Count < 6 ||
+                            postPauseCompareTimes.Count < 6) &&
+                        DateTime.UtcNow - postPauseObservationStartedAt <
+                            TimeSpan.FromSeconds(8)));
 
                 await InvokeWindowTaskAsync(
                         window!,
@@ -495,7 +521,16 @@ namespace FramePlayer.Avalonia.Tests
                     "Shared pause -> paused sync -> shared resume did not remain live. Left=" +
                     postPausePrimaryTimes.Count +
                     " right=" +
-                    postPauseCompareTimes.Count);
+                    postPauseCompareTimes.Count +
+                    " left-times=" +
+                    string.Join(",", postPausePrimaryTimes.OrderBy(value => value)) +
+                    " right-times=" +
+                    string.Join(",", postPauseCompareTimes.OrderBy(value => value)) +
+                    Environment.NewLine +
+                    BuildAlignmentDiagnostics(
+                        window!,
+                        primaryEngine,
+                        compareEngine));
                 Assert.True(
                     postPausePrimaryTimes.Max() -
                         postPausePrimaryTimes.Min() >=
