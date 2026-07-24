@@ -89,7 +89,7 @@ namespace FramePlayer.Avalonia.Tests
 
             Assert.Contains("SeekToTimePreservingPlaybackAsync", mainWindowSource, StringComparison.Ordinal);
             Assert.Contains("var resumePlayback = engine.IsPlaying;", mainWindowSource, StringComparison.Ordinal);
-            Assert.Contains("await engine.SeekToTimeAsync(target);", mainWindowSource, StringComparison.Ordinal);
+            Assert.Contains("await engine.SeekToTimeAsync(target, cancellationToken);", mainWindowSource, StringComparison.Ordinal);
             Assert.Contains("await engine.PlayAsync();", mainWindowSource, StringComparison.Ordinal);
             Assert.Contains("QueueSliderScrub(TimeSpan.FromSeconds(PositionSlider.Value));", mainWindowSource, StringComparison.Ordinal);
             Assert.Contains("await SeekMasterTimelineAsync(_pendingSliderScrubTarget, _sliderScrubCts.Token);", mainWindowSource, StringComparison.Ordinal);

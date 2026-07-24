@@ -139,9 +139,18 @@ namespace FramePlayer.Avalonia.Tests
                 "Views",
                 "MainWindow.axaml.cs"));
 
-            Assert.Contains("ClipExportService.ExportPlanAsync(plan)", source, StringComparison.Ordinal);
-            Assert.Contains("CompareSideBySideExportService.ExportPlanAsync(plan)", source, StringComparison.Ordinal);
-            Assert.Contains("AudioInsertionService.InsertPlanAsync(plan)", source, StringComparison.Ordinal);
+            Assert.Contains(
+                "ClipExportService.ExportPlanAsync(plan, CancellationToken.None)",
+                source,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "CompareSideBySideExportService.ExportPlanAsync(plan, CancellationToken.None)",
+                source,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "AudioInsertionService.InsertPlanAsync(plan, CancellationToken.None)",
+                source,
+                StringComparison.Ordinal);
             Assert.DoesNotContain("NativeClipExportService.ExportAsync(plan)", source, StringComparison.Ordinal);
             Assert.DoesNotContain("NativeCompareSideBySideExportService.ExportAsync(plan)", source, StringComparison.Ordinal);
             Assert.DoesNotContain("NativeAudioInsertionService.InsertAsync(plan)", source, StringComparison.Ordinal);

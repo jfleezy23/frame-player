@@ -610,7 +610,9 @@ namespace FramePlayer.Engines.FFmpeg
                 _lastAudioErrorMessage = string.Empty;
                 _playbackCancellationSource = cancellationSource;
                 _audioPlaybackSession = TryStartAudioPlayback(_currentFrame.Descriptor.PresentationTime, cancellationSource.Token);
-                _playbackTask = Task.Run(() => PlaybackLoop(cancellationSource, cancellationSource.Token));
+                _playbackTask = Task.Run(
+                    () => PlaybackLoop(cancellationSource, cancellationSource.Token),
+                    CancellationToken.None);
                 IsPlaying = true;
             }
 

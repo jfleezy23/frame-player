@@ -336,7 +336,7 @@ namespace FramePlayer.Avalonia.Views
             PlaybackStateTextBlock.Text = "Opening";
             try
             {
-                await engine.OpenAsync(filePath);
+                await engine.OpenAsync(filePath, CancellationToken.None);
                 _diagnosticLogService.Info("File opened: " + BuildDiagnosticFileIdentifier(filePath));
                 _recentFilesService.Add(filePath);
                 UpdateRecentFilesMenu();
@@ -925,11 +925,11 @@ namespace FramePlayer.Avalonia.Views
             {
                 if (delta > 0)
                 {
-                    await engine.StepForwardAsync();
+                    await engine.StepForwardAsync(CancellationToken.None);
                 }
                 else
                 {
-                    await engine.StepBackwardAsync();
+                    await engine.StepBackwardAsync(CancellationToken.None);
                 }
             }
         }
@@ -954,8 +954,8 @@ namespace FramePlayer.Avalonia.Views
             }
 
             await Task.WhenAll(
-                Task.Run(() => _primaryEngine.PlayAsync()),
-                Task.Run(() => compareEngine.PlayAsync()))
+                Task.Run(() => _primaryEngine.PlayAsync(), CancellationToken.None),
+                Task.Run(() => compareEngine.PlayAsync(), CancellationToken.None))
                 .ConfigureAwait(false);
 
             UpdateCommandStatesOnUiThread();
@@ -967,12 +967,12 @@ namespace FramePlayer.Avalonia.Views
             var pauseTasks = new List<Task>(2);
             if (_primaryEngine.IsMediaOpen)
             {
-                pauseTasks.Add(Task.Run(() => _primaryEngine.PauseAsync()));
+                pauseTasks.Add(Task.Run(() => _primaryEngine.PauseAsync(), CancellationToken.None));
             }
 
             if (_compareEngine != null && _compareEngine.IsMediaOpen)
             {
-                pauseTasks.Add(Task.Run(() => _compareEngine.PauseAsync()));
+                pauseTasks.Add(Task.Run(() => _compareEngine.PauseAsync(), CancellationToken.None));
             }
 
             if (pauseTasks.Count > 0)
@@ -1003,7 +1003,7 @@ namespace FramePlayer.Avalonia.Views
                 target = TimeSpan.Zero;
             }
 
-            await SeekToTimePreservingPlaybackAsync(engine, target);
+            await SeekToTimePreservingPlaybackAsync(engine, target, CancellationToken.None);
         }
 
         private Pane ResolvePaneFromSender(object? sender)
@@ -1356,7 +1356,7 @@ namespace FramePlayer.Avalonia.Views
         {
             _ = interactionName;
             CancelQueuedSliderScrubs();
-            await SeekMasterTimelineAsync(target).ConfigureAwait(false);
+            await SeekMasterTimelineAsync(target, CancellationToken.None).ConfigureAwait(false);
         }
 
         private void PositionSlider_ValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
@@ -1532,7 +1532,10 @@ namespace FramePlayer.Avalonia.Views
 
             var primaryTarget = ClampSeekTarget(_primaryEngine.Position.PresentationTime + offset);
             var compareTarget = ClampSeekTarget(compareEngine.Position.PresentationTime + offset);
-            await SeekAllPaneToTimesPreservingPlaybackAsync(primaryTarget, compareTarget).ConfigureAwait(false);
+            await SeekAllPaneToTimesPreservingPlaybackAsync(
+                primaryTarget,
+                compareTarget,
+                CancellationToken.None).ConfigureAwait(false);
         }
 
         private async Task SeekAllPaneToTimePreservingPlaybackAsync(TimeSpan target, CancellationToken cancellationToken = default)
@@ -1618,7 +1621,7 @@ namespace FramePlayer.Avalonia.Views
             var pane = textBox == ComparePaneFrameNumberTextBox ? Pane.Compare : Pane.Primary;
             SelectPane(pane);
             InvalidateLoopRestart(pane);
-            await GetEngine(pane).SeekToFrameAsync(oneBasedFrame - 1);
+            await GetEngine(pane).SeekToFrameAsync(oneBasedFrame - 1, CancellationToken.None);
         }
 
         private static void FrameNumberTextBox_GotFocus(object? sender, RoutedEventArgs e)
@@ -1649,8 +1652,12 @@ namespace FramePlayer.Avalonia.Views
             try
             {
                 await Task.WhenAll(
-                    Task.Run(() => _primaryEngine.SeekToFrameAsync(targetFrameIndex)),
-                    Task.Run(() => compareEngine.SeekToFrameAsync(targetFrameIndex)))
+                    Task.Run(
+                        () => _primaryEngine.SeekToFrameAsync(targetFrameIndex, CancellationToken.None),
+                        CancellationToken.None),
+                    Task.Run(
+                        () => compareEngine.SeekToFrameAsync(targetFrameIndex, CancellationToken.None),
+                        CancellationToken.None))
                     .ConfigureAwait(false);
             }
             finally
@@ -1660,12 +1667,12 @@ namespace FramePlayer.Avalonia.Views
                     var resumeTasks = new List<Task>(2);
                     if (resumePrimaryPlayback && CanStartPlayback(_primaryEngine))
                     {
-                        resumeTasks.Add(Task.Run(() => _primaryEngine.PlayAsync()));
+                        resumeTasks.Add(Task.Run(() => _primaryEngine.PlayAsync(), CancellationToken.None));
                     }
 
                     if (resumeComparePlayback && CanStartPlayback(compareEngine))
                     {
-                        resumeTasks.Add(Task.Run(() => compareEngine.PlayAsync()));
+                        resumeTasks.Add(Task.Run(() => compareEngine.PlayAsync(), CancellationToken.None));
                     }
 
                     if (resumeTasks.Count > 0)
@@ -1723,7 +1730,7 @@ namespace FramePlayer.Avalonia.Views
             }
 
             CancelQueuedSliderScrubs();
-            await engine.SeekToTimeAsync(target);
+            await engine.SeekToTimeAsync(target, CancellationToken.None);
             var anchor = CreateLoopAnchor(engine, pane);
             if (anchor == null)
             {
@@ -2140,11 +2147,15 @@ namespace FramePlayer.Avalonia.Views
             InvalidateLoopRestart(Pane.Compare);
             if (_primaryEngine.Position.FrameIndex.HasValue && _primaryEngine.Position.IsFrameIndexAbsolute)
             {
-                await _compareEngine.SeekToFrameAsync(_primaryEngine.Position.FrameIndex.Value);
+                await _compareEngine.SeekToFrameAsync(
+                    _primaryEngine.Position.FrameIndex.Value,
+                    CancellationToken.None);
             }
             else
             {
-                await _compareEngine.SeekToTimeAsync(_primaryEngine.Position.PresentationTime);
+                await _compareEngine.SeekToTimeAsync(
+                    _primaryEngine.Position.PresentationTime,
+                    CancellationToken.None);
             }
 
             CompareStatusTextBlock.Text = "Compare: synced right to left";
@@ -2161,11 +2172,15 @@ namespace FramePlayer.Avalonia.Views
             InvalidateLoopRestart(Pane.Primary);
             if (_compareEngine.Position.FrameIndex.HasValue && _compareEngine.Position.IsFrameIndexAbsolute)
             {
-                await _primaryEngine.SeekToFrameAsync(_compareEngine.Position.FrameIndex.Value);
+                await _primaryEngine.SeekToFrameAsync(
+                    _compareEngine.Position.FrameIndex.Value,
+                    CancellationToken.None);
             }
             else
             {
-                await _primaryEngine.SeekToTimeAsync(_compareEngine.Position.PresentationTime);
+                await _primaryEngine.SeekToTimeAsync(
+                    _compareEngine.Position.PresentationTime,
+                    CancellationToken.None);
             }
 
             CompareStatusTextBlock.Text = "Compare: synced left to right";
@@ -2591,7 +2606,9 @@ namespace FramePlayer.Avalonia.Views
                 return;
             }
 
-            _ = Task.Run(() => RestartLoopPlaybackAsync(pane, engine, restartRange, restartGeneration));
+            _ = Task.Run(
+                () => RestartLoopPlaybackAsync(pane, engine, restartRange, restartGeneration),
+                CancellationToken.None);
         }
 
         private bool ShouldSynchronizeLoopRestart()
@@ -2635,13 +2652,15 @@ namespace FramePlayer.Avalonia.Views
             var compareRange = GetLoopRange(Pane.Compare) ?? CreateLoopRange(Pane.Compare, null, null);
             var primaryGeneration = GetLoopRestartGeneration(Pane.Primary);
             var compareGeneration = GetLoopRestartGeneration(Pane.Compare);
-            _ = Task.Run(() => RestartAllPaneLoopPlaybackAsync(
-                primaryEngine,
-                primaryRange,
-                primaryGeneration,
-                compareEngine,
-                compareRange,
-                compareGeneration));
+            _ = Task.Run(
+                () => RestartAllPaneLoopPlaybackAsync(
+                    primaryEngine,
+                    primaryRange,
+                    primaryGeneration,
+                    compareEngine,
+                    compareRange,
+                    compareGeneration),
+                CancellationToken.None);
         }
 
         private async Task RestartAllPaneLoopPlaybackAsync(
@@ -2655,21 +2674,27 @@ namespace FramePlayer.Avalonia.Views
             try
             {
                 await Task.WhenAll(
-                    Task.Run(() => primaryEngine.PauseAsync()),
-                    Task.Run(() => compareEngine.PauseAsync()))
+                    Task.Run(() => primaryEngine.PauseAsync(), CancellationToken.None),
+                    Task.Run(() => compareEngine.PauseAsync(), CancellationToken.None))
                     .ConfigureAwait(false);
 
                 var seekTasks = new List<Task>(2);
                 if (CanContinueLoopRestart(Pane.Primary, primaryEngine, primaryGeneration))
                 {
-                    seekTasks.Add(Task.Run(() => primaryEngine.SeekToTimeAsync(
-                        primaryRange.HasLoopIn ? primaryRange.EffectiveStartTime : TimeSpan.Zero)));
+                    seekTasks.Add(Task.Run(
+                        () => primaryEngine.SeekToTimeAsync(
+                            primaryRange.HasLoopIn ? primaryRange.EffectiveStartTime : TimeSpan.Zero,
+                            CancellationToken.None),
+                        CancellationToken.None));
                 }
 
                 if (CanContinueLoopRestart(Pane.Compare, compareEngine, compareGeneration))
                 {
-                    seekTasks.Add(Task.Run(() => compareEngine.SeekToTimeAsync(
-                        compareRange.HasLoopIn ? compareRange.EffectiveStartTime : TimeSpan.Zero)));
+                    seekTasks.Add(Task.Run(
+                        () => compareEngine.SeekToTimeAsync(
+                            compareRange.HasLoopIn ? compareRange.EffectiveStartTime : TimeSpan.Zero,
+                            CancellationToken.None),
+                        CancellationToken.None));
                 }
 
                 if (seekTasks.Count > 0)
@@ -2680,12 +2705,12 @@ namespace FramePlayer.Avalonia.Views
                 var playTasks = new List<Task>(2);
                 if (CanContinueLoopRestart(Pane.Primary, primaryEngine, primaryGeneration))
                 {
-                    playTasks.Add(Task.Run(() => primaryEngine.PlayAsync()));
+                    playTasks.Add(Task.Run(() => primaryEngine.PlayAsync(), CancellationToken.None));
                 }
 
                 if (CanContinueLoopRestart(Pane.Compare, compareEngine, compareGeneration))
                 {
-                    playTasks.Add(Task.Run(() => compareEngine.PlayAsync()));
+                    playTasks.Add(Task.Run(() => compareEngine.PlayAsync(), CancellationToken.None));
                 }
 
                 if (playTasks.Count > 0)
@@ -2720,7 +2745,7 @@ namespace FramePlayer.Avalonia.Views
                     return;
                 }
 
-                await engine.SeekToTimeAsync(restartTime);
+                await engine.SeekToTimeAsync(restartTime, CancellationToken.None);
                 if (!CanContinueLoopRestart(pane, engine, restartGeneration))
                 {
                     return;
@@ -3366,7 +3391,7 @@ namespace FramePlayer.Avalonia.Views
                     ffmpegEngine,
                     BuildPaneViewport(pane, engine.MediaInfo));
                 var plan = ClipExportService.CreatePlan(request);
-                var result = await ClipExportService.ExportPlanAsync(plan).ConfigureAwait(false);
+                var result = await ClipExportService.ExportPlanAsync(plan, CancellationToken.None).ConfigureAwait(false);
                 await SetStatusMessageAsync(result.Succeeded
                     ? "Clip export completed: " + Path.GetFileName(result.Plan.OutputFilePath)
                     : "Clip export failed: " + result.Message).ConfigureAwait(false);
@@ -3450,7 +3475,7 @@ namespace FramePlayer.Avalonia.Views
                     CompareEngine = compareEngine
                 };
                 var plan = CompareSideBySideExportService.CreatePlan(request);
-                var result = await CompareSideBySideExportService.ExportPlanAsync(plan).ConfigureAwait(false);
+                var result = await CompareSideBySideExportService.ExportPlanAsync(plan, CancellationToken.None).ConfigureAwait(false);
                 await SetStatusMessageAsync(result.Succeeded
                     ? "Side-by-side compare export completed: " + Path.GetFileName(result.Plan.OutputFilePath)
                     : "Side-by-side compare export failed: " + result.Message).ConfigureAwait(false);
@@ -3763,7 +3788,7 @@ namespace FramePlayer.Avalonia.Views
                     PanePrimaryLabel,
                     BuildReviewSessionSnapshot(Pane.Primary, _primaryEngine));
                 var plan = AudioInsertionService.CreatePlan(request);
-                var result = await AudioInsertionService.InsertPlanAsync(plan).ConfigureAwait(false);
+                var result = await AudioInsertionService.InsertPlanAsync(plan, CancellationToken.None).ConfigureAwait(false);
                 await SetStatusMessageAsync(result.Succeeded
                     ? "Audio track replaced: " + Path.GetFileName(result.Plan.OutputFilePath)
                     : "Audio insertion failed: " + result.Message).ConfigureAwait(false);
@@ -3825,7 +3850,11 @@ namespace FramePlayer.Avalonia.Views
             }
 
             var report = _diagnosticLogService.BuildReport(BuildDiagnosticsHeader());
-            await File.WriteAllTextAsync(resolvedOutputPath, report, new UTF8Encoding(false)).ConfigureAwait(false);
+            await File.WriteAllTextAsync(
+                resolvedOutputPath,
+                report,
+                new UTF8Encoding(false),
+                CancellationToken.None).ConfigureAwait(false);
             await SetStatusMessageAsync("Diagnostic report exported: " + Path.GetFileName(resolvedOutputPath)).ConfigureAwait(false);
             return resolvedOutputPath;
         }
