@@ -33,7 +33,29 @@ jobs:
           cargo --version
 
       - name: Check spelling
-        uses: crate-ci/typos@f8a58b6b53f2279f71eb605f03a4ae4d10608f45 # v1.47.0
+        shell: pwsh
+        run: |
+          $toolsDirectory = Join-Path $env:RUNNER_TEMP "frameplayer-typos"
+          $archivePath = Join-Path $toolsDirectory "typos.zip"
+          $extractPath = Join-Path $toolsDirectory "extracted"
+          $expectedHash = "8773b1b3029b1e149b7bd676785b065b236173a7509bc9ab19fa64e638ae989a"
+          New-Item -ItemType Directory -Force -Path $toolsDirectory | Out-Null
+          Invoke-WebRequest `
+              -Uri "https://github.com/crate-ci/typos/releases/download/v1.47.0/typos-v1.47.0-x86_64-pc-windows-msvc.zip" `
+              -OutFile $archivePath
+          $actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualHash -ne $expectedHash) {
+              throw "typos archive hash mismatch. Expected $expectedHash, got $actualHash."
+          }
+
+          Expand-Archive -LiteralPath $archivePath -DestinationPath $extractPath -Force
+          $typosExecutable = Get-ChildItem -LiteralPath $extractPath -Filter "typos.exe" -File -Recurse |
+              Select-Object -First 1
+          if ($null -eq $typosExecutable) {
+              throw "typos.exe was not found in the verified archive."
+          }
+
+          & $typosExecutable.FullName
 
       - name: Validate repository text and path casing
         shell: pwsh
