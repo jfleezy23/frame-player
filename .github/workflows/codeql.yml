@@ -1,0 +1,157 @@
+name: CodeQL
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: "31 9 * * 2"
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language:
+          - actions
+          - csharp
+          - rust
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup compatible Rust analysis toolchain
+        if: matrix.language == 'rust'
+        run: |
+          rustup toolchain install 1.94.1 --profile minimal --component rust-src
+          printf '%s\n' 'RUSTUP_TOOLCHAIN=1.94.1' >> "$GITHUB_ENV"
+          rustc +1.94.1 --version
+          cargo +1.94.1 --version
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          build-mode: none
+          languages: ${{ matrix.language }}
+
+      - name: Analyze
+        id: analyze
+        uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          category: "/language:${{ matrix.language }}"
+          upload: failure-only
+
+      - name: Enforce Rust extraction fidelity
+        if: matrix.language == 'rust'
+        env:
+          SARIF_DIRECTORY: ${{ steps.analyze.outputs.sarif-output }}
+        run: |
+          sarif_path="$(find "$SARIF_DIRECTORY" -type f -name '*.sarif' -print -quit)"
+          if [[ -z "$sarif_path" ]]; then
+            echo "CodeQL did not produce a Rust SARIF file." >&2
+            exit 1
+          fi
+
+          expected_files_path="$RUNNER_TEMP/codeql-expected-rust-files.txt"
+          git ls-files '*.rs' | sort > "$expected_files_path"
+          python3 - "$sarif_path" "$expected_files_path" <<'PY'
+          import json
+          import sys
+          from urllib.parse import unquote
+
+          sarif_path = sys.argv[1]
+          expected_files_path = sys.argv[2]
+          with open(sarif_path, encoding="utf-8") as sarif_stream:
+              sarif = json.load(sarif_stream)
+          with open(expected_files_path, encoding="utf-8") as expected_stream:
+              expected_paths = {
+                  unquote(line.strip()).replace("\\", "/")
+                  for line in expected_stream
+                  if line.strip()
+              }
+
+          metrics = {}
+          extraction_diagnostics = []
+          successful_paths = set()
+          for run in sarif.get("runs", []):
+              for metric in run.get("properties", {}).get("metricResults", []):
+                  rule_id = metric.get("ruleId") or metric.get("rule", {}).get("id")
+                  if rule_id:
+                      metrics.setdefault(rule_id, []).append(metric.get("value"))
+              for invocation in run.get("invocations", []):
+                  for notification in invocation.get("toolExecutionNotifications", []):
+                      descriptor_id = notification.get("descriptor", {}).get("id")
+                      if descriptor_id in {
+                          "rust/diagnostics/extraction-errors",
+                          "rust/diagnostics/extraction-warnings",
+                      }:
+                          extraction_diagnostics.append(descriptor_id)
+                      if descriptor_id == "rust/diagnostics/successfully-extracted-files":
+                          for location in notification.get("locations", []):
+                              uri = (
+                                  location.get("physicalLocation", {})
+                                  .get("artifactLocation", {})
+                                  .get("uri")
+                              )
+                              if uri:
+                                  normalized_uri = unquote(uri).replace("\\", "/")
+                                  while normalized_uri.startswith("./"):
+                                      normalized_uri = normalized_uri[2:]
+                                  successful_paths.add(normalized_uri)
+
+          expected_metrics = {
+              "rust/summary/number-of-files-extracted-with-errors": 0,
+              "rust/summary/number-of-successfully-extracted-files": len(expected_paths),
+          }
+          failures = [
+              f"{rule_id}: expected [{expected}], got {metrics.get(rule_id)!r}"
+              for rule_id, expected in expected_metrics.items()
+              if metrics.get(rule_id) != [expected]
+          ]
+          if extraction_diagnostics:
+              failures.append(
+                  "unexpected extraction diagnostics: "
+                  + ", ".join(sorted(extraction_diagnostics))
+              )
+          if successful_paths != expected_paths:
+              missing_paths = sorted(expected_paths - successful_paths)
+              unexpected_paths = sorted(successful_paths - expected_paths)
+              failures.append(
+                  "extracted file set mismatch; "
+                  f"missing={missing_paths!r}, unexpected={unexpected_paths!r}"
+              )
+          if failures:
+              raise SystemExit(
+                  "Rust CodeQL extraction fidelity check failed:\n- "
+                  + "\n- ".join(failures)
+              )
+
+          print(
+              f"Rust CodeQL extraction is complete: "
+              f"{len(expected_paths)}/{len(expected_paths)} tracked files without errors."
+          )
+          PY
+
+      - name: Upload CodeQL results
+        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          category: "/language:${{ matrix.language }}"
+          sarif_file: ${{ steps.analyze.outputs.sarif-output }}
