@@ -8,7 +8,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
@@ -405,41 +404,2285 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
-        public void PrimaryVideoSurface_RenderedFrameChangesWhenSameSizedBitmapUpdates()
+        public async Task ComparePlayback_PairsEarliestUnmatchedFramesAcrossTransportTransitions()
         {
-            _fixture.Run(() =>
+            await _fixture.RunAsync(async () =>
             {
-                var window = new MainWindow
-                {
-                    Width = 960,
-                    Height = 720
-                };
-
+                var window = new MainWindow();
                 try
                 {
-                    window.Show();
-                    var primarySurface = RequireControl<Image>(window, "CustomVideoSurface");
-                    using var firstFrame = CreateFrameBuffer(16, 16, red: 0xC0, green: 0x20, blue: 0x20);
-                    using var secondFrame = CreateFrameBuffer(16, 16, red: 0x20, green: 0xC0, blue: 0x20);
+                    var frameStep = TimeSpan.FromSeconds(1d / 30d);
+                    var mediaInfo = new VideoMediaInfo(
+                        "shared.mp4",
+                        TimeSpan.FromSeconds(10),
+                        frameStep,
+                        30d,
+                        3840,
+                        2160,
+                        "h264",
+                        0,
+                        30,
+                        1,
+                        1,
+                        90_000);
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        CurrentFilePath = "shared.mp4",
+                        MediaInfo = mediaInfo
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        CurrentFilePath = "shared.mp4",
+                        MediaInfo = mediaInfo
+                    };
 
-                    InvokePrivate(window, "SetPaneBitmap", ParsePane("Primary"), firstFrame);
-                    var firstColor = SampleRenderedSurfaceColor(window, primarySurface);
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+                    RequireControl<CheckBox>(window, "AllPanesCheckBox").IsChecked = true;
+                    await InvokePrivateTask(window, "StartAllPanePlaybackAsync", Type.EmptyTypes);
 
-                    InvokePrivate(window, "SetPaneBitmap", ParsePane("Primary"), secondFrame);
-                    var secondColor = SampleRenderedSurfaceColor(window, primarySurface);
+                    Assert.True(GetPrivateField<bool>(window, "_isSynchronizedFramePresentationActive"));
 
+                    var preSeekGeneration = GetPrivateField<long>(window, "_synchronizedFramePresentationGeneration");
+                    using var preSeekPrimary = CreateFrameBuffer(8, 4, TimeSpan.FromSeconds(9));
+                    InvokePrivate(
+                        window,
+                        "PrimaryEngine_FramePresented",
+                        null!,
+                        new FramePresentedEventArgs(preSeekPrimary));
+                    await InvokePrivateTask(
+                        window,
+                        "SeekAllPaneToTimesPreservingPlaybackAsync",
+                        new[] { typeof(TimeSpan), typeof(TimeSpan), typeof(CancellationToken) },
+                        TimeSpan.FromSeconds(1),
+                        TimeSpan.FromSeconds(1),
+                        CancellationToken.None);
+
+                    var postSeekGeneration = GetPrivateField<long>(window, "_synchronizedFramePresentationGeneration");
+                    Assert.True(postSeekGeneration > preSeekGeneration);
+                    Assert.Null(GetPrivateField<DecodedFrameBuffer>(window, "_pendingSynchronizedPrimaryFrame"));
+                    InvokePrivate(window, "PresentPendingSynchronizedFrames", preSeekGeneration);
+                    Assert.Null(GetPrivateField<DecodedFrameBuffer>(window, "_primaryFrameBuffer"));
+
+                    primaryEngine.IsPlaying = false;
+                    compareEngine.IsPlaying = false;
+                    var firstTime = TimeSpan.FromSeconds(1);
+                    using var firstPrimary = CreateFrameBuffer(8, 4, firstTime);
+                    using var firstCompare = CreateFrameBuffer(8, 4, firstTime);
+                    InvokePrivate(
+                        window,
+                        "PrimaryEngine_FramePresented",
+                        null!,
+                        new FramePresentedEventArgs(firstPrimary));
+                    InvokePrivate(
+                        window,
+                        "CompareEngine_FramePresented",
+                        null!,
+                        new FramePresentedEventArgs(firstCompare));
+                    InvokePrivate(
+                        window,
+                        "PresentPendingSynchronizedFrames",
+                        GetPrivateField<long>(window, "_synchronizedFramePresentationGeneration"));
+
+                    Assert.Equal(firstTime, GetPrivateField<DecodedFrameBuffer>(window, "_primaryFrameBuffer")!.Descriptor.PresentationTime);
+                    Assert.Equal(firstTime, GetPrivateField<DecodedFrameBuffer>(window, "_compareFrameBuffer")!.Descriptor.PresentationTime);
+
+                    var earliestPrimaryTime = TimeSpan.FromSeconds(2);
+                    var latestPrimaryTime = earliestPrimaryTime + frameStep;
+                    var latestCompareTime = latestPrimaryTime + TimeSpan.FromMilliseconds(5);
+                    using var earliestPrimary = CreateFrameBuffer(8, 4, earliestPrimaryTime);
+                    using var latestPrimary = CreateFrameBuffer(8, 4, latestPrimaryTime);
+                    using var earliestCompare = CreateFrameBuffer(8, 4, earliestPrimaryTime);
+                    using var latestCompare = CreateFrameBuffer(8, 4, latestCompareTime);
+                    InvokePrivate(
+                        window,
+                        "PrimaryEngine_FramePresented",
+                        null!,
+                        new FramePresentedEventArgs(earliestPrimary));
+                    InvokePrivate(
+                        window,
+                        "PrimaryEngine_FramePresented",
+                        null!,
+                        new FramePresentedEventArgs(latestPrimary));
+                    InvokePrivate(
+                        window,
+                        "CompareEngine_FramePresented",
+                        null!,
+                        new FramePresentedEventArgs(earliestCompare));
+                    InvokePrivate(
+                        window,
+                        "PresentPendingSynchronizedFrames",
+                        GetPrivateField<long>(window, "_synchronizedFramePresentationGeneration"));
+
+                    Assert.Equal(
+                        earliestPrimaryTime,
+                        GetPrivateField<DecodedFrameBuffer>(window, "_primaryFrameBuffer")!.Descriptor.PresentationTime);
+                    Assert.Equal(
+                        earliestPrimaryTime,
+                        GetPrivateField<DecodedFrameBuffer>(window, "_compareFrameBuffer")!.Descriptor.PresentationTime);
+
+                    InvokePrivate(
+                        window,
+                        "CompareEngine_FramePresented",
+                        null!,
+                        new FramePresentedEventArgs(latestCompare));
+                    InvokePrivate(
+                        window,
+                        "PrimaryEngine_FramePresented",
+                        null!,
+                        new FramePresentedEventArgs(latestPrimary));
+                    InvokePrivate(
+                        window,
+                        "PresentPendingSynchronizedFrames",
+                        GetPrivateField<long>(window, "_synchronizedFramePresentationGeneration"));
+
+                    var presentedPrimary = GetPrivateField<DecodedFrameBuffer>(window, "_primaryFrameBuffer")!;
+                    var presentedCompare = GetPrivateField<DecodedFrameBuffer>(window, "_compareFrameBuffer")!;
+                    Assert.Equal(latestPrimaryTime, presentedPrimary.Descriptor.PresentationTime);
+                    Assert.Equal(latestCompareTime, presentedCompare.Descriptor.PresentationTime);
                     Assert.True(
-                        secondColor.Green > firstColor.Green + 64,
-                        "The rendered video surface did not repaint after a same-sized playback bitmap update.");
+                        (presentedPrimary.Descriptor.PresentationTime - presentedCompare.Descriptor.PresentationTime).Duration() <
+                        frameStep);
+                    Assert.Null(GetPrivateField<DecodedFrameBuffer>(window, "_pendingSynchronizedPrimaryFrame"));
+                    Assert.Null(GetPrivateField<DecodedFrameBuffer>(window, "_pendingSynchronizedCompareFrame"));
+
+                    InvokePrivate(
+                        window,
+                        "PaneStepForwardButton_Click",
+                        RequireControl<Button>(window, "PrimaryPaneStepForwardButton"),
+                        new RoutedEventArgs());
+                    Assert.False(GetPrivateField<bool>(window, "_isSynchronizedFramePresentationActive"));
+
+                    primaryEngine.IsPlaying = true;
+                    compareEngine.IsPlaying = true;
+                    primaryEngine.Position = new ReviewPosition(TimeSpan.FromSeconds(3), null, false, false, null, null);
+                    compareEngine.Position = new ReviewPosition(TimeSpan.FromSeconds(4), null, false, false, null, null);
+                    var allPanesCheckBox = RequireControl<CheckBox>(window, "AllPanesCheckBox");
+                    allPanesCheckBox.IsChecked = false;
+                    allPanesCheckBox.IsChecked = true;
+                    await (GetPrivateField<Task>(
+                        window,
+                        "_allPanesSelectionChangeTask")
+                        ?? throw new InvalidOperationException(
+                            "Missing all-pane selection change task."));
+                    Assert.True(GetPrivateField<bool>(window, "_isSynchronizedFramePresentationActive"));
+                    Assert.True(primaryEngine.PauseCallCount >= 2);
+                    Assert.True(compareEngine.PauseCallCount >= 2);
+                    Assert.True(primaryEngine.SeekToTimeCallCount >= 2);
+                    Assert.True(compareEngine.SeekToTimeCallCount >= 2);
+
+                    await InvokePrivateTask(
+                        window,
+                        "PausePlaybackAsync",
+                        new[] { typeof(bool), typeof(SynchronizedOperationScope?) },
+                        true,
+                        (SynchronizedOperationScope?)SynchronizedOperationScope.AllPanes);
+                    Assert.False(GetPrivateField<bool>(window, "_isSynchronizedFramePresentationActive"));
+
+                    primaryEngine.IsPlaying = true;
+                    compareEngine.IsPlaying = false;
+                    await InvokePrivateTask(
+                        window,
+                        "SeekAllPaneToTimesPreservingPlaybackAsync",
+                        new[] { typeof(TimeSpan), typeof(TimeSpan), typeof(CancellationToken) },
+                        TimeSpan.FromSeconds(5),
+                        TimeSpan.FromSeconds(5),
+                        CancellationToken.None);
+                    Assert.True(primaryEngine.IsPlaying);
+                    Assert.False(compareEngine.IsPlaying);
+                    Assert.False(GetPrivateField<bool>(window, "_isSynchronizedFramePresentationActive"));
+
+                    primaryEngine.IsPlaying = true;
+                    compareEngine.IsPlaying = true;
+                    var primaryPlayCount = primaryEngine.PlayCallCount;
+                    var comparePlayCount = compareEngine.PlayCallCount;
+                    var delayedResume = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    primaryEngine.PlayCompletion = delayedResume;
+                    compareEngine.PlayCompletion = delayedResume;
+                    var staleSeekTask = InvokePrivateTask(
+                        window,
+                        "SeekAllPaneToTimesPreservingPlaybackAsync",
+                        new[] { typeof(TimeSpan), typeof(TimeSpan), typeof(CancellationToken) },
+                        TimeSpan.FromSeconds(6),
+                        TimeSpan.FromSeconds(6),
+                        CancellationToken.None);
                     Assert.True(
-                        firstColor.Red > secondColor.Red + 64,
-                        "The rendered video surface did not replace the first frame's visible pixels.");
+                        SpinWait.SpinUntil(
+                            () => primaryEngine.PlayCallCount > primaryPlayCount &&
+                                compareEngine.PlayCallCount > comparePlayCount,
+                            TimeSpan.FromSeconds(2)),
+                        "The delayed shared-seek resume did not start both panes.");
+
+                    var queuedPauseTask = InvokePrivateTask(
+                        window,
+                        "PausePlaybackAsync",
+                        new[] { typeof(bool), typeof(SynchronizedOperationScope?) },
+                        true,
+                        (SynchronizedOperationScope?)SynchronizedOperationScope.AllPanes);
+                    delayedResume.TrySetResult(true);
+                    await Task.WhenAll(staleSeekTask, queuedPauseTask);
+                    primaryEngine.PlayCompletion = null;
+                    compareEngine.PlayCompletion = null;
+
+                    Assert.False(primaryEngine.IsPlaying);
+                    Assert.False(compareEngine.IsPlaying);
+                    Assert.False(GetPrivateField<bool>(window, "_isSynchronizedFramePresentationActive"));
+
+                    primaryEngine.IsPlaying = true;
+                    compareEngine.IsPlaying = true;
+                    var primarySeekCount = primaryEngine.SeekToTimeCallCount;
+                    var compareSeekCount = compareEngine.SeekToTimeCallCount;
+                    var firstSeekDelay = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    primaryEngine.SeekTimeCompletion = firstSeekDelay;
+                    compareEngine.SeekTimeCompletion = firstSeekDelay;
+                    var firstSeek = InvokePrivateTask(
+                        window,
+                        "SeekAllPaneToTimesPreservingPlaybackAsync",
+                        new[] { typeof(TimeSpan), typeof(TimeSpan), typeof(CancellationToken) },
+                        TimeSpan.FromSeconds(7),
+                        TimeSpan.FromSeconds(7),
+                        CancellationToken.None);
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => primaryEngine.SeekToTimeCallCount > primarySeekCount &&
+                                compareEngine.SeekToTimeCallCount > compareSeekCount,
+                            TimeSpan.FromSeconds(2)),
+                        "The first serialized shared seek did not reach both engines.");
+
+                    primaryEngine.SeekTimeCompletion = null;
+                    compareEngine.SeekTimeCompletion = null;
+                    var secondSeek = InvokePrivateTask(
+                        window,
+                        "SeekAllPaneToTimesPreservingPlaybackAsync",
+                        new[] { typeof(TimeSpan), typeof(TimeSpan), typeof(CancellationToken) },
+                        TimeSpan.FromSeconds(8),
+                        TimeSpan.FromSeconds(8),
+                        CancellationToken.None);
+                    firstSeekDelay.TrySetResult(true);
+                    await Task.WhenAll(firstSeek, secondSeek);
+
+                    Assert.True(primaryEngine.IsPlaying);
+                    Assert.True(compareEngine.IsPlaying);
+                    Assert.True(GetPrivateField<bool>(window, "_isSynchronizedFramePresentationActive"));
+
+                    await InvokePrivateTask(
+                        window,
+                        "PausePlaybackAsync",
+                        new[] { typeof(bool), typeof(SynchronizedOperationScope?) },
+                        true,
+                        (SynchronizedOperationScope?)SynchronizedOperationScope.AllPanes);
                 }
                 finally
                 {
                     window.Close();
                 }
             });
+        }
+
+        [Fact]
+        public async Task ComparePlayback_SynchronizedPresentationPreservesPausedPaneOffset()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var frameStep = TimeSpan.FromSeconds(1d / 30d);
+                    var mediaInfo = new VideoMediaInfo(
+                        "offset.mp4",
+                        TimeSpan.FromSeconds(10),
+                        frameStep,
+                        30d,
+                        1920,
+                        1080,
+                        "h264",
+                        0,
+                        30,
+                        1,
+                        1,
+                        90_000);
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        MediaInfo = mediaInfo,
+                        Position = new ReviewPosition(
+                            TimeSpan.FromSeconds(2),
+                            null,
+                            false,
+                            false,
+                            null,
+                            null)
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        MediaInfo = mediaInfo,
+                        Position = new ReviewPosition(
+                            TimeSpan.FromSeconds(5),
+                            null,
+                            false,
+                            false,
+                            null,
+                            null)
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+                    RequireControl<CheckBox>(window, "AllPanesCheckBox").IsChecked = true;
+                    await (GetPrivateField<Task>(
+                        window,
+                        "_allPanesSelectionChangeTask")
+                        ?? throw new InvalidOperationException(
+                            "Missing all-pane selection change task."));
+
+                    await InvokePrivateTask(window, "StartAllPanePlaybackAsync", Type.EmptyTypes);
+
+                    Assert.True(GetPrivateField<bool>(
+                        window,
+                        "_isSynchronizedFramePresentationActive"));
+                    Assert.Equal(
+                        TimeSpan.FromSeconds(-3),
+                        GetPrivateField<TimeSpan>(
+                            window,
+                            "_synchronizedFramePresentationTimeOffset"));
+                    Assert.Equal(0, primaryEngine.SeekToTimeCallCount);
+                    Assert.Equal(0, compareEngine.SeekToTimeCallCount);
+
+                    using var firstPrimary = CreateFrameBuffer(
+                        8,
+                        4,
+                        TimeSpan.FromSeconds(2.2));
+                    using var firstCompare = CreateFrameBuffer(
+                        8,
+                        4,
+                        TimeSpan.FromSeconds(5.2));
+                    InvokePrivate(
+                        window,
+                        "PrimaryEngine_FramePresented",
+                        null!,
+                        new FramePresentedEventArgs(firstPrimary));
+                    InvokePrivate(
+                        window,
+                        "CompareEngine_FramePresented",
+                        null!,
+                        new FramePresentedEventArgs(firstCompare));
+                    InvokePrivate(
+                        window,
+                        "PresentPendingSynchronizedFrames",
+                        GetPrivateField<long>(
+                            window,
+                            "_synchronizedFramePresentationGeneration"));
+
+                    Assert.Equal(
+                        TimeSpan.FromSeconds(2.2),
+                        GetPrivateField<DecodedFrameBuffer>(
+                            window,
+                            "_primaryFrameBuffer")!.Descriptor.PresentationTime);
+                    Assert.Equal(
+                        TimeSpan.FromSeconds(5.2),
+                        GetPrivateField<DecodedFrameBuffer>(
+                            window,
+                            "_compareFrameBuffer")!.Descriptor.PresentationTime);
+
+                    await InvokePrivateTask(
+                        window,
+                        "SeekAllPaneRelativePreservingPlaybackAsync",
+                        new[] { typeof(TimeSpan) },
+                        TimeSpan.FromSeconds(1));
+
+                    Assert.Equal(
+                        TimeSpan.FromSeconds(3),
+                        primaryEngine.Position.PresentationTime);
+                    Assert.Equal(
+                        TimeSpan.FromSeconds(6),
+                        compareEngine.Position.PresentationTime);
+                    Assert.Equal(
+                        TimeSpan.FromSeconds(-3),
+                        GetPrivateField<TimeSpan>(
+                            window,
+                            "_synchronizedFramePresentationTimeOffset"));
+                    Assert.True(GetPrivateField<bool>(
+                        window,
+                        "_isSynchronizedFramePresentationActive"));
+
+                    using var secondPrimary = CreateFrameBuffer(
+                        8,
+                        4,
+                        TimeSpan.FromSeconds(3.2));
+                    using var secondCompare = CreateFrameBuffer(
+                        8,
+                        4,
+                        TimeSpan.FromSeconds(6.2));
+                    InvokePrivate(
+                        window,
+                        "PrimaryEngine_FramePresented",
+                        null!,
+                        new FramePresentedEventArgs(secondPrimary));
+                    InvokePrivate(
+                        window,
+                        "CompareEngine_FramePresented",
+                        null!,
+                        new FramePresentedEventArgs(secondCompare));
+                    InvokePrivate(
+                        window,
+                        "PresentPendingSynchronizedFrames",
+                        GetPrivateField<long>(
+                            window,
+                            "_synchronizedFramePresentationGeneration"));
+
+                    Assert.Equal(
+                        TimeSpan.FromSeconds(3.2),
+                        GetPrivateField<DecodedFrameBuffer>(
+                            window,
+                            "_primaryFrameBuffer")!.Descriptor.PresentationTime);
+                    Assert.Equal(
+                        TimeSpan.FromSeconds(6.2),
+                        GetPrivateField<DecodedFrameBuffer>(
+                            window,
+                            "_compareFrameBuffer")!.Descriptor.PresentationTime);
+
+                    await InvokePrivateTask(
+                        window,
+                        "PausePlaybackAsync",
+                        new[] { typeof(bool), typeof(SynchronizedOperationScope?) },
+                        true,
+                        (SynchronizedOperationScope?)SynchronizedOperationScope.AllPanes);
+                    await InvokePrivateTask(
+                        window,
+                        "SeekAllPaneToTimesPreservingPlaybackAsync",
+                        new[] { typeof(TimeSpan), typeof(TimeSpan), typeof(CancellationToken) },
+                        TimeSpan.FromSeconds(4),
+                        TimeSpan.FromSeconds(4),
+                        CancellationToken.None);
+
+                    Assert.Equal(
+                        TimeSpan.Zero,
+                        GetPrivateField<TimeSpan>(
+                            window,
+                            "_synchronizedFramePresentationTimeOffset"));
+                    using var equalTimePrimary = CreateFrameBuffer(
+                        8,
+                        4,
+                        TimeSpan.FromSeconds(4));
+                    using var equalTimeCompare = CreateFrameBuffer(
+                        8,
+                        4,
+                        TimeSpan.FromSeconds(4));
+                    InvokePrivate(
+                        window,
+                        "PrimaryEngine_FramePresented",
+                        null!,
+                        new FramePresentedEventArgs(equalTimePrimary));
+                    InvokePrivate(
+                        window,
+                        "CompareEngine_FramePresented",
+                        null!,
+                        new FramePresentedEventArgs(equalTimeCompare));
+                    InvokePrivate(
+                        window,
+                        "PresentPendingSynchronizedFrames",
+                        GetPrivateField<long>(
+                            window,
+                            "_synchronizedFramePresentationGeneration"));
+
+                    Assert.Equal(
+                        TimeSpan.FromSeconds(4),
+                        GetPrivateField<DecodedFrameBuffer>(
+                            window,
+                            "_primaryFrameBuffer")!.Descriptor.PresentationTime);
+                    Assert.Equal(
+                        TimeSpan.FromSeconds(4),
+                        GetPrivateField<DecodedFrameBuffer>(
+                            window,
+                            "_compareFrameBuffer")!.Descriptor.PresentationTime);
+
+                    primaryEngine.Position = new ReviewPosition(
+                        TimeSpan.FromSeconds(1),
+                        null,
+                        false,
+                        false,
+                        null,
+                        null);
+                    compareEngine.Position = new ReviewPosition(
+                        TimeSpan.FromSeconds(5),
+                        null,
+                        false,
+                        false,
+                        null,
+                        null);
+                    await InvokePrivateTask(
+                        window,
+                        "SeekAllPaneToFramePreservingPlaybackAsync",
+                        new[] { typeof(long) },
+                        90L);
+
+                    Assert.True(GetPrivateField<bool>(
+                        window,
+                        "_captureSynchronizedFramePresentationTimeOffset"));
+                    using var sameFramePrimary = CreateFrameBuffer(
+                        8,
+                        4,
+                        TimeSpan.FromSeconds(3));
+                    using var sameFrameCompare = CreateFrameBuffer(
+                        8,
+                        4,
+                        TimeSpan.FromSeconds(5));
+                    InvokePrivate(
+                        window,
+                        "PrimaryEngine_FramePresented",
+                        null!,
+                        new FramePresentedEventArgs(sameFramePrimary));
+                    InvokePrivate(
+                        window,
+                        "CompareEngine_FramePresented",
+                        null!,
+                        new FramePresentedEventArgs(sameFrameCompare));
+                    InvokePrivate(
+                        window,
+                        "PresentPendingSynchronizedFrames",
+                        GetPrivateField<long>(
+                            window,
+                            "_synchronizedFramePresentationGeneration"));
+
+                    Assert.False(GetPrivateField<bool>(
+                        window,
+                        "_captureSynchronizedFramePresentationTimeOffset"));
+                    Assert.Equal(
+                        TimeSpan.FromSeconds(-2),
+                        GetPrivateField<TimeSpan>(
+                            window,
+                            "_synchronizedFramePresentationTimeOffset"));
+                    Assert.Equal(
+                        TimeSpan.FromSeconds(3),
+                        GetPrivateField<DecodedFrameBuffer>(
+                            window,
+                            "_primaryFrameBuffer")!.Descriptor.PresentationTime);
+                    Assert.Equal(
+                        TimeSpan.FromSeconds(5),
+                        GetPrivateField<DecodedFrameBuffer>(
+                            window,
+                            "_compareFrameBuffer")!.Descriptor.PresentationTime);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task ComparePlayback_MultiStepAllPaneCommandPresentsFinalPair()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var primaryFrameStep = TimeSpan.FromSeconds(1d / 24d);
+                    var compareFrameStep = TimeSpan.FromSeconds(1d / 30d);
+                    var primaryStart = TimeSpan.FromSeconds(2);
+                    var compareStart = TimeSpan.FromSeconds(5);
+                    var primaryMediaInfo = new VideoMediaInfo(
+                        "multi-step-primary.mp4",
+                        TimeSpan.FromSeconds(30),
+                        primaryFrameStep,
+                        24d,
+                        1920,
+                        1080,
+                        "h264",
+                        0,
+                        24,
+                        1,
+                        1,
+                        90_000);
+                    var compareMediaInfo = new VideoMediaInfo(
+                        "multi-step-compare.mp4",
+                        TimeSpan.FromSeconds(30),
+                        compareFrameStep,
+                        30d,
+                        1920,
+                        1080,
+                        "h264",
+                        0,
+                        30,
+                        1,
+                        1,
+                        90_000);
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        MediaInfo = primaryMediaInfo,
+                        Position = new ReviewPosition(
+                            primaryStart,
+                            null,
+                            false,
+                            false,
+                            null,
+                            null)
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        MediaInfo = compareMediaInfo,
+                        Position = new ReviewPosition(
+                            compareStart,
+                            null,
+                            false,
+                            false,
+                            null,
+                            null)
+                    };
+                    primaryEngine.StepForwarded = step =>
+                    {
+                        using var frame = CreateFrameBuffer(
+                            8,
+                            4,
+                            primaryStart +
+                                TimeSpan.FromTicks(
+                                    primaryFrameStep.Ticks * step));
+                        InvokePrivate(
+                            window,
+                            "PrimaryEngine_FramePresented",
+                            null!,
+                            new FramePresentedEventArgs(frame));
+                    };
+                    compareEngine.StepForwarded = step =>
+                    {
+                        using var frame = CreateFrameBuffer(
+                            8,
+                            4,
+                            compareStart +
+                                TimeSpan.FromTicks(
+                                    compareFrameStep.Ticks * step));
+                        InvokePrivate(
+                            window,
+                            "CompareEngine_FramePresented",
+                            null!,
+                            new FramePresentedEventArgs(frame));
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+                    RequireControl<CheckBox>(window, "AllPanesCheckBox").IsChecked = true;
+                    await (GetPrivateField<Task>(
+                        window,
+                        "_allPanesSelectionChangeTask")
+                        ?? throw new InvalidOperationException(
+                            "Missing all-pane selection change task."));
+
+                    await InvokePrivateTask(
+                        window,
+                        "StepFrameAsync",
+                        new[] { typeof(int) },
+                        10);
+                    InvokePrivate(
+                        window,
+                        "PresentPendingSynchronizedFrames",
+                        GetPrivateField<long>(
+                            window,
+                            "_synchronizedFramePresentationGeneration"));
+
+                    var expectedPrimary =
+                        primaryStart +
+                        TimeSpan.FromTicks(primaryFrameStep.Ticks * 10);
+                    var expectedCompare =
+                        compareStart +
+                        TimeSpan.FromTicks(compareFrameStep.Ticks * 10);
+                    Assert.Equal(10, primaryEngine.StepForwardCallCount);
+                    Assert.Equal(10, compareEngine.StepForwardCallCount);
+                    Assert.Equal(
+                        expectedPrimary,
+                        GetPrivateField<DecodedFrameBuffer>(
+                            window,
+                            "_primaryFrameBuffer")!.Descriptor.PresentationTime);
+                    Assert.Equal(
+                        expectedCompare,
+                        GetPrivateField<DecodedFrameBuffer>(
+                            window,
+                            "_compareFrameBuffer")!.Descriptor.PresentationTime);
+                    Assert.Equal(
+                        expectedPrimary - expectedCompare,
+                        GetPrivateField<TimeSpan>(
+                            window,
+                            "_synchronizedFramePresentationTimeOffset"));
+                    Assert.False(GetPrivateField<bool>(
+                        window,
+                        "_isSynchronizedFramePresentationDeferred"));
+                    Assert.Null(GetPrivateField<DecodedFrameBuffer>(
+                        window,
+                        "_pendingSynchronizedPrimaryFrame"));
+                    Assert.Null(GetPrivateField<DecodedFrameBuffer>(
+                        window,
+                        "_pendingSynchronizedCompareFrame"));
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Theory]
+        [InlineData(1)]
+        [InlineData(-1)]
+        public async Task ComparePlayback_AllPaneBoundaryStepPresentsStationaryAndAdvancedFrames(
+            int delta)
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var frameStep = TimeSpan.FromSeconds(1d / 30d);
+                    var primaryTime = delta > 0
+                        ? TimeSpan.FromSeconds(10)
+                        : TimeSpan.Zero;
+                    var compareTime = TimeSpan.FromSeconds(5);
+                    var mediaInfo = new VideoMediaInfo(
+                        "boundary-step.mp4",
+                        TimeSpan.FromSeconds(10),
+                        frameStep,
+                        30d,
+                        1920,
+                        1080,
+                        "h264",
+                        0,
+                        30,
+                        1,
+                        1,
+                        90_000);
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        MediaInfo = mediaInfo,
+                        Position = new ReviewPosition(
+                            primaryTime,
+                            null,
+                            false,
+                            false,
+                            null,
+                            null)
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        MediaInfo = mediaInfo,
+                        Position = new ReviewPosition(
+                            compareTime,
+                            null,
+                            false,
+                            false,
+                            null,
+                            null)
+                    };
+                    Action<int> emitCompareFrame = _ =>
+                    {
+                        using var frame = CreateFrameBuffer(
+                            8,
+                            4,
+                            compareTime +
+                                TimeSpan.FromTicks(frameStep.Ticks * delta));
+                        InvokePrivate(
+                            window,
+                            "CompareEngine_FramePresented",
+                            null!,
+                            new FramePresentedEventArgs(frame));
+                    };
+                    if (delta > 0)
+                    {
+                        compareEngine.StepForwarded = emitCompareFrame;
+                    }
+                    else
+                    {
+                        compareEngine.StepBackwarded = emitCompareFrame;
+                    }
+
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+                    RequireControl<CheckBox>(window, "AllPanesCheckBox").IsChecked = true;
+                    await (GetPrivateField<Task>(
+                        window,
+                        "_allPanesSelectionChangeTask")
+                        ?? throw new InvalidOperationException(
+                            "Missing all-pane selection change task."));
+
+                    using var initialPrimary = CreateFrameBuffer(
+                        8,
+                        4,
+                        primaryTime);
+                    using var initialCompare = CreateFrameBuffer(
+                        8,
+                        4,
+                        compareTime);
+                    InvokePrivate(
+                        window,
+                        "SetPaneBitmap",
+                        ParsePane("Primary"),
+                        initialPrimary);
+                    InvokePrivate(
+                        window,
+                        "SetPaneBitmap",
+                        ParsePane("Compare"),
+                        initialCompare);
+
+                    await InvokePrivateTask(
+                        window,
+                        "StepFrameAsync",
+                        new[] { typeof(int) },
+                        delta);
+                    InvokePrivate(
+                        window,
+                        "PresentPendingSynchronizedFrames",
+                        GetPrivateField<long>(
+                            window,
+                            "_synchronizedFramePresentationGeneration"));
+
+                    Assert.Equal(
+                        primaryTime,
+                        GetPrivateField<DecodedFrameBuffer>(
+                            window,
+                            "_primaryFrameBuffer")!.Descriptor.PresentationTime);
+                    Assert.Equal(
+                        compareTime +
+                            TimeSpan.FromTicks(frameStep.Ticks * delta),
+                        GetPrivateField<DecodedFrameBuffer>(
+                            window,
+                            "_compareFrameBuffer")!.Descriptor.PresentationTime);
+                    Assert.Equal(
+                        delta > 0 ? 1 : 0,
+                        primaryEngine.StepForwardCallCount);
+                    Assert.Equal(
+                        delta < 0 ? 1 : 0,
+                        primaryEngine.StepBackwardCallCount);
+                    Assert.Null(GetPrivateField<DecodedFrameBuffer>(
+                        window,
+                        "_pendingSynchronizedPrimaryFrame"));
+                    Assert.Null(GetPrivateField<DecodedFrameBuffer>(
+                        window,
+                        "_pendingSynchronizedCompareFrame"));
+                    Assert.False(GetPrivateField<bool>(
+                        window,
+                        "_isSynchronizedFramePresentationDeferred"));
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task ComparePlayback_SharedSeekPresentsTargetFramesOnlyAsAPair()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var seekCompletion = new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                try
+                {
+                    var frameStep = TimeSpan.FromSeconds(1d / 30d);
+                    var mediaInfo = new VideoMediaInfo(
+                        "shared.mp4",
+                        TimeSpan.FromSeconds(10),
+                        frameStep,
+                        30d,
+                        1920,
+                        1080,
+                        "h264",
+                        0,
+                        30,
+                        1,
+                        1,
+                        90_000);
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        MediaInfo = mediaInfo,
+                        SeekTimeCompletion = seekCompletion
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        MediaInfo = mediaInfo,
+                        SeekTimeCompletion = seekCompletion
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+                    RequireControl<CheckBox>(window, "AllPanesCheckBox").IsChecked = true;
+
+                    var sharedSeek = InvokePrivateTask(
+                        window,
+                        "SeekAllPaneToTimesPreservingPlaybackAsync",
+                        new[] { typeof(TimeSpan), typeof(TimeSpan), typeof(CancellationToken) },
+                        TimeSpan.FromSeconds(2),
+                        TimeSpan.FromSeconds(2),
+                        CancellationToken.None);
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => primaryEngine.SeekToTimeCallCount == 1 &&
+                                compareEngine.SeekToTimeCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "The shared seek did not reach both engines.");
+                    Assert.True(GetPrivateField<bool>(window, "_isSynchronizedFramePresentationActive"));
+
+                    var target = TimeSpan.FromSeconds(2);
+                    using var primaryFrame = CreateFrameBuffer(8, 4, target);
+                    using var compareFrame = CreateFrameBuffer(8, 4, target);
+                    InvokePrivate(
+                        window,
+                        "PrimaryEngine_FramePresented",
+                        null!,
+                        new FramePresentedEventArgs(primaryFrame));
+                    InvokePrivate(
+                        window,
+                        "PresentPendingSynchronizedFrames",
+                        GetPrivateField<long>(window, "_synchronizedFramePresentationGeneration"));
+
+                    Assert.Null(GetPrivateField<DecodedFrameBuffer>(window, "_primaryFrameBuffer"));
+                    Assert.Null(GetPrivateField<DecodedFrameBuffer>(window, "_compareFrameBuffer"));
+
+                    InvokePrivate(
+                        window,
+                        "CompareEngine_FramePresented",
+                        null!,
+                        new FramePresentedEventArgs(compareFrame));
+                    InvokePrivate(
+                        window,
+                        "PresentPendingSynchronizedFrames",
+                        GetPrivateField<long>(window, "_synchronizedFramePresentationGeneration"));
+
+                    Assert.Equal(
+                        target,
+                        GetPrivateField<DecodedFrameBuffer>(window, "_primaryFrameBuffer")!.Descriptor.PresentationTime);
+                    Assert.Equal(
+                        target,
+                        GetPrivateField<DecodedFrameBuffer>(window, "_compareFrameBuffer")!.Descriptor.PresentationTime);
+
+                    seekCompletion.TrySetResult(true);
+                    await sharedSeek;
+                    Assert.True(GetPrivateField<bool>(window, "_isSynchronizedFramePresentationActive"));
+                }
+                finally
+                {
+                    seekCompletion.TrySetResult(true);
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public void ComparePlayback_IndividualFrameQueuedBeforeSyncCannotLandAfterTransition()
+        {
+            _fixture.Run(() =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    using var frame = CreateFrameBuffer(8, 4, TimeSpan.FromSeconds(1));
+                    InvokePrivate(
+                        window,
+                        "QueueFramePresentation",
+                        ParsePane("Primary"),
+                        frame);
+                    SetPrivateField(window, "_isSynchronizedFramePresentationActive", true);
+                    SetPrivateField(
+                        window,
+                        "_synchronizedFramePresentationGeneration",
+                        GetPrivateField<long>(window, "_synchronizedFramePresentationGeneration") + 1L);
+
+                    InvokePrivate(window, "PresentPendingFrame", ParsePane("Primary"));
+
+                    Assert.Null(GetPrivateField<DecodedFrameBuffer>(window, "_primaryFrameBuffer"));
+                    Assert.Null(RequireControl<Image>(window, "CustomVideoSurface").Source);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public void ComparePlayback_StaleSyncTeardownCannotDisableNewerPresentationGeneration()
+        {
+            _fixture.Run(() =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var staleTransportGeneration = (int)InvokePrivate(
+                        window,
+                        "BeginAllPaneTransportIntent");
+                    var currentTransportGeneration = (int)InvokePrivate(
+                        window,
+                        "BeginAllPaneTransportIntent");
+
+                    Assert.True((bool)InvokePrivate(
+                        window,
+                        "TryBeginSynchronizedFramePresentation",
+                        currentTransportGeneration));
+                    var presentationGeneration = GetPrivateField<long>(
+                        window,
+                        "_synchronizedFramePresentationGeneration");
+                    var endPresentation = typeof(MainWindow).GetMethod(
+                        "EndSynchronizedFramePresentation",
+                        BindingFlags.Instance | BindingFlags.NonPublic,
+                        binder: null,
+                        types: new[] { typeof(int) },
+                        modifiers: null)
+                        ?? throw new MissingMethodException(
+                            typeof(MainWindow).FullName,
+                            "EndSynchronizedFramePresentation(Int32)");
+
+                    endPresentation.Invoke(window, new object[] { staleTransportGeneration });
+
+                    Assert.Equal(
+                        currentTransportGeneration,
+                        GetPrivateField<int>(window, "_allPaneTransportIntentGeneration"));
+                    Assert.Equal(
+                        presentationGeneration,
+                        GetPrivateField<long>(window, "_synchronizedFramePresentationGeneration"));
+                    Assert.True(GetPrivateField<bool>(
+                        window,
+                        "_isSynchronizedFramePresentationActive"));
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task ComparePlayback_AllPaneStartInvalidatesQueuedLoopRestartsBeforeWaiting()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var operationGate = GetPrivateField<SemaphoreSlim>(
+                    window,
+                    "_allPaneTransportOperationGate")
+                    ?? throw new InvalidOperationException("Missing all-pane transport operation gate.");
+                var operationGateHeld = false;
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine { IsMediaOpen = true };
+                    var compareEngine = new TestVideoReviewEngine { IsMediaOpen = true };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_isCompareModeSelected", true);
+                    SetPrivateField(window, "_isAllPaneTransportSelected", true);
+                    SetPrivateField(window, "_isPrimaryLoopPlaybackEnabled", true);
+                    SetPrivateField(window, "_isCompareLoopPlaybackEnabled", true);
+                    var primaryPane = ParsePane("Primary");
+                    var comparePane = ParsePane("Compare");
+                    var stalePrimaryLoopGeneration = GetPrivateField<int>(
+                        window,
+                        "_primaryLoopRestartGeneration");
+                    var staleCompareLoopGeneration = GetPrivateField<int>(
+                        window,
+                        "_compareLoopRestartGeneration");
+
+                    await operationGate.WaitAsync();
+                    operationGateHeld = true;
+                    var queuedStart = InvokePrivateTask(
+                        window,
+                        "StartAllPanePlaybackAsync",
+                        Type.EmptyTypes);
+
+                    Assert.NotEqual(
+                        stalePrimaryLoopGeneration,
+                        GetPrivateField<int>(window, "_primaryLoopRestartGeneration"));
+                    Assert.NotEqual(
+                        staleCompareLoopGeneration,
+                        GetPrivateField<int>(window, "_compareLoopRestartGeneration"));
+                    Assert.False((bool)InvokePrivate(
+                        window,
+                        "CanContinueLoopRestart",
+                        primaryPane,
+                        primaryEngine,
+                        stalePrimaryLoopGeneration));
+                    Assert.False((bool)InvokePrivate(
+                        window,
+                        "CanContinueLoopRestart",
+                        comparePane,
+                        compareEngine,
+                        staleCompareLoopGeneration));
+                    Assert.False(queuedStart.IsCompleted);
+
+                    operationGate.Release();
+                    operationGateHeld = false;
+                    await queuedStart;
+
+                    Assert.Equal(1, primaryEngine.PlayCallCount);
+                    Assert.Equal(1, compareEngine.PlayCallCount);
+                    Assert.True(primaryEngine.IsPlaying);
+                    Assert.True(compareEngine.IsPlaying);
+                }
+                finally
+                {
+                    if (operationGateHeld)
+                    {
+                        operationGate.Release();
+                    }
+
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task ComparePlayback_DisablingAllPanesCancelsQueuedSharedStart()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var operationGate = GetPrivateField<SemaphoreSlim>(
+                    window,
+                    "_allPaneTransportOperationGate")
+                    ?? throw new InvalidOperationException("Missing all-pane transport operation gate.");
+                var operationGateHeld = false;
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine { IsMediaOpen = true };
+                    var compareEngine = new TestVideoReviewEngine { IsMediaOpen = true };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_isCompareModeSelected", true);
+                    var allPanesCheckBox = RequireControl<CheckBox>(
+                        window,
+                        "AllPanesCheckBox");
+                    Assert.True(allPanesCheckBox.IsChecked);
+
+                    await operationGate.WaitAsync();
+                    operationGateHeld = true;
+                    var queuedStart = InvokePrivateTask(
+                        window,
+                        "StartAllPanePlaybackAsync",
+                        Type.EmptyTypes);
+                    var queuedGeneration = GetPrivateField<int>(
+                        window,
+                        "_allPaneTransportIntentGeneration");
+                    Assert.False(queuedStart.IsCompleted);
+
+                    allPanesCheckBox.IsChecked = false;
+
+                    Assert.False(GetPrivateField<bool>(
+                        window,
+                        "_isAllPaneTransportSelected"));
+                    Assert.NotEqual(
+                        queuedGeneration,
+                        GetPrivateField<int>(window, "_allPaneTransportIntentGeneration"));
+
+                    operationGate.Release();
+                    operationGateHeld = false;
+                    await queuedStart;
+                    await (GetPrivateField<Task>(
+                        window,
+                        "_allPanesSelectionChangeTask")
+                        ?? throw new InvalidOperationException(
+                            "Missing all-pane selection change task."));
+
+                    Assert.Equal(0, primaryEngine.PlayCallCount);
+                    Assert.Equal(0, compareEngine.PlayCallCount);
+                    Assert.False(primaryEngine.IsPlaying);
+                    Assert.False(compareEngine.IsPlaying);
+                }
+                finally
+                {
+                    if (operationGateHeld)
+                    {
+                        operationGate.Release();
+                    }
+
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task ComparePlayback_DisablingAllPanesPreservesInFlightSeekResume()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var seekCompletion = new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        SeekTimeCompletion = seekCompletion
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        SeekTimeCompletion = seekCompletion
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_isCompareModeSelected", true);
+                    SetPrivateField(window, "_isAllPaneTransportSelected", true);
+                    var delayedSeek = InvokePrivateTask(
+                        window,
+                        "SeekAllPaneToTimesPreservingPlaybackAsync",
+                        new[] { typeof(TimeSpan), typeof(TimeSpan), typeof(CancellationToken) },
+                        TimeSpan.FromSeconds(1),
+                        TimeSpan.FromSeconds(1),
+                        CancellationToken.None);
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => primaryEngine.SeekToTimeCallCount == 1 &&
+                                compareEngine.SeekToTimeCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "The playback-preserving shared seek did not reach both engines.");
+                    Assert.False(primaryEngine.IsPlaying);
+                    Assert.False(compareEngine.IsPlaying);
+
+                    RequireControl<CheckBox>(
+                        window,
+                        "AllPanesCheckBox").IsChecked = false;
+                    var selectionChangeTask = GetPrivateField<Task>(
+                        window,
+                        "_allPanesSelectionChangeTask")
+                        ?? throw new InvalidOperationException(
+                            "Missing all-pane selection change task.");
+                    seekCompletion.TrySetResult(true);
+                    await Task.WhenAll(delayedSeek, selectionChangeTask);
+
+                    Assert.False(GetPrivateField<bool>(
+                        window,
+                        "_isAllPaneTransportSelected"));
+                    Assert.True(primaryEngine.IsPlaying);
+                    Assert.True(compareEngine.IsPlaying);
+                    Assert.Equal(1, primaryEngine.PlayCallCount);
+                    Assert.Equal(1, compareEngine.PlayCallCount);
+                    Assert.False(GetPrivateField<bool>(
+                        window,
+                        "_isSynchronizedFramePresentationActive"));
+                    Assert.Equal(
+                        -1,
+                        GetPrivateField<int>(
+                            window,
+                            "_primaryPendingSeekResumeGeneration"));
+                    Assert.Equal(
+                        -1,
+                        GetPrivateField<int>(
+                            window,
+                            "_comparePendingSeekResumeGeneration"));
+                }
+                finally
+                {
+                    seekCompletion.TrySetResult(true);
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task ComparePlayback_NewerPauseCancelsQueuedAllPaneStart()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var operationGate = GetPrivateField<SemaphoreSlim>(window, "_allPaneTransportOperationGate")
+                    ?? throw new InvalidOperationException("Missing all-pane transport operation gate.");
+                var operationGateHeld = false;
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine { IsMediaOpen = true };
+                    var compareEngine = new TestVideoReviewEngine { IsMediaOpen = true };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_isCompareModeSelected", true);
+                    SetPrivateField(window, "_isAllPaneTransportSelected", true);
+
+                    await operationGate.WaitAsync();
+                    operationGateHeld = true;
+                    var queuedStart = InvokePrivateTask(window, "StartAllPanePlaybackAsync", Type.EmptyTypes);
+                    var queuedPause = InvokePrivateTask(
+                        window,
+                        "PauseAllPanePlaybackAsync",
+                        new[] { typeof(bool) },
+                        true);
+                    Assert.False(queuedPause.IsCompleted);
+
+                    operationGate.Release();
+                    operationGateHeld = false;
+                    await Task.WhenAll(queuedStart, queuedPause);
+
+                    Assert.Equal(0, primaryEngine.PlayCallCount);
+                    Assert.Equal(0, compareEngine.PlayCallCount);
+                    Assert.False(primaryEngine.IsPlaying);
+                    Assert.False(compareEngine.IsPlaying);
+                    Assert.False(GetPrivateField<bool>(window, "_isSynchronizedFramePresentationActive"));
+                }
+                finally
+                {
+                    if (operationGateHeld)
+                    {
+                        operationGate.Release();
+                    }
+
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task ComparePlayback_NewerPauseWaitsForDelayedSeekAndPreventsResume()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var seekCompletion = new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        SeekTimeCompletion = seekCompletion
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        SeekTimeCompletion = seekCompletion
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+                    RequireControl<CheckBox>(window, "AllPanesCheckBox").IsChecked = true;
+                    primaryEngine.IsPlaying = true;
+                    compareEngine.IsPlaying = true;
+
+                    var delayedSeek = InvokePrivateTask(
+                        window,
+                        "SeekAllPaneToTimesPreservingPlaybackAsync",
+                        new[] { typeof(TimeSpan), typeof(TimeSpan), typeof(CancellationToken) },
+                        TimeSpan.FromSeconds(1),
+                        TimeSpan.FromSeconds(1),
+                        CancellationToken.None);
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => primaryEngine.SeekToTimeCallCount == 1 &&
+                                compareEngine.SeekToTimeCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "The delayed shared seek did not reach both engines.");
+                    Assert.Equal(1, primaryEngine.PauseCallCount);
+                    Assert.Equal(1, compareEngine.PauseCallCount);
+
+                    var newerPause = InvokePrivateTask(
+                        window,
+                        "PausePlaybackAsync",
+                        new[] { typeof(bool), typeof(SynchronizedOperationScope?) },
+                        true,
+                        (SynchronizedOperationScope?)SynchronizedOperationScope.AllPanes);
+                    await Task.Delay(TimeSpan.FromMilliseconds(25));
+
+                    Assert.False(newerPause.IsCompleted);
+                    Assert.Equal(1, primaryEngine.PauseCallCount);
+                    Assert.Equal(1, compareEngine.PauseCallCount);
+
+                    seekCompletion.TrySetResult(true);
+                    await Task.WhenAll(delayedSeek, newerPause);
+
+                    Assert.Equal(2, primaryEngine.PauseCallCount);
+                    Assert.Equal(2, compareEngine.PauseCallCount);
+                    Assert.Equal(0, primaryEngine.PlayCallCount);
+                    Assert.Equal(0, compareEngine.PlayCallCount);
+                    Assert.False(primaryEngine.WasPausedWithActiveOperation);
+                    Assert.False(compareEngine.WasPausedWithActiveOperation);
+                    Assert.False(primaryEngine.IsPlaying);
+                    Assert.False(compareEngine.IsPlaying);
+                }
+                finally
+                {
+                    seekCompletion.TrySetResult(true);
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task ComparePlayback_FailedCheckboxSynchronizationDoesNotCancelNewerPlayback()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var seekCompletion = new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                try
+                {
+                    var allPanesCheckBox = RequireControl<CheckBox>(window, "AllPanesCheckBox");
+                    allPanesCheckBox.IsChecked = false;
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        SeekTimeCompletion = seekCompletion
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        SeekTimeCompletion = seekCompletion
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_isCompareModeSelected", true);
+
+                    allPanesCheckBox.IsChecked = true;
+                    var selectionChangeTask = GetPrivateField<Task>(
+                        window,
+                        "_allPanesSelectionChangeTask")
+                        ?? throw new InvalidOperationException(
+                            "Missing all-pane selection change task.");
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => primaryEngine.SeekToTimeCallCount == 1 &&
+                                compareEngine.SeekToTimeCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "The checkbox synchronization did not reach both engines.");
+
+                    primaryEngine.SeekTimeCompletion = null;
+                    compareEngine.SeekTimeCompletion = null;
+                    var newerPlayback = InvokePrivateTask(
+                        window,
+                        "StartAllPanePlaybackAsync",
+                        Type.EmptyTypes);
+                    var newerIntentGeneration = GetPrivateField<int>(
+                        window,
+                        "_allPaneTransportIntentGeneration");
+
+                    seekCompletion.TrySetException(
+                        new InvalidOperationException("Expected synchronization failure."));
+                    await Task.WhenAll(newerPlayback, selectionChangeTask);
+
+                    Assert.Equal(
+                        newerIntentGeneration,
+                        GetPrivateField<int>(window, "_allPaneTransportIntentGeneration"));
+                    Assert.Equal(1, primaryEngine.PlayCallCount);
+                    Assert.Equal(1, compareEngine.PlayCallCount);
+                    Assert.True(primaryEngine.IsPlaying);
+                    Assert.True(compareEngine.IsPlaying);
+                    Assert.True(GetPrivateField<bool>(window, "_isSynchronizedFramePresentationActive"));
+                }
+                finally
+                {
+                    seekCompletion.TrySetResult(true);
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task ComparePlayback_NewerSharedStepCancelsDelayedSeekResume()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var seekCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        SeekTimeCompletion = seekCompletion
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        SeekTimeCompletion = seekCompletion
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+                    RequireControl<CheckBox>(window, "AllPanesCheckBox").IsChecked = true;
+                    primaryEngine.IsPlaying = true;
+                    compareEngine.IsPlaying = true;
+
+                    var delayedSeek = InvokePrivateTask(
+                        window,
+                        "SeekAllPaneToTimesPreservingPlaybackAsync",
+                        new[] { typeof(TimeSpan), typeof(TimeSpan), typeof(CancellationToken) },
+                        TimeSpan.FromSeconds(1),
+                        TimeSpan.FromSeconds(1),
+                        CancellationToken.None);
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => primaryEngine.SeekToTimeCallCount == 1 &&
+                                compareEngine.SeekToTimeCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "The delayed shared seek did not reach both engines.");
+
+                    primaryEngine.SeekTimeCompletion = null;
+                    compareEngine.SeekTimeCompletion = null;
+                    var newerStep = InvokePrivateTask(
+                        window,
+                        "StepFrameAsync",
+                        new[] { typeof(int) },
+                        1);
+                    seekCompletion.TrySetResult(true);
+                    await Task.WhenAll(delayedSeek, newerStep);
+
+                    Assert.Equal(0, primaryEngine.PlayCallCount);
+                    Assert.Equal(0, compareEngine.PlayCallCount);
+                    Assert.Equal(1, primaryEngine.StepForwardCallCount);
+                    Assert.Equal(1, compareEngine.StepForwardCallCount);
+                    Assert.False(primaryEngine.IsPlaying);
+                    Assert.False(compareEngine.IsPlaying);
+                    Assert.True(GetPrivateField<bool>(window, "_isSynchronizedFramePresentationActive"));
+                }
+                finally
+                {
+                    seekCompletion.TrySetResult(true);
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task ComparePlayback_NewerFocusedPlayRunsAfterDelayedSharedSeek()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var seekCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        SeekTimeCompletion = seekCompletion
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        SeekTimeCompletion = seekCompletion
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+
+                    var delayedSeek = InvokePrivateTask(
+                        window,
+                        "SeekAllPaneToTimesPreservingPlaybackAsync",
+                        new[] { typeof(TimeSpan), typeof(TimeSpan), typeof(CancellationToken) },
+                        TimeSpan.FromSeconds(1),
+                        TimeSpan.FromSeconds(1),
+                        CancellationToken.None);
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => primaryEngine.SeekToTimeCallCount == 1 &&
+                                compareEngine.SeekToTimeCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "The delayed shared seek did not reach both engines.");
+
+                    primaryEngine.SeekTimeCompletion = null;
+                    compareEngine.SeekTimeCompletion = null;
+                    var newerFocusedPlay = InvokePrivateTask(
+                        window,
+                        "StartPlaybackAsync",
+                        new[] { typeof(SynchronizedOperationScope?), typeof(string) },
+                        (SynchronizedOperationScope?)SynchronizedOperationScope.FocusedPane,
+                        null!);
+                    seekCompletion.TrySetResult(true);
+                    await Task.WhenAll(delayedSeek, newerFocusedPlay);
+
+                    Assert.Equal(1, primaryEngine.PlayCallCount);
+                    Assert.Equal(0, compareEngine.PlayCallCount);
+                    Assert.True(primaryEngine.IsPlaying);
+                    Assert.False(compareEngine.IsPlaying);
+                    Assert.False(GetPrivateField<bool>(window, "_isSynchronizedFramePresentationActive"));
+                }
+                finally
+                {
+                    seekCompletion.TrySetResult(true);
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task ComparePlayback_NewerFocusedSeeksRunAfterDelayedSharedSeek()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var firstSeekCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                var secondSeekCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                try
+                {
+                    var mediaInfo = new VideoMediaInfo(
+                        "shared.mp4",
+                        TimeSpan.FromSeconds(10),
+                        TimeSpan.FromSeconds(1d / 30d),
+                        30d,
+                        1920,
+                        1080,
+                        "h264",
+                        0,
+                        30,
+                        1,
+                        1,
+                        90_000);
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        CurrentFilePath = "left.mp4",
+                        MediaInfo = mediaInfo,
+                        Position = new ReviewPosition(TimeSpan.Zero, 0, true, true, 0, 0),
+                        SeekTimeCompletion = firstSeekCompletion
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        CurrentFilePath = "right.mp4",
+                        MediaInfo = mediaInfo,
+                        Position = new ReviewPosition(TimeSpan.Zero, 0, true, true, 0, 0),
+                        SeekTimeCompletion = firstSeekCompletion
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_primaryLoopRange", CreateLoopRange("pane-primary", "left.mp4"));
+
+                    var delayedSeek = InvokePrivateTask(
+                        window,
+                        "SeekAllPaneToTimesPreservingPlaybackAsync",
+                        new[] { typeof(TimeSpan), typeof(TimeSpan), typeof(CancellationToken) },
+                        TimeSpan.FromSeconds(1),
+                        TimeSpan.FromSeconds(1),
+                        CancellationToken.None);
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => primaryEngine.SeekToTimeCallCount == 1 &&
+                                compareEngine.SeekToTimeCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "The first delayed shared seek did not reach both engines.");
+
+                    primaryEngine.SeekTimeCompletion = null;
+                    compareEngine.SeekTimeCompletion = null;
+                    var focusedFrameSeek = (Task<bool>)InvokePrivate(
+                        window,
+                        "SeekPaneToFrameAsync",
+                        ParsePane("Primary"),
+                        42L,
+                        CancellationToken.None);
+                    firstSeekCompletion.TrySetResult(true);
+                    await Task.WhenAll(delayedSeek, focusedFrameSeek);
+
+                    Assert.True(await focusedFrameSeek);
+                    Assert.Equal(1, primaryEngine.SeekToFrameCallCount);
+                    Assert.Equal(0, compareEngine.SeekToFrameCallCount);
+                    Assert.Equal(42L, primaryEngine.Position.FrameIndex);
+
+                    primaryEngine.IsPlaying = true;
+                    compareEngine.IsPlaying = true;
+                    primaryEngine.SeekTimeCompletion = secondSeekCompletion;
+                    compareEngine.SeekTimeCompletion = secondSeekCompletion;
+                    var secondDelayedSeek = InvokePrivateTask(
+                        window,
+                        "SeekAllPaneToTimesPreservingPlaybackAsync",
+                        new[] { typeof(TimeSpan), typeof(TimeSpan), typeof(CancellationToken) },
+                        TimeSpan.FromSeconds(2),
+                        TimeSpan.FromSeconds(2),
+                        CancellationToken.None);
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => primaryEngine.SeekToTimeCallCount == 2 &&
+                                compareEngine.SeekToTimeCallCount == 2,
+                            TimeSpan.FromSeconds(2)),
+                        "The second delayed shared seek did not reach both engines.");
+
+                    primaryEngine.SeekTimeCompletion = null;
+                    compareEngine.SeekTimeCompletion = null;
+                    var loopMarkerSeek = (Task<bool>)InvokePrivate(
+                        window,
+                        "SetTimelineLoopMarkerAtAsync",
+                        "pane-primary",
+                        LoopPlaybackMarkerEndpoint.In,
+                        TimeSpan.FromMilliseconds(500));
+                    secondSeekCompletion.TrySetResult(true);
+                    await Task.WhenAll(secondDelayedSeek, loopMarkerSeek);
+
+                    Assert.True(await loopMarkerSeek);
+                    Assert.Equal(3, primaryEngine.SeekToTimeCallCount);
+                    Assert.Equal(TimeSpan.FromMilliseconds(500), primaryEngine.Position.PresentationTime);
+                    Assert.False(GetPrivateField<bool>(window, "_isSynchronizedFramePresentationActive"));
+                }
+                finally
+                {
+                    firstSeekCompletion.TrySetResult(true);
+                    secondSeekCompletion.TrySetResult(true);
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task ComparePlayback_RightFocusedSeekDoesNotCancelDelayedLeftSeekResume()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var leftSeekCompletion = new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        SeekTimeCompletion = leftSeekCompletion
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+
+                    var delayedLeftSeek = (Task)InvokePrivate(
+                        window,
+                        "SeekPaneToTimePreservingPlaybackAsync",
+                        ParsePane("Primary"),
+                        TimeSpan.FromSeconds(1),
+                        CancellationToken.None);
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => primaryEngine.SeekToTimeCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "The delayed left-pane seek did not reach its engine.");
+
+                    var newerRightSeek = (Task)InvokePrivate(
+                        window,
+                        "SeekPaneToTimePreservingPlaybackAsync",
+                        ParsePane("Compare"),
+                        TimeSpan.FromSeconds(2),
+                        CancellationToken.None);
+                    await newerRightSeek;
+
+                    Assert.Equal(1, compareEngine.SeekToTimeCallCount);
+                    Assert.Equal(1, compareEngine.PlayCallCount);
+                    Assert.True(compareEngine.IsPlaying);
+
+                    leftSeekCompletion.TrySetResult(true);
+                    await delayedLeftSeek;
+
+                    Assert.Equal(1, primaryEngine.PlayCallCount);
+                    Assert.True(primaryEngine.IsPlaying);
+                    Assert.Equal(TimeSpan.FromSeconds(1), primaryEngine.Position.PresentationTime);
+                    Assert.Equal(TimeSpan.FromSeconds(2), compareEngine.Position.PresentationTime);
+                }
+                finally
+                {
+                    leftSeekCompletion.TrySetResult(true);
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task ComparePlayback_QueuedMasterScrubPreservesPendingSharedSeekResume()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var firstSeekCompletion = new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine { IsMediaOpen = true };
+                    var compareEngine = new TestVideoReviewEngine { IsMediaOpen = true };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+                    RequireControl<CheckBox>(window, "AllPanesCheckBox").IsChecked = true;
+
+                    primaryEngine.IsPlaying = true;
+                    compareEngine.IsPlaying = true;
+                    primaryEngine.SeekTimeCompletion = firstSeekCompletion;
+                    compareEngine.SeekTimeCompletion = firstSeekCompletion;
+                    var firstSeek = InvokePrivateTask(
+                        window,
+                        "SeekAllPaneToTimesPreservingPlaybackAsync",
+                        new[] { typeof(TimeSpan), typeof(TimeSpan), typeof(CancellationToken) },
+                        TimeSpan.FromSeconds(1),
+                        TimeSpan.FromSeconds(1),
+                        CancellationToken.None);
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => primaryEngine.SeekToTimeCallCount == 1 &&
+                                compareEngine.SeekToTimeCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "The delayed shared seek did not reach both engines.");
+                    Assert.False(primaryEngine.IsPlaying);
+                    Assert.False(compareEngine.IsPlaying);
+
+                    InvokePrivate(window, "QueueSliderScrub", TimeSpan.FromSeconds(2));
+                    primaryEngine.SeekTimeCompletion = null;
+                    compareEngine.SeekTimeCompletion = null;
+                    var replacementSeek = InvokePrivateTask(
+                        window,
+                        "CommitSliderSeekAsync",
+                        new[] { typeof(string), typeof(TimeSpan) },
+                        "test",
+                        TimeSpan.FromSeconds(2));
+
+                    firstSeekCompletion.TrySetResult(true);
+                    await Task.WhenAll(firstSeek, replacementSeek);
+
+                    Assert.Equal(1, primaryEngine.PlayCallCount);
+                    Assert.Equal(1, compareEngine.PlayCallCount);
+                    Assert.True(primaryEngine.IsPlaying);
+                    Assert.True(compareEngine.IsPlaying);
+                    Assert.Equal(TimeSpan.FromSeconds(2), primaryEngine.Position.PresentationTime);
+                    Assert.Equal(TimeSpan.FromSeconds(2), compareEngine.Position.PresentationTime);
+                }
+                finally
+                {
+                    firstSeekCompletion.TrySetResult(true);
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task ComparePlayback_CanceledPaneScrubDoesNotLeakResumeIntent()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine { IsMediaOpen = true };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+
+                    InvokePrivate(
+                        window,
+                        "QueuePaneSliderScrub",
+                        ParsePane("Compare"),
+                        TimeSpan.FromSeconds(1));
+                    compareEngine.IsPlaying = false;
+
+                    var primaryPane = ParsePane("Primary");
+                    await InvokePrivateTask(
+                        window,
+                        "StepFrameAsync",
+                        new[] { typeof(int), primaryPane.GetType() },
+                        1,
+                        primaryPane);
+                    await (Task)InvokePrivate(
+                        window,
+                        "SeekPaneToTimePreservingPlaybackAsync",
+                        ParsePane("Compare"),
+                        TimeSpan.FromSeconds(2),
+                        CancellationToken.None);
+
+                    Assert.Equal(0, compareEngine.PlayCallCount);
+                    Assert.False(compareEngine.IsPlaying);
+                    Assert.Equal(TimeSpan.FromSeconds(2), compareEngine.Position.PresentationTime);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task ComparePlayback_DelayedPaneScrubRunsQueuedReplacementOnUiDispatcher()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var firstSeekCompletion = new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                try
+                {
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        SeekTimeCompletion = firstSeekCompletion
+                    };
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    var comparePane = ParsePane("Compare");
+
+                    InvokePrivate(
+                        window,
+                        "QueuePaneSliderScrub",
+                        comparePane,
+                        TimeSpan.FromSeconds(1));
+                    InvokePrivate(
+                        window,
+                        "PaneSliderScrubTimer_Tick",
+                        null!,
+                        EventArgs.Empty);
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => compareEngine.SeekToTimeCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "The first pane scrub did not reach the compare engine.");
+
+                    InvokePrivate(
+                        window,
+                        "QueuePaneSliderScrub",
+                        comparePane,
+                        TimeSpan.FromSeconds(2));
+                    compareEngine.SeekTimeCompletion = null;
+                    firstSeekCompletion.TrySetResult(true);
+
+                    var replacementDeadline = DateTime.UtcNow + TimeSpan.FromSeconds(2);
+                    while (compareEngine.SeekToTimeCallCount < 2 &&
+                        DateTime.UtcNow < replacementDeadline)
+                    {
+                        await Task.Delay(TimeSpan.FromMilliseconds(20));
+                    }
+
+                    Assert.Equal(2, compareEngine.SeekToTimeCallCount);
+                    Assert.Equal(
+                        TimeSpan.FromSeconds(2),
+                        compareEngine.Position.PresentationTime);
+                    Assert.False(GetPrivateField<bool>(
+                        window,
+                        "_isPaneSliderScrubSeekInFlight"));
+                    Assert.False(GetPrivateField<bool>(
+                        window,
+                        "_hasPendingPaneSliderScrubTarget"));
+                }
+                finally
+                {
+                    firstSeekCompletion.TrySetResult(true);
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task ComparePlayback_CanceledFocusedSeekRestoresCurrentPlaybackIntent()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var seekCompletion = new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                using var cancellation = new CancellationTokenSource();
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        SeekTimeCompletion = seekCompletion
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+
+                    var canceledSeek = (Task)InvokePrivate(
+                        window,
+                        "SeekPaneToTimePreservingPlaybackAsync",
+                        ParsePane("Primary"),
+                        TimeSpan.FromSeconds(1),
+                        cancellation.Token);
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => primaryEngine.SeekToTimeCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "The cancelable focused seek did not reach its engine.");
+
+                    primaryEngine.IsPlaying = false;
+                    cancellation.Cancel();
+                    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceledSeek);
+
+                    Assert.Equal(1, primaryEngine.PlayCallCount);
+                    Assert.True(primaryEngine.IsPlaying);
+                }
+                finally
+                {
+                    seekCompletion.TrySetResult(true);
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task ComparePlayback_CloseInvalidatesDelayedSeekResumeBeforeDisposal()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var seekCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                var primaryEngine = new TestVideoReviewEngine
+                {
+                    IsMediaOpen = true,
+                    IsPlaying = true,
+                    SeekTimeCompletion = seekCompletion
+                };
+                var compareEngine = new TestVideoReviewEngine
+                {
+                    IsMediaOpen = true,
+                    IsPlaying = true,
+                    SeekTimeCompletion = seekCompletion
+                };
+                try
+                {
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_isCompareModeSelected", true);
+                    SetPrivateField(window, "_isAllPaneTransportSelected", true);
+                    window.Show();
+
+                    var delayedSeek = InvokePrivateTask(
+                        window,
+                        "SeekAllPaneToTimesPreservingPlaybackAsync",
+                        new[] { typeof(TimeSpan), typeof(TimeSpan), typeof(CancellationToken) },
+                        TimeSpan.FromSeconds(1),
+                        TimeSpan.FromSeconds(1),
+                        CancellationToken.None);
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => primaryEngine.SeekToTimeCallCount == 1 &&
+                                compareEngine.SeekToTimeCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "The delayed shared seek did not reach both engines.");
+
+                    window.Close();
+                    Assert.Equal(0, primaryEngine.DisposeCallCount);
+                    Assert.Equal(0, compareEngine.DisposeCallCount);
+                    seekCompletion.TrySetResult(true);
+                    await delayedSeek;
+                    var disposalTask = GetPrivateField<Task>(window, "_engineDisposalTask")
+                        ?? throw new InvalidOperationException("Missing deferred engine disposal task.");
+                    await disposalTask.WaitAsync(TimeSpan.FromSeconds(2));
+
+                    Assert.Equal(1, primaryEngine.DisposeCallCount);
+                    Assert.Equal(1, compareEngine.DisposeCallCount);
+                    Assert.False(primaryEngine.WasDisposedWithActiveOperation);
+                    Assert.False(compareEngine.WasDisposedWithActiveOperation);
+                    Assert.Equal(0, primaryEngine.PlayCallCount);
+                    Assert.Equal(0, compareEngine.PlayCallCount);
+                    Assert.False(GetPrivateField<bool>(window, "_isSynchronizedFramePresentationActive"));
+                }
+                finally
+                {
+                    seekCompletion.TrySetResult(true);
+                    if (primaryEngine.DisposeCallCount == 0)
+                    {
+                        window.Close();
+                    }
+                }
+            });
+        }
+
+        [Fact]
+        public void ClosedWindow_DropsLateFramePresentationAndLoopRestart()
+        {
+            _fixture.Run(() =>
+            {
+                var window = new MainWindow();
+                var primaryEngine = new TestVideoReviewEngine
+                {
+                    IsMediaOpen = true,
+                    IsPlaying = true,
+                    CurrentFilePath = "left.mp4",
+                    MediaInfo = new VideoMediaInfo(
+                        "left.mp4",
+                        TimeSpan.FromSeconds(2),
+                        TimeSpan.FromSeconds(1d / 30d),
+                        30d,
+                        1920,
+                        1080,
+                        "h264",
+                        0,
+                        30,
+                        1,
+                        1,
+                        90_000)
+                };
+                SetPrivateField(window, "_primaryEngine", primaryEngine);
+                SetPrivateField(window, "_isPrimaryLoopPlaybackEnabled", true);
+                window.Show();
+                window.Close();
+
+                using var lateFrame = CreateFrameBuffer(8, 4, TimeSpan.FromSeconds(2));
+                InvokePrivate(
+                    window,
+                    "QueueFramePresentation",
+                    ParsePane("Primary"),
+                    lateFrame);
+                InvokePrivate(window, "PresentPendingFrame", ParsePane("Primary"));
+
+                var endState = new VideoReviewEngineStateChangedEventArgs(
+                    isMediaOpen: true,
+                    isPlaying: true,
+                    currentFilePath: "left.mp4",
+                    lastErrorMessage: string.Empty,
+                    mediaInfo: primaryEngine.MediaInfo,
+                    position: new ReviewPosition(
+                        TimeSpan.FromSeconds(2),
+                        60,
+                        isFrameAccurate: true,
+                        isFrameIndexAbsolute: true,
+                        presentationTimestamp: 180_000,
+                        decodeTimestamp: 180_000));
+                InvokePrivate(window, "RestartLoopPlaybackIfNeeded", ParsePane("Primary"), endState);
+
+                Assert.Null(GetPrivateField<DecodedFrameBuffer>(window, "_pendingPrimaryFrameBuffer"));
+                Assert.Null(GetPrivateField<DecodedFrameBuffer>(window, "_primaryFrameBuffer"));
+                Assert.Null(RequireControl<Image>(window, "CustomVideoSurface").Source);
+                Assert.Equal(0, primaryEngine.PauseCallCount);
+                Assert.Equal(0, primaryEngine.SeekToTimeCallCount);
+                Assert.Equal(0, primaryEngine.PlayCallCount);
+                Assert.Equal(0, GetPrivateField<int>(window, "_primaryLoopRestartInFlight"));
+            });
+        }
+
+        [Fact]
+        public async Task ClosedWindow_RejectsQueuedPauseAndLateCompareOpenAfterDisposal()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var primaryGate = GetPrivateField<SemaphoreSlim>(
+                    window,
+                    "_primaryPaneTransportOperationGate")
+                    ?? throw new InvalidOperationException("Missing primary transport operation gate.");
+                var gateHeld = false;
+                var primaryEngine = new TestVideoReviewEngine
+                {
+                    IsMediaOpen = true,
+                    IsPlaying = true
+                };
+                var compareEngine = new TestVideoReviewEngine();
+                try
+                {
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    window.Show();
+                    await primaryGate.WaitAsync();
+                    gateHeld = true;
+
+                    window.Close();
+                    var disposalTask = GetPrivateField<Task>(window, "_engineDisposalTask")
+                        ?? throw new InvalidOperationException("Missing deferred engine disposal task.");
+                    var queuedPause = InvokePrivateTask(
+                        window,
+                        "PausePlaybackAsync",
+                        new[] { typeof(bool), typeof(SynchronizedOperationScope?) },
+                        true,
+                        (SynchronizedOperationScope?)SynchronizedOperationScope.FocusedPane);
+
+                    primaryGate.Release();
+                    gateHeld = false;
+                    await Task.WhenAll(disposalTask, queuedPause).WaitAsync(TimeSpan.FromSeconds(2));
+
+                    Assert.Equal(1, primaryEngine.DisposeCallCount);
+                    Assert.Equal(1, compareEngine.DisposeCallCount);
+                    Assert.Equal(0, primaryEngine.PauseCallCount);
+
+                    await (Task)InvokePrivate(
+                        window,
+                        "OpenPathAsync",
+                        "late-compare.mp4",
+                        ParsePane("Compare"));
+
+                    Assert.Same(
+                        compareEngine,
+                        GetPrivateField<IVideoReviewEngine>(window, "_compareEngine"));
+                    Assert.Equal(0, compareEngine.OpenCallCount);
+                }
+                finally
+                {
+                    if (gateHeld)
+                    {
+                        primaryGate.Release();
+                    }
+
+                    if (primaryEngine.DisposeCallCount == 0)
+                    {
+                        window.Close();
+                    }
+                }
+            });
+        }
+
+        [Fact]
+        public void PrimaryVideoSurface_BitmapPixelsChangeWhenSameSizedFrameUpdates()
+        {
+            _fixture.Run(() =>
+            {
+                var window = new MainWindow();
+
+                try
+                {
+                    var primarySurface = RequireControl<Image>(window, "CustomVideoSurface");
+                    using var firstFrame = CreateFrameBuffer(16, 16, red: 0xC0, green: 0x20, blue: 0x20);
+                    using var secondFrame = CreateFrameBuffer(16, 16, red: 0x20, green: 0xC0, blue: 0x20);
+
+                    InvokePrivate(window, "SetPaneBitmap", ParsePane("Primary"), firstFrame);
+                    var firstBitmap = RequireBitmap(primarySurface);
+                    var firstColor = ReadBitmapPixel(firstBitmap, 8, 8);
+
+                    InvokePrivate(window, "SetPaneBitmap", ParsePane("Primary"), secondFrame);
+                    var secondBitmap = RequireBitmap(primarySurface);
+                    var secondColor = ReadBitmapPixel(secondBitmap, 8, 8);
+
+                    Assert.Same(firstBitmap, secondBitmap);
+                    Assert.True(
+                        secondColor.Green > firstColor.Green + 64,
+                        "The reusable video bitmap did not receive the newer frame pixels.");
+                    Assert.True(
+                        firstColor.Red > secondColor.Red + 64,
+                        "The reusable video bitmap retained the first frame's pixels.");
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public void PaneBitmapPresentation_InvalidatesBothVideoSurfaces()
+        {
+            var mainWindowSource = ReadRepositoryFile(
+                "src",
+                "FramePlayer.Avalonia",
+                "Views",
+                "MainWindow.axaml.cs");
+            var setPaneBitmapMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private void SetPaneBitmap(",
+                "private Pane GetFileOpenTargetPane()");
+
+            Assert.Contains(
+                "CompareVideoSurface.InvalidateVisual();",
+                setPaneBitmapMethod,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "CustomVideoSurface.InvalidateVisual();",
+                setPaneBitmapMethod,
+                StringComparison.Ordinal);
         }
 
         [Fact]
@@ -551,7 +2794,7 @@ namespace FramePlayer.Avalonia.Tests
 
             Assert.Contains("await Task.WhenAll(", startAllPaneMethod, StringComparison.Ordinal);
             Assert.Contains(
-                "Task.Run(() => _primaryEngine.PlayAsync(), CancellationToken.None)",
+                "Task.Run(() => primaryEngine.PlayAsync(), CancellationToken.None)",
                 startAllPaneMethod,
                 StringComparison.Ordinal);
             Assert.Contains(
@@ -562,10 +2805,15 @@ namespace FramePlayer.Avalonia.Tests
             Assert.Contains("UpdateCommandStatesOnUiThread();", startAllPaneMethod, StringComparison.Ordinal);
             Assert.Contains("await Task.WhenAll(pauseTasks).ConfigureAwait(false);", pauseAllPaneMethod, StringComparison.Ordinal);
             Assert.Contains("private void UpdateCommandStatesOnUiThread()", mainWindowSource, StringComparison.Ordinal);
-            Assert.Contains("Dispatcher.UIThread.Post(UpdateCommandStates);", mainWindowSource, StringComparison.Ordinal);
+            Assert.Contains("Dispatcher.UIThread.Post(() =>", mainWindowSource, StringComparison.Ordinal);
+            Assert.Contains("if (Volatile.Read(ref _isClosed) == 0)", mainWindowSource, StringComparison.Ordinal);
             Assert.DoesNotContain("if (!_primaryEngine.IsPlaying)", startAllPaneMethod, StringComparison.Ordinal);
             Assert.DoesNotContain("if (!compareEngine.IsPlaying)", startAllPaneMethod, StringComparison.Ordinal);
             Assert.DoesNotContain("await _primaryEngine.PlayAsync();", startAllPaneMethod, StringComparison.Ordinal);
+            Assert.Contains(
+                "synchronizePresentation: _isCompareModeSelected && _isAllPaneTransportSelected",
+                startAllPaneMethod,
+                StringComparison.Ordinal);
             Assert.Contains("await StartPlaybackAsync(null, null);", mainWindowSource, StringComparison.Ordinal);
         }
 
@@ -804,6 +3052,161 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
+        public async Task CompareLoopPlayback_AllPaneRestartLeavesInvalidatedPaneUntouched()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_isPrimaryLoopPlaybackEnabled", true);
+                    SetPrivateField(window, "_isCompareLoopPlaybackEnabled", true);
+                    SetPrivateField(window, "_isCompareModeSelected", true);
+                    SetPrivateField(window, "_isAllPaneTransportSelected", true);
+
+                    var primaryGeneration = GetPrivateField<int>(window, "_primaryLoopRestartGeneration");
+                    var compareGeneration = GetPrivateField<int>(window, "_compareLoopRestartGeneration");
+                    var transportIntentGeneration = GetPrivateField<int>(window, "_allPaneTransportIntentGeneration");
+                    InvokePrivate(window, "InvalidateLoopRestart", ParsePane("Primary"));
+
+                    await (Task)InvokePrivate(
+                        window,
+                        "RestartAllPaneLoopPlaybackAsync",
+                        primaryEngine,
+                        CreateLoopRange("pane-primary", "left.mp4"),
+                        primaryGeneration,
+                        compareEngine,
+                        CreateLoopRange("pane-compare", "right.mp4"),
+                        compareGeneration,
+                        transportIntentGeneration);
+
+                    Assert.Equal(0, primaryEngine.PauseCallCount);
+                    Assert.Equal(0, primaryEngine.SeekToTimeCallCount);
+                    Assert.Equal(0, primaryEngine.PlayCallCount);
+                    Assert.True(primaryEngine.IsPlaying);
+                    Assert.Equal(1, compareEngine.PauseCallCount);
+                    Assert.Equal(1, compareEngine.SeekToTimeCallCount);
+                    Assert.Equal(1, compareEngine.PlayCallCount);
+                    Assert.True(compareEngine.IsPlaying);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task CompareLoopPlayback_SinglePaneRestartEndsSyncAndYieldsToFocusedStep()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var loopSeekCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                try
+                {
+                    var mediaInfo = new VideoMediaInfo(
+                        "compare-loop.mp4",
+                        TimeSpan.FromSeconds(10),
+                        TimeSpan.FromSeconds(1d / 30d),
+                        30d,
+                        1920,
+                        1080,
+                        "h264",
+                        0,
+                        30,
+                        1,
+                        1,
+                        90_000);
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        CurrentFilePath = "left.mp4",
+                        MediaInfo = mediaInfo,
+                        SeekTimeCompletion = loopSeekCompletion
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        CurrentFilePath = "right.mp4",
+                        MediaInfo = mediaInfo
+                    };
+                    var state = new VideoReviewEngineStateChangedEventArgs(
+                        isMediaOpen: true,
+                        isPlaying: true,
+                        currentFilePath: "left.mp4",
+                        lastErrorMessage: string.Empty,
+                        mediaInfo: mediaInfo,
+                        position: new ReviewPosition(
+                            TimeSpan.FromSeconds(2),
+                            60,
+                            isFrameAccurate: true,
+                            isFrameIndexAbsolute: true,
+                            presentationTimestamp: 180_000,
+                            decodeTimestamp: 180_000));
+
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_primaryLoopRange", CreateLoopRange("pane-primary", "left.mp4"));
+                    SetPrivateField(window, "_isPrimaryLoopPlaybackEnabled", true);
+                    SetPrivateField(window, "_isCompareLoopPlaybackEnabled", false);
+                    SetPrivateField(window, "_isCompareModeSelected", true);
+                    SetPrivateField(window, "_isAllPaneTransportSelected", true);
+                    await InvokePrivateTask(window, "StartAllPanePlaybackAsync", Type.EmptyTypes);
+                    Assert.True(GetPrivateField<bool>(window, "_isSynchronizedFramePresentationActive"));
+                    var playCountBeforeLoop = primaryEngine.PlayCallCount;
+
+                    InvokePrivate(window, "RestartLoopPlaybackIfNeeded", ParsePane("Primary"), state);
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => primaryEngine.SeekToTimeCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "The single-pane loop restart did not enter its delayed seek.");
+                    Assert.False(GetPrivateField<bool>(window, "_isSynchronizedFramePresentationActive"));
+
+                    var primaryPane = ParsePane("Primary");
+                    var focusedStep = InvokePrivateTask(
+                        window,
+                        "StepFrameAsync",
+                        new[] { typeof(int), primaryPane.GetType() },
+                        1,
+                        primaryPane);
+                    loopSeekCompletion.TrySetResult(true);
+                    await focusedStep;
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => GetPrivateField<int>(window, "_primaryLoopRestartInFlight") == 0,
+                            TimeSpan.FromSeconds(2)),
+                        "The interrupted single-pane loop restart did not finish.");
+
+                    Assert.Equal(playCountBeforeLoop, primaryEngine.PlayCallCount);
+                    Assert.Equal(1, primaryEngine.StepForwardCallCount);
+                    Assert.Equal(0, compareEngine.PauseCallCount);
+                    Assert.Equal(0, compareEngine.SeekToTimeCallCount);
+                }
+                finally
+                {
+                    loopSeekCompletion.TrySetResult(true);
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
         public void CompareLoopPlayback_PaneAndAllPaneRestartsHaveExclusiveOwnership()
         {
             _fixture.Run(() =>
@@ -913,16 +3316,16 @@ namespace FramePlayer.Avalonia.Tests
                         operationScope);
                     var expectedPrimaryPauseCount = 2;
                     var expectedComparePauseCount = operationScope == SynchronizedOperationScope.AllPanes ? 2 : 1;
-                    Assert.True(
-                        SpinWait.SpinUntil(
-                            () => primaryEngine.PauseCallCount == expectedPrimaryPauseCount &&
-                                compareEngine.PauseCallCount == expectedComparePauseCount,
-                            TimeSpan.FromSeconds(2)),
-                        "The explicit pause did not reach its requested transport scope.");
+                    await Task.Delay(TimeSpan.FromMilliseconds(25));
+                    Assert.False(explicitPauseTask.IsCompleted);
+                    Assert.Equal(1, primaryEngine.PauseCallCount);
+                    Assert.Equal(1, compareEngine.PauseCallCount);
 
                     primaryPauseCompletion.TrySetResult(true);
                     comparePauseCompletion.TrySetResult(true);
                     await explicitPauseTask;
+                    Assert.Equal(expectedPrimaryPauseCount, primaryEngine.PauseCallCount);
+                    Assert.Equal(expectedComparePauseCount, compareEngine.PauseCallCount);
 
                     Assert.True(
                         SpinWait.SpinUntil(
@@ -1019,12 +3422,13 @@ namespace FramePlayer.Avalonia.Tests
                         "The left pane did not begin its loop restart.");
 
                     var explicitPauseTask = InvokePrivateTask(window, "PausePlaybackAsync", new[] { typeof(bool) }, true);
-                    Assert.True(
-                        SpinWait.SpinUntil(() => primaryEngine.PauseCallCount == 2, TimeSpan.FromSeconds(2)),
-                        "The explicit pause did not reach the left pane.");
+                    await Task.Delay(TimeSpan.FromMilliseconds(25));
+                    Assert.False(explicitPauseTask.IsCompleted);
+                    Assert.Equal(1, primaryEngine.PauseCallCount);
 
                     pauseCompletion.TrySetResult(true);
                     await explicitPauseTask;
+                    Assert.Equal(2, primaryEngine.PauseCallCount);
 
                     Assert.True(
                         SpinWait.SpinUntil(
@@ -1177,26 +3581,53 @@ namespace FramePlayer.Avalonia.Tests
                 mainWindowSource,
                 "private void CancelQueuedSliderScrubs(",
                 "private async void PaneSliderScrubTimer_Tick(");
+            var paneScrubTimerMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private async void PaneSliderScrubTimer_Tick(",
+                "private async Task SeekPaneToTimePreservingPlaybackAsync(");
             var masterSeekMethod = ExtractMethodBody(
                 mainWindowSource,
                 "private async Task SeekMasterTimelineAsync(",
                 "private async Task SeekAllPaneRelativePreservingPlaybackAsync(");
             var allPaneSeekMethod = ExtractMethodBody(
                 mainWindowSource,
-                "private async Task SeekAllPaneToTimesPreservingPlaybackAsync(",
+                "private async Task SeekAllPaneToTimesPreservingPlaybackCoreAsync(",
                 "private static TimeSpan ClampSeekTarget(");
 
             Assert.Contains("QueueSliderScrub(TimeSpan.FromSeconds(PositionSlider.Value));", masterSliderMethod, StringComparison.Ordinal);
-            Assert.Contains("await SeekMasterTimelineAsync(_pendingSliderScrubTarget, _sliderScrubCts.Token);", scrubTimerMethod, StringComparison.Ordinal);
-            Assert.Contains("CancelQueuedSliderScrubs();", commitSliderMethod, StringComparison.Ordinal);
-            Assert.Contains(
-                "await SeekMasterTimelineAsync(target, CancellationToken.None).ConfigureAwait(false);",
-                commitSliderMethod,
+            var timerSeekIndex = scrubTimerMethod.IndexOf(
+                "var seekTask = SeekMasterTimelineAsync(_pendingSliderScrubTarget, _sliderScrubCts.Token);",
                 StringComparison.Ordinal);
+            var timerHandoffIndex = scrubTimerMethod.IndexOf(
+                "ForgetQueuedSliderScrubResumeReservation();",
+                StringComparison.Ordinal);
+            var timerAwaitIndex = scrubTimerMethod.IndexOf("await seekTask;", StringComparison.Ordinal);
+            Assert.True(timerSeekIndex >= 0 && timerSeekIndex < timerHandoffIndex);
+            Assert.True(timerHandoffIndex < timerAwaitIndex);
+            var commitCancelIndex = commitSliderMethod.IndexOf(
+                "CancelQueuedSliderScrubsCore(clearResumeReservations: false);",
+                StringComparison.Ordinal);
+            var commitSeekIndex = commitSliderMethod.IndexOf(
+                "var seekTask = SeekMasterTimelineAsync(target, CancellationToken.None);",
+                StringComparison.Ordinal);
+            var commitHandoffIndex = commitSliderMethod.IndexOf(
+                "ClearAllQueuedSliderScrubResumeReservations();",
+                StringComparison.Ordinal);
+            var commitAwaitIndex = commitSliderMethod.IndexOf(
+                "await seekTask.ConfigureAwait(false);",
+                StringComparison.Ordinal);
+            Assert.True(commitCancelIndex >= 0 && commitCancelIndex < commitSeekIndex);
+            Assert.True(commitSeekIndex < commitHandoffIndex);
+            Assert.True(commitHandoffIndex < commitAwaitIndex);
             Assert.Contains("_hasPendingSliderScrubTarget = false;", cancelQueuedScrubsMethod, StringComparison.Ordinal);
             Assert.Contains("_hasPendingPaneSliderScrubTarget = false;", cancelQueuedScrubsMethod, StringComparison.Ordinal);
             Assert.Contains("_sliderScrubTimer.Stop();", cancelQueuedScrubsMethod, StringComparison.Ordinal);
             Assert.Contains("_paneSliderScrubTimer.Stop();", cancelQueuedScrubsMethod, StringComparison.Ordinal);
+            Assert.Contains("await seekTask;", paneScrubTimerMethod, StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                "await seekTask.ConfigureAwait(false);",
+                paneScrubTimerMethod,
+                StringComparison.Ordinal);
             Assert.Contains("if (IsAllPaneTransportEnabled)", masterSeekMethod, StringComparison.Ordinal);
             Assert.Contains(
                 "await SeekAllPaneToTimePreservingPlaybackAsync(target, cancellationToken).ConfigureAwait(false);",
@@ -1205,15 +3636,14 @@ namespace FramePlayer.Avalonia.Tests
             var tryIndex = allPaneSeekMethod.IndexOf("try", StringComparison.Ordinal);
             var seekIndex = allPaneSeekMethod.IndexOf("await Task.WhenAll(", StringComparison.Ordinal);
             var finallyIndex = allPaneSeekMethod.IndexOf("finally", StringComparison.Ordinal);
-            var resumeIndex = allPaneSeekMethod.IndexOf("var resumeTasks", StringComparison.Ordinal);
+            var resumeIndex = allPaneSeekMethod.IndexOf("await ResumePlaybackForIntentAsync(", StringComparison.Ordinal);
             Assert.NotEqual(-1, tryIndex);
             Assert.NotEqual(-1, seekIndex);
             Assert.NotEqual(-1, finallyIndex);
             Assert.NotEqual(-1, resumeIndex);
             Assert.Contains("Task.Run(() => _primaryEngine.SeekToTimeAsync(primaryTarget, cancellationToken), cancellationToken)", allPaneSeekMethod, StringComparison.Ordinal);
             Assert.Contains("Task.Run(() => compareEngine.SeekToTimeAsync(compareTarget, cancellationToken), cancellationToken)", allPaneSeekMethod, StringComparison.Ordinal);
-            Assert.Contains("Task.Run(() => _primaryEngine.PlayAsync(), CancellationToken.None)", allPaneSeekMethod, StringComparison.Ordinal);
-            Assert.Contains("Task.Run(() => compareEngine.PlayAsync(), CancellationToken.None)", allPaneSeekMethod, StringComparison.Ordinal);
+            Assert.Contains("await ResumePlaybackForIntentAsync(", allPaneSeekMethod, StringComparison.Ordinal);
             Assert.Contains("await PauseAllPanePlaybackAsync().ConfigureAwait(false);", allPaneSeekMethod, StringComparison.Ordinal);
             Assert.Contains(".ConfigureAwait(false);", allPaneSeekMethod, StringComparison.Ordinal);
             Assert.Contains("UpdateCommandStatesOnUiThread();", allPaneSeekMethod, StringComparison.Ordinal);
@@ -1246,6 +3676,8 @@ namespace FramePlayer.Avalonia.Tests
 
                     SetPrivateField(window, "_primaryEngine", primaryEngine);
                     SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_isCompareModeSelected", true);
+                    SetPrivateField(window, "_isAllPaneTransportSelected", true);
                     seekCancellation.Cancel();
 
                     await Assert.ThrowsAsync<TaskCanceledException>(
@@ -1262,9 +3694,128 @@ namespace FramePlayer.Avalonia.Tests
                     Assert.Equal(1, compareEngine.PauseCallCount);
                     Assert.Equal(1, primaryEngine.PlayCallCount);
                     Assert.Equal(1, compareEngine.PlayCallCount);
+                    Assert.False(GetPrivateField<bool>(
+                        window,
+                        "_isSynchronizedFramePresentationActive"));
                 }
                 finally
                 {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task MainSharedTransport_PartialTimeSeekFailureEndsSynchronizedPresentation()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var primarySeekCompletion = new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        SeekTimeCompletion = primarySeekCompletion
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_isCompareModeSelected", true);
+                    SetPrivateField(window, "_isAllPaneTransportSelected", true);
+                    primarySeekCompletion.TrySetException(
+                        new InvalidOperationException("Expected primary time seek failure."));
+
+                    var error = await Assert.ThrowsAsync<InvalidOperationException>(
+                        async () => await (Task)InvokePrivate(
+                            window,
+                            "SeekAllPaneToTimesPreservingPlaybackAsync",
+                            TimeSpan.FromSeconds(1),
+                            TimeSpan.FromSeconds(2),
+                            CancellationToken.None));
+
+                    Assert.Equal(
+                        "Expected primary time seek failure.",
+                        error.Message);
+                    Assert.Equal(
+                        TimeSpan.Zero,
+                        primaryEngine.Position.PresentationTime);
+                    Assert.Equal(
+                        TimeSpan.FromSeconds(2),
+                        compareEngine.Position.PresentationTime);
+                    Assert.True(primaryEngine.IsPlaying);
+                    Assert.True(compareEngine.IsPlaying);
+                    Assert.Equal(1, primaryEngine.PlayCallCount);
+                    Assert.Equal(1, compareEngine.PlayCallCount);
+                    Assert.False(GetPrivateField<bool>(
+                        window,
+                        "_isSynchronizedFramePresentationActive"));
+                }
+                finally
+                {
+                    primarySeekCompletion.TrySetResult(true);
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task MainSharedTransport_PartialFrameSeekFailureEndsSynchronizedPresentation()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var primarySeekCompletion = new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        SeekFrameCompletion = primarySeekCompletion
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_isCompareModeSelected", true);
+                    SetPrivateField(window, "_isAllPaneTransportSelected", true);
+                    primarySeekCompletion.TrySetException(
+                        new InvalidOperationException("Expected primary frame seek failure."));
+
+                    var error = await Assert.ThrowsAsync<InvalidOperationException>(
+                        async () => await (Task)InvokePrivate(
+                            window,
+                            "SeekAllPaneToFramePreservingPlaybackAsync",
+                            42L));
+
+                    Assert.Equal(
+                        "Expected primary frame seek failure.",
+                        error.Message);
+                    Assert.Null(primaryEngine.Position.FrameIndex);
+                    Assert.Equal(42L, compareEngine.Position.FrameIndex);
+                    Assert.True(primaryEngine.IsPlaying);
+                    Assert.True(compareEngine.IsPlaying);
+                    Assert.Equal(1, primaryEngine.PlayCallCount);
+                    Assert.Equal(1, compareEngine.PlayCallCount);
+                    Assert.False(GetPrivateField<bool>(
+                        window,
+                        "_isSynchronizedFramePresentationActive"));
+                }
+                finally
+                {
+                    primarySeekCompletion.TrySetResult(true);
                     window.Close();
                 }
             });
@@ -1307,7 +3858,15 @@ namespace FramePlayer.Avalonia.Tests
                 "private void SetLoopMarker(");
 
             Assert.Contains("textBox == FrameNumberTextBox && IsAllPaneTransportEnabled", frameEntryMethod, StringComparison.Ordinal);
-            Assert.Contains("await SeekAllPaneToFramePreservingPlaybackAsync(oneBasedFrame - 1);", frameEntryMethod, StringComparison.Ordinal);
+            var frameSeekIndex = frameEntryMethod.IndexOf(
+                "var seekTask = SeekAllPaneToFramePreservingPlaybackAsync(oneBasedFrame - 1);",
+                StringComparison.Ordinal);
+            var frameHandoffIndex = frameEntryMethod.IndexOf(
+                "ClearAllQueuedSliderScrubResumeReservations();",
+                StringComparison.Ordinal);
+            var frameAwaitIndex = frameEntryMethod.IndexOf("await seekTask;", StringComparison.Ordinal);
+            Assert.True(frameSeekIndex >= 0 && frameSeekIndex < frameHandoffIndex);
+            Assert.True(frameHandoffIndex < frameAwaitIndex);
             Assert.Contains("await Task.WhenAll(", allPaneFrameSeekMethod, StringComparison.Ordinal);
             Assert.Contains(
                 "_primaryEngine.SeekToFrameAsync(targetFrameIndex, CancellationToken.None)",
@@ -1323,7 +3882,7 @@ namespace FramePlayer.Avalonia.Tests
             Assert.Contains("finally", allPaneFrameSeekMethod, StringComparison.Ordinal);
             Assert.True(
                 allPaneFrameSeekMethod.IndexOf("await Task.WhenAll(", StringComparison.Ordinal) <
-                allPaneFrameSeekMethod.IndexOf("var resumeTasks", StringComparison.Ordinal));
+                allPaneFrameSeekMethod.IndexOf("await ResumePlaybackForIntentAsync(", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -2140,20 +4699,6 @@ namespace FramePlayer.Avalonia.Tests
             return Assert.IsType<WriteableBitmap>(image.Source);
         }
 
-        private static RenderedColor SampleRenderedSurfaceColor(Window window, Control surface)
-        {
-            using var renderedFrame = window.CaptureRenderedFrame();
-            Assert.NotNull(renderedFrame);
-
-            var surfaceCenter = new Point(surface.Bounds.Width / 2d, surface.Bounds.Height / 2d);
-            var windowPoint = surface.TranslatePoint(surfaceCenter, window);
-            Assert.NotNull(windowPoint);
-
-            var x = Math.Clamp((int)Math.Round(windowPoint.Value.X), 0, renderedFrame.PixelSize.Width - 1);
-            var y = Math.Clamp((int)Math.Round(windowPoint.Value.Y), 0, renderedFrame.PixelSize.Height - 1);
-            return ReadBitmapPixel(renderedFrame, x, y);
-        }
-
         private static RenderedColor ReadBitmapPixel(Bitmap bitmap, int x, int y)
         {
             var bytes = new byte[bitmap.PixelSize.Width * bitmap.PixelSize.Height * 4];
@@ -2184,7 +4729,23 @@ namespace FramePlayer.Avalonia.Tests
             return CreateFrameBuffer(width, height, red: 0xC0, green: 0x80, blue: 0x40);
         }
 
+        private static DecodedFrameBuffer CreateFrameBuffer(int width, int height, TimeSpan presentationTime)
+        {
+            return CreateFrameBuffer(width, height, presentationTime, red: 0xC0, green: 0x80, blue: 0x40);
+        }
+
         private static DecodedFrameBuffer CreateFrameBuffer(int width, int height, byte red, byte green, byte blue)
+        {
+            return CreateFrameBuffer(width, height, TimeSpan.Zero, red, green, blue);
+        }
+
+        private static DecodedFrameBuffer CreateFrameBuffer(
+            int width,
+            int height,
+            TimeSpan presentationTime,
+            byte red,
+            byte green,
+            byte blue)
         {
             var pixels = new byte[width * height * 4];
             for (var index = 0; index < pixels.Length; index += 4)
@@ -2197,8 +4758,8 @@ namespace FramePlayer.Avalonia.Tests
 
             return new DecodedFrameBuffer(
                 new FrameDescriptor(
-                    0,
-                    TimeSpan.Zero,
+                    Math.Max(0L, (long)Math.Round(presentationTime.TotalSeconds * 30d)),
+                    presentationTime,
                     false,
                     true,
                     width,
@@ -2251,15 +4812,20 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
-        public void CompareMode_FocusedUnloadedPaneDisablesMainTransportCommands()
+        public async Task CompareMode_FocusedUnloadedPaneDisablesMainTransportCommands()
         {
-            _fixture.Run(() =>
+            await _fixture.RunAsync(async () =>
             {
                 var window = new MainWindow();
                 try
                 {
                     RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
                     RequireControl<CheckBox>(window, "AllPanesCheckBox").IsChecked = false;
+                    await (GetPrivateField<Task>(
+                        window,
+                        "_allPanesSelectionChangeTask")
+                        ?? throw new InvalidOperationException(
+                            "Missing all-pane selection change task."));
                     var playPause = RequireControl<Button>(window, "PlayPauseButton");
                     var previousFrame = RequireControl<Button>(window, "PreviousFrameButton");
                     var nextFrame = RequireControl<Button>(window, "NextFrameButton");
@@ -2526,7 +5092,15 @@ namespace FramePlayer.Avalonia.Tests
 
             public TaskCompletionSource<bool>? PauseCompletion { get; set; }
 
+            public TaskCompletionSource<bool>? PlayCompletion { get; set; }
+
             public TaskCompletionSource<bool>? SeekTimeCompletion { get; set; }
+
+            public TaskCompletionSource<bool>? SeekFrameCompletion { get; set; }
+
+            public Action<int>? StepForwarded { get; set; }
+
+            public Action<int>? StepBackwarded { get; set; }
 
             public string LastErrorMessage { get; set; } = string.Empty;
 
@@ -2536,9 +5110,25 @@ namespace FramePlayer.Avalonia.Tests
 
             public int PauseCallCount { get; private set; }
 
+            public int OpenCallCount { get; private set; }
+
             public int PlayCallCount { get; private set; }
 
             public int SeekToTimeCallCount { get; private set; }
+
+            public int StepForwardCallCount { get; private set; }
+
+            public int StepBackwardCallCount { get; private set; }
+
+            public int SeekToFrameCallCount { get; private set; }
+
+            public int DisposeCallCount { get; private set; }
+
+            public bool WasDisposedWithActiveOperation { get; private set; }
+
+            public bool WasPausedWithActiveOperation { get; private set; }
+
+            private int _activeOperationCount;
 
             public event EventHandler<VideoReviewEngineStateChangedEventArgs> StateChanged
             {
@@ -2554,6 +5144,7 @@ namespace FramePlayer.Avalonia.Tests
 
             public Task OpenAsync(string filePath, CancellationToken cancellationToken = default(CancellationToken))
             {
+                OpenCallCount++;
                 CurrentFilePath = filePath;
                 IsMediaOpen = true;
                 return Task.CompletedTask;
@@ -2570,11 +5161,12 @@ namespace FramePlayer.Avalonia.Tests
             {
                 PlayCallCount++;
                 IsPlaying = true;
-                return Task.CompletedTask;
+                return PlayCompletion == null ? Task.CompletedTask : PlayCompletion.Task;
             }
 
             public Task PauseAsync()
             {
+                WasPausedWithActiveOperation |= Volatile.Read(ref _activeOperationCount) != 0;
                 PauseCallCount++;
                 IsPlaying = false;
                 return PauseCompletion == null ? Task.CompletedTask : PauseCompletion.Task;
@@ -2582,27 +5174,74 @@ namespace FramePlayer.Avalonia.Tests
 
             public Task<FrameStepResult> StepForwardAsync(CancellationToken cancellationToken = default(CancellationToken))
             {
+                StepForwardCallCount++;
+                StepForwarded?.Invoke(StepForwardCallCount);
                 return Task.FromResult(FrameStepResult.Failed(1, Position, "Not implemented.", false));
             }
 
             public Task<FrameStepResult> StepBackwardAsync(CancellationToken cancellationToken = default(CancellationToken))
             {
+                StepBackwardCallCount++;
+                StepBackwarded?.Invoke(StepBackwardCallCount);
                 return Task.FromResult(FrameStepResult.Failed(-1, Position, "Not implemented.", false, false));
             }
 
-            public Task SeekToTimeAsync(TimeSpan position, CancellationToken cancellationToken = default(CancellationToken))
+            public async Task SeekToTimeAsync(TimeSpan position, CancellationToken cancellationToken = default(CancellationToken))
             {
                 SeekToTimeCallCount++;
-                return SeekTimeCompletion == null ? Task.CompletedTask : SeekTimeCompletion.Task;
+                Interlocked.Increment(ref _activeOperationCount);
+                try
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (SeekTimeCompletion != null)
+                    {
+                        await SeekTimeCompletion.Task.WaitAsync(cancellationToken);
+                    }
+
+                    Position = new ReviewPosition(
+                        position,
+                        Position.FrameIndex,
+                        Position.IsFrameAccurate,
+                        Position.IsFrameIndexAbsolute,
+                        Position.PresentationTimestamp,
+                        Position.DecodeTimestamp);
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref _activeOperationCount);
+                }
             }
 
-            public Task SeekToFrameAsync(long frameIndex, CancellationToken cancellationToken = default(CancellationToken))
+            public async Task SeekToFrameAsync(long frameIndex, CancellationToken cancellationToken = default(CancellationToken))
             {
-                return Task.CompletedTask;
+                SeekToFrameCallCount++;
+                Interlocked.Increment(ref _activeOperationCount);
+                try
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (SeekFrameCompletion != null)
+                    {
+                        await SeekFrameCompletion.Task.WaitAsync(cancellationToken);
+                    }
+
+                    Position = new ReviewPosition(
+                        Position.PresentationTime,
+                        Math.Max(0L, frameIndex),
+                        true,
+                        true,
+                        Position.PresentationTimestamp,
+                        Position.DecodeTimestamp);
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref _activeOperationCount);
+                }
             }
 
             public void Dispose()
             {
+                WasDisposedWithActiveOperation = Volatile.Read(ref _activeOperationCount) != 0;
+                DisposeCallCount++;
             }
         }
 

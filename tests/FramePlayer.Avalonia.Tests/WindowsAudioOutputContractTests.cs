@@ -87,12 +87,27 @@ namespace FramePlayer.Avalonia.Tests
                 "Views",
                 "MainWindow.axaml.cs");
 
-            Assert.Contains("SeekToTimePreservingPlaybackAsync", mainWindowSource, StringComparison.Ordinal);
-            Assert.Contains("var resumePlayback = engine.IsPlaying;", mainWindowSource, StringComparison.Ordinal);
-            Assert.Contains("await engine.SeekToTimeAsync(target, cancellationToken);", mainWindowSource, StringComparison.Ordinal);
-            Assert.Contains("await engine.PlayAsync();", mainWindowSource, StringComparison.Ordinal);
+            Assert.Contains("SeekPaneToTimePreservingPlaybackAsync", mainWindowSource, StringComparison.Ordinal);
+            Assert.Contains(
+                "var seekIntent = BeginPanePreservingSeekIntent(pane, engine);",
+                mainWindowSource,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "var resumePlayback = seekIntent.ResumePlayback;",
+                mainWindowSource,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "await engine.SeekToTimeAsync(target, cancellationToken).ConfigureAwait(false);",
+                mainWindowSource,
+                StringComparison.Ordinal);
+            Assert.Contains("await engine.PlayAsync().ConfigureAwait(false);", mainWindowSource, StringComparison.Ordinal);
             Assert.Contains("QueueSliderScrub(TimeSpan.FromSeconds(PositionSlider.Value));", mainWindowSource, StringComparison.Ordinal);
-            Assert.Contains("await SeekMasterTimelineAsync(_pendingSliderScrubTarget, _sliderScrubCts.Token);", mainWindowSource, StringComparison.Ordinal);
+            Assert.Contains(
+                "var seekTask = SeekMasterTimelineAsync(_pendingSliderScrubTarget, _sliderScrubCts.Token);",
+                mainWindowSource,
+                StringComparison.Ordinal);
+            Assert.Contains("ForgetQueuedSliderScrubResumeReservation();", mainWindowSource, StringComparison.Ordinal);
+            Assert.Contains("await seekTask;", mainWindowSource, StringComparison.Ordinal);
             Assert.Contains(
                 "await SeekAllPaneToTimePreservingPlaybackAsync(target, cancellationToken).ConfigureAwait(false);",
                 mainWindowSource,
