@@ -12,6 +12,7 @@ env:
 
 jobs:
   build:
+    name: Windows build and test
     runs-on: windows-latest
 
     steps:
@@ -28,8 +29,8 @@ jobs:
       - name: Setup Rust toolchain
         shell: pwsh
         run: |
-          rustup toolchain install stable --profile minimal
           rustup component add clippy rustfmt
+          rustc --version
           cargo --version
 
       - name: Check spelling
@@ -137,6 +138,7 @@ jobs:
         run: |
           cargo fmt --manifest-path .\native\frameplayer_ffmpeg_probe\Cargo.toml --all -- --check
           cargo clippy --manifest-path .\native\frameplayer_ffmpeg_probe\Cargo.toml --all-targets --all-features --locked -- -D warnings
+          cargo test --manifest-path .\native\frameplayer_ffmpeg_probe\Cargo.toml --all-targets --all-features --locked
 
       - name: Restore pinned FFmpeg runtime
         shell: pwsh
