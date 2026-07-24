@@ -32,7 +32,7 @@ jobs:
       - name: Setup Rust toolchain
         shell: pwsh
         run: |
-          rustup toolchain install stable --profile minimal
+          rustc --version
           cargo --version
 
       - name: Restore pinned runtimes

@@ -18,6 +18,7 @@ env:
 
 jobs:
   analyze:
+    name: SonarQube analysis
     runs-on: windows-latest
 
     steps:
