@@ -14,13 +14,14 @@ using Xunit;
 
 namespace FramePlayer.Avalonia.Tests
 {
-    public sealed class MacTransportParityHarnessTests : IClassFixture<AvaloniaHeadlessFixture>
+    [Collection(MacReleaseCandidateTestGroup.Name)]
+    public sealed class MacTransportParityHarnessTests
     {
         private static readonly TimeSpan PlaybackObservationDelay = TimeSpan.FromMilliseconds(900);
         private static readonly string[] SupportedExtensions = { ".avi", ".m4v", ".mkv", ".mov", ".mp4", ".ts", ".wmv" };
-        private readonly AvaloniaHeadlessFixture _fixture;
+        private readonly MacReleaseCandidateHeadlessFixture _fixture;
 
-        public MacTransportParityHarnessTests(AvaloniaHeadlessFixture fixture)
+        public MacTransportParityHarnessTests(MacReleaseCandidateHeadlessFixture fixture)
         {
             _fixture = fixture;
         }

@@ -8,6 +8,7 @@ using Xunit;
 
 namespace FramePlayer.Avalonia.Tests
 {
+    [Collection(MacReleaseCandidateTestGroup.Name)]
     public sealed class MacCorpusReleaseCandidateTests
     {
         private static readonly string[] SupportedExtensions =
