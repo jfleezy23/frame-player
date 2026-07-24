@@ -2916,9 +2916,8 @@ namespace FramePlayer.Avalonia.Views
 
         private async void AllPanesCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)
         {
-            var selectionChangeTask = HandleAllPanesSelectionChangedAsync();
-            _allPanesSelectionChangeTask = selectionChangeTask;
-            await selectionChangeTask;
+            _allPanesSelectionChangeTask = HandleAllPanesSelectionChangedAsync();
+            await _allPanesSelectionChangeTask;
         }
 
         private async Task HandleAllPanesSelectionChangedAsync()
@@ -2965,8 +2964,7 @@ namespace FramePlayer.Avalonia.Views
                     preservePrimaryPlayback &&
                     preserveComparePlayback &&
                     _primaryEngine.IsMediaOpen &&
-                    compareEngine != null &&
-                    compareEngine.IsMediaOpen)
+                    compareEngine!.IsMediaOpen)
                 {
                     var synchronizationTarget = _primaryEngine.Position.PresentationTime;
                     await SeekAllPaneToTimesPreservingPlaybackCoreAsync(
@@ -2995,8 +2993,7 @@ namespace FramePlayer.Avalonia.Views
                     CanStartPlayback(_primaryEngine);
                 var resumeCompare =
                     preserveComparePlayback &&
-                    compareEngine != null &&
-                    !compareEngine.IsPlaying &&
+                    !compareEngine!.IsPlaying &&
                     CanStartPlayback(compareEngine);
                 if (compareEngine != null && (resumePrimary || resumeCompare))
                 {
@@ -3368,11 +3365,6 @@ namespace FramePlayer.Avalonia.Views
             }
         }
 
-        private int EndSynchronizedFramePresentation()
-        {
-            return BeginAllPaneTransportIntent();
-        }
-
         private int BeginPaneTransportIntent(Pane pane)
         {
             int allPaneTransportIntentGeneration;
@@ -3624,6 +3616,11 @@ namespace FramePlayer.Avalonia.Views
         private bool IsPaneTransportIntentCurrent(Pane pane, int transportIntentGeneration)
         {
             return GetPaneTransportIntentGeneration(pane) == transportIntentGeneration;
+        }
+
+        private int EndSynchronizedFramePresentation()
+        {
+            return BeginAllPaneTransportIntent();
         }
 
         private void EndSynchronizedFramePresentation(int expectedTransportIntentGeneration)
@@ -4150,7 +4147,7 @@ namespace FramePlayer.Avalonia.Views
                 : "Loop: off";
         }
 
-        private string BuildLoopStatusText(LoopPlaybackPaneRangeSnapshot range, bool isEnabled)
+        private static string BuildLoopStatusText(LoopPlaybackPaneRangeSnapshot range, bool isEnabled)
         {
             if (range == null || !range.HasAnyMarkers)
             {
@@ -6253,7 +6250,7 @@ namespace FramePlayer.Avalonia.Views
         {
             _nativeRecentFilesMenuItem = new NativeMenuItem("Open Recent")
             {
-                Menu = new NativeMenu()
+                Menu = []
             };
             _nativeCloseVideoMenuItem = CreateMenuItem("Close Video", async (_, _) => await CloseVideosAsync(), new KeyGesture(Key.W, CommandKeyModifier));
             _nativeVideoInfoMenuItem = CreateMenuItem("Video Info...", (sender, _) => VideoInfoMenuItem_Click(sender, new RoutedEventArgs()));
@@ -6342,7 +6339,7 @@ namespace FramePlayer.Avalonia.Views
         {
             var menuItem = new NativeMenuItem(header)
             {
-                Menu = new NativeMenu()
+                Menu = []
             };
 
             foreach (var item in items)

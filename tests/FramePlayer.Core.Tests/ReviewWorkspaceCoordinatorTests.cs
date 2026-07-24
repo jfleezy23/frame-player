@@ -493,9 +493,9 @@ namespace FramePlayer.Core.Tests
 
             public int PauseCallCount { get; private set; }
 
-            public List<TimeSpan> SeekTimeRequests { get; } = new List<TimeSpan>();
+            public List<TimeSpan> SeekTimeRequests { get; } = [];
 
-            public List<long> SeekFrameRequests { get; } = new List<long>();
+            public List<long> SeekFrameRequests { get; } = [];
 
             public Exception? OpenException { get; set; }
 

@@ -9,7 +9,7 @@ namespace FramePlayer.Avalonia.Services
 {
     internal sealed class DiagnosticLogService
     {
-        private readonly List<string> _entries = new List<string>();
+        private readonly List<string> _entries = [];
         private readonly object _lock = new object();
         private readonly string _latestLogPath;
 

@@ -1333,8 +1333,10 @@ namespace FramePlayer.Core.Coordination
             }
 
             var focusedBinding = GetFocusedBinding();
-            var bindings = new List<WorkspacePaneBinding>(_paneBindings.Count);
-            bindings.Add(focusedBinding);
+            var bindings = new List<WorkspacePaneBinding>(_paneBindings.Count)
+            {
+                focusedBinding
+            };
             for (var index = 0; index < _paneBindings.Count; index++)
             {
                 var binding = _paneBindings[index];
