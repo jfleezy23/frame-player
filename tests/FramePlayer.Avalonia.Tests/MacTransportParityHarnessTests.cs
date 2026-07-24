@@ -202,7 +202,7 @@ namespace FramePlayer.Avalonia.Tests
                 SetCompareMode(window!, true);
                 await InvokeWindowTaskAsync(window!, "OpenMediaAsync", file, "pane-primary")
                     .WaitAsync(TimeSpan.FromSeconds(10));
-                await InvokeWindowTaskAsync(window!, "OpenMediaAsync", file, "pane-compare")
+                await InvokeWindowTaskAsync(window!, "OpenMediaAsync", file!, "pane-compare")
                     .WaitAsync(TimeSpan.FromSeconds(10));
 
                 var primaryEngine = GetPrimaryEngine(window!);
@@ -295,12 +295,15 @@ namespace FramePlayer.Avalonia.Tests
 
         [Fact]
         [Trait("Category", "ReleaseCandidate")]
-        public async Task CompareWindow_AllPanePlaybackKeepsIdenticalAudioMediaSynchronized()
+        public async Task CompareWindow_LiveSyncInBothDirectionsKeepsIdenticalMediaSynchronized()
         {
             ConfigureRuntime();
             var files = FindCorpusFiles();
             var file = files.FirstOrDefault(path =>
-                Path.GetFileName(path).StartsWith("Audio_Video_Sync_", StringComparison.OrdinalIgnoreCase)) ?? files[0];
+                string.Equals(
+                    Path.GetFileName(path),
+                    "hevc-2398-20s.mp4",
+                    StringComparison.OrdinalIgnoreCase)) ?? files[0];
 
             MainWindow? window = null;
             try
@@ -316,8 +319,12 @@ namespace FramePlayer.Avalonia.Tests
                 var compareEngine = GetCompareEngine(window!);
                 await WaitForIndexAsync(primaryEngine);
                 await WaitForIndexAsync(compareEngine);
-                Assert.True(primaryEngine.MediaInfo.HasAudioStream, file + " did not report audio in the left pane.");
-                Assert.True(compareEngine.MediaInfo.HasAudioStream, file + " did not report audio in the right pane.");
+                Assert.True(
+                    primaryEngine.MediaInfo.HasAudioStream,
+                    file + " did not report audio in the left pane.");
+                Assert.True(
+                    compareEngine.MediaInfo.HasAudioStream,
+                    file + " did not report audio in the right pane.");
                 var frameStep = primaryEngine.MediaInfo.PositionStep > TimeSpan.Zero
                     ? primaryEngine.MediaInfo.PositionStep
                     : TimeSpan.FromSeconds(1d / Math.Max(primaryEngine.MediaInfo.FramesPerSecond, 24d));
@@ -332,6 +339,39 @@ namespace FramePlayer.Avalonia.Tests
                         (SynchronizedOperationScope?)SynchronizedOperationScope.AllPanes,
                         "pane-primary")
                     .WaitAsync(TimeSpan.FromSeconds(10));
+
+                var primaryPane = ParsePane(window!, "Primary");
+                var comparePane = ParsePane(window!, "Compare");
+                for (var syncCycle = 0; syncCycle < 3; syncCycle++)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(150));
+                    var primaryToCompareAligned = await InvokeAlignmentAsync(
+                            window!,
+                            primaryEngine,
+                            compareEngine,
+                            primaryPane,
+                            comparePane);
+                    Assert.True(
+                        primaryToCompareAligned,
+                        BuildAlignmentDiagnostics(window!, primaryEngine, compareEngine));
+                    GetPresentedFrameTimesAndValidateReadouts(window!);
+                    Assert.True(primaryEngine.IsPlaying);
+                    Assert.True(compareEngine.IsPlaying);
+
+                    await Task.Delay(TimeSpan.FromMilliseconds(150));
+                    var compareToPrimaryAligned = await InvokeAlignmentAsync(
+                            window!,
+                            primaryEngine,
+                            compareEngine,
+                            comparePane,
+                            primaryPane);
+                    Assert.True(
+                        compareToPrimaryAligned,
+                        BuildAlignmentDiagnostics(window!, primaryEngine, compareEngine));
+                    GetPresentedFrameTimesAndValidateReadouts(window!);
+                    Assert.True(primaryEngine.IsPlaying);
+                    Assert.True(compareEngine.IsPlaying);
+                }
 
                 var maximumEngineDelta = TimeSpan.Zero;
                 var maximumRawEngineDelta = TimeSpan.Zero;
@@ -383,10 +423,89 @@ namespace FramePlayer.Avalonia.Tests
                     .WaitAsync(TimeSpan.FromSeconds(10));
                 GetPresentedFrameTimesAndValidateReadouts(window!);
 
-                Assert.True(primaryEngine.LastAudioSubmittedBytes > 0, "Left pane did not submit audio bytes.");
-                Assert.True(compareEngine.LastAudioSubmittedBytes > 0, "Right pane did not submit audio bytes.");
-                Assert.True(primaryEngine.LastPlaybackUsedAudioClock, "Left pane did not use its audio clock.");
-                Assert.True(compareEngine.LastPlaybackUsedAudioClock, "Right pane did not use its audio clock.");
+                Assert.True(
+                    primaryEngine.LastAudioSubmittedBytes > 0,
+                    "Left pane did not submit audio bytes.");
+                Assert.True(
+                    compareEngine.LastAudioSubmittedBytes > 0,
+                    "Right pane did not submit audio bytes.");
+                Assert.True(
+                    primaryEngine.LastPlaybackUsedAudioClock,
+                    "Left pane did not use its audio clock.");
+                Assert.True(
+                    compareEngine.LastPlaybackUsedAudioClock,
+                    "Right pane did not use its audio clock.");
+
+                var pausedAlignment = await InvokeAlignmentAsync(
+                    window!,
+                    primaryEngine,
+                    compareEngine,
+                    comparePane,
+                    primaryPane);
+                Assert.True(
+                    pausedAlignment,
+                    BuildAlignmentDiagnostics(
+                        window!,
+                        primaryEngine,
+                        compareEngine));
+                Assert.False(primaryEngine.IsPlaying);
+                Assert.False(compareEngine.IsPlaying);
+
+                await InvokeWindowTaskAsync(
+                        window!,
+                        "StartPlaybackAsync",
+                        (SynchronizedOperationScope?)
+                            SynchronizedOperationScope.AllPanes,
+                        "pane-primary")
+                    .WaitAsync(TimeSpan.FromSeconds(10));
+                var postPausePrimaryTimes = new HashSet<TimeSpan>();
+                var postPauseCompareTimes = new HashSet<TimeSpan>();
+                for (var index = 0; index < 60; index++)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(50));
+                    var presentedTimes =
+                        GetPresentedFrameTimesAndValidateReadouts(window!);
+                    postPausePrimaryTimes.Add(presentedTimes.Primary);
+                    postPauseCompareTimes.Add(presentedTimes.Compare);
+                }
+
+                await InvokeWindowTaskAsync(
+                        window!,
+                        "PausePlaybackAsync",
+                        true,
+                        (SynchronizedOperationScope?)
+                            SynchronizedOperationScope.AllPanes)
+                    .WaitAsync(TimeSpan.FromSeconds(10));
+                GetPresentedFrameTimesAndValidateReadouts(window!);
+                Assert.True(
+                    primaryEngine.LastAudioSubmittedBytes > 0,
+                    "Left pane did not resume audio after paused synchronization.");
+                Assert.True(
+                    compareEngine.LastAudioSubmittedBytes > 0,
+                    "Right pane did not resume audio after paused synchronization.");
+                Assert.True(
+                    primaryEngine.LastPlaybackUsedAudioClock,
+                    "Left pane did not resume on its audio clock after paused synchronization.");
+                Assert.True(
+                    compareEngine.LastPlaybackUsedAudioClock,
+                    "Right pane did not resume on its audio clock after paused synchronization.");
+                Assert.True(
+                    postPausePrimaryTimes.Count >= 6 &&
+                        postPauseCompareTimes.Count >= 6,
+                    "Shared pause -> paused sync -> shared resume did not remain live. Left=" +
+                    postPausePrimaryTimes.Count +
+                    " right=" +
+                    postPauseCompareTimes.Count);
+                Assert.True(
+                    postPausePrimaryTimes.Max() -
+                        postPausePrimaryTimes.Min() >=
+                        frameStep + frameStep + frameStep,
+                    "Left pane froze after shared pause and paused synchronization.");
+                Assert.True(
+                    postPauseCompareTimes.Max() -
+                        postPauseCompareTimes.Min() >=
+                        frameStep + frameStep + frameStep,
+                    "Right pane froze after shared pause and paused synchronization.");
                 Console.WriteLine(
                     "Synchronized presentation samples: left=" +
                     primaryPresentedTimes.Count +
@@ -651,6 +770,100 @@ namespace FramePlayer.Avalonia.Tests
             return (T)field.GetValue(window)!;
         }
 
+        private string BuildAlignmentDiagnostics(
+            MainWindow window,
+            FfmpegReviewEngine primaryEngine,
+            FfmpegReviewEngine compareEngine)
+        {
+            var primaryPresented = "missing";
+            var comparePresented = "missing";
+            var status = string.Empty;
+            _fixture.Run(() =>
+            {
+                var primaryFrame = GetPrivateField<DecodedFrameBuffer?>(
+                    window,
+                    "_primaryFrameBuffer");
+                var compareFrame = GetPrivateField<DecodedFrameBuffer?>(
+                    window,
+                    "_compareFrameBuffer");
+                primaryPresented = FormatFrameDescriptor(primaryFrame?.Descriptor);
+                comparePresented = FormatFrameDescriptor(compareFrame?.Descriptor);
+                status = window.FindControl<TextBlock>("CacheStatusTextBlock")?.Text ?? string.Empty;
+            });
+
+            return "Alignment returned false. Primary engine=" +
+                FormatReviewPosition(primaryEngine.Position) +
+                " compare engine=" +
+                FormatReviewPosition(compareEngine.Position) +
+                " primary presented=" +
+                primaryPresented +
+                " compare presented=" +
+                comparePresented +
+                " sync-active=" +
+                GetPrivateField<bool>(
+                    window,
+                    "_isSynchronizedFramePresentationActive") +
+                " all-gate=" +
+                GetPrivateField<SemaphoreSlim>(
+                    window,
+                    "_allPaneTransportOperationGate").CurrentCount +
+                " primary-gate=" +
+                GetPrivateField<SemaphoreSlim>(
+                    window,
+                    "_primaryPaneTransportOperationGate").CurrentCount +
+                " compare-gate=" +
+                GetPrivateField<SemaphoreSlim>(
+                    window,
+                    "_comparePaneTransportOperationGate").CurrentCount +
+                " playback-gate=" +
+                GetPrivateField<SemaphoreSlim>(
+                    window,
+                    "_playbackStartGate").CurrentCount +
+                " status=" +
+                status;
+        }
+
+        private async Task<bool> InvokeAlignmentAsync(
+            MainWindow window,
+            FfmpegReviewEngine primaryEngine,
+            FfmpegReviewEngine compareEngine,
+            object sourcePane,
+            object targetPane)
+        {
+            var alignmentTask = InvokeWindowTaskAsync<bool>(
+                window,
+                "AlignPaneToPaneAsync",
+                sourcePane,
+                targetPane);
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
+            while (!alignmentTask.IsCompleted && DateTime.UtcNow < deadline)
+            {
+                _fixture.Run(() => { });
+                await Task.Delay(TimeSpan.FromMilliseconds(10));
+            }
+
+            Assert.True(
+                alignmentTask.IsCompleted,
+                BuildAlignmentDiagnostics(window, primaryEngine, compareEngine));
+            return await alignmentTask;
+        }
+
+        private static string FormatFrameDescriptor(FrameDescriptor? descriptor)
+        {
+            return descriptor == null
+                ? "missing"
+                : "frame=" + descriptor.FrameIndex +
+                    " time=" + descriptor.PresentationTime +
+                    " pts=" + descriptor.PresentationTimestamp;
+        }
+
+        private static string FormatReviewPosition(ReviewPosition position)
+        {
+            return "frame=" + position.FrameIndex +
+                " time=" + position.PresentationTime +
+                " pts=" + position.PresentationTimestamp;
+        }
+
         private (TimeSpan Primary, TimeSpan Compare) GetPresentedFrameTimesAndValidateReadouts(
             MainWindow window)
         {
@@ -668,6 +881,16 @@ namespace FramePlayer.Avalonia.Tests
                 Assert.NotNull(compareFrame);
                 primaryTime = primaryFrame?.Descriptor.PresentationTime ?? TimeSpan.Zero;
                 compareTime = compareFrame?.Descriptor.PresentationTime ?? TimeSpan.Zero;
+                Assert.Equal(
+                    primaryFrame?.Descriptor.FrameIndex,
+                    compareFrame?.Descriptor.FrameIndex);
+                Assert.Equal(primaryTime, compareTime);
+                Assert.Equal(
+                    primaryFrame?.Descriptor.PresentationTimestamp,
+                    compareFrame?.Descriptor.PresentationTimestamp);
+                Assert.Equal(
+                    primaryFrame?.Descriptor.DecodeTimestamp,
+                    compareFrame?.Descriptor.DecodeTimestamp);
                 var primaryTimeText = FormatTime(primaryTime);
                 var compareTimeText = FormatTime(compareTime);
                 var primaryFrameText = FormatFrameNumber(primaryFrame?.Descriptor.FrameIndex);
@@ -706,6 +929,13 @@ namespace FramePlayer.Avalonia.Tests
             });
 
             return (primaryTime, compareTime);
+        }
+
+        private static object ParsePane(MainWindow window, string paneName)
+        {
+            var paneType = window.GetType().GetNestedType("Pane", BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("Missing MainWindow.Pane enum.");
+            return Enum.Parse(paneType, paneName);
         }
 
         private static string FormatFrameNumber(long? frameIndex)
