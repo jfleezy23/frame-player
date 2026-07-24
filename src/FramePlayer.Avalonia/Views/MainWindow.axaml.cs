@@ -44,6 +44,8 @@ namespace FramePlayer.Avalonia.Views
         private DecodedFrameBuffer? _compareFrameBuffer;
         private WriteableBitmap? _primaryReusableBitmap;
         private WriteableBitmap? _compareReusableBitmap;
+        private WriteableBitmap? _primarySynchronizedStagingBitmap;
+        private WriteableBitmap? _compareSynchronizedStagingBitmap;
         private readonly object _primaryFramePresentationLock = new();
         private readonly object _compareFramePresentationLock = new();
         private DecodedFrameBuffer? _pendingPrimaryFrameBuffer;
@@ -59,6 +61,9 @@ namespace FramePlayer.Avalonia.Views
         private long _synchronizedFramePresentationGeneration;
         private TimeSpan _synchronizedFramePresentationTimeOffset;
         private bool _captureSynchronizedFramePresentationTimeOffset;
+        private FrameDescriptor? _synchronizedFrameAlignmentSourceDescriptor;
+        private bool _synchronizedFrameAlignmentUsesFrameIdentity;
+        private long _lastCommittedSynchronizedFramePresentationGeneration = -1L;
         private bool _isSynchronizedFramePresentationDeferred;
         private int _allPaneTransportIntentGeneration;
         private int _primaryPaneTransportIntentGeneration;
@@ -1317,7 +1322,8 @@ namespace FramePlayer.Avalonia.Views
 
                 if (synchronizePresentation)
                 {
-                    if (!TryBeginSynchronizedFramePresentation(transportIntentGeneration))
+                    if (!TryBeginSynchronizedFramePresentation(
+                            transportIntentGeneration))
                     {
                         return false;
                     }
@@ -1460,7 +1466,7 @@ namespace FramePlayer.Avalonia.Views
             }
 
             var engine = GetEngine(pane);
-            var target = engine.Position.PresentationTime + offset;
+            var target = GetPresentedTransportTime(pane, engine) + offset;
             if (target < TimeSpan.Zero)
             {
                 target = TimeSpan.Zero;
@@ -2151,8 +2157,9 @@ namespace FramePlayer.Avalonia.Views
                 return;
             }
 
-            var primaryTarget = ClampSeekTarget(_primaryEngine.Position.PresentationTime + offset);
-            var compareTarget = ClampSeekTarget(compareEngine.Position.PresentationTime + offset);
+            var presentedPositions = GetPresentedTransportTimes(_primaryEngine, compareEngine);
+            var primaryTarget = ClampSeekTarget(presentedPositions.Primary + offset);
+            var compareTarget = ClampSeekTarget(presentedPositions.Compare + offset);
             await SeekAllPaneToTimesPreservingPlaybackAsync(
                 primaryTarget,
                 compareTarget,
@@ -2892,8 +2899,8 @@ namespace FramePlayer.Avalonia.Views
             return primaryEngine.IsMediaOpen &&
                 compareEngine != null &&
                 compareEngine.IsMediaOpen &&
-                primaryEngine.IsPlaying &&
-                compareEngine.IsPlaying;
+                (primaryEngine.IsPlaying ||
+                    compareEngine.IsPlaying);
         }
 
         private bool CanToggleAllPanePlayback()
@@ -2966,7 +2973,8 @@ namespace FramePlayer.Avalonia.Views
                     _primaryEngine.IsMediaOpen &&
                     compareEngine!.IsMediaOpen)
                 {
-                    var synchronizationTarget = _primaryEngine.Position.PresentationTime;
+                    var synchronizationTarget =
+                        GetPresentedTransportTime(Pane.Primary, _primaryEngine);
                     await SeekAllPaneToTimesPreservingPlaybackCoreAsync(
                         synchronizationTarget,
                         synchronizationTarget,
@@ -3066,9 +3074,17 @@ namespace FramePlayer.Avalonia.Views
             }
 
             CancelQueuedSliderScrubs();
-            if (await AlignPaneToPaneAsync(Pane.Primary, Pane.Compare))
+            var alignmentTask =
+                AlignPaneToPaneAsync(Pane.Primary, Pane.Compare);
+            var alignmentGeneration =
+                Volatile.Read(ref _allPaneTransportIntentGeneration);
+            var alignmentSucceeded = await alignmentTask;
+            if (Volatile.Read(ref _allPaneTransportIntentGeneration) ==
+                alignmentGeneration)
             {
-                CompareStatusTextBlock.Text = "Compare: synced right to left";
+                CompareStatusTextBlock.Text = alignmentSucceeded
+                    ? "Compare: synced right to left"
+                    : "Compare: synchronization failed; playback paused";
             }
         }
 
@@ -3080,9 +3096,17 @@ namespace FramePlayer.Avalonia.Views
             }
 
             CancelQueuedSliderScrubs();
-            if (await AlignPaneToPaneAsync(Pane.Compare, Pane.Primary))
+            var alignmentTask =
+                AlignPaneToPaneAsync(Pane.Compare, Pane.Primary);
+            var alignmentGeneration =
+                Volatile.Read(ref _allPaneTransportIntentGeneration);
+            var alignmentSucceeded = await alignmentTask;
+            if (Volatile.Read(ref _allPaneTransportIntentGeneration) ==
+                alignmentGeneration)
             {
-                CompareStatusTextBlock.Text = "Compare: synced left to right";
+                CompareStatusTextBlock.Text = alignmentSucceeded
+                    ? "Compare: synced left to right"
+                    : "Compare: synchronization failed; playback paused";
             }
         }
 
@@ -3095,13 +3119,37 @@ namespace FramePlayer.Avalonia.Views
 
             var sourceEngine = GetEngine(sourcePane);
             var targetEngine = GetEngine(targetPane);
-            var transportIntentGeneration = BeginAllPaneTransportIntent();
-            InvalidateLoopRestart(targetPane);
+            (
+                int TransportIntentGeneration,
+                int PrimaryIntentGeneration,
+                int CompareIntentGeneration,
+                bool ResumePrimaryPlayback,
+                bool ResumeComparePlayback)? seekIntent = null;
+            seekIntent = BeginAllPanePreservingSeekIntent(
+                _primaryEngine,
+                _compareEngine);
+            var transportIntentGeneration =
+                seekIntent.Value.TransportIntentGeneration;
+            if (!TryBeginSynchronizedFramePresentation(
+                    transportIntentGeneration))
+            {
+                ClearPaneSeekResumeIntent(
+                    Pane.Primary,
+                    seekIntent.Value.PrimaryIntentGeneration);
+                ClearPaneSeekResumeIntent(
+                    Pane.Compare,
+                    seekIntent.Value.CompareIntentGeneration);
+                return false;
+            }
+
+            var alignmentSucceeded = false;
+            InvalidateAllLoopRestarts();
             await WaitForAllPaneTransportOperationAsync().ConfigureAwait(false);
             try
             {
                 if (Volatile.Read(ref _isClosed) != 0 ||
-                    Volatile.Read(ref _allPaneTransportIntentGeneration) != transportIntentGeneration ||
+                    Volatile.Read(ref _allPaneTransportIntentGeneration) !=
+                        transportIntentGeneration ||
                     !ReferenceEquals(sourceEngine, TryGetExistingEngine(sourcePane)) ||
                     !ReferenceEquals(targetEngine, TryGetExistingEngine(targetPane)) ||
                     !sourceEngine.IsMediaOpen ||
@@ -3110,27 +3158,348 @@ namespace FramePlayer.Avalonia.Views
                     return false;
                 }
 
-                if (sourceEngine.Position.FrameIndex.HasValue && sourceEngine.Position.IsFrameIndexAbsolute)
+                await PauseAllPanePlaybackAsync().ConfigureAwait(false);
+                if (Volatile.Read(ref _isClosed) != 0 ||
+                    Volatile.Read(ref _allPaneTransportIntentGeneration) != transportIntentGeneration ||
+                    !ReferenceEquals(sourceEngine, TryGetExistingEngine(sourcePane)) ||
+                    !ReferenceEquals(targetEngine, TryGetExistingEngine(targetPane)))
                 {
-                    await targetEngine.SeekToFrameAsync(
-                        sourceEngine.Position.FrameIndex.Value,
-                        CancellationToken.None).ConfigureAwait(false);
-                }
-                else
-                {
-                    await targetEngine.SeekToTimeAsync(
-                        sourceEngine.Position.PresentationTime,
-                        CancellationToken.None).ConfigureAwait(false);
+                    return false;
                 }
 
-                return Volatile.Read(ref _isClosed) == 0 &&
+                var sourceDescriptor = GetPresentedFrameDescriptor(sourcePane);
+                if (sourceDescriptor == null)
+                {
+                    return false;
+                }
+
+                var seekByFrameIdentity =
+                    sourceDescriptor.FrameIndex.HasValue &&
+                    sourceDescriptor.IsFrameIndexAbsolute &&
+                    AreSameMediaPaths(
+                        sourceEngine.CurrentFilePath,
+                        targetEngine.CurrentFilePath);
+                var presentationGeneration =
+                    TryBeginSynchronizedFrameAlignment(
+                        transportIntentGeneration,
+                        sourceDescriptor,
+                        seekByFrameIdentity);
+                if (!presentationGeneration.HasValue)
+                {
+                    return false;
+                }
+
+                await Task.WhenAll(
+                    Task.Run(
+                        () => SeekEngineToPresentedFrameAsync(
+                            sourceEngine,
+                            sourceDescriptor,
+                            seekByFrameIdentity),
+                        CancellationToken.None),
+                    Task.Run(
+                        () => SeekEngineToPresentedFrameAsync(
+                            targetEngine,
+                            sourceDescriptor,
+                            seekByFrameIdentity),
+                        CancellationToken.None)).ConfigureAwait(false);
+
+                if (Volatile.Read(ref _isClosed) != 0 ||
+                    Volatile.Read(ref _allPaneTransportIntentGeneration) != transportIntentGeneration ||
+                    !await PresentAndValidateAlignedPairAsync(
+                        transportIntentGeneration,
+                        presentationGeneration.Value,
+                        sourceDescriptor,
+                        seekByFrameIdentity).ConfigureAwait(false))
+                {
+                    return false;
+                }
+
+                var resumeSynchronizedPlayback =
+                    seekIntent.Value.ResumePrimaryPlayback &&
+                    seekIntent.Value.ResumeComparePlayback &&
+                    _isCompareModeSelected;
+                if (resumeSynchronizedPlayback &&
+                    !await ResumePlaybackForIntentAsync(
+                        transportIntentGeneration,
+                        _primaryEngine,
+                        resumePrimary: true,
+                        _compareEngine!,
+                        resumeCompare: true,
+                        synchronizePresentation: true).ConfigureAwait(false))
+                {
+                    return false;
+                }
+
+                UpdateCommandStatesOnUiThread();
+                alignmentSucceeded = Volatile.Read(ref _isClosed) == 0 &&
                     Volatile.Read(ref _allPaneTransportIntentGeneration) == transportIntentGeneration &&
                     ReferenceEquals(sourceEngine, TryGetExistingEngine(sourcePane)) &&
                     ReferenceEquals(targetEngine, TryGetExistingEngine(targetPane));
+                return alignmentSucceeded;
+            }
+            catch (Exception ex)
+            {
+                Trace.TraceWarning("Compare pane synchronization failed: " + ex.Message);
+                if (Volatile.Read(ref _isClosed) == 0 &&
+                    Volatile.Read(ref _allPaneTransportIntentGeneration) == transportIntentGeneration)
+                {
+                    await SetStatusMessageAsync(
+                        "Compare synchronization failed: " + ex.Message).ConfigureAwait(false);
+                }
+
+                return false;
             }
             finally
             {
+                if (!alignmentSucceeded &&
+                    Volatile.Read(ref _isClosed) == 0 &&
+                    Volatile.Read(ref _allPaneTransportIntentGeneration) ==
+                        transportIntentGeneration)
+                {
+                    try
+                    {
+                        await PauseAllPanePlaybackAsync().ConfigureAwait(false);
+                    }
+                    catch (Exception pauseEx)
+                    {
+                        Trace.TraceWarning(
+                            "Compare synchronization fail-closed pause failed: " +
+                            pauseEx.Message);
+                    }
+
+                    EndSynchronizedFramePresentation(transportIntentGeneration);
+                    UpdateCommandStatesOnUiThread();
+                }
+
                 ReleaseAllPaneTransportOperation();
+                if (seekIntent.HasValue)
+                {
+                    ClearPaneSeekResumeIntent(
+                        Pane.Primary,
+                        seekIntent.Value.PrimaryIntentGeneration);
+                    ClearPaneSeekResumeIntent(
+                        Pane.Compare,
+                        seekIntent.Value.CompareIntentGeneration);
+                }
+            }
+        }
+
+        private static bool AreSameMediaPaths(string? firstPath, string? secondPath)
+        {
+            if (string.IsNullOrWhiteSpace(firstPath) ||
+                string.IsNullOrWhiteSpace(secondPath))
+            {
+                return false;
+            }
+
+            try
+            {
+                firstPath = Path.GetFullPath(firstPath);
+                secondPath = Path.GetFullPath(secondPath);
+            }
+            catch (Exception ex) when (
+                ex is ArgumentException ||
+                ex is NotSupportedException ||
+                ex is PathTooLongException ||
+                ex is System.Security.SecurityException)
+            {
+                Trace.TraceWarning(
+                    "Compare media path normalization failed: " +
+                    ex.Message);
+            }
+
+            return string.Equals(
+                firstPath,
+                secondPath,
+                OperatingSystem.IsWindows()
+                    ? StringComparison.OrdinalIgnoreCase
+                    : StringComparison.Ordinal);
+        }
+
+        private static Task SeekEngineToPresentedFrameAsync(
+            IVideoReviewEngine engine,
+            FrameDescriptor sourceDescriptor,
+            bool seekByFrameIdentity)
+        {
+            if (seekByFrameIdentity)
+            {
+                return engine.SeekToFrameAsync(
+                    sourceDescriptor.FrameIndex!.Value,
+                    CancellationToken.None);
+            }
+
+            return engine.SeekToTimeAsync(
+                sourceDescriptor.PresentationTime,
+                CancellationToken.None);
+        }
+
+        private async Task<bool> PresentAndValidateAlignedPairAsync(
+            int transportIntentGeneration,
+            long presentationGeneration,
+            FrameDescriptor sourceDescriptor,
+            bool seekByFrameIdentity)
+        {
+            if (Volatile.Read(ref _isClosed) != 0 ||
+                Volatile.Read(ref _allPaneTransportIntentGeneration) !=
+                    transportIntentGeneration)
+            {
+                return false;
+            }
+
+            var dispatcher = CustomVideoSurface.Dispatcher;
+            if (dispatcher.CheckAccess())
+            {
+                PresentPendingSynchronizedFrames(presentationGeneration);
+                return IsPresentedPairAligned(
+                    presentationGeneration,
+                    sourceDescriptor,
+                    seekByFrameIdentity);
+            }
+
+            return await dispatcher.InvokeAsync(() =>
+            {
+                if (Volatile.Read(ref _isClosed) != 0 ||
+                    Volatile.Read(ref _allPaneTransportIntentGeneration) !=
+                        transportIntentGeneration)
+                {
+                    return false;
+                }
+
+                PresentPendingSynchronizedFrames(presentationGeneration);
+                return IsPresentedPairAligned(
+                    presentationGeneration,
+                    sourceDescriptor,
+                    seekByFrameIdentity);
+            });
+        }
+
+        private bool IsPresentedPairAligned(
+            long presentationGeneration,
+            FrameDescriptor sourceDescriptor,
+            bool seekByFrameIdentity)
+        {
+            lock (_synchronizedFramePresentationLock)
+            {
+                if (_lastCommittedSynchronizedFramePresentationGeneration !=
+                    presentationGeneration)
+                {
+                    return false;
+                }
+
+                var primaryDescriptor = _primaryFrameBuffer?.Descriptor;
+                var compareDescriptor = _compareFrameBuffer?.Descriptor;
+                if (primaryDescriptor == null || compareDescriptor == null)
+                {
+                    return false;
+                }
+
+                return AreFrameDescriptorsAligned(
+                    primaryDescriptor,
+                    compareDescriptor,
+                    sourceDescriptor,
+                    seekByFrameIdentity);
+            }
+        }
+
+        private bool AreFrameDescriptorsAligned(
+            FrameDescriptor primaryDescriptor,
+            FrameDescriptor compareDescriptor,
+            FrameDescriptor sourceDescriptor,
+            bool seekByFrameIdentity)
+        {
+            if (seekByFrameIdentity)
+            {
+                return primaryDescriptor.IsFrameIndexAbsolute &&
+                    compareDescriptor.IsFrameIndexAbsolute &&
+                    primaryDescriptor.FrameIndex == sourceDescriptor.FrameIndex &&
+                    compareDescriptor.FrameIndex == sourceDescriptor.FrameIndex &&
+                    primaryDescriptor.PresentationTime == sourceDescriptor.PresentationTime &&
+                    compareDescriptor.PresentationTime == sourceDescriptor.PresentationTime &&
+                    primaryDescriptor.PresentationTimestamp ==
+                        sourceDescriptor.PresentationTimestamp &&
+                    compareDescriptor.PresentationTimestamp ==
+                        sourceDescriptor.PresentationTimestamp &&
+                    primaryDescriptor.DecodeTimestamp ==
+                        sourceDescriptor.DecodeTimestamp &&
+                    compareDescriptor.DecodeTimestamp ==
+                        sourceDescriptor.DecodeTimestamp;
+            }
+
+            var primaryStep = _primaryEngine.MediaInfo.PositionStep;
+            var compareStep =
+                _compareEngine?.MediaInfo.PositionStep ?? TimeSpan.Zero;
+            var pairTolerance = GetAlignmentPresentationTolerance();
+            return IsTimeSeekFrameAligned(
+                    primaryDescriptor.PresentationTime,
+                    sourceDescriptor.PresentationTime,
+                    primaryStep) &&
+                IsTimeSeekFrameAligned(
+                    compareDescriptor.PresentationTime,
+                    sourceDescriptor.PresentationTime,
+                    compareStep) &&
+                (primaryDescriptor.PresentationTime -
+                    compareDescriptor.PresentationTime).Duration() <
+                    pairTolerance;
+        }
+
+        private static bool IsTimeSeekFrameAligned(
+            TimeSpan actualPresentationTime,
+            TimeSpan targetPresentationTime,
+            TimeSpan frameStep)
+        {
+            var delta = actualPresentationTime - targetPresentationTime;
+            var maximumDelta = frameStep > TimeSpan.Zero
+                ? frameStep
+                : TimeSpan.FromMilliseconds(50d);
+            return delta >= TimeSpan.Zero && delta < maximumDelta;
+        }
+
+        private TimeSpan GetAlignmentPresentationTolerance()
+        {
+            var compareStep = _compareEngine?.MediaInfo.PositionStep ?? TimeSpan.Zero;
+            var maximumStepTicks = Math.Max(
+                _primaryEngine.MediaInfo.PositionStep.Ticks,
+                compareStep.Ticks);
+            return maximumStepTicks > 0L
+                ? TimeSpan.FromTicks(maximumStepTicks)
+                : TimeSpan.FromMilliseconds(50d);
+        }
+
+        private FrameDescriptor? GetPresentedFrameDescriptor(Pane pane)
+        {
+            lock (_synchronizedFramePresentationLock)
+            {
+                return pane == Pane.Compare
+                    ? _compareFrameBuffer?.Descriptor
+                    : _primaryFrameBuffer?.Descriptor;
+            }
+        }
+
+        private TimeSpan GetPresentedTransportTime(
+            Pane pane,
+            IVideoReviewEngine engine)
+        {
+            lock (_synchronizedFramePresentationLock)
+            {
+                var frameBuffer = pane == Pane.Compare
+                    ? _compareFrameBuffer
+                    : _primaryFrameBuffer;
+                return frameBuffer?.Descriptor.PresentationTime ??
+                    engine.Position.PresentationTime;
+            }
+        }
+
+        private (TimeSpan Primary, TimeSpan Compare) GetPresentedTransportTimes(
+            IVideoReviewEngine primaryEngine,
+            IVideoReviewEngine compareEngine)
+        {
+            lock (_synchronizedFramePresentationLock)
+            {
+                return (
+                    _primaryFrameBuffer?.Descriptor.PresentationTime ??
+                        primaryEngine.Position.PresentationTime,
+                    _compareFrameBuffer?.Descriptor.PresentationTime ??
+                        compareEngine.Position.PresentationTime);
             }
         }
 
@@ -3234,11 +3603,20 @@ namespace FramePlayer.Avalonia.Views
 
         private bool TryBeginSynchronizedFramePresentation(int transportIntentGeneration)
         {
-            return TryBeginSynchronizedFramePresentationCore(
-                transportIntentGeneration,
-                _primaryEngine.Position.PresentationTime -
-                    (_compareEngine?.Position.PresentationTime ?? TimeSpan.Zero),
-                captureTimeOffsetFromNextPair: false);
+            lock (_synchronizedFramePresentationLock)
+            {
+                var primaryPresentationTime =
+                    _primaryFrameBuffer?.Descriptor.PresentationTime ??
+                    _primaryEngine.Position.PresentationTime;
+                var comparePresentationTime =
+                    _compareFrameBuffer?.Descriptor.PresentationTime ??
+                    _compareEngine?.Position.PresentationTime ??
+                    TimeSpan.Zero;
+                return TryBeginSynchronizedFramePresentationCoreLocked(
+                    transportIntentGeneration,
+                    primaryPresentationTime - comparePresentationTime,
+                    captureTimeOffsetFromNextPair: false);
+            }
         }
 
         private bool TryBeginSynchronizedFramePresentationFromNextPair(
@@ -3250,6 +3628,28 @@ namespace FramePlayer.Avalonia.Views
                 captureTimeOffsetFromNextPair: true);
         }
 
+        private long? TryBeginSynchronizedFrameAlignment(
+            int transportIntentGeneration,
+            FrameDescriptor sourceDescriptor,
+            bool seekByFrameIdentity)
+        {
+            lock (_synchronizedFramePresentationLock)
+            {
+                if (!TryBeginSynchronizedFramePresentationCoreLocked(
+                        transportIntentGeneration,
+                        TimeSpan.Zero,
+                        captureTimeOffsetFromNextPair: false))
+                {
+                    return null;
+                }
+
+                _synchronizedFrameAlignmentSourceDescriptor = sourceDescriptor;
+                _synchronizedFrameAlignmentUsesFrameIdentity =
+                    seekByFrameIdentity;
+                return _synchronizedFramePresentationGeneration;
+            }
+        }
+
         private bool TryBeginSynchronizedFramePresentationCore(
             int transportIntentGeneration,
             TimeSpan presentationTimeOffset,
@@ -3257,19 +3657,48 @@ namespace FramePlayer.Avalonia.Views
         {
             lock (_synchronizedFramePresentationLock)
             {
-                if (Volatile.Read(ref _allPaneTransportIntentGeneration) != transportIntentGeneration)
+                return TryBeginSynchronizedFramePresentationCoreLocked(
+                    transportIntentGeneration,
+                    presentationTimeOffset,
+                    captureTimeOffsetFromNextPair);
+            }
+        }
+
+        private bool TryBeginSynchronizedFramePresentationCoreLocked(
+            int transportIntentGeneration,
+            TimeSpan presentationTimeOffset,
+            bool captureTimeOffsetFromNextPair)
+        {
+            if (Volatile.Read(ref _allPaneTransportIntentGeneration) != transportIntentGeneration)
+            {
+                return false;
+            }
+
+            ClearPendingIndividualFramePresentations();
+            _synchronizedFramePresentationGeneration++;
+            ClearPendingSynchronizedFramePresentationsLocked();
+            _synchronizedFramePresentationTimeOffset = presentationTimeOffset;
+            _captureSynchronizedFramePresentationTimeOffset =
+                captureTimeOffsetFromNextPair;
+            _synchronizedFrameAlignmentSourceDescriptor = null;
+            _synchronizedFrameAlignmentUsesFrameIdentity = false;
+            _isSynchronizedFramePresentationActive = true;
+            return true;
+        }
+
+        private long? GetSynchronizedFramePresentationGeneration(
+            int transportIntentGeneration)
+        {
+            lock (_synchronizedFramePresentationLock)
+            {
+                if (Volatile.Read(ref _allPaneTransportIntentGeneration) !=
+                        transportIntentGeneration ||
+                    !_isSynchronizedFramePresentationActive)
                 {
-                    return false;
+                    return null;
                 }
 
-                ClearPendingIndividualFramePresentations();
-                _synchronizedFramePresentationGeneration++;
-                ClearPendingSynchronizedFramePresentationsLocked();
-                _synchronizedFramePresentationTimeOffset = presentationTimeOffset;
-                _captureSynchronizedFramePresentationTimeOffset =
-                    captureTimeOffsetFromNextPair;
-                _isSynchronizedFramePresentationActive = true;
-                return true;
+                return _synchronizedFramePresentationGeneration;
             }
         }
 
@@ -3361,6 +3790,8 @@ namespace FramePlayer.Avalonia.Views
                 }
 
                 _synchronizedFramePresentationGeneration++;
+                _synchronizedFrameAlignmentSourceDescriptor = null;
+                _synchronizedFrameAlignmentUsesFrameIdentity = false;
                 ClearPendingSynchronizedFramePresentationsLocked();
             }
         }
@@ -3635,6 +4066,8 @@ namespace FramePlayer.Avalonia.Views
                 _synchronizedFramePresentationGeneration++;
                 _isSynchronizedFramePresentationActive = false;
                 _captureSynchronizedFramePresentationTimeOffset = false;
+                _synchronizedFrameAlignmentSourceDescriptor = null;
+                _synchronizedFrameAlignmentUsesFrameIdentity = false;
                 ClearPendingSynchronizedFramePresentationsLocked();
             }
         }
@@ -3723,18 +4156,14 @@ namespace FramePlayer.Avalonia.Views
                         return;
                     }
 
-                    SetPaneBitmap(Pane.Primary, pair.Primary);
-                    SetPaneBitmap(Pane.Compare, pair.Compare);
-                    var primaryPresented = ReferenceEquals(
-                        _primaryFrameBuffer?.Descriptor,
-                        pair.Primary.Descriptor);
-                    var comparePresented = ReferenceEquals(
-                        _compareFrameBuffer?.Descriptor,
-                        pair.Compare.Descriptor);
-                    if (primaryPresented && comparePresented)
+                    if (TrySetSynchronizedPaneBitmaps(
+                            pair.Primary,
+                            pair.Compare))
                     {
                         presentedPrimaryDescriptor = pair.Primary.Descriptor;
                         presentedCompareDescriptor = pair.Compare.Descriptor;
+                        _lastCommittedSynchronizedFramePresentationGeneration =
+                            generation;
                     }
                 }
             }
@@ -3778,34 +4207,63 @@ namespace FramePlayer.Avalonia.Views
                 {
                     var primary = _pendingSynchronizedPrimaryFrame;
                     var compare = _pendingSynchronizedCompareFrame;
-                    if (_captureSynchronizedFramePresentationTimeOffset)
+                    if (_synchronizedFrameAlignmentSourceDescriptor != null)
                     {
-                        _synchronizedFramePresentationTimeOffset =
-                            primary.Descriptor.PresentationTime -
-                            compare.Descriptor.PresentationTime;
-                        _captureSynchronizedFramePresentationTimeOffset = false;
-                    }
-
-                    var delta =
-                        primary.Descriptor.PresentationTime -
-                        compare.Descriptor.PresentationTime -
-                        _synchronizedFramePresentationTimeOffset;
-                    if (delta.Duration() <= tolerance)
-                    {
-                        selectedPrimary = primary;
-                        selectedCompare = compare;
-                        _pendingSynchronizedPrimaryFrame = null;
-                        _pendingSynchronizedCompareFrame = null;
-                    }
-                    else if (delta < TimeSpan.Zero)
-                    {
-                        _pendingSynchronizedPrimaryFrame = null;
-                        primary.Dispose();
+                        if (!AreFrameDescriptorsAligned(
+                                primary.Descriptor,
+                                compare.Descriptor,
+                                _synchronizedFrameAlignmentSourceDescriptor,
+                                _synchronizedFrameAlignmentUsesFrameIdentity))
+                        {
+                            _pendingSynchronizedPrimaryFrame = null;
+                            _pendingSynchronizedCompareFrame = null;
+                            primary.Dispose();
+                            compare.Dispose();
+                        }
+                        else
+                        {
+                            _synchronizedFramePresentationTimeOffset =
+                                primary.Descriptor.PresentationTime -
+                                compare.Descriptor.PresentationTime;
+                            _synchronizedFrameAlignmentSourceDescriptor = null;
+                            _synchronizedFrameAlignmentUsesFrameIdentity = false;
+                            selectedPrimary = primary;
+                            selectedCompare = compare;
+                            _pendingSynchronizedPrimaryFrame = null;
+                            _pendingSynchronizedCompareFrame = null;
+                        }
                     }
                     else
                     {
-                        _pendingSynchronizedCompareFrame = null;
-                        compare.Dispose();
+                        if (_captureSynchronizedFramePresentationTimeOffset)
+                        {
+                            _synchronizedFramePresentationTimeOffset =
+                                primary.Descriptor.PresentationTime -
+                                compare.Descriptor.PresentationTime;
+                            _captureSynchronizedFramePresentationTimeOffset = false;
+                        }
+
+                        var delta =
+                            primary.Descriptor.PresentationTime -
+                            compare.Descriptor.PresentationTime -
+                            _synchronizedFramePresentationTimeOffset;
+                        if (delta.Duration() <= tolerance)
+                        {
+                            selectedPrimary = primary;
+                            selectedCompare = compare;
+                            _pendingSynchronizedPrimaryFrame = null;
+                            _pendingSynchronizedCompareFrame = null;
+                        }
+                        else if (delta < TimeSpan.Zero)
+                        {
+                            _pendingSynchronizedPrimaryFrame = null;
+                            primary.Dispose();
+                        }
+                        else
+                        {
+                            _pendingSynchronizedCompareFrame = null;
+                            compare.Dispose();
+                        }
                     }
                 }
 
@@ -3813,6 +4271,117 @@ namespace FramePlayer.Avalonia.Views
             }
 
             return (selectedPrimary, selectedCompare);
+        }
+
+        private bool TrySetSynchronizedPaneBitmaps(
+            DecodedFrameBuffer primaryFrameBuffer,
+            DecodedFrameBuffer compareFrameBuffer)
+        {
+            var primaryViewport = BuildPaneViewport(
+                Pane.Primary,
+                primaryFrameBuffer);
+            var compareViewport = BuildPaneViewport(
+                Pane.Compare,
+                compareFrameBuffer);
+            var retainedPrimary = primaryFrameBuffer.Retain();
+            DecodedFrameBuffer? retainedCompare = null;
+            var stagedPrimaryBitmap = _primarySynchronizedStagingBitmap;
+            var stagedCompareBitmap = _compareSynchronizedStagingBitmap;
+            WriteableBitmap? primaryBitmap;
+            WriteableBitmap? compareBitmap;
+            try
+            {
+                retainedCompare = compareFrameBuffer.Retain();
+                primaryBitmap = AvaloniaFrameBufferPresenter.PresentBitmap(
+                    retainedPrimary,
+                    primaryViewport,
+                    ref stagedPrimaryBitmap);
+                compareBitmap = AvaloniaFrameBufferPresenter.PresentBitmap(
+                    retainedCompare,
+                    compareViewport,
+                    ref stagedCompareBitmap);
+            }
+            catch
+            {
+                _primarySynchronizedStagingBitmap = stagedPrimaryBitmap;
+                _compareSynchronizedStagingBitmap = stagedCompareBitmap;
+                retainedPrimary.Dispose();
+                retainedCompare?.Dispose();
+                throw;
+            }
+
+            _primarySynchronizedStagingBitmap = stagedPrimaryBitmap;
+            _compareSynchronizedStagingBitmap = stagedCompareBitmap;
+            if (primaryBitmap == null || compareBitmap == null)
+            {
+                retainedPrimary.Dispose();
+                retainedCompare.Dispose();
+                return false;
+            }
+
+            var previousPrimaryFrameBuffer = _primaryFrameBuffer;
+            var previousCompareFrameBuffer = _compareFrameBuffer;
+            var previousPrimaryBitmap = _primaryReusableBitmap;
+            var previousCompareBitmap = _compareReusableBitmap;
+            var previousPrimarySource = CustomVideoSurface.Source;
+            var previousCompareSource = CompareVideoSurface.Source;
+            try
+            {
+                CustomVideoSurface.Source = primaryBitmap;
+                CompareVideoSurface.Source = compareBitmap;
+            }
+            catch
+            {
+                try
+                {
+                    CustomVideoSurface.Source = previousPrimarySource;
+                    CompareVideoSurface.Source = previousCompareSource;
+                }
+                catch (Exception restoreEx)
+                {
+                    Trace.TraceWarning(
+                        "Synchronized surface rollback failed: " +
+                        restoreEx.Message);
+                }
+
+                retainedPrimary.Dispose();
+                retainedCompare.Dispose();
+                throw;
+            }
+
+            _primaryFrameBuffer = retainedPrimary;
+            _compareFrameBuffer = retainedCompare;
+            _primaryReusableBitmap = primaryBitmap;
+            _compareReusableBitmap = compareBitmap;
+            _primarySynchronizedStagingBitmap = previousPrimaryBitmap;
+            _compareSynchronizedStagingBitmap = previousCompareBitmap;
+            try
+            {
+                CustomVideoSurface.InvalidateVisual();
+                CompareVideoSurface.InvalidateVisual();
+                PrimaryEmptyStateOverlay.IsVisible = false;
+                CompareEmptyStateOverlay.IsVisible = false;
+            }
+            catch (Exception ex)
+            {
+                Trace.TraceWarning(
+                    "Synchronized surface refresh failed after pair commit: " +
+                    ex.Message);
+            }
+
+            try
+            {
+                previousPrimaryFrameBuffer?.Dispose();
+                previousCompareFrameBuffer?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                Trace.TraceWarning(
+                    "Previous synchronized frame release failed: " +
+                    ex.Message);
+            }
+
+            return true;
         }
 
         private TimeSpan GetSynchronizedFramePresentationTolerance()
@@ -6632,8 +7201,12 @@ namespace FramePlayer.Avalonia.Views
         {
             _primaryReusableBitmap?.Dispose();
             _compareReusableBitmap?.Dispose();
+            _primarySynchronizedStagingBitmap?.Dispose();
+            _compareSynchronizedStagingBitmap?.Dispose();
             _primaryReusableBitmap = null;
             _compareReusableBitmap = null;
+            _primarySynchronizedStagingBitmap = null;
+            _compareSynchronizedStagingBitmap = null;
         }
 
         private enum Pane
