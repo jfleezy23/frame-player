@@ -1,0 +1,9 @@
+[default.extend-identifiers]
+WriteableBitmap = "WriteableBitmap"
+
+[default.extend-words]
+# FFmpeg filter-graph output labels use "aout".
+aout = "aout"
+
+# MinGW's structured-exception-handling runtime is named libgcc_s_seh.
+seh = "seh"

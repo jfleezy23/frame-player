@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -422,10 +423,10 @@ namespace FramePlayer.Services
                 : (standardOutput ?? string.Empty).Trim();
             if (!string.IsNullOrWhiteSpace(details))
             {
-                return "Export host failed with exit code " + exitCode.ToString() + ". " + details;
+                return "Export host failed with exit code " + exitCode.ToString(CultureInfo.InvariantCulture) + ". " + details;
             }
 
-            return "Export host failed with exit code " + exitCode.ToString() + " before it could write a response.";
+            return "Export host failed with exit code " + exitCode.ToString(CultureInfo.InvariantCulture) + " before it could write a response.";
         }
 
         private sealed class RuntimeAvailability

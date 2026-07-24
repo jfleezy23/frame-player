@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using FramePlayer.Avalonia.Services;
@@ -41,7 +42,7 @@ namespace FramePlayer.Avalonia.Tests
             {
                 var service = new UnifiedRecentFilesService(Path.Combine(root, "recent-files.txt"));
                 var files = Enumerable.Range(0, 12)
-                    .Select(index => CreateVideoFile(root, "video-" + index.ToString("00") + ".mp4"))
+                    .Select(index => CreateVideoFile(root, "video-" + index.ToString("00", CultureInfo.InvariantCulture) + ".mp4"))
                     .ToArray();
 
                 foreach (var file in files)

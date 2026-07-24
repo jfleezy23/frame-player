@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -264,7 +265,7 @@ namespace FramePlayer.Avalonia.Tests
         {
             using var stream = File.OpenRead(filePath);
             using var sha256 = SHA256.Create();
-            return string.Concat(sha256.ComputeHash(stream).Select(value => value.ToString("x2")));
+            return string.Concat(sha256.ComputeHash(stream).Select(value => value.ToString("x2", CultureInfo.InvariantCulture)));
         }
 
         private static string[] ResolveCurrentPlatformRuntimeFiles()

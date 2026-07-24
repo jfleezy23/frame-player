@@ -1,6 +1,6 @@
 # Build From Source
 
-The unified cross-platform application builds from `src\FramePlayer.Avalonia`. It also requires Rust/Cargo for release packaging; the Rust toolchain is pinned by `rust-toolchain.toml`. 
+The unified cross-platform application builds from `src\FramePlayer.Avalonia`. It also requires Rust/Cargo for release packaging; the Rust toolchain is pinned by `rust-toolchain.toml`.
 
 On Windows, restore the pinned playback and export runtimes before building or packaging:
 

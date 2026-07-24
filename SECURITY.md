@@ -28,11 +28,13 @@ This repository currently uses a mix of GitHub-native security tooling and workf
 - GitHub secret scanning is enabled to detect known leaked secret patterns in repository history.
 - GitHub push protection is enabled to block many secrets before they are pushed.
 - The dependency graph and automatic dependency submission are enabled so GitHub can reason about shipped dependencies beyond just manifest files.
-- Dependabot security and version update pull requests are enabled for `nuget` and GitHub Actions dependencies.
+- Dependabot security and version update pull requests are enabled for NuGet, Cargo, and GitHub Actions dependencies.
 - Dependency review now runs on pull requests to flag newly introduced vulnerable dependencies before merge.
+- NuGet restore audits direct and transitive packages at moderate severity or higher, and CI treats audit warnings as errors.
 - Release packaging artifacts can be attested with GitHub artifact attestations so published build provenance can be verified.
 - A SonarQube Cloud workflow is configured for PRs and `main` pushes, and becomes active when the repository `SONAR_TOKEN` secret is present; repository-level overrides are available for organization and project key if the default mapping is not correct.
 - The macOS workflow builds and tests the same Avalonia project and verifies its application bundle. Release-candidate corpus validation remains a local/manual gate because the corpus is not stored in git.
+- The required Windows CI job enforces Roslyn analysis and naming rules, warning-free builds, C# and Rust formatting, Rust Clippy, PowerShell analysis, ShellCheck, workflow validation, spelling, and repository path/text casing.
 - GitHub Actions used by repository workflows must be pinned to full commit SHAs.
 - Pull request templates and issue templates are in place to keep validation, documentation, and security review visible during review.
 

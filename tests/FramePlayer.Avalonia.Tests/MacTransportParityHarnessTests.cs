@@ -270,6 +270,18 @@ namespace FramePlayer.Avalonia.Tests
                     position => Assert.True(
                         position <= maximumAllowed,
                         "Right pane escaped the configured loop range. Position=" + position + " range=" + loopStart + ".." + loopEnd));
+                for (var index = 0; index < primaryObservations.Count; index++)
+                {
+                    var paneDelta = (primaryObservations[index] - compareObservations[index]).Duration();
+                    Assert.True(
+                        paneDelta <= frameStep + frameStep + frameStep,
+                        "All-pane loop playback lost synchronization. Left=" +
+                        primaryObservations[index] +
+                        " right=" +
+                        compareObservations[index] +
+                        " delta=" +
+                        paneDelta);
+                }
             }
             finally
             {
