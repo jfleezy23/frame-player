@@ -295,6 +295,240 @@ namespace FramePlayer.Avalonia.Tests
 
         [Fact]
         [Trait("Category", "ReleaseCandidate")]
+        public async Task CompareWindow_AllPanePlaybackKeepsIdenticalAudioMediaSynchronized()
+        {
+            ConfigureRuntime();
+            var files = FindCorpusFiles();
+            var file = files.FirstOrDefault(path =>
+                Path.GetFileName(path).StartsWith("Audio_Video_Sync_", StringComparison.OrdinalIgnoreCase)) ?? files[0];
+
+            MainWindow? window = null;
+            try
+            {
+                window = CreateWindow();
+                SetCompareMode(window!, true);
+                await InvokeWindowTaskAsync(window!, "OpenMediaAsync", file, "pane-primary")
+                    .WaitAsync(TimeSpan.FromSeconds(10));
+                await InvokeWindowTaskAsync(window!, "OpenMediaAsync", file, "pane-compare")
+                    .WaitAsync(TimeSpan.FromSeconds(10));
+
+                var primaryEngine = GetPrimaryEngine(window!);
+                var compareEngine = GetCompareEngine(window!);
+                await WaitForIndexAsync(primaryEngine);
+                await WaitForIndexAsync(compareEngine);
+                Assert.True(primaryEngine.MediaInfo.HasAudioStream, file + " did not report audio in the left pane.");
+                Assert.True(compareEngine.MediaInfo.HasAudioStream, file + " did not report audio in the right pane.");
+                var frameStep = primaryEngine.MediaInfo.PositionStep > TimeSpan.Zero
+                    ? primaryEngine.MediaInfo.PositionStep
+                    : TimeSpan.FromSeconds(1d / Math.Max(primaryEngine.MediaInfo.FramesPerSecond, 24d));
+
+                SetAllPanesTransport(window!, true);
+                SetUnifiedLoopPlaybackEnabled(window!, true);
+                await InvokeWindowTaskAsync(window!, "CommitSliderSeekAsync", "test", TimeSpan.Zero)
+                    .WaitAsync(TimeSpan.FromSeconds(10));
+                await InvokeWindowTaskAsync(
+                        window!,
+                        "StartPlaybackAsync",
+                        (SynchronizedOperationScope?)SynchronizedOperationScope.AllPanes,
+                        "pane-primary")
+                    .WaitAsync(TimeSpan.FromSeconds(10));
+
+                var maximumEngineDelta = TimeSpan.Zero;
+                var maximumRawEngineDelta = TimeSpan.Zero;
+                var maximumPresentedDelta = TimeSpan.Zero;
+                var primaryPresentedTimes = new HashSet<TimeSpan>();
+                var comparePresentedTimes = new HashSet<TimeSpan>();
+                var observationStartedAt = DateTime.UtcNow;
+                do
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(50));
+                    var rawEngineDelta = (primaryEngine.Position.PresentationTime - compareEngine.Position.PresentationTime).Duration();
+                    if (rawEngineDelta > maximumRawEngineDelta)
+                    {
+                        maximumRawEngineDelta = rawEngineDelta;
+                    }
+
+                    var engineDelta = rawEngineDelta;
+                    var loopDuration = primaryEngine.MediaInfo.Duration;
+                    if (loopDuration > TimeSpan.Zero)
+                    {
+                        engineDelta = TimeSpan.FromTicks(Math.Min(
+                            rawEngineDelta.Ticks,
+                            (loopDuration - rawEngineDelta).Duration().Ticks));
+                    }
+
+                    if (engineDelta > maximumEngineDelta)
+                    {
+                        maximumEngineDelta = engineDelta;
+                    }
+
+                    var presentedTimes = GetPresentedFrameTimes(window!);
+                    primaryPresentedTimes.Add(presentedTimes.Primary);
+                    comparePresentedTimes.Add(presentedTimes.Compare);
+                    var presentedDelta = (presentedTimes.Primary - presentedTimes.Compare).Duration();
+                    if (presentedDelta > maximumPresentedDelta)
+                    {
+                        maximumPresentedDelta = presentedDelta;
+                    }
+                }
+                while (DateTime.UtcNow - observationStartedAt < TimeSpan.FromSeconds(6) ||
+                    ((primaryPresentedTimes.Count < 10 || comparePresentedTimes.Count < 10) &&
+                        DateTime.UtcNow - observationStartedAt < TimeSpan.FromSeconds(10)));
+
+                await InvokeWindowTaskAsync(
+                        window!,
+                        "PausePlaybackAsync",
+                        true,
+                        (SynchronizedOperationScope?)SynchronizedOperationScope.AllPanes)
+                    .WaitAsync(TimeSpan.FromSeconds(10));
+
+                Assert.True(primaryEngine.LastAudioSubmittedBytes > 0, "Left pane did not submit audio bytes.");
+                Assert.True(compareEngine.LastAudioSubmittedBytes > 0, "Right pane did not submit audio bytes.");
+                Assert.True(primaryEngine.LastPlaybackUsedAudioClock, "Left pane did not use its audio clock.");
+                Assert.True(compareEngine.LastPlaybackUsedAudioClock, "Right pane did not use its audio clock.");
+                Console.WriteLine(
+                    "Synchronized presentation samples: left=" +
+                    primaryPresentedTimes.Count +
+                    " right=" +
+                    comparePresentedTimes.Count +
+                    " left-span=" +
+                    (primaryPresentedTimes.Max() - primaryPresentedTimes.Min()) +
+                    " right-span=" +
+                    (comparePresentedTimes.Max() - comparePresentedTimes.Min()) +
+                    " engine-delta=" +
+                    maximumEngineDelta +
+                    " raw-engine-delta=" +
+                    maximumRawEngineDelta);
+                Assert.True(
+                    primaryPresentedTimes.Count >= 10 && comparePresentedTimes.Count >= 10,
+                    "Synchronized presentation did not advance through enough distinct frames. Left=" +
+                    primaryPresentedTimes.Count +
+                    " right=" +
+                    comparePresentedTimes.Count);
+                Assert.True(
+                    primaryPresentedTimes.Max() - primaryPresentedTimes.Min() >= frameStep + frameStep + frameStep,
+                    "Left synchronized presentation remained frozen.");
+                Assert.True(
+                    comparePresentedTimes.Max() - comparePresentedTimes.Min() >= frameStep + frameStep + frameStep,
+                    "Right synchronized presentation remained frozen.");
+                Assert.True(
+                    maximumEngineDelta <= frameStep + frameStep + frameStep,
+                    "All-pane playback engines drifted too far apart. Maximum engine delta=" +
+                    maximumEngineDelta +
+                    " raw engine delta=" +
+                    maximumRawEngineDelta +
+                    " frame step=" +
+                    frameStep);
+                Assert.True(
+                    maximumPresentedDelta < frameStep,
+                    "Sustained all-pane playback visibly lost synchronization. Maximum presented delta=" +
+                    maximumPresentedDelta +
+                    " maximum engine delta=" +
+                    maximumEngineDelta +
+                    " frame step=" +
+                    frameStep);
+
+                var loopStart = TimeSpan.FromTicks(Math.Max(frameStep.Ticks * 6, TimeSpan.FromMilliseconds(250).Ticks));
+                var loopEnd = loopStart + TimeSpan.FromTicks(frameStep.Ticks * 8);
+                foreach (var paneId in new[] { "pane-primary", "pane-compare" })
+                {
+                    Assert.True(await InvokeWindowTaskAsync<bool>(
+                            window!,
+                            "SetTimelineLoopMarkerAtAsync",
+                            paneId,
+                            LoopPlaybackMarkerEndpoint.In,
+                            loopStart)
+                        .WaitAsync(TimeSpan.FromSeconds(10)));
+                    Assert.True(await InvokeWindowTaskAsync<bool>(
+                            window!,
+                            "SetTimelineLoopMarkerAtAsync",
+                            paneId,
+                            LoopPlaybackMarkerEndpoint.Out,
+                            loopEnd)
+                        .WaitAsync(TimeSpan.FromSeconds(10)));
+                }
+
+                await InvokeWindowTaskAsync(window!, "CommitSliderSeekAsync", "test-loop-restart", loopStart)
+                    .WaitAsync(TimeSpan.FromSeconds(10));
+                await InvokeWindowTaskAsync(
+                        window!,
+                        "StartPlaybackAsync",
+                        (SynchronizedOperationScope?)SynchronizedOperationScope.AllPanes,
+                        "pane-primary")
+                    .WaitAsync(TimeSpan.FromSeconds(10));
+
+                var loopMaximumPresentedDelta = TimeSpan.Zero;
+                var loopPresentedTimes = new HashSet<TimeSpan>();
+                var loopWrapObserved = false;
+                TimeSpan? previousLoopPrimary = null;
+                for (var index = 0; index < 60; index++)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(50));
+                    var presentedTimes = GetPresentedFrameTimes(window!);
+                    loopPresentedTimes.Add(presentedTimes.Primary);
+                    var presentedDelta = (presentedTimes.Primary - presentedTimes.Compare).Duration();
+                    if (presentedDelta > loopMaximumPresentedDelta)
+                    {
+                        loopMaximumPresentedDelta = presentedDelta;
+                    }
+
+                    if (previousLoopPrimary.HasValue &&
+                        presentedTimes.Primary + frameStep < previousLoopPrimary.Value)
+                    {
+                        loopWrapObserved = true;
+                    }
+
+                    previousLoopPrimary = presentedTimes.Primary;
+                }
+
+                await InvokeWindowTaskAsync(
+                        window!,
+                        "PausePlaybackAsync",
+                        true,
+                        (SynchronizedOperationScope?)SynchronizedOperationScope.AllPanes)
+                    .WaitAsync(TimeSpan.FromSeconds(10));
+
+                Console.WriteLine(
+                    "Short-loop presentation samples=" +
+                    loopPresentedTimes.Count +
+                    " span=" +
+                    (loopPresentedTimes.Count > 0
+                        ? loopPresentedTimes.Max() - loopPresentedTimes.Min()
+                        : TimeSpan.Zero) +
+                    " wrapped=" +
+                    loopWrapObserved +
+                    " left-position=" +
+                    primaryEngine.Position.PresentationTime +
+                    " right-position=" +
+                    compareEngine.Position.PresentationTime +
+                    " synchronized=" +
+                    GetPrivateField<bool>(window!, "_isSynchronizedFramePresentationActive"));
+                Assert.True(loopPresentedTimes.Count >= 4, "Short-loop presentation did not advance.");
+                Assert.True(loopWrapObserved, "Short-loop playback did not visibly restart.");
+                Assert.True(
+                    loopMaximumPresentedDelta < frameStep,
+                    "Short-loop restart presented mismatched panes. Maximum delta=" +
+                    loopMaximumPresentedDelta +
+                    " frame step=" +
+                    frameStep);
+            }
+            finally
+            {
+                if (window != null)
+                {
+                    await InvokeWindowTaskAsync(
+                            window,
+                            "PausePlaybackAsync",
+                            true,
+                            (SynchronizedOperationScope?)SynchronizedOperationScope.AllPanes)
+                        .WaitAsync(TimeSpan.FromSeconds(10));
+                    _fixture.Run(() => window.Close());
+                }
+            }
+        }
+
+        [Fact]
+        [Trait("Category", "ReleaseCandidate")]
         public async Task MacWindow_OpenRecentUsesFocusedComparePane()
         {
             ConfigureRuntime();
@@ -406,6 +640,32 @@ namespace FramePlayer.Avalonia.Tests
             var field = typeof(MainWindow).GetField("_compareEngine", BindingFlags.Instance | BindingFlags.NonPublic)
                 ?? throw new InvalidOperationException("Missing _compareEngine field.");
             return (FfmpegReviewEngine)field.GetValue(window)!;
+        }
+
+        private static T GetPrivateField<T>(MainWindow window, string fieldName)
+        {
+            var field = typeof(MainWindow).GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("Missing " + fieldName + " field.");
+            return (T)field.GetValue(window)!;
+        }
+
+        private (TimeSpan Primary, TimeSpan Compare) GetPresentedFrameTimes(MainWindow window)
+        {
+            var primaryField = typeof(MainWindow).GetField("_primaryFrameBuffer", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("Missing _primaryFrameBuffer field.");
+            var compareField = typeof(MainWindow).GetField("_compareFrameBuffer", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("Missing _compareFrameBuffer field.");
+            var primaryTime = TimeSpan.Zero;
+            var compareTime = TimeSpan.Zero;
+            _fixture.Run(() =>
+            {
+                var primaryFrame = (DecodedFrameBuffer?)primaryField.GetValue(window);
+                var compareFrame = (DecodedFrameBuffer?)compareField.GetValue(window);
+                primaryTime = primaryFrame?.Descriptor.PresentationTime ?? TimeSpan.Zero;
+                compareTime = compareFrame?.Descriptor.PresentationTime ?? TimeSpan.Zero;
+            });
+
+            return (primaryTime, compareTime);
         }
 
         private MainWindow CreateWindow()

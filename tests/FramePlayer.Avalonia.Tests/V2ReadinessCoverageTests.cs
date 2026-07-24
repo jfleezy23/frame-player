@@ -157,7 +157,11 @@ namespace FramePlayer.Avalonia.Tests
             Assert.Contains("private void RestartLoopPlaybackIfNeeded(", source, StringComparison.Ordinal);
             Assert.Contains("var engine = TryGetExistingEngine(pane);", source, StringComparison.Ordinal);
             Assert.Contains(
-                "RestartLoopPlaybackAsync(pane, engine, restartRange, restartGeneration)",
+                "private async Task RestartLoopPlaybackAsync(",
+                source,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "int transportIntentGeneration)",
                 source,
                 StringComparison.Ordinal);
             Assert.Contains("_diagnosticLogService.Info(\"File opened: \" + BuildDiagnosticFileIdentifier(filePath));", source, StringComparison.Ordinal);
