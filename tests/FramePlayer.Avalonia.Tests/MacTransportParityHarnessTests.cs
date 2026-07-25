@@ -900,6 +900,158 @@ namespace FramePlayer.Avalonia.Tests
                         window!,
                         primaryEngine,
                         compareEngine));
+
+                var masterPauseTask =
+                    InvokeWindowTaskAsync(window!, "TogglePlaybackAsync");
+                var masterPauseDeadline =
+                    DateTimeOffset.UtcNow + TimeSpan.FromSeconds(2);
+                while (!masterPauseTask.IsCompleted &&
+                    DateTimeOffset.UtcNow < masterPauseDeadline)
+                {
+                    _fixture.Run(() => { });
+                    await Task.Delay(TimeSpan.FromMilliseconds(20));
+                }
+
+                Assert.True(
+                    masterPauseTask.IsCompleted,
+                    "Master pause did not complete after offset-preserving shared playback." +
+                    Environment.NewLine +
+                    BuildAlignmentDiagnostics(
+                        window!,
+                        primaryEngine,
+                        compareEngine));
+                await masterPauseTask;
+                Assert.False(
+                    primaryEngine.IsPlaying,
+                    "Master pause left the left pane playing.");
+                Assert.False(
+                    compareEngine.IsPlaying,
+                    "Master pause left the right pane playing.");
+                Assert.True(
+                    TryGetPresentedFrameTimesPreservingOffset(
+                        window!,
+                        expectedPresentedOffset,
+                        frameStep + frameStep,
+                        out _),
+                    "Master pause re-synced an intentional live offset." +
+                    Environment.NewLine +
+                    BuildAlignmentDiagnostics(
+                        window!,
+                        primaryEngine,
+                        compareEngine));
+            }
+            finally
+            {
+                if (window != null)
+                {
+                    await TryPauseAllPanePlaybackForCleanupAsync(window);
+                    SetUnifiedLoopPlaybackEnabled(window, false);
+                    _fixture.Run(() => window.Close());
+                }
+            }
+        }
+
+        [Fact]
+        [Trait("Category", "ReleaseCandidate")]
+        public async Task CompareWindow_MasterPausePreservesLocalPlaybackDivergence()
+        {
+            ConfigureRuntime();
+            var file = FindCorpusFiles().FirstOrDefault(path =>
+                Path.GetFileName(path).StartsWith(
+                    "Audio_Video_Sync_",
+                    StringComparison.OrdinalIgnoreCase));
+            Assert.False(
+                string.IsNullOrWhiteSpace(file),
+                "The local-playback divergence test requires the Audio_Video_Sync corpus clip.");
+
+            MainWindow? window = null;
+            try
+            {
+                window = CreateWindow();
+                SetCompareMode(window!, true);
+                await InvokeWindowTaskAsync(window!, "OpenMediaAsync", file!, "pane-primary")
+                    .WaitAsync(TimeSpan.FromSeconds(10));
+                await InvokeWindowTaskAsync(window!, "OpenMediaAsync", file, "pane-compare")
+                    .WaitAsync(TimeSpan.FromSeconds(10));
+
+                var primaryEngine = GetPrimaryEngine(window!);
+                var compareEngine = GetCompareEngine(window!);
+                await WaitForIndexAsync(primaryEngine);
+                await WaitForIndexAsync(compareEngine);
+                var frameStep = primaryEngine.MediaInfo.PositionStep > TimeSpan.Zero
+                    ? primaryEngine.MediaInfo.PositionStep
+                    : TimeSpan.FromSeconds(
+                        1d / Math.Max(primaryEngine.MediaInfo.FramesPerSecond, 24d));
+
+                SetUnifiedLoopPlaybackEnabled(window!, true);
+                await InvokeWindowTaskAsync(window!, "CommitSliderSeekAsync", "test", TimeSpan.FromSeconds(1))
+                    .WaitAsync(TimeSpan.FromSeconds(10));
+                await Task.Delay(TimeSpan.FromMilliseconds(200));
+                _fixture.Run(() => { });
+
+                await InvokeWindowTaskAsync(
+                        window!,
+                        "TogglePanePlaybackAsync",
+                        ParsePane(window!, "Primary"))
+                    .WaitAsync(TimeSpan.FromSeconds(2));
+                await Task.Delay(TimeSpan.FromMilliseconds(450));
+                await InvokeWindowTaskAsync(
+                        window!,
+                        "TogglePanePlaybackAsync",
+                        ParsePane(window!, "Compare"))
+                    .WaitAsync(TimeSpan.FromSeconds(2));
+                await Task.Delay(TimeSpan.FromMilliseconds(450));
+                _fixture.Run(() => { });
+
+                Assert.True(primaryEngine.IsPlaying, "The left local play command did not leave the left pane playing.");
+                Assert.True(compareEngine.IsPlaying, "The right local play command did not leave the right pane playing.");
+
+                Assert.True(
+                    TryGetPresentedFrameTimesPreservingOffsetWithoutReadoutValidation(
+                        window!,
+                        primaryEngine.Position.PresentationTime -
+                            compareEngine.Position.PresentationTime,
+                        frameStep + frameStep + frameStep,
+                        out var presentedTimesBeforePause),
+                    "The local controls did not present visible offset frames before master pause." +
+                    Environment.NewLine +
+                    BuildAlignmentDiagnostics(window!, primaryEngine, compareEngine));
+                var observedPresentedOffset = presentedTimesBeforePause.Primary -
+                    presentedTimesBeforePause.Compare;
+                Assert.True(
+                    observedPresentedOffset.Duration() >= frameStep,
+                    "The local controls did not create an offset before master pause." +
+                    Environment.NewLine +
+                    BuildAlignmentDiagnostics(window!, primaryEngine, compareEngine));
+
+                var masterPauseTask =
+                    InvokeWindowTaskAsync(window!, "TogglePlaybackAsync");
+                var masterPauseDeadline =
+                    DateTimeOffset.UtcNow + TimeSpan.FromSeconds(2);
+                while (!masterPauseTask.IsCompleted &&
+                    DateTimeOffset.UtcNow < masterPauseDeadline)
+                {
+                    _fixture.Run(() => { });
+                    await Task.Delay(TimeSpan.FromMilliseconds(20));
+                }
+
+                Assert.True(
+                    masterPauseTask.IsCompleted,
+                    "Master pause did not complete after local pane playback." +
+                    Environment.NewLine +
+                    BuildAlignmentDiagnostics(window!, primaryEngine, compareEngine));
+                await masterPauseTask;
+                Assert.False(primaryEngine.IsPlaying, "Master pause left the left pane playing.");
+                Assert.False(compareEngine.IsPlaying, "Master pause left the right pane playing.");
+                Assert.True(
+                    TryGetPresentedFrameTimesPreservingOffsetWithoutReadoutValidation(
+                        window!,
+                        observedPresentedOffset,
+                        frameStep + frameStep + frameStep,
+                        out _),
+                    "Master pause re-synced independently playing panes." +
+                    Environment.NewLine +
+                    BuildAlignmentDiagnostics(window!, primaryEngine, compareEngine));
             }
             finally
             {
@@ -1752,6 +1904,44 @@ namespace FramePlayer.Avalonia.Tests
                     window,
                     primaryFrame.Descriptor,
                     compareFrame.Descriptor);
+                foundOffsetFrame = true;
+            });
+
+            presentedTimes = (primaryTime, compareTime);
+            return foundOffsetFrame;
+        }
+
+        private bool TryGetPresentedFrameTimesPreservingOffsetWithoutReadoutValidation(
+            MainWindow window,
+            TimeSpan expectedOffset,
+            TimeSpan tolerance,
+            out (TimeSpan Primary, TimeSpan Compare) presentedTimes)
+        {
+            var primaryField = typeof(MainWindow).GetField("_primaryFrameBuffer", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("Missing _primaryFrameBuffer field.");
+            var compareField = typeof(MainWindow).GetField("_compareFrameBuffer", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("Missing _compareFrameBuffer field.");
+            var primaryTime = TimeSpan.Zero;
+            var compareTime = TimeSpan.Zero;
+            var foundOffsetFrame = false;
+            _fixture.Run(() =>
+            {
+                var primaryFrame = (DecodedFrameBuffer?)primaryField.GetValue(window);
+                var compareFrame = (DecodedFrameBuffer?)compareField.GetValue(window);
+                if (primaryFrame == null || compareFrame == null)
+                {
+                    return;
+                }
+
+                var offset = primaryFrame.Descriptor.PresentationTime -
+                    compareFrame.Descriptor.PresentationTime;
+                if ((offset - expectedOffset).Duration() > tolerance)
+                {
+                    return;
+                }
+
+                primaryTime = primaryFrame.Descriptor.PresentationTime;
+                compareTime = compareFrame.Descriptor.PresentationTime;
                 foundOffsetFrame = true;
             });
 

@@ -3968,9 +3968,16 @@ namespace FramePlayer.Avalonia.Tests
                             TimeSpan.FromSeconds(2)),
                         "Shared pause did not reach both engines.");
                     Assert.False(pauseTask.IsCompleted);
-                    Assert.True(GetPrivateField<bool>(
+                    Assert.False(GetPrivateField<bool>(
                         window,
                         "_isSynchronizedFramePresentationActive"));
+                    Assert.Equal(
+                        GetPrivateField<int>(
+                            window,
+                            "_allPaneTransportIntentGeneration"),
+                        GetPrivateField<int>(
+                            window,
+                            "_allPanePausePresentationHoldGeneration"));
 
                     using var unmatchedPrimary = CreateFrameBuffer(
                         8,
@@ -3996,7 +4003,7 @@ namespace FramePlayer.Avalonia.Tests
                         GetPrivateField<DecodedFrameBuffer>(
                             window,
                             "_compareFrameBuffer")!.Descriptor);
-                    Assert.NotNull(GetPrivateField<DecodedFrameBuffer>(
+                    Assert.Null(GetPrivateField<DecodedFrameBuffer>(
                         window,
                         "_pendingSynchronizedPrimaryFrame"));
 
@@ -7038,6 +7045,13 @@ namespace FramePlayer.Avalonia.Tests
                     SetPrivateField(window, "_isAllPaneTransportSelected", true);
                     RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
                     RequireControl<TextBlock>(window, "PlaybackStateTextBlock").Text = "Playing";
+                    var transportIntentGeneration = (int)InvokePrivate(
+                        window,
+                        "BeginAllPaneTransportIntent");
+                    Assert.True((bool)InvokePrivate(
+                        window,
+                        "TryBeginSynchronizedFramePresentation",
+                        transportIntentGeneration));
 
                     await InvokePrivateTask(
                             window,
@@ -7057,6 +7071,178 @@ namespace FramePlayer.Avalonia.Tests
                     Assert.Equal(
                         "49",
                         RequireControl<TextBox>(window, "FrameNumberTextBox").Text);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task ComparePlayback_MasterPauseHoldsPresentedOffsetAgainstLateFrames()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var mediaInfo = new VideoMediaInfo(
+                        "compare-pause.mp4",
+                        TimeSpan.FromSeconds(20),
+                        TimeSpan.FromSeconds(1d / 24d),
+                        24d,
+                        1920,
+                        1080,
+                        "h264",
+                        0,
+                        24,
+                        1,
+                        1,
+                        90_000);
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        CurrentFilePath = "left.mp4",
+                        MediaInfo = mediaInfo,
+                        Position = new ReviewPosition(
+                            TimeSpan.FromSeconds(5),
+                            120,
+                            isFrameAccurate: true,
+                            isFrameIndexAbsolute: true,
+                            presentationTimestamp: 450_000,
+                            decodeTimestamp: 450_000)
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        CurrentFilePath = "right.mp4",
+                        MediaInfo = mediaInfo,
+                        Position = primaryEngine.Position
+                    };
+
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_isCompareModeSelected", true);
+                    SetPrivateField(window, "_isAllPaneTransportSelected", true);
+                    RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+                    var rawPlayingState = new VideoReviewEngineStateChangedEventArgs(
+                        isMediaOpen: true,
+                        isPlaying: true,
+                        currentFilePath: "left.mp4",
+                        lastErrorMessage: string.Empty,
+                        mediaInfo: mediaInfo,
+                        position: primaryEngine.Position);
+                    InvokePrivate(
+                        window,
+                        "ApplyState",
+                        ParsePane("Primary"),
+                        rawPlayingState);
+                    InvokePrivate(
+                        window,
+                        "ApplyState",
+                        ParsePane("Compare"),
+                        rawPlayingState);
+
+                    using var primaryPresentedFrame = CreateFrameBuffer(
+                        8,
+                        4,
+                        TimeSpan.FromSeconds(2),
+                        255,
+                        0,
+                        0);
+                    using var comparePresentedFrame = CreateFrameBuffer(
+                        8,
+                        4,
+                        TimeSpan.FromSeconds(2.5),
+                        0,
+                        255,
+                        0);
+                    InvokePrivate(
+                        window,
+                        "SetPaneBitmap",
+                        ParsePane("Primary"),
+                        primaryPresentedFrame);
+                    InvokePrivate(
+                        window,
+                        "SetPaneBitmap",
+                        ParsePane("Compare"),
+                        comparePresentedFrame);
+                    InvokePrivate(
+                        window,
+                        "ApplyPresentedFramePosition",
+                        ParsePane("Primary"),
+                        primaryPresentedFrame.Descriptor,
+                        true);
+                    InvokePrivate(
+                        window,
+                        "ApplyPresentedFramePosition",
+                        ParsePane("Compare"),
+                        comparePresentedFrame.Descriptor,
+                        false);
+                    var transportIntentGeneration = (int)InvokePrivate(
+                        window,
+                        "BeginAllPaneTransportIntent");
+                    Assert.True((bool)InvokePrivate(
+                        window,
+                        "TryBeginSynchronizedFramePresentation",
+                        transportIntentGeneration));
+
+                    await InvokePrivateTask(
+                            window,
+                            "PausePlaybackAsync",
+                            new[] { typeof(bool), typeof(SynchronizedOperationScope?) },
+                            true,
+                            (SynchronizedOperationScope?)SynchronizedOperationScope.AllPanes)
+                        .WaitAsync(TimeSpan.FromSeconds(2));
+
+                    using var latePrimaryFrame = CreateFrameBuffer(
+                        8,
+                        4,
+                        TimeSpan.FromSeconds(5),
+                        0,
+                        0,
+                        255);
+                    using var lateCompareFrame = CreateFrameBuffer(
+                        8,
+                        4,
+                        TimeSpan.FromSeconds(5),
+                        0,
+                        0,
+                        255);
+                    InvokePrivate(
+                        window,
+                        "QueueFramePresentation",
+                        ParsePane("Primary"),
+                        latePrimaryFrame);
+                    InvokePrivate(
+                        window,
+                        "QueueFramePresentation",
+                        ParsePane("Compare"),
+                        lateCompareFrame);
+                    await Task.Delay(TimeSpan.FromMilliseconds(50));
+                    Dispatcher.UIThread.RunJobs();
+
+                    Assert.Equal(
+                        2d,
+                        RequireControl<Slider>(
+                            window,
+                            "PrimaryPanePositionSlider").Value,
+                        precision: 3);
+                    Assert.Equal(
+                        2.5d,
+                        RequireControl<Slider>(
+                            window,
+                            "ComparePanePositionSlider").Value,
+                        precision: 3);
+                    Assert.Equal(
+                        2d,
+                        RequireControl<Slider>(
+                            window,
+                            "PositionSlider").Value,
+                        precision: 3);
                 }
                 finally
                 {

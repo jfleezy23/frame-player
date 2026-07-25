@@ -80,6 +80,7 @@ namespace FramePlayer.Avalonia.Views
         private readonly SemaphoreSlim _playbackStartGate = new(1, 1);
         private int _pairedFrameStepOperationInFlight;
         private int _pairedFrameStepTransportIntentGeneration = -1;
+        private int _allPanePausePresentationHoldGeneration = -1;
         private bool _synchronizedFramePresentationQueued;
         private int _isClosed;
         private Task? _engineDisposalTask;
@@ -1749,7 +1750,13 @@ namespace FramePlayer.Avalonia.Views
                 return;
             }
 
+            var holdSynchronizedPresentation =
+                IsSynchronizedFramePresentationActive();
             var transportIntentGeneration = AdvanceAllPaneTransportIntent();
+            if (holdSynchronizedPresentation)
+            {
+                BeginAllPanePausePresentationHold(transportIntentGeneration);
+            }
             InvalidateAllLoopRestarts();
             var refreshMasterTransportReadout = false;
             await WaitForAllPaneTransportOperationAsync().ConfigureAwait(false);
@@ -1778,14 +1785,21 @@ namespace FramePlayer.Avalonia.Views
             }
             finally
             {
-                EndSynchronizedFramePresentation(transportIntentGeneration);
                 ReleaseAllPaneTransportOperation();
             }
 
-            if (refreshMasterTransportReadout)
+            if (!refreshMasterTransportReadout)
+            {
+                return;
+            }
+
+            if (holdSynchronizedPresentation)
             {
                 await RefreshAllPaneMasterTransportReadoutOnUiThreadAsync().ConfigureAwait(false);
+                return;
             }
+
+            await RefreshAllPaneMasterPlaybackStateOnUiThreadAsync().ConfigureAwait(false);
         }
 
         private bool IsTransportIdle()
@@ -1876,6 +1890,45 @@ namespace FramePlayer.Avalonia.Views
                 durationSeconds,
                 durationText,
                 applyMasterTransport: true);
+            UpdateMainPlayPauseVisual();
+            PlaybackStateTextBlock.Text = (_primaryEngine.IsPlaying ||
+                _compareEngine?.IsPlaying == true)
+                    ? "Playing"
+                    : "Paused";
+        }
+
+        private async Task RefreshAllPaneMasterPlaybackStateOnUiThreadAsync()
+        {
+            if (Volatile.Read(ref _isClosed) != 0)
+            {
+                return;
+            }
+
+            var dispatcher = PlaybackStateTextBlock.Dispatcher;
+            try
+            {
+                if (dispatcher.CheckAccess())
+                {
+                    RefreshAllPaneMasterPlaybackState();
+                    return;
+                }
+            }
+            catch (Exception dispatcherEx)
+            {
+                Trace.TraceWarning("Master playback state dispatcher check failed: " + dispatcherEx.Message);
+            }
+
+            await dispatcher.InvokeAsync(() =>
+            {
+                if (Volatile.Read(ref _isClosed) == 0)
+                {
+                    RefreshAllPaneMasterPlaybackState();
+                }
+            });
+        }
+
+        private void RefreshAllPaneMasterPlaybackState()
+        {
             UpdateMainPlayPauseVisual();
             PlaybackStateTextBlock.Text = (_primaryEngine.IsPlaying ||
                 _compareEngine?.IsPlaying == true)
@@ -4184,6 +4237,11 @@ namespace FramePlayer.Avalonia.Views
                     return;
                 }
 
+                if (IsAllPanePausePresentationHoldActiveLocked())
+                {
+                    return;
+                }
+
                 if (TryQueueSynchronizedFramePresentation(pane, sourceFrameBuffer))
                 {
                     ClearPendingIndividualFramePresentations();
@@ -4324,6 +4382,7 @@ namespace FramePlayer.Avalonia.Views
             ClearPendingIndividualFramePresentations();
             _synchronizedFramePresentationGeneration++;
             ClearPendingSynchronizedFramePresentationsLocked();
+            _allPanePausePresentationHoldGeneration = -1;
             _synchronizedFramePresentationTimeOffset = presentationTimeOffset;
             _captureSynchronizedFramePresentationTimeOffset =
                 captureTimeOffsetFromNextPair;
@@ -4724,11 +4783,41 @@ namespace FramePlayer.Avalonia.Views
 
                 _synchronizedFramePresentationGeneration++;
                 _isSynchronizedFramePresentationActive = false;
+                _allPanePausePresentationHoldGeneration = -1;
                 _captureSynchronizedFramePresentationTimeOffset = false;
                 _synchronizedFrameAlignmentSourceDescriptor = null;
                 _synchronizedFrameAlignmentUsesFrameIdentity = false;
                 ClearPendingSynchronizedFramePresentationsLocked();
             }
+        }
+
+        private void BeginAllPanePausePresentationHold(
+            int expectedTransportIntentGeneration)
+        {
+            lock (_synchronizedFramePresentationLock)
+            {
+                if (Volatile.Read(ref _allPaneTransportIntentGeneration) !=
+                    expectedTransportIntentGeneration)
+                {
+                    return;
+                }
+
+                ClearPendingIndividualFramePresentations();
+                _synchronizedFramePresentationGeneration++;
+                _isSynchronizedFramePresentationActive = false;
+                _allPanePausePresentationHoldGeneration =
+                    expectedTransportIntentGeneration;
+                _captureSynchronizedFramePresentationTimeOffset = false;
+                _synchronizedFrameAlignmentSourceDescriptor = null;
+                _synchronizedFrameAlignmentUsesFrameIdentity = false;
+                ClearPendingSynchronizedFramePresentationsLocked();
+            }
+        }
+
+        private bool IsAllPanePausePresentationHoldActiveLocked()
+        {
+            return _allPanePausePresentationHoldGeneration ==
+                Volatile.Read(ref _allPaneTransportIntentGeneration);
         }
 
         private bool TryQueueSynchronizedFramePresentation(Pane pane, DecodedFrameBuffer sourceFrameBuffer)
@@ -5401,6 +5490,14 @@ namespace FramePlayer.Avalonia.Views
                 if (frameBuffer != null)
                 {
                     return CreateReviewPosition(frameBuffer.Descriptor);
+                }
+
+                lock (_synchronizedFramePresentationLock)
+                {
+                    if (IsAllPanePausePresentationHoldActiveLocked())
+                    {
+                        return null;
+                    }
                 }
 
                 if (IsSynchronizedFramePresentationActive())
