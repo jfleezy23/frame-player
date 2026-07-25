@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ARTIFACT_VERSION="${PACKAGE_VERSION:-${VERSION:-2.1.0-rc.3}}"
+ARTIFACT_VERSION="${PACKAGE_VERSION:-${VERSION:-2.1.0-rc.15}}"
 SIGN_MODE="${SIGN_MODE:-auto}"
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-}"
 DIST_DIR="$ROOT_DIR/dist"
@@ -17,7 +17,7 @@ usage() {
 usage: $0 [--unsigned|--sign [identity]]
 
 Environment:
-  PACKAGE_VERSION=<label>      Artifact version label. Default: 2.1.0-rc.3
+  PACKAGE_VERSION=<label>      Artifact version label. Default: 2.1.0-rc.15
   APP_VERSION=<version>        Bundle short version. Default: numeric segment from PACKAGE_VERSION
   SIGNING_IDENTITY=<identity>  codesign identity name/hash
 
