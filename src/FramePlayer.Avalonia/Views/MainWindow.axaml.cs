@@ -138,6 +138,7 @@ namespace FramePlayer.Avalonia.Views
         private bool _isUpdatingSliders;
         private volatile bool _isCompareModeSelected;
         private volatile bool _isAllPaneTransportSelected;
+        private bool _isAllPanePlaybackControlActive;
         private Pane _focusedPane = Pane.Primary;
         private TimeSpan _masterTimelineContextTarget = TimeSpan.Zero;
         private TimeSpan _primaryTimelineContextTarget = TimeSpan.Zero;
@@ -517,6 +518,41 @@ namespace FramePlayer.Avalonia.Views
             }
         }
 
+        private Pane GetMasterTransportPane()
+        {
+            var compareEngine = _compareEngine;
+            if (_isCompareModeSelected &&
+                _primaryEngine.IsMediaOpen &&
+                compareEngine != null &&
+                compareEngine.IsMediaOpen &&
+                compareEngine.MediaInfo.Duration >
+                    _primaryEngine.MediaInfo.Duration)
+            {
+                return Pane.Compare;
+            }
+
+            return Pane.Primary;
+        }
+
+        private TimeSpan GetMasterTransportDuration()
+        {
+            var masterEngine = TryGetExistingEngine(GetMasterTransportPane());
+            if (masterEngine != null && masterEngine.IsMediaOpen)
+            {
+                return masterEngine.MediaInfo.Duration;
+            }
+
+            if (_primaryEngine.IsMediaOpen)
+            {
+                return _primaryEngine.MediaInfo.Duration;
+            }
+
+            var compareEngine = _compareEngine;
+            return compareEngine != null && compareEngine.IsMediaOpen
+                ? compareEngine.MediaInfo.Duration
+                : TimeSpan.Zero;
+        }
+
         private bool IsLinkedPaneZoomEnabled
         {
             get
@@ -824,6 +860,7 @@ namespace FramePlayer.Avalonia.Views
 
             CancelQueuedSliderScrubs();
             InvalidateAllLoopRestarts();
+            Volatile.Write(ref _isAllPanePlaybackControlActive, false);
             var transportIntentGeneration = EndSynchronizedFramePresentation();
             await WaitForAllPaneTransportOperationAsync();
             try
@@ -1682,10 +1719,19 @@ namespace FramePlayer.Avalonia.Views
                 }
 
                 await Task.WhenAll(resumeTasks).ConfigureAwait(false);
-                return IsCurrentAllPaneResumeIntent(
+                var currentIntent = IsCurrentAllPaneResumeIntent(
                     transportIntentGeneration,
                     primaryIntentGeneration,
                     compareIntentGeneration);
+                if (currentIntent &&
+                    synchronizePresentation &&
+                    resumePrimary &&
+                    resumeCompare)
+                {
+                    Volatile.Write(ref _isAllPanePlaybackControlActive, true);
+                }
+
+                return currentIntent;
             }
             catch
             {
@@ -1723,6 +1769,7 @@ namespace FramePlayer.Avalonia.Views
                 return;
             }
 
+            Volatile.Write(ref _isAllPanePlaybackControlActive, false);
             if (!_primaryEngine.IsPlaying &&
                 _compareEngine?.IsPlaying != true &&
                 Volatile.Read(ref _allPaneLoopRestartInFlight) == 0 &&
@@ -1877,15 +1924,25 @@ namespace FramePlayer.Avalonia.Views
                 return;
             }
 
-            var duration = _primaryEngine.MediaInfo.Duration;
+            var masterPane = GetMasterTransportPane();
+            var masterEngine = TryGetExistingEngine(masterPane);
+            if (masterEngine == null || !masterEngine.IsMediaOpen)
+            {
+                return;
+            }
+
+            var duration = GetMasterTransportDuration();
             var durationSeconds = Math.Max(1d, duration.TotalSeconds);
             var durationText = FormatTime(duration);
-            var position = _primaryFrameBuffer != null
-                ? CreateReviewPosition(_primaryFrameBuffer.Descriptor)
-                : _primaryEngine.Position;
+            var frameBuffer = masterPane == Pane.Compare
+                ? _compareFrameBuffer
+                : _primaryFrameBuffer;
+            var position = frameBuffer != null
+                ? CreateReviewPosition(frameBuffer.Descriptor)
+                : masterEngine.Position;
 
             ApplyPanePosition(
-                Pane.Primary,
+                masterPane,
                 position,
                 durationSeconds,
                 durationText,
@@ -4507,6 +4564,7 @@ namespace FramePlayer.Avalonia.Views
                 }
             }
 
+            Volatile.Write(ref _isAllPanePlaybackControlActive, false);
             EndSynchronizedFramePresentation(allPaneTransportIntentGeneration);
             return transportIntentGeneration;
         }
@@ -4514,6 +4572,7 @@ namespace FramePlayer.Avalonia.Views
         private int BeginAllPaneTransportIntent()
         {
             var transportIntentGeneration = AdvanceAllPaneTransportIntent();
+            Volatile.Write(ref _isAllPanePlaybackControlActive, false);
             EndSynchronizedFramePresentation(transportIntentGeneration);
             return transportIntentGeneration;
         }
@@ -4522,6 +4581,7 @@ namespace FramePlayer.Avalonia.Views
         {
             var transportIntentGeneration = AdvanceAllPaneTransportIntent(
                 invalidateQueuedFrameSteps: false);
+            Volatile.Write(ref _isAllPanePlaybackControlActive, false);
             EndSynchronizedFramePresentation(transportIntentGeneration);
             return transportIntentGeneration;
         }
@@ -4582,6 +4642,7 @@ namespace FramePlayer.Avalonia.Views
                 }
             }
 
+            Volatile.Write(ref _isAllPanePlaybackControlActive, false);
             EndSynchronizedFramePresentation(allPaneTransportIntentGeneration);
             return (paneIntentGeneration, resumePlayback);
         }
@@ -4928,13 +4989,15 @@ namespace FramePlayer.Avalonia.Views
             if (presentedPrimaryDescriptor != null &&
                 presentedCompareDescriptor != null)
             {
+                var masterPane = GetMasterTransportPane();
                 ApplyPresentedFramePosition(
                     Pane.Primary,
                     presentedPrimaryDescriptor,
-                    applyMasterTransport: true);
+                    applyMasterTransport: masterPane == Pane.Primary);
                 ApplyPresentedFramePosition(
                     Pane.Compare,
-                    presentedCompareDescriptor);
+                    presentedCompareDescriptor,
+                    applyMasterTransport: masterPane == Pane.Compare);
             }
         }
 
@@ -5457,8 +5520,7 @@ namespace FramePlayer.Avalonia.Views
             PrimaryPaneDurationTextBlock.Text = durationText;
             PrimaryPanePlayPausePlayIcon.IsVisible = !state.IsPlaying;
             PrimaryPanePlayPausePauseIcon.IsVisible = state.IsPlaying;
-            PositionSlider.Maximum = durationSeconds;
-            DurationTextBlock.Text = durationText;
+            ApplyMasterTransportDuration();
 
             if (ShouldApplyPrimaryStateToMasterTransport())
             {
@@ -5476,6 +5538,20 @@ namespace FramePlayer.Avalonia.Views
             ComparePaneDurationTextBlock.Text = durationText;
             ComparePanePlayPausePlayIcon.IsVisible = !state.IsPlaying;
             ComparePanePlayPausePauseIcon.IsVisible = state.IsPlaying;
+            ApplyMasterTransportDuration();
+
+            if (ShouldApplyPaneStateToMasterTransport(Pane.Compare))
+            {
+                UpdateMainPlayPauseVisual();
+                PlaybackStateTextBlock.Text = FormatPlaybackState(state);
+            }
+        }
+
+        private void ApplyMasterTransportDuration()
+        {
+            var duration = GetMasterTransportDuration();
+            PositionSlider.Maximum = Math.Max(1d, duration.TotalSeconds);
+            DurationTextBlock.Text = FormatTime(duration);
         }
 
         private ReviewPosition? ResolvePresentedPosition(
@@ -5550,6 +5626,12 @@ namespace FramePlayer.Avalonia.Views
                 ComparePanePositionSlider.Value = positionSeconds;
                 ComparePaneCurrentPositionTextBlock.Text = positionText;
                 ComparePaneFrameNumberTextBox.Text = frameNumberText;
+                if (applyMasterTransport ||
+                    ShouldApplyPaneStateToMasterTransport(Pane.Compare))
+                {
+                    ApplyMasterTransportPosition(position);
+                }
+
                 return;
             }
 
@@ -5557,12 +5639,23 @@ namespace FramePlayer.Avalonia.Views
             PrimaryPaneCurrentPositionTextBlock.Text = positionText;
             PrimaryPaneFrameNumberTextBox.Text = frameNumberText;
 
-            if (!applyMasterTransport &&
-                !ShouldApplyPrimaryStateToMasterTransport())
+            if (applyMasterTransport ||
+                ShouldApplyPrimaryStateToMasterTransport())
             {
-                return;
+                ApplyMasterTransportPosition(position);
             }
+        }
 
+        private void ApplyMasterTransportPosition(ReviewPosition position)
+        {
+            var duration = GetMasterTransportDuration();
+            var durationSeconds = Math.Max(1d, duration.TotalSeconds);
+            var durationText = FormatTime(duration);
+            var positionSeconds = Math.Max(
+                0d,
+                Math.Min(durationSeconds, position.PresentationTime.TotalSeconds));
+            var positionText = FormatTime(position.PresentationTime);
+            var frameNumberText = FormatFrameNumberEntry(position);
             PositionSlider.Value = positionSeconds;
             CurrentPositionTextBlock.Text = positionText;
             CurrentFrameTextBlock.Text = position.FrameIndex.HasValue
@@ -5609,7 +5702,18 @@ namespace FramePlayer.Avalonia.Views
 
         private bool ShouldApplyPrimaryStateToMasterTransport()
         {
-            return !IsCompareModeEnabled || IsSynchronizedFramePresentationActive();
+            return ShouldApplyPaneStateToMasterTransport(Pane.Primary);
+        }
+
+        private bool ShouldApplyPaneStateToMasterTransport(Pane pane)
+        {
+            if (!_isCompareModeSelected)
+            {
+                return pane == Pane.Primary;
+            }
+
+            return IsSynchronizedFramePresentationActive() &&
+                pane == GetMasterTransportPane();
         }
 
 
@@ -5749,6 +5853,11 @@ namespace FramePlayer.Avalonia.Views
 
             if (ShouldSynchronizeLoopRestart())
             {
+                if (!IsMasterLoopBoundaryPane(pane))
+                {
+                    return;
+                }
+
                 StartAllPaneLoopRestart(pane);
                 return;
             }
@@ -5781,7 +5890,7 @@ namespace FramePlayer.Avalonia.Views
                 !_primaryEngine.IsMediaOpen ||
                 compareEngine == null ||
                 !compareEngine.IsMediaOpen ||
-                !IsSynchronizedFramePresentationActive())
+                !Volatile.Read(ref _isAllPanePlaybackControlActive))
             {
                 return false;
             }
@@ -5790,6 +5899,32 @@ namespace FramePlayer.Avalonia.Views
             var compareRange = GetLoopRange(Pane.Compare);
             return (primaryRange == null || !primaryRange.IsInvalidRange) &&
                 (compareRange == null || !compareRange.IsInvalidRange);
+        }
+
+        private bool IsMasterLoopBoundaryPane(Pane pane)
+        {
+            var primaryRange =
+                GetLoopRange(Pane.Primary) ??
+                CreateLoopRange(Pane.Primary, null, null);
+            var compareRange =
+                GetLoopRange(Pane.Compare) ??
+                CreateLoopRange(Pane.Compare, null, null);
+            return IsMasterLoopBoundaryPane(pane, primaryRange, compareRange);
+        }
+
+        private static bool IsMasterLoopBoundaryPane(
+            Pane pane,
+            LoopPlaybackPaneRangeSnapshot primaryRange,
+            LoopPlaybackPaneRangeSnapshot compareRange)
+        {
+            if (primaryRange.EffectiveEndTime == compareRange.EffectiveEndTime)
+            {
+                return true;
+            }
+
+            return pane == (compareRange.EffectiveEndTime > primaryRange.EffectiveEndTime
+                ? Pane.Compare
+                : Pane.Primary);
         }
 
         private void StartAllPaneLoopRestart(Pane boundaryPane)
