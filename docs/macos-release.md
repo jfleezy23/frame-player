@@ -17,7 +17,7 @@ dotnet test tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj -
 For release-candidate corpus validation, run:
 
 ```bash
-PACKAGE_VERSION=2.1.0-rc.16 script/validate_macos_release_candidate.sh --corpus "Video Test Files"
+PACKAGE_VERSION=2.1.0-rc.17 script/validate_macos_release_candidate.sh --corpus "Video Test Files"
 ```
 
 The validator builds the Avalonia bundle, requires the maintained corpus, verifies native runtime files, and runs the `Category=ReleaseCandidate` tests through the packaged application/export host.
@@ -29,13 +29,13 @@ The validation never substitutes downloaded sample media for the maintained rele
 For an unsigned local package:
 
 ```bash
-PACKAGE_VERSION=2.1.0-rc.16 script/package_unified_macos_release.sh --unsigned
+PACKAGE_VERSION=2.1.0-rc.17 script/package_unified_macos_release.sh --unsigned
 ```
 
 For a signed release candidate:
 
 ```bash
-PACKAGE_VERSION=2.1.0-rc.16 script/package_unified_macos_release.sh --sign
+PACKAGE_VERSION=2.1.0-rc.17 script/package_unified_macos_release.sh --sign
 codesign --verify --deep --verbose=2 "dist/Frame Player.app"
 codesign -dvvv --entitlements :- "dist/Frame Player.app"
 ```

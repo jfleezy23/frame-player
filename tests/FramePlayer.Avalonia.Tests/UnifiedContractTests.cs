@@ -92,9 +92,9 @@ namespace FramePlayer.Avalonia.Tests
         [Fact]
         public void UnifiedReleaseNaming_UsesV21ReleaseCandidate()
         {
-            const string version = "2.1.0-rc.16";
-            const string windowsAsset = "FramePlayer-Windows-x64-2.1.0-rc.16.zip";
-            const string macAsset = "FramePlayer-macOS-arm64-2.1.0-rc.16.zip";
+            const string version = "2.1.0-rc.17";
+            const string windowsAsset = "FramePlayer-Windows-x64-2.1.0-rc.17.zip";
+            const string macAsset = "FramePlayer-macOS-arm64-2.1.0-rc.17.zip";
 
             Assert.StartsWith("2.1.0", version, StringComparison.Ordinal);
             Assert.Contains(version, windowsAsset, StringComparison.Ordinal);
@@ -109,14 +109,14 @@ namespace FramePlayer.Avalonia.Tests
             var script = File.ReadAllText(Path.Combine(root, "scripts", "Package-UnifiedWindows.ps1"));
             var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "windows-ci.yml"));
 
-            Assert.Contains("[string]$Version = \"2.1.0-rc.16\"", script, StringComparison.Ordinal);
+            Assert.Contains("[string]$Version = \"2.1.0-rc.17\"", script, StringComparison.Ordinal);
             Assert.Contains("Get-AssemblyVersionFromPackageVersion", script, StringComparison.Ordinal);
             Assert.Contains("-p:AssemblyVersion=$assemblyVersion", script, StringComparison.Ordinal);
             Assert.Contains("-p:FileVersion=$assemblyVersion", script, StringComparison.Ordinal);
             Assert.Contains("-p:InformationalVersion=$Version", script, StringComparison.Ordinal);
             Assert.Contains("-p:IncludeSourceRevisionInInformationalVersion=false", script, StringComparison.Ordinal);
             Assert.Contains("$productVersion -ne $Version", script, StringComparison.Ordinal);
-            Assert.Contains("$packageVersion = \"2.1.0-rc.16\"", workflow, StringComparison.Ordinal);
+            Assert.Contains("$packageVersion = \"2.1.0-rc.17\"", workflow, StringComparison.Ordinal);
         }
 
         [Fact]
@@ -126,7 +126,7 @@ namespace FramePlayer.Avalonia.Tests
             var script = File.ReadAllText(Path.Combine(root, "script", "package_unified_macos_release.sh"));
             var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "macos-avalonia.yml"));
 
-            Assert.Contains("ARTIFACT_VERSION=\"${PACKAGE_VERSION:-${VERSION:-2.1.0-rc.16}}\"", script, StringComparison.Ordinal);
+            Assert.Contains("ARTIFACT_VERSION=\"${PACKAGE_VERSION:-${VERSION:-2.1.0-rc.17}}\"", script, StringComparison.Ordinal);
             Assert.Contains("bundle_short_version_from_artifact", script, StringComparison.Ordinal);
             Assert.Contains("APP_VERSION=\"$BUNDLE_SHORT_VERSION\"", script, StringComparison.Ordinal);
             Assert.Contains("APP_INFORMATIONAL_VERSION=\"$ARTIFACT_VERSION\"", script, StringComparison.Ordinal);
@@ -166,7 +166,7 @@ namespace FramePlayer.Avalonia.Tests
             Assert.Contains("-p:FileVersion=\"$APP_ASSEMBLY_VERSION\"", buildScript, StringComparison.Ordinal);
             Assert.Contains("-p:InformationalVersion=\"$APP_INFORMATIONAL_VERSION\"", buildScript, StringComparison.Ordinal);
             Assert.Contains("-p:IncludeSourceRevisionInInformationalVersion=false", buildScript, StringComparison.Ordinal);
-            Assert.Contains("PACKAGE_VERSION=2.1.0-rc.16", workflow, StringComparison.Ordinal);
+            Assert.Contains("PACKAGE_VERSION=2.1.0-rc.17", workflow, StringComparison.Ordinal);
             Assert.Contains("CFBundleShortVersionString 2.1.0", workflow, StringComparison.Ordinal);
         }
 

@@ -5712,8 +5712,14 @@ namespace FramePlayer.Avalonia.Views
                 return pane == Pane.Primary;
             }
 
-            return IsSynchronizedFramePresentationActive() &&
-                pane == GetMasterTransportPane();
+            if (pane != GetMasterTransportPane())
+            {
+                return false;
+            }
+
+            return IsSynchronizedFramePresentationActive() ||
+                (_isAllPaneTransportSelected &&
+                    Volatile.Read(ref _isAllPanePlaybackControlActive));
         }
 
 

@@ -1185,6 +1185,200 @@ namespace FramePlayer.Avalonia.Tests
             });
         }
 
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public void ComparePlayback_MasterReadoutTracksLongerPaneAfterShortPaneEnds(
+            bool compareIsLonger)
+        {
+            _fixture.Run(() =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var primaryDuration = TimeSpan.FromSeconds(
+                        compareIsLonger ? 4 : 12);
+                    var compareDuration = TimeSpan.FromSeconds(
+                        compareIsLonger ? 12 : 4);
+                    var primaryMediaInfo = CreateMediaInfo(
+                        "left.mp4",
+                        primaryDuration);
+                    var compareMediaInfo = CreateMediaInfo(
+                        "right.mp4",
+                        compareDuration);
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = !compareIsLonger,
+                        CurrentFilePath = "left.mp4",
+                        MediaInfo = primaryMediaInfo
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = compareIsLonger,
+                        CurrentFilePath = "right.mp4",
+                        MediaInfo = compareMediaInfo
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    RequireControl<CheckBox>(
+                        window,
+                        "CompareModeCheckBox").IsChecked = true;
+
+                    InvokePrivate(
+                        window,
+                        "ApplyState",
+                        ParsePane("Primary"),
+                        new VideoReviewEngineStateChangedEventArgs(
+                            isMediaOpen: true,
+                            isPlaying: primaryEngine.IsPlaying,
+                            currentFilePath: "left.mp4",
+                            lastErrorMessage: string.Empty,
+                            mediaInfo: primaryMediaInfo,
+                            position: ReviewPosition.Empty));
+                    InvokePrivate(
+                        window,
+                        "ApplyState",
+                        ParsePane("Compare"),
+                        new VideoReviewEngineStateChangedEventArgs(
+                            isMediaOpen: true,
+                            isPlaying: compareEngine.IsPlaying,
+                            currentFilePath: "right.mp4",
+                            lastErrorMessage: string.Empty,
+                            mediaInfo: compareMediaInfo,
+                            position: ReviewPosition.Empty));
+
+                    var transportIntentGeneration = (int)InvokePrivate(
+                        window,
+                        "BeginAllPaneTransportIntent");
+                    Assert.True((bool)InvokePrivate(
+                        window,
+                        "TryBeginSynchronizedFramePresentation",
+                        transportIntentGeneration));
+                    SetPrivateField(
+                        window,
+                        "_isAllPanePlaybackControlActive",
+                        true);
+
+                    var shorterPane = ParsePane(
+                        compareIsLonger ? "Primary" : "Compare");
+                    var longerPane = ParsePane(
+                        compareIsLonger ? "Compare" : "Primary");
+                    var shorterEngine = compareIsLonger
+                        ? primaryEngine
+                        : compareEngine;
+                    var shorterMediaInfo = compareIsLonger
+                        ? primaryMediaInfo
+                        : compareMediaInfo;
+                    var longerMediaInfo = compareIsLonger
+                        ? compareMediaInfo
+                        : primaryMediaInfo;
+                    var shortEndState = new VideoReviewEngineStateChangedEventArgs(
+                        isMediaOpen: true,
+                        isPlaying: false,
+                        currentFilePath: compareIsLonger ? "left.mp4" : "right.mp4",
+                        lastErrorMessage: string.Empty,
+                        mediaInfo: shorterMediaInfo,
+                        position: new ReviewPosition(
+                            shorterMediaInfo.Duration,
+                            119,
+                            isFrameAccurate: true,
+                            isFrameIndexAbsolute: true,
+                            presentationTimestamp: 360_000,
+                            decodeTimestamp: 360_000));
+
+                    InvokePrivate(
+                        window,
+                        "ReleaseSynchronizedPresentationIfPaneStopped",
+                        shorterPane,
+                        shorterEngine,
+                        shortEndState);
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => !GetPrivateField<bool>(
+                                window,
+                                "_isSynchronizedFramePresentationActive"),
+                            TimeSpan.FromSeconds(2)),
+                        "The short pane ending did not release paired presentation.");
+
+                    var longerPosition = TimeSpan.FromSeconds(6.4);
+                    InvokePrivate(
+                        window,
+                        "ApplyState",
+                        longerPane,
+                        new VideoReviewEngineStateChangedEventArgs(
+                            isMediaOpen: true,
+                            isPlaying: true,
+                            currentFilePath: compareIsLonger ? "right.mp4" : "left.mp4",
+                            lastErrorMessage: string.Empty,
+                            mediaInfo: longerMediaInfo,
+                            position: new ReviewPosition(
+                                longerPosition,
+                                191,
+                                isFrameAccurate: true,
+                                isFrameIndexAbsolute: true,
+                                presentationTimestamp: 576_000,
+                                decodeTimestamp: 576_000)));
+
+                    InvokePrivate(
+                        window,
+                        "ApplyState",
+                        shorterPane,
+                        new VideoReviewEngineStateChangedEventArgs(
+                            isMediaOpen: true,
+                            isPlaying: false,
+                            currentFilePath: compareIsLonger ? "left.mp4" : "right.mp4",
+                            lastErrorMessage: string.Empty,
+                            mediaInfo: shorterMediaInfo,
+                            position: new ReviewPosition(
+                                TimeSpan.FromSeconds(0.2),
+                                5,
+                                isFrameAccurate: true,
+                                isFrameIndexAbsolute: true,
+                                presentationTimestamp: 18_000,
+                                decodeTimestamp: 18_000)));
+
+                    Assert.Equal(
+                        longerMediaInfo.Duration.TotalSeconds,
+                        RequireControl<Slider>(
+                            window,
+                            "PositionSlider").Maximum);
+                    Assert.Equal(
+                        longerPosition.TotalSeconds,
+                        RequireControl<Slider>(
+                            window,
+                            "PositionSlider").Value);
+                    Assert.Equal(
+                        FormatExpectedTime(longerPosition),
+                        RequireControl<TextBlock>(
+                            window,
+                            "CurrentPositionTextBlock").Text);
+                    Assert.Equal(
+                        FormatExpectedTime(longerPosition) +
+                            " / " +
+                            FormatExpectedTime(longerMediaInfo.Duration),
+                        RequireControl<TextBlock>(
+                            window,
+                            "TimecodeTextBlock").Text);
+                    Assert.Equal(
+                        "Frame 192",
+                        RequireControl<TextBlock>(
+                            window,
+                            "CurrentFrameTextBlock").Text);
+                    Assert.Equal(
+                        "192",
+                        RequireControl<TextBox>(
+                            window,
+                            "FrameNumberTextBox").Text);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
         [Fact]
         public async Task ComparePlayback_SynchronizedPresentationPreservesPausedPaneOffset()
         {
@@ -7859,7 +8053,11 @@ namespace FramePlayer.Avalonia.Tests
                 primaryMasterStateMethod,
                 StringComparison.Ordinal);
             Assert.Contains(
-                "pane == GetMasterTransportPane();",
+                "if (pane != GetMasterTransportPane())",
+                paneMasterStateMethod,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "Volatile.Read(ref _isAllPanePlaybackControlActive)",
                 paneMasterStateMethod,
                 StringComparison.Ordinal);
         }
