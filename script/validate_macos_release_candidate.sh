@@ -84,7 +84,7 @@ if [[ ! -s "$RESULTS_DIR/corpus-files.txt" ]]; then
   exit 1
 fi
 
-PACKAGE_VERSION="${PACKAGE_VERSION:-2.1.0-rc.15}" \
+PACKAGE_VERSION="${PACKAGE_VERSION:-2.1.0-rc.16}" \
   "$ROOT_DIR/script/package_unified_macos_release.sh" --unsigned
 
 [[ -s "$APP_BUNDLE/Contents/Resources/FramePlayer.icns" ]]
