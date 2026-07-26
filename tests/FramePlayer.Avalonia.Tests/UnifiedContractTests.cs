@@ -124,6 +124,7 @@ namespace FramePlayer.Avalonia.Tests
         {
             var root = FindRepositoryRoot();
             var script = File.ReadAllText(Path.Combine(root, "script", "package_unified_macos_release.sh"));
+            var validator = File.ReadAllText(Path.Combine(root, "script", "validate_macos_release_candidate.sh"));
             var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "macos-avalonia.yml"));
 
             Assert.Contains("ARTIFACT_VERSION=\"${PACKAGE_VERSION:-${VERSION:-2.1.0-rc.17}}\"", script, StringComparison.Ordinal);
@@ -166,6 +167,8 @@ namespace FramePlayer.Avalonia.Tests
             Assert.Contains("-p:FileVersion=\"$APP_ASSEMBLY_VERSION\"", buildScript, StringComparison.Ordinal);
             Assert.Contains("-p:InformationalVersion=\"$APP_INFORMATIONAL_VERSION\"", buildScript, StringComparison.Ordinal);
             Assert.Contains("-p:IncludeSourceRevisionInInformationalVersion=false", buildScript, StringComparison.Ordinal);
+            Assert.Contains("-iname '*.mp4'", validator, StringComparison.Ordinal);
+            Assert.DoesNotContain("-iname '*.ts'", validator, StringComparison.Ordinal);
             Assert.Contains("PACKAGE_VERSION=2.1.0-rc.17", workflow, StringComparison.Ordinal);
             Assert.Contains("CFBundleShortVersionString 2.1.0", workflow, StringComparison.Ordinal);
         }

@@ -76,7 +76,7 @@ fi
 
 find "$CORPUS_DIR" -type f \( \
   -iname '*.avi' -o -iname '*.m4v' -o -iname '*.mkv' -o -iname '*.mov' -o \
-  -iname '*.mp4' -o -iname '*.ts' -o -iname '*.wmv' \
+  -iname '*.mp4' -o -iname '*.wmv' \
 \) | sort > "$RESULTS_DIR/corpus-files.txt"
 
 if [[ ! -s "$RESULTS_DIR/corpus-files.txt" ]]; then
