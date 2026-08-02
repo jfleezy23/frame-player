@@ -17,7 +17,7 @@ dotnet test tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj -
 For release-candidate corpus validation, run:
 
 ```bash
-PACKAGE_VERSION=2.1.0-rc.17 script/validate_macos_release_candidate.sh --corpus "Video Test Files"
+PACKAGE_VERSION="<release-version>" script/validate_macos_release_candidate.sh --corpus "Video Test Files"
 ```
 
 The validator builds the Avalonia bundle, requires the maintained corpus, verifies native runtime files, and runs the `Category=ReleaseCandidate` tests through the packaged application/export host.
@@ -29,25 +29,27 @@ The validation never substitutes downloaded sample media for the maintained rele
 For an unsigned local package:
 
 ```bash
-PACKAGE_VERSION=2.1.0-rc.17 script/package_unified_macos_release.sh --unsigned
+PACKAGE_VERSION="<release-version>" script/package_unified_macos_release.sh --unsigned
 ```
 
 For a signed release candidate:
 
 ```bash
-PACKAGE_VERSION=2.1.0-rc.17 script/package_unified_macos_release.sh --sign
+PACKAGE_VERSION="<release-version>" script/package_unified_macos_release.sh --sign
 codesign --verify --deep --verbose=2 "dist/Frame Player.app"
 codesign -dvvv --entitlements :- "dist/Frame Player.app"
 ```
 
 Automatic identity selection prefers `Developer ID Application` and then `Apple Development`. The latter is suitable only for local testing.
 
+Replace `<release-version>` with the exact candidate or final version being packaged. The published v2.1.0 archive is release evidence, not the version input for a later candidate.
+
 ## Notarization
 
 Public distribution requires a Developer ID Application identity, hardened-runtime signing, the maintained Avalonia entitlements, notarization, and stapling:
 
 ```bash
-PACKAGE_VERSION=2.1.0 script/package_unified_macos_release.sh --sign "Developer ID Application: <Team Name> (<TEAMID>)"
+PACKAGE_VERSION="<release-version>" script/package_unified_macos_release.sh --sign "Developer ID Application: <Team Name> (<TEAMID>)"
 codesign --verify --strict --deep --verbose=2 "dist/Frame Player.app"
 spctl -a -vvv -t exec "dist/Frame Player.app"
 ditto -c -k --keepParent "dist/Frame Player.app" "artifacts/FramePlayer-macOS-notary-submit.zip"

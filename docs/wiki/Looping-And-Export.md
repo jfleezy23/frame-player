@@ -7,9 +7,9 @@ Frame Player supports whole-media loop playback and exact A/B loop playback.
 - Press `[` to set loop in.
 - Press `]` to set loop out.
 - Press `L` to toggle loop playback.
-- Loop status appears near the relevant transport surface.
+- Loop status appears on the main transport surface.
 
-In compare mode, loop context follows the active shared or pane-local review surface.
+In compare mode, the main loop status controls loop playback for both panes together. Each pane retains its own loop range.
 
 ## Clip Export
 

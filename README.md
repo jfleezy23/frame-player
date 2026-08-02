@@ -10,6 +10,21 @@ Frame Player is a frame-first cross-platform video review tool for exact steppin
 
 Frame Player `v2.1.0` is the universal Avalonia application for Windows x64 and Apple Silicon macOS.
 
+## Quality Evidence
+
+[![macOS Avalonia](https://github.com/jfleezy23/frame-player/actions/workflows/macos-avalonia.yml/badge.svg?branch=main)](https://github.com/jfleezy23/frame-player/actions/workflows/macos-avalonia.yml)
+[![Windows CI](https://github.com/jfleezy23/frame-player/actions/workflows/windows-ci.yml/badge.svg?branch=main)](https://github.com/jfleezy23/frame-player/actions/workflows/windows-ci.yml)
+[![CodeQL](https://github.com/jfleezy23/frame-player/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/jfleezy23/frame-player/actions/workflows/codeql.yml)
+[![SonarQube](https://github.com/jfleezy23/frame-player/actions/workflows/sonarqube.yml/badge.svg?branch=main)](https://github.com/jfleezy23/frame-player/actions/workflows/sonarqube.yml)
+
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=jfleezy23_frame-player&metric=alert_status)](https://sonarcloud.io/dashboard?id=jfleezy23_frame-player&branch=main)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=jfleezy23_frame-player&metric=coverage)](https://sonarcloud.io/dashboard?id=jfleezy23_frame-player&branch=main)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=jfleezy23_frame-player&metric=security_rating)](https://sonarcloud.io/dashboard?id=jfleezy23_frame-player&branch=main)
+[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=jfleezy23_frame-player&metric=reliability_rating)](https://sonarcloud.io/dashboard?id=jfleezy23_frame-player&branch=main)
+[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=jfleezy23_frame-player&metric=sqale_rating)](https://sonarcloud.io/dashboard?id=jfleezy23_frame-player&branch=main)
+
+These indicators are live measurements for `main`. The [security policy](SECURITY.md) and [security and quality baseline](docs/security-quality-baseline.md) describe the scope and release controls behind them.
+
 ## Highlights
 
 - Exact frame stepping and frame jumps based on decoded display-order frame identity.

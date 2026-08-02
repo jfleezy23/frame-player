@@ -4,8 +4,7 @@ This document is the maintainer source of truth for the repository's automated s
 
 ## Repository guardrails
 
-- `main` accepts changes through pull requests and the required `Windows CI / build` check.
-- macOS Avalonia, dependency review, SonarQube, and GitHub code-scanning checks provide additional evidence; repository settings determine which are merge-blocking.
+- `main` accepts changes through pull requests. Branch protection currently requires CodeQL analysis for Actions, C#, and Rust; dependency review; macOS and Windows build-and-test; and SonarQube analysis before merge.
 - Secret scanning, push protection, the dependency graph, dependency submission, Dependabot, and private vulnerability reporting should remain enabled.
 - Human review and media-corpus validation remain required; generic scanners do not establish media correctness.
 

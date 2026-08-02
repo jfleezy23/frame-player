@@ -18,7 +18,7 @@ Key surfaces:
 - Space toggles play/pause.
 - Left and Right step one frame while paused.
 - Holding Left or Right repeats frame stepping.
-- Rewind and fast-forward controls move by time on the shared transport.
+- When both compare panes are loaded, the main rewind and fast-forward controls move both panes together; otherwise they act on the active single-pane review.
 - Pane-local controls in compare mode include single-frame and 100-frame navigation.
 
 When audio output is active, playback uses the audio clock. Frame stepping and seek/jump operations remain decode/index based.
