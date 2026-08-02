@@ -103,10 +103,14 @@ namespace FramePlayer.Avalonia.Tests
             Assert.Contains("await engine.PlayAsync().ConfigureAwait(false);", mainWindowSource, StringComparison.Ordinal);
             Assert.Contains("QueueSliderScrub(TimeSpan.FromSeconds(PositionSlider.Value));", mainWindowSource, StringComparison.Ordinal);
             Assert.Contains(
-                "var seekTask = SeekMasterTimelineAsync(_pendingSliderScrubTarget, _sliderScrubCts.Token);",
+                "var seekTask = SeekMasterTimelineAsync(target, _sliderScrubCts.Token);",
                 mainWindowSource,
                 StringComparison.Ordinal);
-            Assert.Contains("ForgetQueuedSliderScrubResumeReservation();", mainWindowSource, StringComparison.Ordinal);
+            Assert.DoesNotContain("ForgetQueuedSliderScrubResumeReservation();", mainWindowSource, StringComparison.Ordinal);
+            Assert.Contains(
+                "ShouldDeferAllPaneResumeForPendingSliderScrub()",
+                mainWindowSource,
+                StringComparison.Ordinal);
             Assert.Contains("await seekTask;", mainWindowSource, StringComparison.Ordinal);
             Assert.Contains(
                 "await SeekAllPaneToTimePreservingPlaybackAsync(target, cancellationToken).ConfigureAwait(false);",

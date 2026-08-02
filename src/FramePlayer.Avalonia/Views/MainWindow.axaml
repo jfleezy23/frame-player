@@ -234,12 +234,11 @@
       </Border>
 
       <Border Grid.Row="2" x:Name="CompareToolbarBorder" Background="#1A2028" BorderBrush="#28313B" BorderThickness="0,0,0,1" Padding="18,8" IsVisible="False">
-        <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*" ColumnSpacing="8">
-          <CheckBox x:Name="AllPanesCheckBox" Content="All panes" IsChecked="True" />
-          <Button x:Name="AlignRightToLeftButton" Grid.Column="1" Content="Sync Right to Left" ToolTip.Tip="Frame first: syncs the right pane to the left pane with exact frame identity when available." Click="AlignRightToLeftButton_Click" />
-          <Button x:Name="AlignLeftToRightButton" Grid.Column="2" Content="Sync Left to Right" ToolTip.Tip="Frame first: syncs the left pane to the right pane with exact frame identity when available." Click="AlignLeftToRightButton_Click" />
-          <CheckBox x:Name="LinkPaneZoomCheckBox" Grid.Column="3" Content="Link zoom" IsChecked="True" />
-          <TextBlock x:Name="CompareStatusTextBlock" Grid.Column="4" Text="Compare: Load two videos to begin | Last sync: none" Foreground="#B7BDC6" VerticalAlignment="Center" Margin="12,0,0,0" MinWidth="0" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+        <Grid ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="8">
+          <Button x:Name="AlignRightToLeftButton" Content="Sync Right to Left" ToolTip.Tip="Frame first: syncs the right pane to the left pane with exact frame identity when available." Click="AlignRightToLeftButton_Click" />
+          <Button x:Name="AlignLeftToRightButton" Grid.Column="1" Content="Sync Left to Right" ToolTip.Tip="Frame first: syncs the left pane to the right pane with exact frame identity when available." Click="AlignLeftToRightButton_Click" />
+          <CheckBox x:Name="LinkPaneZoomCheckBox" Grid.Column="2" Content="Link zoom" IsChecked="True" />
+          <TextBlock x:Name="CompareStatusTextBlock" Grid.Column="3" Text="Compare: Load two videos to begin | Last sync: none" Foreground="#B7BDC6" VerticalAlignment="Center" Margin="12,0,0,0" MinWidth="0" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
         </Grid>
       </Border>
 
@@ -273,9 +272,6 @@
                   <TextBlock x:Name="PrimaryPaneCurrentPositionTextBlock" Text="00:00:00.000" Foreground="#B7BDC6" VerticalAlignment="Center" />
                   <Slider x:Name="PrimaryPanePositionSlider" Grid.Column="1" Classes="timeline-slider" Margin="10,0" Minimum="0" Maximum="1" Tag="pane-primary" PointerPressed="TimelineSlider_PointerPressed" ValueChanged="PanePositionSlider_ValueChanged" />
                   <TextBlock x:Name="PrimaryPaneDurationTextBlock" Grid.Column="2" Text="00:00:00.000" Foreground="#B7BDC6" HorizontalAlignment="Right" TextAlignment="Right" VerticalAlignment="Center" />
-                  <Button x:Name="PrimaryPaneLoopStatusButton" Grid.Row="1" Grid.Column="2" Classes="loop-status pane-loop-status" Tag="pane-primary" Click="LoopStatusButton_Click" ToolTip.Tip="Toggle Left Loop Playback">
-                    <TextBlock x:Name="PrimaryPaneLoopStatusTextBlock" Text="Loop: off" TextAlignment="Right" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
-                  </Button>
                   <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,6,0,0">
                     <Button x:Name="PrimaryPaneStepBackButton" Classes="transport-button pane-transport-button" Tag="pane-primary" Click="PaneStepBackButton_Click" ToolTip.Tip="Previous Frame">
                       <Viewbox Classes="transport-icon">
@@ -360,9 +356,6 @@
                   <TextBlock x:Name="ComparePaneCurrentPositionTextBlock" Text="00:00:00.000" Foreground="#B7BDC6" VerticalAlignment="Center" />
                   <Slider x:Name="ComparePanePositionSlider" Grid.Column="1" Classes="timeline-slider" Margin="10,0" Minimum="0" Maximum="1" Tag="pane-compare" PointerPressed="TimelineSlider_PointerPressed" ValueChanged="PanePositionSlider_ValueChanged" />
                   <TextBlock x:Name="ComparePaneDurationTextBlock" Grid.Column="2" Text="00:00:00.000" Foreground="#B7BDC6" HorizontalAlignment="Right" TextAlignment="Right" VerticalAlignment="Center" />
-                  <Button x:Name="ComparePaneLoopStatusButton" Grid.Row="1" Grid.Column="2" Classes="loop-status pane-loop-status" Tag="pane-compare" Click="LoopStatusButton_Click" ToolTip.Tip="Toggle Right Loop Playback">
-                    <TextBlock x:Name="ComparePaneLoopStatusTextBlock" Text="Loop: off" TextAlignment="Right" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
-                  </Button>
                   <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,6,0,0">
                     <Button x:Name="ComparePaneStepBackButton" Classes="transport-button pane-transport-button" Tag="pane-compare" Click="PaneStepBackButton_Click" ToolTip.Tip="Previous Frame">
                       <Viewbox Classes="transport-icon">

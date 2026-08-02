@@ -89,8 +89,8 @@ jobs:
 
       - name: Bundle smoke test
         run: |
-          PACKAGE_VERSION=2.1.0-rc.3 script/package_unified_macos_release.sh --unsigned
-          zip_path="artifacts/2.1.0-rc.3/FramePlayer-macOS-arm64-2.1.0-rc.3.zip"
+          PACKAGE_VERSION=2.1.0-rc.17 script/package_unified_macos_release.sh --unsigned
+          zip_path="artifacts/2.1.0-rc.17/FramePlayer-macOS-arm64-2.1.0-rc.17.zip"
           sha_path="$zip_path.sha256"
           test -f "$zip_path"
           test -f "$sha_path"
