@@ -5017,14 +5017,14 @@ namespace FramePlayer.Avalonia.Views
                 var compare = _pendingSynchronizedCompareFrame;
                 (DecodedFrameBuffer? Primary, DecodedFrameBuffer? Compare) selectedPair =
                     (null, null);
-            if (primary != null && compare != null)
-            {
-                selectedPair = _synchronizedFrameAlignmentSourceDescriptor != null
-                    ? TakePendingAlignmentFramePairLocked(primary, compare)
-                    : RequiresExactFrameIdentity(primary.Descriptor, compare.Descriptor)
-                        ? TakePendingSameMediaFramePairLocked(primary, compare)
-                    : TakePendingTimeFramePairLocked(primary, compare, tolerance);
-            }
+                if (primary != null && compare != null)
+                {
+                    selectedPair = _synchronizedFrameAlignmentSourceDescriptor != null
+                        ? TakePendingAlignmentFramePairLocked(primary, compare)
+                        : RequiresExactFrameIdentity(primary.Descriptor, compare.Descriptor)
+                            ? TakePendingSameMediaFramePairLocked(primary, compare)
+                            : TakePendingTimeFramePairLocked(primary, compare, tolerance);
+                }
 
                 _synchronizedFramePresentationQueued = false;
                 return selectedPair;
