@@ -76,7 +76,7 @@ fi
 
 find "$CORPUS_DIR" -type f \( \
   -iname '*.avi' -o -iname '*.m4v' -o -iname '*.mkv' -o -iname '*.mov' -o \
-  -iname '*.mp4' -o -iname '*.ts' -o -iname '*.wmv' \
+  -iname '*.mp4' -o -iname '*.wmv' \
 \) | sort > "$RESULTS_DIR/corpus-files.txt"
 
 if [[ ! -s "$RESULTS_DIR/corpus-files.txt" ]]; then
@@ -84,7 +84,7 @@ if [[ ! -s "$RESULTS_DIR/corpus-files.txt" ]]; then
   exit 1
 fi
 
-PACKAGE_VERSION="${PACKAGE_VERSION:-2.1.0-rc.14}" \
+PACKAGE_VERSION="${PACKAGE_VERSION:-2.1.0-rc.17}" \
   "$ROOT_DIR/script/package_unified_macos_release.sh" --unsigned
 
 [[ -s "$APP_BUNDLE/Contents/Resources/FramePlayer.icns" ]]

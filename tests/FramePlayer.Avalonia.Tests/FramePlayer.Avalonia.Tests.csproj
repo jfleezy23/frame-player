@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <PackageReference Include="Avalonia.Headless" Version="12.0.2" />
+    <PackageReference Include="FFmpeg.AutoGen" Version="8.1.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.10.0" />
     <PackageReference Include="xunit" Version="2.9.0" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
@@ -21,6 +22,17 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\FramePlayer.Engine.FFmpeg\FramePlayer.Engine.FFmpeg.csproj" />
     <ProjectReference Include="..\..\src\FramePlayer.Avalonia\FramePlayer.Avalonia.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\Runtime\rust\osx-arm64\libframeplayer_ffmpeg_probe.dylib"
+          Link="libframeplayer_ffmpeg_probe.dylib"
+          CopyToOutputDirectory="PreserveNewest"
+          Condition="$([MSBuild]::IsOSPlatform('OSX')) And Exists('..\..\Runtime\rust\osx-arm64\libframeplayer_ffmpeg_probe.dylib')" />
+    <None Include="..\..\Runtime\rust\win-x64\frameplayer_ffmpeg_probe.dll"
+          Link="frameplayer_ffmpeg_probe.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          Condition="'$(OS)' == 'Windows_NT' And Exists('..\..\Runtime\rust\win-x64\frameplayer_ffmpeg_probe.dll')" />
   </ItemGroup>
 
 </Project>

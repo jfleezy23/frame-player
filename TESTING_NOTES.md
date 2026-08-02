@@ -28,13 +28,13 @@ The required Windows CI job also runs pinned typos, PSScriptAnalyzer, ShellCheck
 On Windows, build the self-contained package with:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Package-UnifiedWindows.ps1 -Version 2.1.0-rc.14
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Package-UnifiedWindows.ps1 -Version 2.1.0-rc.17
 ```
 
 On macOS, build the self-contained application bundle and archive with:
 
 ```bash
-PACKAGE_VERSION=2.1.0-rc.14 script/package_unified_macos_release.sh --unsigned
+PACKAGE_VERSION=2.1.0-rc.17 script/package_unified_macos_release.sh --unsigned
 ```
 
 Release-candidate corpus tests are tagged `Category=ReleaseCandidate` and require the platform-specific corpus environment documented in `docs/macos-release.md` or the Windows Rust corpus harness.
