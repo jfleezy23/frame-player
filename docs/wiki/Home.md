@@ -10,6 +10,13 @@ Frame Player is a frame-first video review tool for people who need to know exac
 
 Frame Player `v2.1.0` is the cross-platform Avalonia release for Windows and macOS.
 
+## Screenshot Gallery
+
+| Windows | macOS |
+| --- | --- |
+| ![Windows single-pane empty state](https://raw.githubusercontent.com/jfleezy23/frame-player/main/docs/assets/screenshots/windows-main.png) | ![macOS single-pane empty state](https://raw.githubusercontent.com/jfleezy23/frame-player/main/docs/assets/screenshots/macos-main.png) |
+| ![Windows two-pane compare empty state](https://raw.githubusercontent.com/jfleezy23/frame-player/main/docs/assets/screenshots/windows-compare.png) | ![macOS two-pane compare empty state](https://raw.githubusercontent.com/jfleezy23/frame-player/main/docs/assets/screenshots/macos-compare.png) |
+
 ## What To Read Next
 
 - [Getting Started](Getting-Started): install and open your first video.
