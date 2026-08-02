@@ -11,7 +11,7 @@ Frame Player v2.1.0 is a security, runtime, and reliability update for the unive
 - Hardened native media-buffer ownership, cleanup, cancellation, and platform interop.
 - Hardened Windows audio-buffer teardown and retry behavior.
 - Made the visible loop status an accessible toggle and kept native-backed frames visible when zoom changes.
-- Kept two-pane compare presentation frame-locked through shared pause, alignment, resume, and loop playback.
+- Stabilized two-pane compare so pane-local controls remain independent, master transport commands stay shared without implicit alignment, and dedicated Sync commands perform explicit alignment.
 - Corrected macOS About-version metadata so it matches the packaged release label.
 - Enabled audio insertion from the primary pane during compare review and added MPEG-4 `.m4v` and HEVC MP4 input support.
 
