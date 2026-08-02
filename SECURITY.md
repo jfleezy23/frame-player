@@ -50,7 +50,6 @@ Repository build and developer workflows can perform outbound network access for
 
 ## macOS Signing And Notarization Expectations
 
-- Signed-but-not-notarized Apple Development builds are acceptable for local maintainer testing only.
 - Public macOS distribution requires a Developer ID Application certificate, hardened runtime signing, notarization, stapling, and Gatekeeper validation of the final archived artifact after extraction.
 - The current required entitlement is `com.apple.security.cs.allow-jit` for .NET. Do not add entitlements unless a concrete runtime failure proves they are required.
 
