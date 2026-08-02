@@ -2144,7 +2144,7 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
-        public async Task CompareSync_QueuedToolbarAlignmentCannotOverrideANewerSharedPause()
+        public async Task CompareSync_QueuedAlignmentCannotOverrideANewerSharedPause()
         {
             await _fixture.RunAsync(async () =>
             {
@@ -2194,15 +2194,17 @@ namespace FramePlayer.Avalonia.Tests
                     var target = TimeSpan.FromSeconds(4);
                     using var primaryFrame = CreateFrameBuffer(8, 4, target);
                     using var compareFrame = CreateFrameBuffer(8, 4, target);
+                    var primaryPane = ParsePane("Primary");
+                    var comparePane = ParsePane("Compare");
                     InvokePrivate(
                         window,
                         "SetPaneBitmap",
-                        ParsePane("Primary"),
+                        primaryPane,
                         primaryFrame);
                     InvokePrivate(
                         window,
                         "SetPaneBitmap",
-                        ParsePane("Compare"),
+                        comparePane,
                         compareFrame);
                     primaryEngine.FrameSought = frameIndex =>
                     {
@@ -2235,29 +2237,15 @@ namespace FramePlayer.Avalonia.Tests
 
                     await allPaneGate.WaitAsync();
                     gateHeld = true;
-                    var initialTransportIntentGeneration = GetPrivateField<int>(
+                    var alignmentTask = InvokePrivateTask(
                         window,
-                        "_allPaneTransportIntentGeneration");
-                    RequireControl<Button>(
+                        "AlignPaneToPaneAsync",
+                        new[] { primaryPane.GetType(), comparePane.GetType() },
+                        primaryPane,
+                        comparePane);
+                    Assert.True((bool)InvokePrivate(
                         window,
-                        "AlignRightToLeftButton").RaiseEvent(
-                        new RoutedEventArgs(Button.ClickEvent));
-                    var alignmentIntentDeadline =
-                        DateTime.UtcNow + TimeSpan.FromSeconds(2);
-                    while (GetPrivateField<int>(
-                               window,
-                               "_allPaneTransportIntentGeneration") ==
-                            initialTransportIntentGeneration &&
-                        DateTime.UtcNow < alignmentIntentDeadline)
-                    {
-                        await Task.Delay(TimeSpan.FromMilliseconds(10));
-                    }
-
-                    Assert.NotEqual(
-                        initialTransportIntentGeneration,
-                        GetPrivateField<int>(
-                            window,
-                            "_allPaneTransportIntentGeneration"));
+                        "IsSynchronizedFramePresentationActive"));
                     var pauseTask = InvokePrivateTask(
                         window,
                         "PausePlaybackAsync",
@@ -2272,8 +2260,7 @@ namespace FramePlayer.Avalonia.Tests
 
                     allPaneGate.Release();
                     gateHeld = false;
-                    await pauseTask;
-                    await Task.Delay(TimeSpan.FromMilliseconds(50));
+                    await Task.WhenAll(alignmentTask, pauseTask);
 
                     Assert.False(primaryEngine.IsPlaying);
                     Assert.False(compareEngine.IsPlaying);
@@ -2284,9 +2271,9 @@ namespace FramePlayer.Avalonia.Tests
                     Assert.Equal(
                         "Compare: awaiting command",
                         compareStatus.Text);
-                    Assert.False(GetPrivateField<bool>(
+                    Assert.False((bool)InvokePrivate(
                         window,
-                        "_isSynchronizedFramePresentationActive"));
+                        "IsSynchronizedFramePresentationActive"));
                 }
                 finally
                 {
