@@ -2,6 +2,8 @@
 
 This is the ship gate for the single Avalonia application. Run platform packaging from the same validated commit.
 
+In the commands below, replace `<release-version>` with the exact candidate or final version being shipped.
+
 ## Repository gate
 
 - Confirm the intended commit is on `main`, pushed, and the working tree is clean.
@@ -26,7 +28,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Test-WorkflowActio
 ## Windows package gate
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Package-UnifiedWindows.ps1 -Version 2.1.0
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Package-UnifiedWindows.ps1 -Version <release-version>
 ```
 
 - Verify the ZIP and SHA256 output.
@@ -38,7 +40,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Package-UnifiedWin
 ## macOS package gate
 
 ```bash
-PACKAGE_VERSION=2.1.0 script/package_unified_macos_release.sh --sign "Developer ID Application: <Team Name> (<TEAMID>)"
+PACKAGE_VERSION="<release-version>" script/package_unified_macos_release.sh --sign "Developer ID Application: <Team Name> (<TEAMID>)"
 codesign --verify --strict --deep --verbose=2 "dist/Frame Player.app"
 codesign -dvvv --entitlements :- "dist/Frame Player.app"
 ```

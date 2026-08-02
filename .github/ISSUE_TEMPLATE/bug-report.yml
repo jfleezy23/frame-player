@@ -44,7 +44,7 @@ body:
     attributes:
       label: Version
       description: App version or release tag.
-      placeholder: v1.8.0 or main @ <short SHA>
+      placeholder: v2.1.0 or main @ <short SHA>
 
   - type: dropdown
     id: backend

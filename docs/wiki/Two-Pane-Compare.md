@@ -11,9 +11,10 @@ Two-pane compare mode is designed for original vs processed review. The left pan
 
 ## Controls
 
-- Shared transport controls operate across panes when `All panes` is enabled and both videos are loaded.
-- Pane-local controls operate on the focused pane.
-- Each pane has previous frame, 100-frame rewind, play/pause, 100-frame fast forward, next frame, timeline, loop status, and frame entry.
+- When both videos are loaded, the main transport controls are the shared master controls and operate across both panes.
+- Pane-local controls operate only on their own pane, independently of the other pane.
+- Each pane has previous frame, 100-frame rewind, play/pause, 100-frame fast forward, next frame, timeline, and frame entry.
+- The main loop status controls loop playback for both panes together; each pane retains its own loop range.
 - `Sync Right to Left` aligns the right pane to the left pane.
 - `Sync Left to Right` aligns the left pane to the right pane.
 - `Link zoom` mirrors zoom changes between panes.

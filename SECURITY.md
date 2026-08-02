@@ -21,10 +21,10 @@ When reporting an issue, include:
 This repository currently uses a mix of GitHub-native security tooling and workflow guardrails to reduce drift and catch issues earlier:
 
 - `main` requires pull requests before merge, including for administrators.
-- The `build` check from `Windows CI` is required before merges into `main`.
+- Branch protection currently requires the CodeQL analyses for Actions, C#, and Rust; dependency review; macOS and Windows build-and-test; and SonarQube analysis before merge.
 - Merged branches are deleted automatically to reduce branch sprawl and stale release drift.
 - `Windows CI` runs on pushes and pull requests and verifies pinned runtime restore, the universal Release build, tests, and packaging.
-- GitHub code scanning is enabled through GitHub's default CodeQL setup for `actions`, `csharp`, and `rust`.
+- The repository CodeQL workflow analyzes `actions`, `csharp`, and `rust`.
 - GitHub secret scanning is enabled to detect known leaked secret patterns in repository history.
 - GitHub push protection is enabled to block many secrets before they are pushed.
 - The dependency graph and automatic dependency submission are enabled so GitHub can reason about shipped dependencies beyond just manifest files.

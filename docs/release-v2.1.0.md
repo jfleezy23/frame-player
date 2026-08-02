@@ -25,18 +25,17 @@ Frame Player v2.1.0 is a security, runtime, and reliability update for the unive
 - Retained pinned runtime provenance and archive/per-library SHA-256 records for release validation; the export host validates its bundled native libraries before configuring them.
 - Kept recent-file records and diagnostics local to the current user profile; the application does not send media, file paths, diagnostics, or usage data to a service.
 
-## Planned Release Packages
+## Release Packages
 
-- `FramePlayer-Windows-x64-2.1.0.zip`
-- `FramePlayer-macOS-arm64-2.1.0.zip`
-- A SHA256 file accompanies each archive.
+- [Windows x64 ZIP](https://github.com/jfleezy23/frame-player/releases/download/v2.1.0/FramePlayer-Windows-x64-2.1.0.zip) and [SHA256](https://github.com/jfleezy23/frame-player/releases/download/v2.1.0/FramePlayer-Windows-x64-2.1.0.zip.sha256)
+- [macOS Apple Silicon ZIP](https://github.com/jfleezy23/frame-player/releases/download/v2.1.0/FramePlayer-macOS-arm64-2.1.0.zip) and [SHA256](https://github.com/jfleezy23/frame-player/releases/download/v2.1.0/FramePlayer-macOS-arm64-2.1.0.zip.sha256)
 
-The packages are self-contained and include the pinned playback and export runtimes. They do not require a separate FFmpeg installation and do not ship developer FFmpeg command-line tools.
+The published packages are self-contained and include the pinned playback and export runtimes. They do not require a separate FFmpeg installation and do not ship developer FFmpeg command-line tools. Each archive was checked against its published SHA256 companion file after download.
 
-Before publication, the macOS application must be Developer ID signed with the hardened runtime, notarized, stapled, and verified with Gatekeeper from the final archived artifact. The Windows application binaries must be Authenticode signed. Each public archive is accompanied by a SHA256 checksum.
+The published macOS archive was Developer ID signed with the hardened runtime, notarized, stapled, and validated by Gatekeeper after extraction. The release process requires Authenticode signing of Windows application binaries before publication. Each public archive is accompanied by a SHA256 checksum.
 
 The macOS package supports Apple Silicon on macOS 13 or later. The Windows package supports Windows x64.
 
 ## Upgrade Notes
 
-After publication, replace the previous application with the v2.1.0 package for your platform. Frame Player remains one cross-platform Avalonia product with the same review, compare, loop, export, audio-insertion, recent-file, and diagnostics workflows.
+Replace the previous application with the v2.1.0 package for your platform. Frame Player remains one cross-platform Avalonia product with the same review, compare, loop, export, audio-insertion, recent-file, and diagnostics workflows.
