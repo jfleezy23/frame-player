@@ -21,6 +21,9 @@ Frame Player v2.1.0 is a security, runtime, and reliability update for the unive
 - Removed user-selected filenames from FFmpeg filtergraph syntax; native exports now bind filenames through typed FFmpeg options.
 - Added validation around native pointers, buffer layouts, allocation sizes, managed/native ABI compatibility, and partial-failure cleanup.
 - Updated pinned GitHub security actions while retaining immutable full-commit pins.
+- Built the bundled playback and export runtimes with networking disabled; the application has no telemetry, auto-update, HTTP-client, socket, or background network-service feature.
+- Retained pinned runtime provenance and archive/per-library SHA-256 records for release validation; the export host validates its bundled native libraries before configuring them.
+- Kept recent-file records and diagnostics local to the current user profile; the application does not send media, file paths, diagnostics, or usage data to a service.
 
 ## Planned Release Packages
 
@@ -30,7 +33,7 @@ Frame Player v2.1.0 is a security, runtime, and reliability update for the unive
 
 The packages are self-contained and include the pinned playback and export runtimes. They do not require a separate FFmpeg installation and do not ship developer FFmpeg command-line tools.
 
-Before publication, the macOS application must be Developer ID signed, notarized, stapled, and verified with Gatekeeper. The Windows application binaries must be Authenticode signed.
+Before publication, the macOS application must be Developer ID signed with the hardened runtime, notarized, stapled, and verified with Gatekeeper from the final archived artifact. The Windows application binaries must be Authenticode signed. Each public archive is accompanied by a SHA256 checksum.
 
 The macOS package supports Apple Silicon on macOS 13 or later. The Windows package supports Windows x64.
 

@@ -44,12 +44,14 @@ These checks improve detection and consistency, but they are not a guarantee tha
 
 Frame Player is designed as a local review tool. The universal application does not include telemetry, analytics, auto-update, HTTP client, socket, or background network-service code. It uses local media files, bundled FFmpeg libraries, per-user local state, and a hidden local child process for export and export-side probe work on both supported platforms.
 
+The bundled playback and export runtimes are built with FFmpeg networking disabled. Runtime manifests record their pinned source provenance and expected SHA-256 values; the export host validates its bundled native libraries before configuring them, and release validation checks the packaged runtime hashes. Export filenames are bound through FFmpeg options rather than interpolated into filtergraph text. Recent-file records and diagnostic logs stay in the current user's profile and are not transmitted by the application.
+
 Repository build and developer workflows can perform outbound network access for NuGet restore, HTTPS downloads of pinned FFmpeg runtime artifacts, optional official FFmpeg source clones, and optional signing timestamp requests. Those are build-time supply-chain paths, not runtime telemetry paths. Network-restricted review builds should restore NuGet packages from an approved local cache/feed, stage the required runtime folders locally, and build with `-p:SkipRuntimeBootstrap=true`.
 
 ## macOS Signing And Notarization Expectations
 
 - Signed-but-not-notarized Apple Development builds are acceptable for local maintainer testing only.
-- Public macOS distribution requires a Developer ID Application certificate, hardened runtime signing, notarization, stapling, and Gatekeeper validation.
+- Public macOS distribution requires a Developer ID Application certificate, hardened runtime signing, notarization, stapling, and Gatekeeper validation of the final archived artifact after extraction.
 - The current required entitlement is `com.apple.security.cs.allow-jit` for .NET. Do not add entitlements unless a concrete runtime failure proves they are required.
 
 ## Scope and Background
