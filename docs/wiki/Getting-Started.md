@@ -4,7 +4,7 @@
 
 macOS:
 
-1. Download `FramePlayer-macOS-arm64-2.0.0.zip` and its SHA256 file from the [Frame Player v2.0.0 release page](https://github.com/jfleezy23/frame-player/releases/tag/v2.0.0).
+1. Download `FramePlayer-macOS-arm64-2.1.0.zip` and its SHA256 file from the [Frame Player v2.1.0 release page](https://github.com/jfleezy23/frame-player/releases/tag/v2.1.0).
 2. Verify the ZIP hash.
 3. Unzip the app and move `Frame Player.app` to `/Applications`.
 4. Launch `Frame Player.app`.

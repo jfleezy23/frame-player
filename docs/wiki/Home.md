@@ -6,9 +6,9 @@ Frame Player is a frame-first video review tool for people who need to know exac
 
 | Release track | Platform | Current release | Download |
 | --- | --- | --- | --- |
-| Stable (Unified) | Windows x64 and Apple Silicon macOS | `v2.0.0` | [Frame Player v2.0.0](https://github.com/jfleezy23/frame-player/releases/tag/v2.0.0) |
+| Stable (Unified) | Windows x64 and Apple Silicon macOS | `v2.1.0` | [Frame Player v2.1.0](https://github.com/jfleezy23/frame-player/releases/tag/v2.1.0) |
 
-Frame Player `v2.0.0` is the cross-platform Avalonia release for Windows and macOS.
+Frame Player `v2.1.0` is the cross-platform Avalonia release for Windows and macOS.
 
 ## What To Read Next
 
