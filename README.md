@@ -6,9 +6,9 @@ Frame Player is a frame-first cross-platform video review tool for exact steppin
 
 | Release track | Platform | Current release | Download |
 | --- | --- | --- | --- |
-| Stable (Unified) | Windows x64 and Apple Silicon macOS | `v2.0.0` | [Frame Player v2.0.0](https://github.com/jfleezy23/frame-player/releases/tag/v2.0.0) |
+| Stable (Unified) | Windows x64 and Apple Silicon macOS | `v2.1.0` | [Frame Player v2.1.0](https://github.com/jfleezy23/frame-player/releases/tag/v2.1.0) |
 
-Frame Player `v2.0` is the universal Avalonia application for Windows x64 and Apple Silicon macOS.
+Frame Player `v2.1.0` is the universal Avalonia application for Windows x64 and Apple Silicon macOS.
 
 ## Highlights
 
@@ -40,7 +40,7 @@ See the [Wiki build guide](https://github.com/jfleezy23/frame-player/wiki/Build-
 
 ## Release Tracks
 
-- Frame Player `v2.0` has one Avalonia codebase and one release line for both supported platforms.
+- Frame Player `v2.1.0` has one Avalonia codebase and one release line for both supported platforms.
 
 ## License
 
