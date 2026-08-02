@@ -2235,10 +2235,29 @@ namespace FramePlayer.Avalonia.Tests
 
                     await allPaneGate.WaitAsync();
                     gateHeld = true;
+                    var initialTransportIntentGeneration = GetPrivateField<int>(
+                        window,
+                        "_allPaneTransportIntentGeneration");
                     RequireControl<Button>(
                         window,
                         "AlignRightToLeftButton").RaiseEvent(
                         new RoutedEventArgs(Button.ClickEvent));
+                    var alignmentIntentDeadline =
+                        DateTime.UtcNow + TimeSpan.FromSeconds(2);
+                    while (GetPrivateField<int>(
+                               window,
+                               "_allPaneTransportIntentGeneration") ==
+                            initialTransportIntentGeneration &&
+                        DateTime.UtcNow < alignmentIntentDeadline)
+                    {
+                        await Task.Delay(TimeSpan.FromMilliseconds(10));
+                    }
+
+                    Assert.NotEqual(
+                        initialTransportIntentGeneration,
+                        GetPrivateField<int>(
+                            window,
+                            "_allPaneTransportIntentGeneration"));
                     var pauseTask = InvokePrivateTask(
                         window,
                         "PausePlaybackAsync",
