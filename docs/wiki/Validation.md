@@ -21,4 +21,4 @@ Frame Player is validated as one Avalonia application on Windows and macOS.
 
 ## Published release evidence
 
-Release-specific commit IDs, package hashes, signing evidence, and notarization submission IDs belong in the GitHub release record. Validation claims should always identify the exact source commit and artifact hash they cover.
+Release-specific source references, package hashes, and public validation claims belong in the GitHub release record. Private signing and notarization records remain outside the repository and releases. Validation claims should always identify the exact source and artifact hash they cover.

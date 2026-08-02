@@ -5,7 +5,11 @@
 macOS:
 
 1. Download `FramePlayer-macOS-arm64-2.1.0.zip` and its SHA256 file from the [Frame Player v2.1.0 release page](https://github.com/jfleezy23/frame-player/releases/tag/v2.1.0).
-2. Verify the ZIP hash.
+2. Verify the ZIP hash:
+
+   ```bash
+   shasum -a 256 -c FramePlayer-macOS-arm64-2.1.0.zip.sha256
+   ```
 3. Unzip the app and move `Frame Player.app` to `/Applications`.
 4. Launch `Frame Player.app`.
 
@@ -14,7 +18,13 @@ The macOS release is built for Apple Silicon.
 Windows:
 
 1. Download `FramePlayer-Windows-x64-2.1.0.zip` and its SHA256 file from the [Frame Player v2.1.0 release page](https://github.com/jfleezy23/frame-player/releases/tag/v2.1.0).
-2. Verify the ZIP hash.
+2. Verify the ZIP hash. In PowerShell:
+
+   ```powershell
+   Get-FileHash .\FramePlayer-Windows-x64-2.1.0.zip -Algorithm SHA256
+   ```
+
+   Compare the returned hash with `FramePlayer-Windows-x64-2.1.0.zip.sha256` from the same release.
 3. Extract the ZIP to a local folder.
 4. Run `FramePlayer.Avalonia.exe`.
 

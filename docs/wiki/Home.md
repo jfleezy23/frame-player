@@ -21,6 +21,6 @@ Frame Player `v2.1.0` is the cross-platform Avalonia release for Windows and mac
 
 - [Getting Started](Getting-Started): install and open your first video.
 - [User Guide](User-Guide): transport controls, frame entry, status bar, and diagnostics.
-- [Two-Pane Compare](Two-Pane-Compare): compare panes, Sync, Link Zoom, and focused-pane behavior.
+- [Two-Pane Compare](Two-Pane-Compare): compare panes, Sync, Link Zoom, and pane-local controls.
 - [Looping And Export](Looping-And-Export): loop in/out, loop playback, clip export, compare export, and audio insertion.
 - [Troubleshooting](Troubleshooting): audio, unsupported media, recent files, logs, and diagnostics.

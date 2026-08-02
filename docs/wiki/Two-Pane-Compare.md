@@ -7,7 +7,7 @@ Two-pane compare mode is designed for original vs processed review. The left pan
 1. Turn on `Two-Pane Compare`.
 2. Load the primary video in the left pane.
 3. Load the compare video in the right pane.
-4. Use the pane focus state to choose which pane receives pane-local commands.
+4. Click a pane to make it active for keyboard, menu, and context-menu commands. Pane-local buttons always operate their own pane.
 
 ## Controls
 
@@ -17,6 +17,7 @@ Two-pane compare mode is designed for original vs processed review. The left pan
 - The main loop status controls loop playback for both panes together; each pane retains its own loop range.
 - `Sync Right to Left` aligns the right pane to the left pane.
 - `Sync Left to Right` aligns the left pane to the right pane.
+- Master transport commands do not align the two videos first. Use a Sync command when you want one explicit alignment.
 - `Link zoom` mirrors zoom changes between panes.
 
 ## Focused Pane Behavior

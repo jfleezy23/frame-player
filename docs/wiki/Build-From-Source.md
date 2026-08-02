@@ -11,7 +11,7 @@ On Windows, restore the pinned playback and export runtimes before building or p
 dotnet build .\src\FramePlayer.Avalonia\FramePlayer.Avalonia.csproj -c Release
 dotnet test .\tests\FramePlayer.Core.Tests\FramePlayer.Core.Tests.csproj -c Release
 dotnet test .\tests\FramePlayer.Avalonia.Tests\FramePlayer.Avalonia.Tests.csproj -c Release --filter "Category!=ReleaseCandidate"
-.\scripts\Package-UnifiedWindows.ps1
+.\scripts\Package-UnifiedWindows.ps1 -Version <release-version>
 ```
 
 On macOS, stage the pinned macOS FFmpeg runtime under `Runtime/macos/osx-arm64/ffmpeg`, make sure `cargo` is available, then run:
@@ -24,7 +24,7 @@ dotnet test tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj -
 script/validate_macos_release_candidate.sh --corpus "Video Test Files"
 ```
 
-Package a local signed release candidate:
+Package a local signed release build:
 
 ```bash
 PACKAGE_VERSION="<release-version>" script/package_unified_macos_release.sh --sign

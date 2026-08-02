@@ -10,11 +10,16 @@
 | Play or pause | `Space` | `Space` |
 | Previous frame while paused | `Left` | `Left` |
 | Next frame while paused | `Right` | `Right` |
-| Rewind 5 seconds | `,` | `,` |
+| Step 10 frames while paused | `Ctrl+Left` / `Ctrl+Right` | `Ctrl+Left` / `Ctrl+Right` |
+| Step 100 frames while paused | `Shift+Left` / `Shift+Right` | `Shift+Left` / `Shift+Right` |
+| Rewind 5 seconds | `J` or `,` | `J` or `,` |
 | Fast forward 5 seconds | `.` | `.` |
 | Set loop in | `[` | `[` |
 | Set loop out | `]` | `]` |
 | Toggle loop playback | `L` | `L` |
+| Zoom in | `+` or numpad `+` | `+` or numpad `+` |
+| Zoom out | `-` or numpad `-` | `-` or numpad `-` |
+| Reset zoom | `0` or numpad `0` | `0` or numpad `0` |
 | Full screen | `F11` or `Alt+Enter` | native full-screen control |
 | Commit frame jump | `Enter` | `Enter` |
 
