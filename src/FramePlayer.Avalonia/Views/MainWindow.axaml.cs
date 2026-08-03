@@ -2061,11 +2061,6 @@ namespace FramePlayer.Avalonia.Views
             {
                 SelectPane(pane);
             }
-
-            if (sender is Control control)
-            {
-                OpenContextMenuOnRightClick(control, e);
-            }
         }
 
         private void LoopStatusButton_Click(object? sender, RoutedEventArgs e)
@@ -2091,20 +2086,7 @@ namespace FramePlayer.Avalonia.Views
             if (e.GetCurrentPoint(slider).Properties.IsRightButtonPressed)
             {
                 SetTimelineContextTarget(slider.Tag is string ? pane : null, CalculateTimelineTarget(slider, e));
-                OpenContextMenuOnRightClick(slider, e);
             }
-        }
-
-        private static void OpenContextMenuOnRightClick(Control control, PointerPressedEventArgs e)
-        {
-            if (!e.GetCurrentPoint(control).Properties.IsRightButtonPressed ||
-                control.ContextMenu == null)
-            {
-                return;
-            }
-
-            control.ContextMenu.Open(control);
-            e.Handled = true;
         }
 
         private static TimeSpan CalculateTimelineTarget(Slider slider, PointerEventArgs e)
@@ -2143,11 +2125,52 @@ namespace FramePlayer.Avalonia.Views
 
         private ContextMenu CreatePaneContextMenu(Pane pane)
         {
+            var openVideoItem = CreateFrameContextMenuItem(
+                pane == Pane.Compare ? "Open Compare Video..." : "Open Video...");
+            openVideoItem.Click += async (_, _) => await OpenVideoAsync(pane);
+
+            var openRecentItem = CreateFrameContextMenuItem("Open Recent");
+
             var videoInfoItem = CreateFrameContextMenuItem("Video Info...");
             videoInfoItem.Click += (_, _) =>
             {
                 SelectPane(pane);
                 ShowVideoInfo(pane);
+            };
+
+            var setPositionAItem = CreateFrameContextMenuItem("Set Position A Here");
+            setPositionAItem.Click += (_, _) => SetSurfaceContextMarker(pane, LoopPlaybackMarkerEndpoint.In);
+
+            var setPositionBItem = CreateFrameContextMenuItem("Set Position B Here");
+            setPositionBItem.Click += (_, _) => SetSurfaceContextMarker(pane, LoopPlaybackMarkerEndpoint.Out);
+
+            var clearLoopPointsItem = CreateFrameContextMenuItem("Clear Loop Points");
+            clearLoopPointsItem.Click += (_, _) =>
+            {
+                SelectPane(pane);
+                ClearLoopPoints();
+            };
+
+            var loopPlaybackItem = CreateFrameContextMenuItem("Loop Playback");
+            loopPlaybackItem.ToggleType = MenuItemToggleType.CheckBox;
+            loopPlaybackItem.Click += (_, _) =>
+            {
+                SelectPane(pane);
+                SetPaneLoopPlaybackEnabled(pane, !IsLoopPlaybackEnabled(pane));
+            };
+
+            var zoomInItem = CreateFrameContextMenuItem("Zoom In");
+            zoomInItem.Click += (_, _) =>
+            {
+                SelectPane(pane);
+                AdjustPaneZoom(pane, PaneZoomStep);
+            };
+
+            var zoomOutItem = CreateFrameContextMenuItem("Zoom Out");
+            zoomOutItem.Click += (_, _) =>
+            {
+                SelectPane(pane);
+                AdjustPaneZoom(pane, 1d / PaneZoomStep);
             };
 
             var resetZoomItem = CreateFrameContextMenuItem("Reset Zoom");
@@ -2172,22 +2195,124 @@ namespace FramePlayer.Avalonia.Views
             };
 
             var menu = CreateFrameContextMenu();
+            var reviewSeparator = new Separator();
+            var zoomSeparator = new Separator();
+            var exportSeparator = new Separator();
+            menu.Items.Add(openVideoItem);
+            menu.Items.Add(openRecentItem);
             menu.Items.Add(videoInfoItem);
+            menu.Items.Add(reviewSeparator);
+            menu.Items.Add(setPositionAItem);
+            menu.Items.Add(setPositionBItem);
+            menu.Items.Add(clearLoopPointsItem);
+            menu.Items.Add(loopPlaybackItem);
+            menu.Items.Add(zoomSeparator);
+            menu.Items.Add(zoomInItem);
+            menu.Items.Add(zoomOutItem);
             menu.Items.Add(resetZoomItem);
+            menu.Items.Add(exportSeparator);
             menu.Items.Add(saveLoopItem);
             menu.Items.Add(compareExportItem);
-            menu.Opened += (_, _) =>
+            bool PreparePaneContextMenu()
             {
                 SelectPane(pane);
                 var engine = TryGetExistingEngine(pane);
-                videoInfoItem.IsEnabled = engine != null && engine.IsMediaOpen;
-                resetZoomItem.IsEnabled = GetPaneZoomFactor(pane) > MinimumPaneZoomFactor + 0.0001d;
+                var isMediaOpen = engine != null && engine.IsMediaOpen;
+                openVideoItem.IsVisible = !isMediaOpen;
+                openRecentItem.IsVisible = !isMediaOpen;
+                if (!isMediaOpen)
+                {
+                    PopulateSurfaceRecentFiles(openRecentItem, pane);
+                }
+
+                videoInfoItem.IsVisible = isMediaOpen;
+                reviewSeparator.IsVisible = isMediaOpen;
+                setPositionAItem.IsVisible = isMediaOpen;
+                setPositionBItem.IsVisible = isMediaOpen;
+                clearLoopPointsItem.IsVisible = isMediaOpen;
+                loopPlaybackItem.IsVisible = isMediaOpen;
+                zoomSeparator.IsVisible = isMediaOpen;
+                zoomInItem.IsVisible = isMediaOpen;
+                zoomOutItem.IsVisible = isMediaOpen;
+                resetZoomItem.IsVisible = isMediaOpen;
+                exportSeparator.IsVisible = isMediaOpen;
+                saveLoopItem.IsVisible = isMediaOpen;
+                compareExportItem.IsVisible = isMediaOpen && CompareModeCheckBox.IsChecked == true;
+
+                if (!isMediaOpen)
+                {
+                    return true;
+                }
+
+                var target = GetPresentedTransportTime(pane, engine!);
+                var zoomFactor = GetPaneZoomFactor(pane);
+                videoInfoItem.IsEnabled = true;
+                setPositionAItem.IsEnabled = CanSetTimelineLoopMarker(pane, LoopPlaybackMarkerEndpoint.In, target);
+                setPositionBItem.IsEnabled = CanSetTimelineLoopMarker(pane, LoopPlaybackMarkerEndpoint.Out, target);
+                clearLoopPointsItem.IsEnabled = _primaryLoopRange.HasAnyMarkers || _compareLoopRange.HasAnyMarkers;
+                loopPlaybackItem.IsEnabled = true;
+                loopPlaybackItem.IsChecked = IsLoopPlaybackEnabled(pane);
+                zoomInItem.IsEnabled = zoomFactor < MaximumPaneZoomFactor - 0.0001d;
+                zoomOutItem.IsEnabled = zoomFactor > MinimumPaneZoomFactor + 0.0001d;
+                resetZoomItem.IsEnabled = zoomOutItem.IsEnabled;
                 saveLoopItem.IsEnabled = CanExportLoopClip(pane);
-                compareExportItem.IsVisible = CompareModeCheckBox.IsChecked == true;
                 compareExportItem.IsEnabled = CanExportSideBySideCompare();
-            };
+                return true;
+            }
+
+            ConfigureFrameContextMenu(menu, PreparePaneContextMenu);
 
             return menu;
+        }
+
+        private void PopulateSurfaceRecentFiles(MenuItem openRecentItem, Pane pane)
+        {
+            openRecentItem.Items.Clear();
+            var recentFiles = _recentFilesService.Load();
+            if (recentFiles.Count == 0)
+            {
+                openRecentItem.Items.Add(CreateFrameContextMenuItem("No Recent Files", isEnabled: false));
+                return;
+            }
+
+            foreach (var filePath in recentFiles)
+            {
+                var recentItem = CreateFrameContextMenuItem(Path.GetFileName(filePath));
+                recentItem.Click += async (_, _) => await OpenPathAsync(filePath, pane);
+                openRecentItem.Items.Add(recentItem);
+            }
+        }
+
+        private void SetSurfaceContextMarker(Pane pane, LoopPlaybackMarkerEndpoint endpoint)
+        {
+            SelectPane(pane);
+            var engine = GetEngine(pane);
+            var presentedDescriptor = GetPresentedFrameDescriptor(pane);
+            var anchor = CreateLoopAnchor(
+                engine,
+                pane,
+                presentedDescriptor == null
+                    ? null
+                    : CreateReviewPosition(presentedDescriptor));
+            if (anchor == null)
+            {
+                CacheStatusTextBlock.Text = "Open a video before setting loop points.";
+                return;
+            }
+
+            var currentRange = GetLoopRange(pane);
+            if (!CanSetTimelineLoopMarker(pane, endpoint, anchor.PresentationTime))
+            {
+                CacheStatusTextBlock.Text = endpoint == LoopPlaybackMarkerEndpoint.In
+                    ? "Could not set position A here."
+                    : "Could not set position B here.";
+                return;
+            }
+
+            var loopIn = endpoint == LoopPlaybackMarkerEndpoint.In ? anchor : currentRange.LoopIn;
+            var loopOut = endpoint == LoopPlaybackMarkerEndpoint.Out ? anchor : currentRange.LoopOut;
+            SetLoopRange(pane, CreateLoopRange(pane, loopIn, loopOut));
+            UpdateLoopUi();
         }
 
         private ContextMenu CreateTimelineContextMenu(Pane? explicitPane)
@@ -2238,21 +2363,21 @@ namespace FramePlayer.Avalonia.Views
             menu.Items.Add(loopPlaybackItem);
             menu.Items.Add(new Separator());
             menu.Items.Add(saveLoopItem);
-            menu.Opened += (_, _) =>
+            bool PrepareTimelineContextMenu()
             {
                 if (IsSharedTimelineContextDisabled(explicitPane))
                 {
-                    setPositionAItem.IsEnabled = false;
-                    setPositionBItem.IsEnabled = false;
-                    loopPlaybackItem.IsVisible = true;
-                    loopPlaybackItem.IsEnabled = false;
-                    loopPlaybackItem.IsChecked = IsUnifiedLoopPlaybackEnabled();
-                    saveLoopItem.IsEnabled = false;
-                    return;
+                    return false;
                 }
 
                 var pane = ResolveTimelineContextPane(explicitPane);
                 SelectPane(pane);
+                var engine = TryGetExistingEngine(pane);
+                if (engine == null || !engine.IsMediaOpen)
+                {
+                    return false;
+                }
+
                 var target = GetTimelineContextTarget(explicitPane);
                 setPositionAItem.IsEnabled = CanSetTimelineLoopMarker(pane, LoopPlaybackMarkerEndpoint.In, target);
                 setPositionBItem.IsEnabled = CanSetTimelineLoopMarker(pane, LoopPlaybackMarkerEndpoint.Out, target);
@@ -2262,7 +2387,10 @@ namespace FramePlayer.Avalonia.Views
                     ? IsLoopPlaybackEnabled(pane)
                     : IsUnifiedLoopPlaybackEnabled();
                 saveLoopItem.IsEnabled = CanExportLoopClip(pane);
-            };
+                return true;
+            }
+
+            ConfigureFrameContextMenu(menu, PrepareTimelineContextMenu);
 
             return menu;
         }
@@ -2279,9 +2407,18 @@ namespace FramePlayer.Avalonia.Views
             return menu;
         }
 
-        private static MenuItem CreateFrameContextMenuItem(string header)
+        private static void ConfigureFrameContextMenu(ContextMenu menu, Func<bool> prepareForOpen)
         {
-            var item = new MenuItem { Header = header };
+            menu.Opening += (_, e) => e.Cancel = !prepareForOpen();
+        }
+
+        private static MenuItem CreateFrameContextMenuItem(string header, bool isEnabled = true)
+        {
+            var item = new MenuItem
+            {
+                Header = header,
+                IsEnabled = isEnabled
+            };
             item.Classes.Add("frame-context-menu-item");
             return item;
         }
@@ -6379,14 +6516,17 @@ namespace FramePlayer.Avalonia.Views
             UpdateCommandStates();
         }
 
-        private static LoopPlaybackAnchorSnapshot? CreateLoopAnchor(IVideoReviewEngine engine, Pane pane)
+        private static LoopPlaybackAnchorSnapshot? CreateLoopAnchor(
+            IVideoReviewEngine engine,
+            Pane pane,
+            ReviewPosition? positionOverride = null)
         {
             if (engine == null || !engine.IsMediaOpen)
             {
                 return null;
             }
 
-            var position = engine.Position ?? ReviewPosition.Empty;
+            var position = positionOverride ?? engine.Position ?? ReviewPosition.Empty;
             return new LoopPlaybackAnchorSnapshot(
                 ResolvePaneId(pane),
                 ResolvePaneKey(pane),
@@ -7988,8 +8128,9 @@ namespace FramePlayer.Avalonia.Views
                 "F1: controls and shortcuts",
                 "F11 / Alt+Enter: full screen",
                 "Escape: exit full screen",
-                "Right-click video: video info, reset zoom, loop export, compare export",
-                "Right-click timeline: set loop markers and export loop");
+                "Right-click empty video: open video or recent video",
+                "Right-click loaded video: loop markers, loop playback, zoom, info, and export",
+                "Right-click timeline: set loop markers at the clicked position and export loop");
         }
 
         private static string BuildAboutText()
