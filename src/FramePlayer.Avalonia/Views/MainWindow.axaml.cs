@@ -138,6 +138,9 @@ namespace FramePlayer.Avalonia.Views
         private bool _isUpdatingSliders;
         private volatile bool _isCompareModeSelected;
         private volatile bool _isAllPaneTransportSelected;
+        private int _compareModeTransitionGeneration;
+        private int _pendingAllPanePlaybackStartGeneration = -1;
+        private int _resumeAllPanePlaybackOnCompareReenableGeneration = -1;
         private bool _isAllPanePlaybackControlActive;
         private Pane _focusedPane = Pane.Primary;
         private TimeSpan _masterTimelineContextTarget = TimeSpan.Zero;
@@ -422,6 +425,13 @@ namespace FramePlayer.Avalonia.Views
                     }
                     UpdateCompareOptionState();
                     SetPaneState(pane, "Ready");
+                    await RefreshMasterTransportReadoutForPaneOperationAsync(
+                            pane,
+                            engine,
+                            transportIntentGeneration,
+                            refreshPlaybackState: true,
+                            refreshWhenPaneIsNotMaster: true)
+                        .ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -492,6 +502,26 @@ namespace FramePlayer.Avalonia.Views
         {
             _comparePaneTransportOperationGate.Release();
             _primaryPaneTransportOperationGate.Release();
+            _allPaneTransportOperationGate.Release();
+        }
+
+        private async Task WaitForAllPaneAndCompareOperationAsync()
+        {
+            await _allPaneTransportOperationGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+            try
+            {
+                await _comparePaneTransportOperationGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch
+            {
+                _allPaneTransportOperationGate.Release();
+                throw;
+            }
+        }
+
+        private void ReleaseAllPaneAndCompareOperation()
+        {
+            _comparePaneTransportOperationGate.Release();
             _allPaneTransportOperationGate.Release();
         }
 
@@ -1623,6 +1653,9 @@ namespace FramePlayer.Avalonia.Views
             }
 
             var transportIntentGeneration = BeginAllPaneTransportIntent();
+            Volatile.Write(
+                ref _pendingAllPanePlaybackStartGeneration,
+                transportIntentGeneration);
             InvalidateAllLoopRestarts();
             await WaitForAllPaneTransportOperationAsync();
             try
@@ -1637,6 +1670,10 @@ namespace FramePlayer.Avalonia.Views
             }
             finally
             {
+                Interlocked.CompareExchange(
+                    ref _pendingAllPanePlaybackStartGeneration,
+                    -1,
+                    transportIntentGeneration);
                 ReleaseAllPaneTransportOperation();
             }
         }
@@ -1889,6 +1926,16 @@ namespace FramePlayer.Avalonia.Views
 
         private async Task RefreshAllPaneMasterTransportReadoutOnUiThreadAsync()
         {
+            await RefreshAllPaneMasterTransportReadoutOnUiThreadAsync(
+                    refreshPlaybackState: true,
+                    preferPresentedFrame: true)
+                .ConfigureAwait(false);
+        }
+
+        private async Task RefreshAllPaneMasterTransportReadoutOnUiThreadAsync(
+            bool refreshPlaybackState,
+            bool preferPresentedFrame)
+        {
             if (Volatile.Read(ref _isClosed) != 0)
             {
                 return;
@@ -1899,7 +1946,9 @@ namespace FramePlayer.Avalonia.Views
             {
                 if (dispatcher.CheckAccess())
                 {
-                    RefreshAllPaneMasterTransportReadout();
+                    RefreshAllPaneMasterTransportReadout(
+                        refreshPlaybackState,
+                        preferPresentedFrame);
                     return;
                 }
             }
@@ -1912,12 +1961,16 @@ namespace FramePlayer.Avalonia.Views
             {
                 if (Volatile.Read(ref _isClosed) == 0)
                 {
-                    RefreshAllPaneMasterTransportReadout();
+                    RefreshAllPaneMasterTransportReadout(
+                        refreshPlaybackState,
+                        preferPresentedFrame);
                 }
             });
         }
 
-        private void RefreshAllPaneMasterTransportReadout()
+        private void RefreshAllPaneMasterTransportReadout(
+            bool refreshPlaybackState = true,
+            bool preferPresentedFrame = true)
         {
             if (!_primaryEngine.IsMediaOpen)
             {
@@ -1934,24 +1987,61 @@ namespace FramePlayer.Avalonia.Views
             var duration = GetMasterTransportDuration();
             var durationSeconds = Math.Max(1d, duration.TotalSeconds);
             var durationText = FormatTime(duration);
-            var frameBuffer = masterPane == Pane.Compare
-                ? _compareFrameBuffer
-                : _primaryFrameBuffer;
-            var position = frameBuffer != null
-                ? CreateReviewPosition(frameBuffer.Descriptor)
-                : masterEngine.Position;
+            var wasUpdatingSliders = _isUpdatingSliders;
+            _isUpdatingSliders = true;
+            try
+            {
+                ApplyMasterTransportDuration();
+                var frameBuffer = masterPane == Pane.Compare
+                    ? _compareFrameBuffer
+                    : _primaryFrameBuffer;
+                var position = preferPresentedFrame && frameBuffer != null
+                    ? CreateReviewPosition(frameBuffer.Descriptor)
+                    : masterEngine.Position;
 
-            ApplyPanePosition(
-                masterPane,
-                position,
-                durationSeconds,
-                durationText,
-                applyMasterTransport: true);
-            UpdateMainPlayPauseVisual();
-            PlaybackStateTextBlock.Text = (_primaryEngine.IsPlaying ||
-                _compareEngine?.IsPlaying == true)
-                    ? "Playing"
-                    : "Paused";
+                ApplyPanePosition(
+                    masterPane,
+                    position,
+                    durationSeconds,
+                    durationText,
+                    applyMasterTransport: true);
+                if (refreshPlaybackState)
+                {
+                    var isMasterTransportPlaying = ShouldShowMainPauseAction();
+                    UpdateMainPlayPauseVisual();
+                    PlaybackStateTextBlock.Text = isMasterTransportPlaying
+                        ? "Playing"
+                        : "Paused";
+                }
+            }
+            finally
+            {
+                _isUpdatingSliders = wasUpdatingSliders;
+            }
+        }
+
+        private async Task RefreshMasterTransportReadoutForPaneOperationAsync(
+            Pane pane,
+            IVideoReviewEngine engine,
+            int transportIntentGeneration,
+            bool refreshPlaybackState,
+            bool refreshWhenPaneIsNotMaster = false)
+        {
+            if (Volatile.Read(ref _isClosed) != 0 ||
+                !IsPaneTransportIntentCurrent(pane, transportIntentGeneration) ||
+                !ReferenceEquals(engine, TryGetExistingEngine(pane)) ||
+                !engine.IsMediaOpen ||
+                (_isCompareModeSelected &&
+                    !refreshWhenPaneIsNotMaster &&
+                    pane != GetMasterTransportPane()))
+            {
+                return;
+            }
+
+            await RefreshAllPaneMasterTransportReadoutOnUiThreadAsync(
+                    refreshPlaybackState,
+                    preferPresentedFrame: false)
+                .ConfigureAwait(false);
         }
 
         private async Task RefreshAllPaneMasterPlaybackStateOnUiThreadAsync()
@@ -1986,11 +2076,11 @@ namespace FramePlayer.Avalonia.Views
 
         private void RefreshAllPaneMasterPlaybackState()
         {
+            var isMasterTransportDisplayPlaying = IsMasterTransportDisplayPlaying();
             UpdateMainPlayPauseVisual();
-            PlaybackStateTextBlock.Text = (_primaryEngine.IsPlaying ||
-                _compareEngine?.IsPlaying == true)
-                    ? "Playing"
-                    : "Paused";
+            PlaybackStateTextBlock.Text = isMasterTransportDisplayPlaying
+                ? "Playing"
+                : "Paused";
         }
 
         private async Task SeekRelativeAsync(TimeSpan offset)
@@ -2734,6 +2824,7 @@ namespace FramePlayer.Avalonia.Views
             var seekIntent = BeginPanePreservingSeekIntent(pane, engine);
             var transportIntentGeneration = seekIntent.PaneIntentGeneration;
             var resumePlayback = seekIntent.ResumePlayback;
+            var refreshMasterTransportReadout = false;
             InvalidateLoopRestart(pane);
             var operationGate = GetPaneTransportOperationGate(pane);
             await operationGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
@@ -2754,6 +2845,10 @@ namespace FramePlayer.Avalonia.Views
                 try
                 {
                     await engine.SeekToTimeAsync(target, cancellationToken).ConfigureAwait(false);
+                    refreshMasterTransportReadout =
+                        IsPaneTransportIntentCurrent(pane, transportIntentGeneration) &&
+                        ReferenceEquals(engine, TryGetExistingEngine(pane)) &&
+                        engine.IsMediaOpen;
                 }
                 finally
                 {
@@ -2772,6 +2867,16 @@ namespace FramePlayer.Avalonia.Views
                 operationGate.Release();
                 ClearPaneSeekResumeIntent(pane, transportIntentGeneration);
             }
+
+            if (refreshMasterTransportReadout)
+            {
+                await RefreshMasterTransportReadoutForPaneOperationAsync(
+                        pane,
+                        engine,
+                        transportIntentGeneration,
+                        refreshPlaybackState: false)
+                    .ConfigureAwait(false);
+            }
         }
 
         private async Task<bool> SeekPaneToFrameAsync(
@@ -2786,6 +2891,7 @@ namespace FramePlayer.Avalonia.Views
 
             var engine = GetEngine(pane);
             var transportIntentGeneration = BeginPaneTransportIntent(pane);
+            var refreshMasterTransportReadout = false;
             InvalidateLoopRestart(pane);
             var operationGate = GetPaneTransportOperationGate(pane);
             await operationGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
@@ -2800,7 +2906,7 @@ namespace FramePlayer.Avalonia.Views
                 }
 
                 await engine.SeekToFrameAsync(Math.Max(0L, frameIndex), cancellationToken).ConfigureAwait(false);
-                return Volatile.Read(ref _isClosed) == 0 &&
+                refreshMasterTransportReadout = Volatile.Read(ref _isClosed) == 0 &&
                     IsPaneTransportIntentCurrent(pane, transportIntentGeneration) &&
                     ReferenceEquals(engine, TryGetExistingEngine(pane));
             }
@@ -2808,6 +2914,18 @@ namespace FramePlayer.Avalonia.Views
             {
                 operationGate.Release();
             }
+
+            if (refreshMasterTransportReadout)
+            {
+                await RefreshMasterTransportReadoutForPaneOperationAsync(
+                        pane,
+                        engine,
+                        transportIntentGeneration,
+                        refreshPlaybackState: false)
+                    .ConfigureAwait(false);
+            }
+
+            return refreshMasterTransportReadout;
         }
 
         private async Task SeekMasterTimelineAsync(TimeSpan target, CancellationToken cancellationToken = default)
@@ -3407,16 +3525,41 @@ namespace FramePlayer.Avalonia.Views
                 return;
             }
 
+            var compareModeTransitionGeneration = Interlocked.Increment(
+                ref _compareModeTransitionGeneration);
             _isCompareModeSelected = CompareModeCheckBox.IsChecked == true;
             _isAllPaneTransportSelected = _isCompareModeSelected;
             if (_isCompareModeSelected)
             {
                 ShowCompareMode();
+                var resumeAllPanePlaybackGeneration = Interlocked.Exchange(
+                    ref _resumeAllPanePlaybackOnCompareReenableGeneration,
+                    -1);
+                var resumeActiveAllPanePlayback =
+                    resumeAllPanePlaybackGeneration == compareModeTransitionGeneration - 1 &&
+                    (_primaryEngine.IsPlaying ||
+                        Volatile.Read(ref _allPaneLoopRestartInFlight) != 0);
+                if (resumeActiveAllPanePlayback ||
+                    Volatile.Read(ref _pendingAllPanePlaybackStartGeneration) >= 0)
+                {
+                    _ = StartAllPanePlaybackAsync();
+                }
             }
             else
             {
+                var resumeAllPanePlaybackOnCompareReenable =
+                    (Volatile.Read(ref _isAllPanePlaybackControlActive) &&
+                        ShouldPauseAllPanePlayback()) ||
+                    Volatile.Read(ref _allPaneLoopRestartInFlight) != 0;
+                if (resumeAllPanePlaybackOnCompareReenable)
+                {
+                    Volatile.Write(
+                        ref _resumeAllPanePlaybackOnCompareReenableGeneration,
+                        compareModeTransitionGeneration);
+                }
+
                 EndSynchronizedFramePresentation();
-                HideCompareMode();
+                HideCompareMode(compareModeTransitionGeneration);
             }
         }
 
@@ -3435,7 +3578,7 @@ namespace FramePlayer.Avalonia.Views
             UpdateCacheStatusFromEngine();
         }
 
-        private void HideCompareMode()
+        private void HideCompareMode(int compareModeTransitionGeneration)
         {
             _focusedPane = Pane.Primary;
             VideoPaneGrid.ColumnDefinitions[1].Width = new GridLength(0);
@@ -3448,34 +3591,44 @@ namespace FramePlayer.Avalonia.Views
             UpdateCompareOptionState();
             UpdateLoopUi();
             UpdateCacheStatusFromEngine();
-            _ = PauseHiddenComparePlaybackAsync();
+            _ = PauseHiddenComparePlaybackAsync(compareModeTransitionGeneration);
         }
 
-        private async Task PauseHiddenComparePlaybackAsync()
+        private async Task PauseHiddenComparePlaybackAsync(
+            int compareModeTransitionGeneration)
         {
-            if (Volatile.Read(ref _isClosed) != 0)
-            {
-                return;
-            }
-
             var compareEngine = _compareEngine;
-            if (compareEngine == null ||
-                !compareEngine.IsMediaOpen ||
-                !compareEngine.IsPlaying)
+            if (!CanPauseHiddenComparePlayback(
+                    compareModeTransitionGeneration,
+                    compareEngine))
             {
                 return;
             }
 
+            var compareOperationAcquired = false;
             try
             {
-                if (compareEngine.IsMediaOpen && compareEngine.IsPlaying)
+                await WaitForAllPaneAndCompareOperationAsync().ConfigureAwait(false);
+                compareOperationAcquired = true;
+                if (!CanPauseHiddenComparePlayback(
+                        compareModeTransitionGeneration,
+                        compareEngine))
                 {
-                    var transportIntentGeneration = BeginPaneTransportIntent(Pane.Compare);
-                    InvalidateLoopRestart(Pane.Compare);
-                    await PausePanePlaybackAsync(
-                        transportIntentGeneration,
+                    return;
+                }
+
+                var transportIntentGeneration = BeginPaneTransportIntent(
+                    Pane.Compare,
+                    preservePendingAllPanePlaybackStart: true);
+                InvalidateLoopRestart(Pane.Compare);
+                if (CanPauseHiddenComparePlayback(
+                        compareModeTransitionGeneration,
+                        compareEngine) &&
+                    IsPaneTransportIntentCurrent(
                         Pane.Compare,
-                        compareEngine).ConfigureAwait(false);
+                        transportIntentGeneration))
+                {
+                        await compareEngine!.PauseAsync().ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
@@ -3483,6 +3636,27 @@ namespace FramePlayer.Avalonia.Views
                 Trace.TraceWarning("Compare playback pause failed: " + ex.Message);
                 await SetStatusMessageAsync("Compare playback pause failed: " + ex.Message).ConfigureAwait(false);
             }
+            finally
+            {
+                if (compareOperationAcquired)
+                {
+                    ReleaseAllPaneAndCompareOperation();
+                }
+            }
+        }
+
+        private bool CanPauseHiddenComparePlayback(
+            int compareModeTransitionGeneration,
+            IVideoReviewEngine? compareEngine)
+        {
+            return Volatile.Read(ref _isClosed) == 0 &&
+                Volatile.Read(ref _compareModeTransitionGeneration) ==
+                    compareModeTransitionGeneration &&
+                !_isCompareModeSelected &&
+                compareEngine != null &&
+                ReferenceEquals(compareEngine, _compareEngine) &&
+                compareEngine.IsMediaOpen &&
+                compareEngine.IsPlaying;
         }
 
         private void SetPrimaryPaneLocalChromeVisible(bool isVisible)
@@ -4680,7 +4854,9 @@ namespace FramePlayer.Avalonia.Views
             }
         }
 
-        private int BeginPaneTransportIntent(Pane pane)
+        private int BeginPaneTransportIntent(
+            Pane pane,
+            bool preservePendingAllPanePlaybackStart = false)
         {
             var allPaneTransportIntentGeneration = Volatile.Read(
                 ref _allPaneTransportIntentGeneration);
@@ -4699,6 +4875,16 @@ namespace FramePlayer.Avalonia.Views
                     transportIntentGeneration = Interlocked.Increment(ref _primaryPaneTransportIntentGeneration);
                     _primaryPendingSeekResumeGeneration = -1;
                 }
+            }
+
+            if (!preservePendingAllPanePlaybackStart)
+            {
+                Interlocked.Exchange(
+                    ref _pendingAllPanePlaybackStartGeneration,
+                    -1);
+                Interlocked.Exchange(
+                    ref _resumeAllPanePlaybackOnCompareReenableGeneration,
+                    -1);
             }
 
             Volatile.Write(ref _isAllPanePlaybackControlActive, false);
@@ -5828,9 +6014,20 @@ namespace FramePlayer.Avalonia.Views
 
         private bool ShouldShowMainPauseAction()
         {
+            return IsMasterTransportDisplayPlaying();
+        }
+
+        private bool IsMasterTransportDisplayPlaying()
+        {
             if (IsAllPaneTransportEnabled)
             {
-                return ShouldPauseAllPanePlayback();
+                if (!Volatile.Read(ref _isAllPanePlaybackControlActive))
+                {
+                    return false;
+                }
+
+                var masterEngine = TryGetExistingEngine(GetMasterTransportPane());
+                return masterEngine != null && masterEngine.IsPlaying;
             }
 
             var focusedEngine = TryGetExistingEngine(GetFocusedPane());

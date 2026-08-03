@@ -1374,6 +1374,19 @@ namespace FramePlayer.Avalonia.Tests
                         RequireControl<TextBox>(
                             window,
                             "FrameNumberTextBox").Text);
+                    Assert.Equal(
+                        "Playing",
+                        RequireControl<TextBlock>(
+                            window,
+                            "PlaybackStateTextBlock").Text);
+                    Assert.False(
+                        RequireControl<Control>(
+                            window,
+                            "PlayPausePlayIcon").IsVisible);
+                    Assert.True(
+                        RequireControl<Control>(
+                            window,
+                            "PlayPausePauseIcon").IsVisible);
                 }
                 finally
                 {
@@ -7978,7 +7991,451 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
-        public void MainSharedTransport_MasterVisualTracksAllPanePauseRule()
+        public async Task CompareMode_RapidReenableDoesNotPauseVisibleComparePane()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var allPaneGate = GetPrivateField<SemaphoreSlim>(
+                    window,
+                    "_allPaneTransportOperationGate")!;
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    var compareMode = RequireControl<CheckBox>(window, "CompareModeCheckBox");
+                    compareMode.IsChecked = true;
+
+                    await allPaneGate.WaitAsync();
+                    try
+                    {
+                        compareMode.IsChecked = false;
+                        compareMode.IsChecked = true;
+                    }
+                    finally
+                    {
+                        allPaneGate.Release();
+                    }
+
+                    await Task.Delay(TimeSpan.FromMilliseconds(100));
+
+                    Assert.True(compareEngine.IsPlaying);
+                    Assert.Equal(0, compareEngine.PauseCallCount);
+                    Assert.True(primaryEngine.IsPlaying);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task CompareMode_RapidReenableRestartsMasterPlaybackQueuedBeforeTransition()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var allPaneGate = GetPrivateField<SemaphoreSlim>(
+                    window,
+                    "_allPaneTransportOperationGate")!;
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine { IsMediaOpen = true };
+                    var compareEngine = new TestVideoReviewEngine { IsMediaOpen = true };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    var compareMode = RequireControl<CheckBox>(window, "CompareModeCheckBox");
+                    compareMode.IsChecked = true;
+
+                    await allPaneGate.WaitAsync();
+                    Task? startTask = null;
+                    try
+                    {
+                        startTask = (Task)InvokePrivate(window, "StartAllPanePlaybackAsync");
+                        Assert.True(GetPrivateField<int>(
+                            window,
+                            "_pendingAllPanePlaybackStartGeneration") >= 0);
+                        compareMode.IsChecked = false;
+                        compareMode.IsChecked = true;
+                    }
+                    finally
+                    {
+                        allPaneGate.Release();
+                    }
+
+                    await startTask!;
+                    await Task.Delay(TimeSpan.FromMilliseconds(200));
+                    Assert.True(
+                        primaryEngine.IsPlaying && compareEngine.IsPlaying,
+                        "The queued master start was not reissued after compare was re-enabled.");
+                    Assert.True(GetPrivateField<bool>(
+                        window,
+                        "_isAllPanePlaybackControlActive"));
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task CompareMode_ReenableAfterHiddenPauseCompletesRestartsMasterPlayback()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var pauseCompletion = new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        PauseCompletion = pauseCompletion
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_isAllPanePlaybackControlActive", true);
+                    var compareMode = RequireControl<CheckBox>(window, "CompareModeCheckBox");
+                    compareMode.IsChecked = true;
+                    compareMode.IsChecked = false;
+
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => compareEngine.PauseCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "The hidden compare pause did not begin.");
+                    compareMode.IsChecked = true;
+                    pauseCompletion.TrySetResult(true);
+
+                    await Task.Delay(TimeSpan.FromMilliseconds(200));
+                    Assert.True(
+                        primaryEngine.IsPlaying && compareEngine.IsPlaying,
+                        "Compare re-enable did not restore the active master transport.");
+                }
+                finally
+                {
+                    pauseCompletion.TrySetResult(true);
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task CompareMode_ReenableAfterMasterPlaybackEndsDoesNotRestartTransport()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_isAllPanePlaybackControlActive", true);
+                    var compareMode = RequireControl<CheckBox>(window, "CompareModeCheckBox");
+                    compareMode.IsChecked = true;
+                    compareMode.IsChecked = false;
+
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => compareEngine.PauseCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "The hidden compare pane was not paused.");
+                    primaryEngine.IsPlaying = false;
+                    compareMode.IsChecked = true;
+
+                    await Task.Delay(TimeSpan.FromMilliseconds(200));
+
+                    Assert.Equal(0, primaryEngine.PlayCallCount);
+                    Assert.Equal(0, compareEngine.PlayCallCount);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task CompareMode_HiddenComparePauseDoesNotBlockPrimaryLocalPlayback()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var pauseCompletion = new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine { IsMediaOpen = true };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        PauseCompletion = pauseCompletion
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    var compareMode = RequireControl<CheckBox>(window, "CompareModeCheckBox");
+                    compareMode.IsChecked = true;
+                    compareMode.IsChecked = false;
+
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => compareEngine.PauseCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "The hidden compare pause did not begin.");
+                    var primaryStartTask = (Task)InvokePrivate(
+                        window,
+                        "StartPlaybackAsync",
+                        (SynchronizedOperationScope?)SynchronizedOperationScope.FocusedPane,
+                        "pane-primary");
+
+                    var completedTask = await Task.WhenAny(
+                        primaryStartTask,
+                        Task.Delay(TimeSpan.FromMilliseconds(500)));
+                    Assert.Same(primaryStartTask, completedTask);
+                    Assert.True(primaryEngine.IsPlaying);
+                }
+                finally
+                {
+                    pauseCompletion.TrySetResult(true);
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task CompareMode_ReenableDuringAllPaneLoopRestartRestartsBothPanes()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine { IsMediaOpen = true };
+                    var compareEngine = new TestVideoReviewEngine { IsMediaOpen = true };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_allPaneLoopRestartInFlight", 1);
+                    var compareMode = RequireControl<CheckBox>(window, "CompareModeCheckBox");
+                    compareMode.IsChecked = true;
+                    compareMode.IsChecked = false;
+                    compareMode.IsChecked = true;
+
+                    await Task.Delay(TimeSpan.FromMilliseconds(200));
+                    Assert.True(primaryEngine.IsPlaying && compareEngine.IsPlaying);
+                }
+                finally
+                {
+                    SetPrivateField(window, "_allPaneLoopRestartInFlight", 0);
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task CompareMode_DisablingComparePausesHiddenComparePaneOnce()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(
+                        window,
+                        "_compareFrameBuffer",
+                        CreateFrameBuffer(8, 4, TimeSpan.FromSeconds(1)));
+                    var compareMode = RequireControl<CheckBox>(window, "CompareModeCheckBox");
+                    compareMode.IsChecked = true;
+                    compareMode.IsChecked = false;
+
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => compareEngine.PauseCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "The hidden compare pane was not paused.");
+                    Assert.False(compareEngine.IsPlaying);
+                    Assert.True(primaryEngine.IsPlaying);
+                    Assert.Equal(1, compareEngine.PauseCallCount);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task ComparePlayback_LocalMasterSeekRefreshesOnlyMasterReadout()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        MediaInfo = CreateMediaInfo("left.mp4", TimeSpan.FromSeconds(5)),
+                        Position = new ReviewPosition(
+                            TimeSpan.FromSeconds(1),
+                            24,
+                            isFrameAccurate: true,
+                            isFrameIndexAbsolute: true,
+                            presentationTimestamp: 90_000,
+                            decodeTimestamp: 90_000)
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        MediaInfo = CreateMediaInfo("right.mp4", TimeSpan.FromSeconds(20)),
+                        Position = new ReviewPosition(
+                            TimeSpan.FromSeconds(7),
+                            168,
+                            isFrameAccurate: true,
+                            isFrameIndexAbsolute: true,
+                            presentationTimestamp: 630_000,
+                            decodeTimestamp: 630_000)
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_isCompareModeSelected", true);
+                    SetPrivateField(window, "_isAllPaneTransportSelected", true);
+                    RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+
+                    var comparePane = ParsePane("Compare");
+                    await InvokePrivateTask(
+                        window,
+                        "SeekPaneToTimePreservingPlaybackAsync",
+                        new[]
+                        {
+                            comparePane.GetType(),
+                            typeof(TimeSpan),
+                            typeof(CancellationToken)
+                        },
+                        comparePane,
+                        TimeSpan.FromSeconds(7),
+                        CancellationToken.None);
+
+                    Assert.Equal(20d, RequireControl<Slider>(window, "PositionSlider").Maximum);
+                    Assert.Equal(7d, RequireControl<Slider>(window, "PositionSlider").Value);
+                    Assert.Equal("00:00:07.000", RequireControl<TextBlock>(window, "CurrentPositionTextBlock").Text);
+                    Assert.Equal("169", RequireControl<TextBox>(window, "FrameNumberTextBox").Text);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task ComparePlayback_LocalMasterSeekDoesNotQueueDelayedSliderSynchronization()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        MediaInfo = CreateMediaInfo("left.mp4", TimeSpan.FromSeconds(5)),
+                        Position = new ReviewPosition(
+                            TimeSpan.FromSeconds(1),
+                            24,
+                            isFrameAccurate: true,
+                            isFrameIndexAbsolute: true,
+                            presentationTimestamp: 90_000,
+                            decodeTimestamp: 90_000)
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        MediaInfo = CreateMediaInfo("right.mp4", TimeSpan.FromSeconds(20)),
+                        Position = new ReviewPosition(
+                            TimeSpan.FromSeconds(7),
+                            168,
+                            isFrameAccurate: true,
+                            isFrameIndexAbsolute: true,
+                            presentationTimestamp: 630_000,
+                            decodeTimestamp: 630_000)
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_isCompareModeSelected", true);
+                    SetPrivateField(window, "_isAllPaneTransportSelected", true);
+                    RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+
+                    var comparePane = ParsePane("Compare");
+                    await InvokePrivateTask(
+                        window,
+                        "SeekPaneToTimePreservingPlaybackAsync",
+                        new[]
+                        {
+                            comparePane.GetType(),
+                            typeof(TimeSpan),
+                            typeof(CancellationToken)
+                        },
+                        comparePane,
+                        TimeSpan.FromSeconds(7),
+                        CancellationToken.None);
+
+                    await Task.Delay(TimeSpan.FromMilliseconds(200));
+                    Dispatcher.UIThread.RunJobs();
+
+                    Assert.Equal(0, primaryEngine.SeekToTimeCallCount);
+                    Assert.Equal(1, compareEngine.SeekToTimeCallCount);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public void MainSharedTransport_MasterVisualTracksDisplayPaneWithoutChangingToggleRule()
         {
             var mainWindowSource = ReadRepositoryFile(
                 "src",
@@ -7996,12 +8453,24 @@ namespace FramePlayer.Avalonia.Tests
             var visualRuleMethod = ExtractMethodBody(
                 mainWindowSource,
                 "private bool ShouldShowMainPauseAction()",
+                "private bool IsMasterTransportDisplayPlaying()");
+            var displayRuleMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private bool IsMasterTransportDisplayPlaying()",
                 "private static string FormatFrameNumberEntry(");
+            var toggleAllPaneMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private async Task ToggleAllPanePlaybackAsync()",
+                "private async Task ToggleFocusedPanePlaybackAsync()");
 
             Assert.Contains("UpdateMainPlayPauseVisual();", applyPrimaryMethod, StringComparison.Ordinal);
             Assert.DoesNotContain("\n            PlayPausePlayIcon.IsVisible = !state.IsPlaying;", applyPrimaryMethod, StringComparison.Ordinal);
             Assert.Contains("ShouldShowMainPauseAction()", visualMethod, StringComparison.Ordinal);
-            Assert.Contains("return ShouldPauseAllPanePlayback();", visualRuleMethod, StringComparison.Ordinal);
+            Assert.Contains("return IsMasterTransportDisplayPlaying();", visualRuleMethod, StringComparison.Ordinal);
+            Assert.Contains("Volatile.Read(ref _isAllPanePlaybackControlActive)", displayRuleMethod, StringComparison.Ordinal);
+            Assert.Contains("var masterEngine = TryGetExistingEngine(GetMasterTransportPane());", displayRuleMethod, StringComparison.Ordinal);
+            Assert.Contains("return masterEngine != null && masterEngine.IsPlaying;", displayRuleMethod, StringComparison.Ordinal);
+            Assert.Contains("if (ShouldPauseAllPanePlayback())", toggleAllPaneMethod, StringComparison.Ordinal);
         }
 
         [Fact]
