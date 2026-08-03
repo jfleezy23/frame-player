@@ -177,6 +177,7 @@ jobs:
         shell: pwsh
         run: |
           dotnet test .\tests\FramePlayer.Core.Tests\FramePlayer.Core.Tests.csproj -c Release -r win-x64
+          dotnet test .\tests\FramePlayer.Avalonia.Tests\FramePlayer.Avalonia.Tests.csproj -c Release -r win-x64 --filter "Category=ContextMenu"
           dotnet test .\tests\FramePlayer.Avalonia.Tests\FramePlayer.Avalonia.Tests.csproj -c Release -r win-x64 --filter "Category!=ReleaseCandidate"
 
       - name: Package unified Windows build

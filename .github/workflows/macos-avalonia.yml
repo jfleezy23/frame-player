@@ -85,6 +85,7 @@ jobs:
       - name: Test
         run: |
           dotnet test tests/FramePlayer.Core.Tests/FramePlayer.Core.Tests.csproj -c Release -r osx-arm64 --no-restore
+          dotnet test tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj -c Release -r osx-arm64 --no-restore --filter "Category=ContextMenu"
           dotnet test tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj -c Release -r osx-arm64 --no-restore --filter "Category!=ReleaseCandidate"
 
       - name: Bundle smoke test
