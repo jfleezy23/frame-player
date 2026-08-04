@@ -153,7 +153,9 @@ namespace FramePlayer.Avalonia.Tests
             Assert.Contains("UpdateCacheStatusFromEngine()", source, StringComparison.Ordinal);
             Assert.Contains("ffmpegEngine.ApproximateCachedFrameBytes", source, StringComparison.Ordinal);
             Assert.Contains("ffmpegEngine.LastCacheRefillMilliseconds", source, StringComparison.Ordinal);
-            Assert.Contains("private async Task PauseHiddenComparePlaybackAsync()", source, StringComparison.Ordinal);
+            Assert.Contains("private async Task PauseHiddenComparePlaybackAsync(", source, StringComparison.Ordinal);
+            Assert.Contains("_compareModeTransitionGeneration", source, StringComparison.Ordinal);
+            Assert.Contains("CanPauseHiddenComparePlayback(", source, StringComparison.Ordinal);
             Assert.Contains("private void RestartLoopPlaybackIfNeeded(", source, StringComparison.Ordinal);
             Assert.Contains("var engine = TryGetExistingEngine(pane);", source, StringComparison.Ordinal);
             Assert.Contains(

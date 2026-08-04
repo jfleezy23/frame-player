@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
@@ -21,7 +22,9 @@ using FramePlayer.Core.Abstractions;
 using FramePlayer.Core.Coordination;
 using FramePlayer.Core.Events;
 using FramePlayer.Core.Models;
+using FramePlayer.Avalonia.Services;
 using FramePlayer.Avalonia.Views;
+using FramePlayer.Services;
 using Microsoft.Win32.SafeHandles;
 using Xunit;
 
@@ -1371,6 +1374,19 @@ namespace FramePlayer.Avalonia.Tests
                         RequireControl<TextBox>(
                             window,
                             "FrameNumberTextBox").Text);
+                    Assert.Equal(
+                        "Playing",
+                        RequireControl<TextBlock>(
+                            window,
+                            "PlaybackStateTextBlock").Text);
+                    Assert.False(
+                        RequireControl<Control>(
+                            window,
+                            "PlayPausePlayIcon").IsVisible);
+                    Assert.True(
+                        RequireControl<Control>(
+                            window,
+                            "PlayPausePauseIcon").IsVisible);
                 }
                 finally
                 {
@@ -6222,7 +6238,7 @@ namespace FramePlayer.Avalonia.Tests
         [InlineData(true, false, false)]
         [InlineData(false, true, false)]
         [InlineData(true, true, true)]
-        public void MainSharedTransport_PausesOnlyWhenBothPanesArePlaying(
+        public void MainSharedTransport_PausesLocalPlaybackOnlyWhenBothPanesArePlaying(
             bool primaryPlaying,
             bool comparePlaying,
             bool expectedShouldPause)
@@ -6244,6 +6260,135 @@ namespace FramePlayer.Avalonia.Tests
                 compareEngine);
 
             Assert.Equal(expectedShouldPause, shouldPause);
+        }
+
+        [Theory]
+        [InlineData(false, false, false, false)]
+        [InlineData(false, true, false, false)]
+        [InlineData(false, false, true, false)]
+        [InlineData(false, true, true, true)]
+        [InlineData(true, false, false, false)]
+        [InlineData(true, true, false, true)]
+        [InlineData(true, false, true, true)]
+        [InlineData(true, true, true, true)]
+        public void MainSharedTransport_PauseRuleSeparatesActiveSharedPlaybackFromLocalDivergence(
+            bool sharedPlaybackActive,
+            bool primaryPlaying,
+            bool comparePlaying,
+            bool expectedShouldPause)
+        {
+            _fixture.Run(() =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = primaryPlaying
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = comparePlaying
+                    };
+
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(
+                        window,
+                        "_isAllPanePlaybackControlActive",
+                        sharedPlaybackActive);
+
+                    var shouldPause = (bool)InvokePrivate(
+                        window,
+                        "ShouldPauseAllPanePlayback");
+
+                    Assert.Equal(expectedShouldPause, shouldPause);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task ComparePlayback_MasterPauseStopsLongerPaneAfterShorterPaneEndsWithLoopOff(
+            bool primaryIsLonger)
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var shortInfo = CreateMediaInfo("short.mp4", TimeSpan.FromSeconds(5));
+                    var longInfo = CreateMediaInfo("long.mp4", TimeSpan.FromSeconds(20));
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = primaryIsLonger,
+                        CurrentFilePath = primaryIsLonger ? "long.mp4" : "short.mp4",
+                        MediaInfo = primaryIsLonger ? longInfo : shortInfo,
+                        Position = new ReviewPosition(
+                            primaryIsLonger ? TimeSpan.FromSeconds(6) : shortInfo.Duration,
+                            primaryIsLonger ? 180 : 149,
+                            isFrameAccurate: true,
+                            isFrameIndexAbsolute: true,
+                            presentationTimestamp: primaryIsLonger ? 540_000 : 450_000,
+                            decodeTimestamp: primaryIsLonger ? 540_000 : 450_000)
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = !primaryIsLonger,
+                        CurrentFilePath = primaryIsLonger ? "short.mp4" : "long.mp4",
+                        MediaInfo = primaryIsLonger ? shortInfo : longInfo,
+                        Position = new ReviewPosition(
+                            primaryIsLonger ? shortInfo.Duration : TimeSpan.FromSeconds(6),
+                            primaryIsLonger ? 149 : 180,
+                            isFrameAccurate: true,
+                            isFrameIndexAbsolute: true,
+                            presentationTimestamp: primaryIsLonger ? 450_000 : 540_000,
+                            decodeTimestamp: primaryIsLonger ? 450_000 : 540_000)
+                    };
+
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_isCompareModeSelected", true);
+                    SetPrivateField(window, "_isAllPaneTransportSelected", true);
+                    SetPrivateField(window, "_isPrimaryLoopPlaybackEnabled", false);
+                    SetPrivateField(window, "_isCompareLoopPlaybackEnabled", false);
+                    RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+                    SetPrivateField(window, "_isAllPanePlaybackControlActive", true);
+                    InvokePrivate(window, "UpdateCommandStates");
+
+                    Assert.True(RequireControl<Control>(window, "PlayPausePauseIcon").IsVisible);
+                    Assert.False(RequireControl<Control>(window, "PlayPausePlayIcon").IsVisible);
+                    Assert.Equal("Pause", RequireControl<MenuItem>(window, "PlayPauseMenuItem").Header);
+
+                    await InvokePrivateTask(window, "TogglePlaybackAsync", Type.EmptyTypes)
+                        .WaitAsync(TimeSpan.FromSeconds(2));
+
+                    Assert.False(primaryEngine.IsPlaying);
+                    Assert.False(compareEngine.IsPlaying);
+                    Assert.Equal(1, primaryEngine.PauseCallCount);
+                    Assert.Equal(1, compareEngine.PauseCallCount);
+                    Assert.Equal(0, primaryEngine.PlayCallCount);
+                    Assert.Equal(0, compareEngine.PlayCallCount);
+                    Assert.Equal(
+                        "Paused",
+                        RequireControl<TextBlock>(
+                            window,
+                            "PlaybackStateTextBlock").Text);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
         }
 
         [Fact]
@@ -7975,7 +8120,451 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
-        public void MainSharedTransport_MasterVisualTracksAllPanePauseRule()
+        public async Task CompareMode_RapidReenableDoesNotPauseVisibleComparePane()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var allPaneGate = GetPrivateField<SemaphoreSlim>(
+                    window,
+                    "_allPaneTransportOperationGate")!;
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    var compareMode = RequireControl<CheckBox>(window, "CompareModeCheckBox");
+                    compareMode.IsChecked = true;
+
+                    await allPaneGate.WaitAsync();
+                    try
+                    {
+                        compareMode.IsChecked = false;
+                        compareMode.IsChecked = true;
+                    }
+                    finally
+                    {
+                        allPaneGate.Release();
+                    }
+
+                    await Task.Delay(TimeSpan.FromMilliseconds(100));
+
+                    Assert.True(compareEngine.IsPlaying);
+                    Assert.Equal(0, compareEngine.PauseCallCount);
+                    Assert.True(primaryEngine.IsPlaying);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task CompareMode_RapidReenableRestartsMasterPlaybackQueuedBeforeTransition()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var allPaneGate = GetPrivateField<SemaphoreSlim>(
+                    window,
+                    "_allPaneTransportOperationGate")!;
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine { IsMediaOpen = true };
+                    var compareEngine = new TestVideoReviewEngine { IsMediaOpen = true };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    var compareMode = RequireControl<CheckBox>(window, "CompareModeCheckBox");
+                    compareMode.IsChecked = true;
+
+                    await allPaneGate.WaitAsync();
+                    Task? startTask = null;
+                    try
+                    {
+                        startTask = (Task)InvokePrivate(window, "StartAllPanePlaybackAsync");
+                        Assert.True(GetPrivateField<int>(
+                            window,
+                            "_pendingAllPanePlaybackStartGeneration") >= 0);
+                        compareMode.IsChecked = false;
+                        compareMode.IsChecked = true;
+                    }
+                    finally
+                    {
+                        allPaneGate.Release();
+                    }
+
+                    await startTask!;
+                    await Task.Delay(TimeSpan.FromMilliseconds(200));
+                    Assert.True(
+                        primaryEngine.IsPlaying && compareEngine.IsPlaying,
+                        "The queued master start was not reissued after compare was re-enabled.");
+                    Assert.True(GetPrivateField<bool>(
+                        window,
+                        "_isAllPanePlaybackControlActive"));
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task CompareMode_ReenableAfterHiddenPauseCompletesRestartsMasterPlayback()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var pauseCompletion = new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        PauseCompletion = pauseCompletion
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_isAllPanePlaybackControlActive", true);
+                    var compareMode = RequireControl<CheckBox>(window, "CompareModeCheckBox");
+                    compareMode.IsChecked = true;
+                    compareMode.IsChecked = false;
+
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => compareEngine.PauseCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "The hidden compare pause did not begin.");
+                    compareMode.IsChecked = true;
+                    pauseCompletion.TrySetResult(true);
+
+                    await Task.Delay(TimeSpan.FromMilliseconds(200));
+                    Assert.True(
+                        primaryEngine.IsPlaying && compareEngine.IsPlaying,
+                        "Compare re-enable did not restore the active master transport.");
+                }
+                finally
+                {
+                    pauseCompletion.TrySetResult(true);
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task CompareMode_ReenableAfterMasterPlaybackEndsDoesNotRestartTransport()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_isAllPanePlaybackControlActive", true);
+                    var compareMode = RequireControl<CheckBox>(window, "CompareModeCheckBox");
+                    compareMode.IsChecked = true;
+                    compareMode.IsChecked = false;
+
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => compareEngine.PauseCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "The hidden compare pane was not paused.");
+                    primaryEngine.IsPlaying = false;
+                    compareMode.IsChecked = true;
+
+                    await Task.Delay(TimeSpan.FromMilliseconds(200));
+
+                    Assert.Equal(0, primaryEngine.PlayCallCount);
+                    Assert.Equal(0, compareEngine.PlayCallCount);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task CompareMode_HiddenComparePauseDoesNotBlockPrimaryLocalPlayback()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                var pauseCompletion = new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine { IsMediaOpen = true };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true,
+                        PauseCompletion = pauseCompletion
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    var compareMode = RequireControl<CheckBox>(window, "CompareModeCheckBox");
+                    compareMode.IsChecked = true;
+                    compareMode.IsChecked = false;
+
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => compareEngine.PauseCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "The hidden compare pause did not begin.");
+                    var primaryStartTask = (Task)InvokePrivate(
+                        window,
+                        "StartPlaybackAsync",
+                        (SynchronizedOperationScope?)SynchronizedOperationScope.FocusedPane,
+                        "pane-primary");
+
+                    var completedTask = await Task.WhenAny(
+                        primaryStartTask,
+                        Task.Delay(TimeSpan.FromMilliseconds(500)));
+                    Assert.Same(primaryStartTask, completedTask);
+                    Assert.True(primaryEngine.IsPlaying);
+                }
+                finally
+                {
+                    pauseCompletion.TrySetResult(true);
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task CompareMode_ReenableDuringAllPaneLoopRestartRestartsBothPanes()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine { IsMediaOpen = true };
+                    var compareEngine = new TestVideoReviewEngine { IsMediaOpen = true };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_allPaneLoopRestartInFlight", 1);
+                    var compareMode = RequireControl<CheckBox>(window, "CompareModeCheckBox");
+                    compareMode.IsChecked = true;
+                    compareMode.IsChecked = false;
+                    compareMode.IsChecked = true;
+
+                    await Task.Delay(TimeSpan.FromMilliseconds(200));
+                    Assert.True(primaryEngine.IsPlaying && compareEngine.IsPlaying);
+                }
+                finally
+                {
+                    SetPrivateField(window, "_allPaneLoopRestartInFlight", 0);
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task CompareMode_DisablingComparePausesHiddenComparePaneOnce()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = true
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(
+                        window,
+                        "_compareFrameBuffer",
+                        CreateFrameBuffer(8, 4, TimeSpan.FromSeconds(1)));
+                    var compareMode = RequireControl<CheckBox>(window, "CompareModeCheckBox");
+                    compareMode.IsChecked = true;
+                    compareMode.IsChecked = false;
+
+                    Assert.True(
+                        SpinWait.SpinUntil(
+                            () => compareEngine.PauseCallCount == 1,
+                            TimeSpan.FromSeconds(2)),
+                        "The hidden compare pane was not paused.");
+                    Assert.False(compareEngine.IsPlaying);
+                    Assert.True(primaryEngine.IsPlaying);
+                    Assert.Equal(1, compareEngine.PauseCallCount);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task ComparePlayback_LocalMasterSeekRefreshesOnlyMasterReadout()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        MediaInfo = CreateMediaInfo("left.mp4", TimeSpan.FromSeconds(5)),
+                        Position = new ReviewPosition(
+                            TimeSpan.FromSeconds(1),
+                            24,
+                            isFrameAccurate: true,
+                            isFrameIndexAbsolute: true,
+                            presentationTimestamp: 90_000,
+                            decodeTimestamp: 90_000)
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        MediaInfo = CreateMediaInfo("right.mp4", TimeSpan.FromSeconds(20)),
+                        Position = new ReviewPosition(
+                            TimeSpan.FromSeconds(7),
+                            168,
+                            isFrameAccurate: true,
+                            isFrameIndexAbsolute: true,
+                            presentationTimestamp: 630_000,
+                            decodeTimestamp: 630_000)
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_isCompareModeSelected", true);
+                    SetPrivateField(window, "_isAllPaneTransportSelected", true);
+                    RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+
+                    var comparePane = ParsePane("Compare");
+                    await InvokePrivateTask(
+                        window,
+                        "SeekPaneToTimePreservingPlaybackAsync",
+                        new[]
+                        {
+                            comparePane.GetType(),
+                            typeof(TimeSpan),
+                            typeof(CancellationToken)
+                        },
+                        comparePane,
+                        TimeSpan.FromSeconds(7),
+                        CancellationToken.None);
+
+                    Assert.Equal(20d, RequireControl<Slider>(window, "PositionSlider").Maximum);
+                    Assert.Equal(7d, RequireControl<Slider>(window, "PositionSlider").Value);
+                    Assert.Equal("00:00:07.000", RequireControl<TextBlock>(window, "CurrentPositionTextBlock").Text);
+                    Assert.Equal("169", RequireControl<TextBox>(window, "FrameNumberTextBox").Text);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public async Task ComparePlayback_LocalMasterSeekDoesNotQueueDelayedSliderSynchronization()
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        MediaInfo = CreateMediaInfo("left.mp4", TimeSpan.FromSeconds(5)),
+                        Position = new ReviewPosition(
+                            TimeSpan.FromSeconds(1),
+                            24,
+                            isFrameAccurate: true,
+                            isFrameIndexAbsolute: true,
+                            presentationTimestamp: 90_000,
+                            decodeTimestamp: 90_000)
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        MediaInfo = CreateMediaInfo("right.mp4", TimeSpan.FromSeconds(20)),
+                        Position = new ReviewPosition(
+                            TimeSpan.FromSeconds(7),
+                            168,
+                            isFrameAccurate: true,
+                            isFrameIndexAbsolute: true,
+                            presentationTimestamp: 630_000,
+                            decodeTimestamp: 630_000)
+                    };
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_isCompareModeSelected", true);
+                    SetPrivateField(window, "_isAllPaneTransportSelected", true);
+                    RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+
+                    var comparePane = ParsePane("Compare");
+                    await InvokePrivateTask(
+                        window,
+                        "SeekPaneToTimePreservingPlaybackAsync",
+                        new[]
+                        {
+                            comparePane.GetType(),
+                            typeof(TimeSpan),
+                            typeof(CancellationToken)
+                        },
+                        comparePane,
+                        TimeSpan.FromSeconds(7),
+                        CancellationToken.None);
+
+                    await Task.Delay(TimeSpan.FromMilliseconds(200));
+                    Dispatcher.UIThread.RunJobs();
+
+                    Assert.Equal(0, primaryEngine.SeekToTimeCallCount);
+                    Assert.Equal(1, compareEngine.SeekToTimeCallCount);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Fact]
+        public void MainSharedTransport_MasterVisualShowsPauseForAnyActiveSharedPlaybackPane()
         {
             var mainWindowSource = ReadRepositoryFile(
                 "src",
@@ -7993,12 +8582,23 @@ namespace FramePlayer.Avalonia.Tests
             var visualRuleMethod = ExtractMethodBody(
                 mainWindowSource,
                 "private bool ShouldShowMainPauseAction()",
+                "private bool IsMasterTransportDisplayPlaying()");
+            var displayRuleMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private bool IsMasterTransportDisplayPlaying()",
                 "private static string FormatFrameNumberEntry(");
+            var toggleAllPaneMethod = ExtractMethodBody(
+                mainWindowSource,
+                "private async Task ToggleAllPanePlaybackAsync()",
+                "private async Task ToggleFocusedPanePlaybackAsync()");
 
             Assert.Contains("UpdateMainPlayPauseVisual();", applyPrimaryMethod, StringComparison.Ordinal);
             Assert.DoesNotContain("\n            PlayPausePlayIcon.IsVisible = !state.IsPlaying;", applyPrimaryMethod, StringComparison.Ordinal);
             Assert.Contains("ShouldShowMainPauseAction()", visualMethod, StringComparison.Ordinal);
-            Assert.Contains("return ShouldPauseAllPanePlayback();", visualRuleMethod, StringComparison.Ordinal);
+            Assert.Contains("return IsMasterTransportDisplayPlaying();", visualRuleMethod, StringComparison.Ordinal);
+            Assert.Contains("Volatile.Read(ref _isAllPanePlaybackControlActive)", displayRuleMethod, StringComparison.Ordinal);
+            Assert.Contains("return IsAnyAllPanePlaybackPlaying(_primaryEngine, _compareEngine);", displayRuleMethod, StringComparison.Ordinal);
+            Assert.Contains("if (ShouldPauseAllPanePlayback())", toggleAllPaneMethod, StringComparison.Ordinal);
         }
 
         [Fact]
@@ -8639,47 +9239,6 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
-        public void CompareMode_HidesPaneTimelineLoopPlaybackToggle()
-        {
-            _fixture.Run(() =>
-            {
-                var window = new MainWindow();
-                try
-                {
-                    SetPrivateField(
-                        window,
-                        "_primaryEngine",
-                        new TestVideoReviewEngine { IsMediaOpen = true });
-                    SetPrivateField(
-                        window,
-                        "_compareEngine",
-                        new TestVideoReviewEngine { IsMediaOpen = true });
-                    RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
-
-                    var timeline = RequireControl<Slider>(
-                        window,
-                        "PrimaryPanePositionSlider");
-                    var menu = Assert.IsType<ContextMenu>(timeline.ContextMenu);
-                    menu.Open(timeline);
-
-                    var loopPlaybackItem = Assert.Single(
-                        menu.Items
-                            .OfType<MenuItem>()
-                            .Where(item => string.Equals(
-                                item.Header?.ToString(),
-                                "Loop Playback",
-                                StringComparison.Ordinal)));
-                    Assert.False(loopPlaybackItem.IsVisible);
-                    menu.Close();
-                }
-                finally
-                {
-                    window.Close();
-                }
-            });
-        }
-
-        [Fact]
         public void CompareMode_UsesPrimaryLoopStateToNormalizeLegacyPaneState()
         {
             _fixture.Run(() =>
@@ -9011,68 +9570,384 @@ namespace FramePlayer.Avalonia.Tests
             });
         }
 
-        [Fact]
-        public void RightClickContextMenus_ExposeWindowsParityCommands()
+        [Collection(MacReleaseCandidateTestGroup.Name)]
+        public sealed class ContextMenuTests
         {
-            _fixture.Run(() =>
-            {
-                var window = new MainWindow();
-                try
-                {
-                    AssertContextMenuHeaders(
-                        RequireControl<Border>(window, "CustomVideoSurfaceHost").ContextMenu,
-                        "Video Info...",
-                        "Reset Zoom",
-                        "Save Loop As Clip...",
-                        "Export Side-by-Side Compare...");
-                    AssertContextMenuHeaders(
-                        RequireControl<Border>(window, "CompareVideoSurfaceHost").ContextMenu,
-                        "Video Info...",
-                        "Reset Zoom",
-                        "Save Loop As Clip...",
-                        "Export Side-by-Side Compare...");
+            private readonly MacReleaseCandidateHeadlessFixture _fixture;
 
-                    foreach (var sliderName in TimelineSliderNames)
+            public ContextMenuTests(MacReleaseCandidateHeadlessFixture fixture)
+            {
+                _fixture = fixture;
+            }
+
+            [Fact]
+            [Trait("Category", "ContextMenu")]
+            public void CompareMode_HidesPaneTimelineLoopPlaybackToggle()
+            {
+                _fixture.Run(() =>
+                {
+                    var window = new MainWindow();
+                    try
                     {
-                        AssertContextMenuHeaders(
-                            RequireControl<Slider>(window, sliderName).ContextMenu,
+                        SetPrivateField(
+                            window,
+                            "_primaryEngine",
+                            new TestVideoReviewEngine { IsMediaOpen = true });
+                        SetPrivateField(
+                            window,
+                            "_compareEngine",
+                            new TestVideoReviewEngine { IsMediaOpen = true });
+                        RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+
+                        var timeline = RequireControl<Slider>(
+                            window,
+                            "PrimaryPanePositionSlider");
+                        var menu = OpenContextMenuWithRightClick(window, timeline);
+
+                        var loopPlaybackItem = Assert.Single(
+                            menu.Items
+                                .OfType<MenuItem>()
+                                .Where(item => string.Equals(
+                                    item.Header?.ToString(),
+                                    "Loop Playback",
+                                    StringComparison.Ordinal)));
+                        Assert.False(loopPlaybackItem.IsVisible);
+                        menu.Close();
+                    }
+                    finally
+                    {
+                        window.Close();
+                    }
+                });
+            }
+
+            [Fact]
+            [Trait("Category", "ContextMenu")]
+            public void RightClickSurfaceContextMenus_OfferReadableOpenActionsBeforeMediaLoads()
+            {
+                _fixture.Run(() =>
+                {
+                    var recentFilesRoot = Path.Combine(
+                        Path.GetTempPath(),
+                        "frame-player-context-menu-" + Guid.NewGuid().ToString("N"));
+                    var window = new MainWindow();
+                    try
+                    {
+                        var recentFilesPath = Path.Combine(
+                            recentFilesRoot,
+                            "recent-files.txt");
+                        SetPrivateField(
+                            window,
+                            "_recentFilesService",
+                            new UnifiedRecentFilesService(recentFilesPath));
+                        var primaryHost = RequireControl<Border>(window, "CustomVideoSurfaceHost");
+                        var primaryMenu = OpenContextMenuWithRightClick(window, primaryHost);
+
+                        Assert.True(primaryMenu.IsOpen);
+                        AssertVisibleContextMenuHeaders(primaryMenu, "Open Video...", "Open Recent");
+                        var openVideo = RequireContextMenuItem(primaryMenu, "Open Video...");
+                        var openRecent = RequireContextMenuItem(primaryMenu, "Open Recent");
+                        Assert.True(openVideo.IsEnabled);
+                        Assert.True(openRecent.IsEnabled);
+                        var noRecentFiles = Assert.Single(openRecent.Items.OfType<MenuItem>());
+                        Assert.Equal("No Recent Files", noRecentFiles.Header);
+                        Assert.False(noRecentFiles.IsEnabled);
+                        Assert.All(
+                            openRecent.Items.OfType<MenuItem>(),
+                            item =>
+                            {
+                                Assert.False(string.IsNullOrWhiteSpace(item.Header?.ToString()));
+                                Assert.Contains("frame-context-menu-item", item.Classes);
+                            });
+                        Assert.False(RequireContextMenuItem(primaryMenu, "Video Info...").IsVisible);
+                        Assert.False(RequireContextMenuItem(primaryMenu, "Set Position A Here").IsVisible);
+                        AssertContextMenuPalette(primaryMenu);
+                        AssertBrushColor("#1A2028", primaryMenu.Background);
+                        AssertBrushColor("#F3F4F6", openVideo.Foreground);
+                        AssertBrushContrastAtLeast(4.5d, openVideo.Foreground, primaryMenu.Background);
+                        Assert.Equal(1d, openVideo.Opacity);
+                        AssertBrushColor("#B7BDC6", noRecentFiles.Foreground);
+                        AssertBrushContrastAtLeast(4.5d, noRecentFiles.Foreground, primaryMenu.Background);
+                        Assert.Equal(1d, noRecentFiles.Opacity);
+                        HoverContextMenuItem(primaryMenu, "Open Video...");
+                        Assert.True(openVideo.IsPointerOver);
+                        AssertBrushColor("#2A2F37", openVideo.Background);
+                        primaryMenu.Close();
+
+                        var mainTimeline = RequireControl<Slider>(window, "PositionSlider");
+                        var mainTimelineMenu = Assert.IsType<ContextMenu>(mainTimeline.ContextMenu);
+                        RightClick(window, mainTimeline);
+                        Assert.False(mainTimelineMenu.IsOpen);
+
+                        RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+                        var compareHost = RequireControl<Border>(window, "CompareVideoSurfaceHost");
+                        var compareMenu = OpenContextMenuWithRightClick(window, compareHost);
+                        AssertVisibleContextMenuHeaders(compareMenu, "Open Compare Video...", "Open Recent");
+                        Assert.True(RequireContextMenuItem(compareMenu, "Open Compare Video...").IsEnabled);
+                        Assert.False(RequireContextMenuItem(compareMenu, "Video Info...").IsVisible);
+                        compareMenu.Close();
+                    }
+                    finally
+                    {
+                        window.Close();
+                        if (Directory.Exists(recentFilesRoot))
+                        {
+                            Directory.Delete(recentFilesRoot, recursive: true);
+                        }
+                    }
+                });
+            }
+
+            [Fact]
+            [Trait("Category", "ContextMenu")]
+            public void RightClickSurfaceContextMenu_LoadedStateRunsReviewCommandsAtPresentedFrame()
+            {
+                _fixture.Run(() =>
+                {
+                    var window = new MainWindow();
+                    try
+                    {
+                        var engine = new TestVideoReviewEngine
+                        {
+                            IsMediaOpen = true,
+                            CurrentFilePath = "primary.mp4",
+                            Position = new ReviewPosition(TimeSpan.FromSeconds(9), 270, true, true, 810_000, 810_000)
+                        };
+                        SetPrivateField(window, "_primaryEngine", engine);
+                        using var firstPresentedFrame = CreateFrameBuffer(8, 4, TimeSpan.FromSeconds(1));
+                        InvokePrivate(
+                            window,
+                            "PrimaryEngine_FramePresented",
+                            null!,
+                            new FramePresentedEventArgs(firstPresentedFrame));
+                        InvokePrivate(window, "PresentPendingFrame", ParsePane("Primary"));
+
+                        var host = RequireControl<Border>(window, "CustomVideoSurfaceHost");
+                        var menu = OpenContextMenuWithRightClick(window, host);
+
+                        AssertVisibleContextMenuHeaders(
+                            menu,
+                            "Video Info...",
                             "Set Position A Here",
                             "Set Position B Here",
+                            "Clear Loop Points",
                             "Loop Playback",
+                            "Zoom In",
+                            "Zoom Out",
+                            "Reset Zoom",
                             "Save Loop As Clip...");
+                        Assert.False(RequireContextMenuItem(menu, "Open Video...").IsVisible);
+                        Assert.False(RequireContextMenuItem(menu, "Open Recent").IsVisible);
+                        Assert.False(RequireContextMenuItem(menu, "Export Side-by-Side Compare...").IsVisible);
+
+                        var setPositionA = RequireContextMenuItem(menu, "Set Position A Here");
+                        var setPositionB = RequireContextMenuItem(menu, "Set Position B Here");
+                        var clearLoopPoints = RequireContextMenuItem(menu, "Clear Loop Points");
+                        var loopPlayback = RequireContextMenuItem(menu, "Loop Playback");
+                        var zoomIn = RequireContextMenuItem(menu, "Zoom In");
+                        var zoomOut = RequireContextMenuItem(menu, "Zoom Out");
+                        var resetZoom = RequireContextMenuItem(menu, "Reset Zoom");
+                        Assert.True(RequireContextMenuItem(menu, "Video Info...").IsEnabled);
+                        Assert.True(setPositionA.IsEnabled);
+                        Assert.True(setPositionB.IsEnabled);
+                        Assert.False(clearLoopPoints.IsEnabled);
+                        Assert.True(loopPlayback.IsEnabled);
+                        Assert.False(loopPlayback.IsChecked);
+                        Assert.True(zoomIn.IsEnabled);
+                        Assert.False(zoomOut.IsEnabled);
+                        Assert.False(resetZoom.IsEnabled);
+                        Assert.False(RequireContextMenuItem(menu, "Save Loop As Clip...").IsEnabled);
+                        AssertBrushColor("#1A2028", menu.Background);
+                        AssertBrushColor("#F3F4F6", setPositionA.Foreground);
+                        AssertBrushColor("#B7BDC6", resetZoom.Foreground);
+                        AssertBrushContrastAtLeast(4.5d, setPositionA.Foreground, menu.Background);
+                        AssertBrushContrastAtLeast(4.5d, resetZoom.Foreground, menu.Background);
+                        Assert.Equal(1d, resetZoom.Opacity);
+
+                        ClickContextMenuItem(menu, "Set Position A Here");
+                        var range = GetPrivateField<LoopPlaybackPaneRangeSnapshot>(window, "_primaryLoopRange");
+                        Assert.NotNull(range);
+                        Assert.Equal(TimeSpan.FromSeconds(1), range!.LoopIn?.PresentationTime);
+
+                        engine.Position = new ReviewPosition(TimeSpan.FromSeconds(8), 240, true, true, 720_000, 720_000);
+                        using var secondPresentedFrame = CreateFrameBuffer(8, 4, TimeSpan.FromSeconds(2));
+                        InvokePrivate(
+                            window,
+                            "PrimaryEngine_FramePresented",
+                            null!,
+                            new FramePresentedEventArgs(secondPresentedFrame));
+                        InvokePrivate(window, "PresentPendingFrame", ParsePane("Primary"));
+                        menu = OpenContextMenuWithRightClick(window, host);
+                        ClickContextMenuItem(menu, "Set Position B Here");
+                        range = GetPrivateField<LoopPlaybackPaneRangeSnapshot>(window, "_primaryLoopRange");
+                        Assert.Equal(TimeSpan.FromSeconds(2), range!.LoopOut?.PresentationTime);
+
+                        menu = OpenContextMenuWithRightClick(window, host);
+                        Assert.True(RequireContextMenuItem(menu, "Set Position A Here").IsEnabled);
+                        using var advancedPresentedFrame = CreateFrameBuffer(8, 4, TimeSpan.FromSeconds(3));
+                        InvokePrivate(
+                            window,
+                            "PrimaryEngine_FramePresented",
+                            null!,
+                            new FramePresentedEventArgs(advancedPresentedFrame));
+                        InvokePrivate(window, "PresentPendingFrame", ParsePane("Primary"));
+                        ClickContextMenuItem(menu, "Set Position A Here");
+                        range = GetPrivateField<LoopPlaybackPaneRangeSnapshot>(window, "_primaryLoopRange");
+                        Assert.Equal(TimeSpan.FromSeconds(1), range!.LoopIn?.PresentationTime);
+                        Assert.Equal(TimeSpan.FromSeconds(2), range.LoopOut?.PresentationTime);
+                        Assert.False(range.IsInvalidRange);
+                        Assert.Equal("Could not set position A here.", RequireControl<TextBlock>(window, "CacheStatusTextBlock").Text);
+
+                        menu = OpenContextMenuWithRightClick(window, host);
+                        clearLoopPoints = RequireContextMenuItem(menu, "Clear Loop Points");
+                        Assert.True(clearLoopPoints.IsEnabled);
+                        Assert.Equal(
+                            ClipExportService.IsBundledRuntimeAvailable,
+                            RequireContextMenuItem(menu, "Save Loop As Clip...").IsEnabled);
+                        ClickContextMenuItem(menu, "Clear Loop Points");
+                        Assert.False(GetPrivateField<LoopPlaybackPaneRangeSnapshot>(window, "_primaryLoopRange")!.HasAnyMarkers);
+
+                        menu = OpenContextMenuWithRightClick(window, host);
+                        ClickContextMenuItem(menu, "Loop Playback");
+                        Assert.True(GetPrivateField<bool>(window, "_isPrimaryLoopPlaybackEnabled"));
+                        Assert.False(GetPrivateField<bool>(window, "_isCompareLoopPlaybackEnabled"));
+                        menu = OpenContextMenuWithRightClick(window, host);
+                        var checkedLoopPlayback = RequireContextMenuItem(menu, "Loop Playback");
+                        Assert.True(checkedLoopPlayback.IsChecked);
+                        AssertBrushColor("#1D2934", checkedLoopPlayback.Background);
+
+                        ClickContextMenuItem(menu, "Zoom In");
+                        Assert.True(GetPrivateField<double>(window, "_primaryZoomFactor") > 1d);
+                        menu = OpenContextMenuWithRightClick(window, host);
+                        Assert.True(RequireContextMenuItem(menu, "Zoom Out").IsEnabled);
+                        Assert.True(RequireContextMenuItem(menu, "Reset Zoom").IsEnabled);
+                        menu.Close();
                     }
-                }
-                finally
-                {
-                    window.Close();
-                }
-            });
-        }
-
-        [Fact]
-        public void RightClickContextMenus_UseMainMenuPaletteClasses()
-        {
-            _fixture.Run(() =>
-            {
-                var window = new MainWindow();
-                try
-                {
-                    AssertContextMenuPalette(
-                        RequireControl<Border>(window, "CustomVideoSurfaceHost").ContextMenu);
-                    AssertContextMenuPalette(
-                        RequireControl<Border>(window, "CompareVideoSurfaceHost").ContextMenu);
-
-                    foreach (var sliderName in TimelineSliderNames)
+                    finally
                     {
-                        AssertContextMenuPalette(
-                            RequireControl<Slider>(window, sliderName).ContextMenu);
+                        window.Close();
                     }
-                }
-                finally
+                });
+            }
+
+            [Fact]
+            [Trait("Category", "ContextMenu")]
+            public void RightClickContextMenus_KeepCompareActionsPaneScopedAndSuppressSharedTimelineMenu()
+            {
+                _fixture.Run(() =>
                 {
-                    window.Close();
-                }
-            });
+                    var window = new MainWindow();
+                    try
+                    {
+                        var primaryEngine = new TestVideoReviewEngine
+                        {
+                            IsMediaOpen = true,
+                            CurrentFilePath = "primary.mp4",
+                            Position = new ReviewPosition(TimeSpan.FromSeconds(1), 30, true, true, 90_000, 90_000)
+                        };
+                        var compareEngine = new TestVideoReviewEngine
+                        {
+                            IsMediaOpen = true,
+                            CurrentFilePath = "compare.mp4",
+                            Position = new ReviewPosition(TimeSpan.FromSeconds(9), 270, true, true, 810_000, 810_000)
+                        };
+                        SetPrivateField(window, "_primaryEngine", primaryEngine);
+                        SetPrivateField(window, "_compareEngine", compareEngine);
+                        RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+                        using var comparePresentedFrame = CreateFrameBuffer(8, 4, TimeSpan.FromSeconds(4));
+                        InvokePrivate(
+                            window,
+                            "CompareEngine_FramePresented",
+                            null!,
+                            new FramePresentedEventArgs(comparePresentedFrame));
+                        InvokePrivate(window, "PresentPendingFrame", ParsePane("Compare"));
+
+                        var compareHost = RequireControl<Border>(window, "CompareVideoSurfaceHost");
+                        var compareMenu = OpenContextMenuWithRightClick(window, compareHost);
+                        Assert.Contains(
+                            "Export Side-by-Side Compare...",
+                            GetVisibleContextMenuHeaders(compareMenu));
+                        Assert.Equal(
+                            CompareSideBySideExportService.IsBundledRuntimeAvailable,
+                            RequireContextMenuItem(
+                                compareMenu,
+                                "Export Side-by-Side Compare...").IsEnabled);
+                        ClickContextMenuItem(compareMenu, "Set Position A Here");
+
+                        var primaryRange = GetPrivateField<LoopPlaybackPaneRangeSnapshot>(window, "_primaryLoopRange");
+                        var compareRange = GetPrivateField<LoopPlaybackPaneRangeSnapshot>(window, "_compareLoopRange");
+                        Assert.False(primaryRange!.HasAnyMarkers);
+                        Assert.Equal(TimeSpan.FromSeconds(4), compareRange!.LoopIn?.PresentationTime);
+
+                        compareMenu = OpenContextMenuWithRightClick(window, compareHost);
+                        ClickContextMenuItem(compareMenu, "Loop Playback");
+                        Assert.True(GetPrivateField<bool>(window, "_isPrimaryLoopPlaybackEnabled"));
+                        Assert.True(GetPrivateField<bool>(window, "_isCompareLoopPlaybackEnabled"));
+
+                        SetPrivateField(window, "_primaryLoopRange", CreateLoopRange("pane-primary", "primary.mp4"));
+                        compareMenu = OpenContextMenuWithRightClick(window, compareHost);
+                        ClickContextMenuItem(compareMenu, "Clear Loop Points");
+                        Assert.False(GetPrivateField<LoopPlaybackPaneRangeSnapshot>(window, "_primaryLoopRange")!.HasAnyMarkers);
+                        Assert.False(GetPrivateField<LoopPlaybackPaneRangeSnapshot>(window, "_compareLoopRange")!.HasAnyMarkers);
+                        compareMenu.Close();
+
+                        var sharedTimeline = RequireControl<Slider>(window, "PositionSlider");
+                        var sharedTimelineMenu = Assert.IsType<ContextMenu>(sharedTimeline.ContextMenu);
+                        RightClick(window, sharedTimeline);
+                        Assert.False(sharedTimelineMenu.IsOpen);
+                    }
+                    finally
+                    {
+                        window.Close();
+                    }
+                });
+            }
+
+            [Fact]
+            [Trait("Category", "ContextMenu")]
+            public void RightClickTimelineContextMenu_RecalculatesTargetAndDisablesInvalidMarkerOrder()
+            {
+                _fixture.Run(() =>
+                {
+                    var window = new MainWindow();
+                    try
+                    {
+                        var engine = new TestVideoReviewEngine
+                        {
+                            IsMediaOpen = true,
+                            CurrentFilePath = "primary.mp4",
+                            Position = new ReviewPosition(TimeSpan.Zero, 0, true, true, 0, 0)
+                        };
+                        SetPrivateField(window, "_primaryEngine", engine);
+                        InvokePrivate(window, "UpdateCommandStates");
+                        var timeline = RequireControl<Slider>(window, "PositionSlider");
+                        timeline.Maximum = 10d;
+
+                        var menu = OpenContextMenuWithRightClick(window, timeline, 0.3d);
+                        ClickContextMenuItem(menu, "Set Position A Here");
+                        Assert.Equal(TimeSpan.FromSeconds(3), engine.Position.PresentationTime);
+                        Assert.Equal(
+                            TimeSpan.FromSeconds(3),
+                            GetPrivateField<LoopPlaybackPaneRangeSnapshot>(window, "_primaryLoopRange")!.LoopIn?.PresentationTime);
+
+                        menu = OpenContextMenuWithRightClick(window, timeline, 0.5d);
+                        ClickContextMenuItem(menu, "Set Position B Here");
+                        Assert.Equal(TimeSpan.FromSeconds(5), engine.Position.PresentationTime);
+
+                        menu = OpenContextMenuWithRightClick(window, timeline, 0.6d);
+                        Assert.False(RequireContextMenuItem(menu, "Set Position A Here").IsEnabled);
+
+                        menu.Close();
+                        menu = OpenContextMenuWithRightClick(window, timeline, 0.4d);
+                        Assert.True(RequireContextMenuItem(menu, "Set Position A Here").IsEnabled);
+                        menu.Close();
+                    }
+                    finally
+                    {
+                        window.Close();
+                    }
+                });
+            }
         }
 
         [Fact]
@@ -9638,15 +10513,99 @@ namespace FramePlayer.Avalonia.Tests
             }
         }
 
-        private static void AssertContextMenuHeaders(ContextMenu? menu, params string[] expectedHeaders)
+        private static void AssertVisibleContextMenuHeaders(ContextMenu menu, params string[] expectedHeaders)
         {
-            Assert.NotNull(menu);
-            Assert.Equal(
-                expectedHeaders,
-                menu!.Items
-                    .OfType<MenuItem>()
-                    .Select(item => item.Header?.ToString() ?? string.Empty)
-                    .ToArray());
+            Assert.Equal(expectedHeaders, GetVisibleContextMenuHeaders(menu));
+        }
+
+        private static string[] GetVisibleContextMenuHeaders(ContextMenu menu)
+        {
+            return menu.Items
+                .OfType<MenuItem>()
+                .Where(item => item.IsVisible)
+                .Select(item => item.Header?.ToString() ?? string.Empty)
+                .ToArray();
+        }
+
+        private static MenuItem RequireContextMenuItem(ContextMenu menu, string header)
+        {
+            return menu.Items
+                .OfType<MenuItem>()
+                .FirstOrDefault(item => string.Equals(item.Header?.ToString(), header, StringComparison.Ordinal))
+                ?? throw new InvalidOperationException("Missing context menu item: " + header);
+        }
+
+        private static ContextMenu OpenContextMenuWithRightClick(
+            Window window,
+            Control target,
+            double horizontalRatio = 0.5d)
+        {
+            var menu = Assert.IsType<ContextMenu>(target.ContextMenu);
+            RightClick(window, target, horizontalRatio);
+            Assert.True(menu.IsOpen);
+            return menu;
+        }
+
+        private static void RightClick(
+            Window window,
+            Control target,
+            double horizontalRatio = 0.5d)
+        {
+            if (!window.IsVisible)
+            {
+                window.Show();
+            }
+
+            Dispatcher.UIThread.RunJobs();
+            var localPoint = new Point(
+                target.Bounds.Width * Math.Clamp(horizontalRatio, 0d, 1d),
+                target.Bounds.Height / 2d);
+            var windowPoint = target.TranslatePoint(localPoint, window);
+            Assert.True(windowPoint.HasValue);
+
+            window.MouseMove(windowPoint.Value, RawInputModifiers.None);
+            window.MouseDown(windowPoint.Value, MouseButton.Right, RawInputModifiers.None);
+            window.MouseUp(windowPoint.Value, MouseButton.Right, RawInputModifiers.None);
+            Dispatcher.UIThread.RunJobs();
+        }
+
+        private static void ClickContextMenuItem(ContextMenu menu, string header)
+        {
+            var item = RequireContextMenuItem(menu, header);
+            Assert.True(menu.IsOpen);
+            Assert.True(item.IsVisible);
+            Assert.True(item.IsEnabled);
+            Dispatcher.UIThread.RunJobs();
+
+            var popup = TopLevel.GetTopLevel(item);
+            Assert.NotNull(popup);
+            var itemPoint = item.TranslatePoint(
+                new Point(item.Bounds.Width / 2d, item.Bounds.Height / 2d),
+                popup);
+            Assert.True(itemPoint.HasValue);
+
+            popup!.MouseMove(itemPoint.Value, RawInputModifiers.None);
+            popup.MouseDown(itemPoint.Value, MouseButton.Left, RawInputModifiers.None);
+            popup.MouseUp(itemPoint.Value, MouseButton.Left, RawInputModifiers.None);
+            Dispatcher.UIThread.RunJobs();
+            Assert.False(menu.IsOpen);
+        }
+
+        private static void HoverContextMenuItem(ContextMenu menu, string header)
+        {
+            var item = RequireContextMenuItem(menu, header);
+            Assert.True(menu.IsOpen);
+            Dispatcher.UIThread.RunJobs();
+
+            var popup = TopLevel.GetTopLevel(item);
+            Assert.NotNull(popup);
+            var itemPoint = item.TranslatePoint(
+                new Point(item.Bounds.Width / 2d, item.Bounds.Height / 2d),
+                popup);
+            Assert.True(itemPoint.HasValue);
+
+            popup!.MouseMove(itemPoint.Value, RawInputModifiers.None);
+            Dispatcher.UIThread.RunJobs();
         }
 
         private static void AssertMenuItemHeaders(MenuItem menuItem, params string[] expectedHeaders)
@@ -9971,6 +10930,35 @@ namespace FramePlayer.Avalonia.Tests
         {
             var solid = Assert.IsAssignableFrom<ISolidColorBrush>(brush);
             Assert.Equal(Color.Parse(expectedColor), solid.Color);
+        }
+
+        private static void AssertBrushContrastAtLeast(double minimumRatio, IBrush? foreground, IBrush? background)
+        {
+            var foregroundColor = Assert.IsAssignableFrom<ISolidColorBrush>(foreground).Color;
+            var backgroundColor = Assert.IsAssignableFrom<ISolidColorBrush>(background).Color;
+            var foregroundLuminance = GetRelativeLuminance(foregroundColor);
+            var backgroundLuminance = GetRelativeLuminance(backgroundColor);
+            var lighter = Math.Max(foregroundLuminance, backgroundLuminance);
+            var darker = Math.Min(foregroundLuminance, backgroundLuminance);
+            var ratio = (lighter + 0.05d) / (darker + 0.05d);
+            Assert.True(
+                ratio >= minimumRatio,
+                $"Expected contrast ratio of at least {minimumRatio:F1}:1, but found {ratio:F2}:1.");
+        }
+
+        private static double GetRelativeLuminance(Color color)
+        {
+            return (0.2126d * LinearizeColorChannel(color.R)) +
+                   (0.7152d * LinearizeColorChannel(color.G)) +
+                   (0.0722d * LinearizeColorChannel(color.B));
+        }
+
+        private static double LinearizeColorChannel(byte channel)
+        {
+            var value = channel / 255d;
+            return value <= 0.04045d
+                ? value / 12.92d
+                : Math.Pow((value + 0.055d) / 1.055d, 2.4d);
         }
 
         private readonly struct RenderedColor
