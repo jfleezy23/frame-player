@@ -1,0 +1,12 @@
+{
+  "runtimeSource": "Self-built Intel runtime produced by scripts/ffmpeg/Build-FFmpeg-macOS-8.1.sh on the Mac Pro release host",
+  "sourceRepository": "https://git.ffmpeg.org/ffmpeg.git",
+  "sourceTag": "n8.1.2",
+  "sourceCommit": "38b88335f99e76ed89ff3c93f877fdefce736c13",
+  "x264Commit": "0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee",
+  "ffmpegVersion": "n8.1.2-frameplayer-macos-source",
+  "assetName": "FramePlayer-ffmpeg-runtime-osx-x64-8.1.2.zip",
+  "tag": "v2.1.1-beta.1",
+  "assetUrl": "https://github.com/jfleezy23/frame-player/releases/download/v2.1.1-beta.1/FramePlayer-ffmpeg-runtime-osx-x64-8.1.2.zip",
+  "assetSha256": "aa6eba1a0b8b92617fd38c32211fe73596513c472c2b364737cfbadc2b438f8e"
+}
