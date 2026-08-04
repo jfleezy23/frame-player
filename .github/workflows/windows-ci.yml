@@ -23,12 +23,51 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Detect docs-only change
+        id: changes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $docsOnly = $false
+          $changedFiles = @()
+          if ("${{ github.event_name }}" -eq "pull_request") {
+              $base = "${{ github.event.pull_request.base.sha }}"
+              git fetch --no-tags --depth=1 origin $base
+              $changedFiles = @(git diff --name-only $base HEAD)
+          } elseif ("${{ github.event_name }}" -eq "push") {
+              $base = "${{ github.event.before }}"
+              if ($base -notmatch '^0+$') {
+                  git fetch --no-tags --depth=1 origin $base
+                  $changedFiles = @(git diff --name-only $base HEAD)
+              }
+          }
+
+          if ($changedFiles.Count -gt 0) {
+              $docsOnly = $true
+              foreach ($file in $changedFiles) {
+                  if ($file -notmatch '^(README\.md|SECURITY\.md|THIRD_PARTY_NOTICES\.md|LICENSE|.*\.md|docs/.*|\.github/ISSUE_TEMPLATE/.*)$') {
+                      $docsOnly = $false
+                      break
+                  }
+              }
+          }
+
+          $changedFiles | ForEach-Object { Write-Host "Changed: $_" }
+          "docs_only=$($docsOnly.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
+      - name: Skip docs-only change
+        if: steps.changes.outputs.docs_only == 'true'
+        shell: pwsh
+        run: Write-Host "Docs-only change detected; Windows build and package checks are intentionally short-circuited."
+
       - name: Setup .NET SDK
+        if: steps.changes.outputs.docs_only != 'true'
         uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5
         with:
           global-json-file: .\global.json
 
       - name: Setup Rust toolchain
+        if: steps.changes.outputs.docs_only != 'true'
         shell: pwsh
         run: |
           rustup component add clippy rustfmt
@@ -36,6 +75,7 @@ jobs:
           cargo --version
 
       - name: Check spelling
+        if: steps.changes.outputs.docs_only != 'true'
         shell: pwsh
         run: |
           $toolsDirectory = Join-Path $env:RUNNER_TEMP "frameplayer-typos"
@@ -61,18 +101,22 @@ jobs:
           & $typosExecutable.FullName
 
       - name: Validate repository text and path casing
+        if: steps.changes.outputs.docs_only != 'true'
         shell: pwsh
         run: .\scripts\Test-RepositoryTextHygiene.ps1
 
       - name: Enforce workflow action pinning
+        if: steps.changes.outputs.docs_only != 'true'
         shell: pwsh
         run: .\scripts\Test-WorkflowActionPinning.ps1
 
       - name: Validate harness scripts
+        if: steps.changes.outputs.docs_only != 'true'
         shell: pwsh
         run: .\scripts\Test-RepoHarnessScripts.ps1
 
       - name: Analyze PowerShell scripts
+        if: steps.changes.outputs.docs_only != 'true'
         shell: pwsh
         run: |
           Install-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Scope CurrentUser -Force
@@ -85,6 +129,7 @@ jobs:
           }
 
       - name: Install pinned shell linters
+        if: steps.changes.outputs.docs_only != 'true'
         shell: pwsh
         run: |
           $toolsDirectory = Join-Path $env:RUNNER_TEMP "frameplayer-hygiene-tools"
@@ -125,6 +170,7 @@ jobs:
           $toolsDirectory >> $env:GITHUB_PATH
 
       - name: Analyze shell scripts and workflows
+        if: steps.changes.outputs.docs_only != 'true'
         shell: pwsh
         run: |
           shellcheck --version
@@ -136,6 +182,7 @@ jobs:
           actionlint -shellcheck "shellcheck"
 
       - name: Validate Rust formatting and lints
+        if: steps.changes.outputs.docs_only != 'true'
         shell: pwsh
         run: |
           cargo fmt --manifest-path .\native\frameplayer_ffmpeg_probe\Cargo.toml --all -- --check
@@ -143,27 +190,33 @@ jobs:
           cargo test --manifest-path .\native\frameplayer_ffmpeg_probe\Cargo.toml --all-targets --all-features --locked
 
       - name: Restore pinned FFmpeg runtime
+        if: steps.changes.outputs.docs_only != 'true'
         shell: pwsh
         run: .\scripts\Ensure-DevRuntime.ps1
 
       - name: Restore pinned FFmpeg export tools
+        if: steps.changes.outputs.docs_only != 'true'
         shell: pwsh
         run: .\scripts\Ensure-DevExportTools.ps1
 
       - name: Restore pinned FFmpeg export runtime
+        if: steps.changes.outputs.docs_only != 'true'
         shell: pwsh
         run: .\scripts\Ensure-DevExportRuntime.ps1 -Required
 
       - name: Build Rust FFmpeg probe
+        if: steps.changes.outputs.docs_only != 'true'
         shell: pwsh
         run: .\scripts\Build-RustFfmpegProbe.ps1 -RuntimeIdentifier win-x64
 
       - name: Restore and build
+        if: steps.changes.outputs.docs_only != 'true'
         shell: pwsh
         run: |
           dotnet build .\src\FramePlayer.Avalonia\FramePlayer.Avalonia.csproj -c Release -r win-x64
 
       - name: Verify C# formatting
+        if: steps.changes.outputs.docs_only != 'true'
         shell: pwsh
         run: |
           dotnet format .\src\FramePlayer.Avalonia\FramePlayer.Avalonia.csproj whitespace --verify-no-changes --no-restore
@@ -174,6 +227,7 @@ jobs:
           dotnet format .\tests\FramePlayer.Avalonia.Tests\FramePlayer.Avalonia.Tests.csproj analyzers --diagnostics IDE1006 --severity warn --verify-no-changes --no-restore
 
       - name: Run cold-path unit tests
+        if: steps.changes.outputs.docs_only != 'true'
         shell: pwsh
         run: |
           dotnet test .\tests\FramePlayer.Core.Tests\FramePlayer.Core.Tests.csproj -c Release -r win-x64
@@ -181,6 +235,7 @@ jobs:
           dotnet test .\tests\FramePlayer.Avalonia.Tests\FramePlayer.Avalonia.Tests.csproj -c Release -r win-x64 --filter "Category!=ReleaseCandidate"
 
       - name: Package unified Windows build
+        if: steps.changes.outputs.docs_only != 'true'
         shell: pwsh
         run: |
           .\scripts\Package-UnifiedWindows.ps1
