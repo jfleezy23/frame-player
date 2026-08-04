@@ -3824,7 +3824,17 @@ namespace FramePlayer.Avalonia.Views
 
         private bool ShouldPauseAllPanePlayback()
         {
-            return ShouldPauseAllPanePlayback(_primaryEngine, _compareEngine);
+            return ShouldPauseAllPanePlayback(_primaryEngine, _compareEngine) ||
+                (Volatile.Read(ref _isAllPanePlaybackControlActive) &&
+                    IsAnyAllPanePlaybackPlaying(_primaryEngine, _compareEngine));
+        }
+
+        private static bool IsAnyAllPanePlaybackPlaying(IVideoReviewEngine primaryEngine, IVideoReviewEngine? compareEngine)
+        {
+            return primaryEngine.IsMediaOpen &&
+                compareEngine != null &&
+                compareEngine.IsMediaOpen &&
+                (primaryEngine.IsPlaying || compareEngine.IsPlaying);
         }
 
         private static bool ShouldPauseAllPanePlayback(IVideoReviewEngine primaryEngine, IVideoReviewEngine? compareEngine)
@@ -6026,8 +6036,7 @@ namespace FramePlayer.Avalonia.Views
                     return false;
                 }
 
-                var masterEngine = TryGetExistingEngine(GetMasterTransportPane());
-                return masterEngine != null && masterEngine.IsPlaying;
+                return IsAnyAllPanePlaybackPlaying(_primaryEngine, _compareEngine);
             }
 
             var focusedEngine = TryGetExistingEngine(GetFocusedPane());

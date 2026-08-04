@@ -6238,7 +6238,7 @@ namespace FramePlayer.Avalonia.Tests
         [InlineData(true, false, false)]
         [InlineData(false, true, false)]
         [InlineData(true, true, true)]
-        public void MainSharedTransport_PausesOnlyWhenBothPanesArePlaying(
+        public void MainSharedTransport_PausesLocalPlaybackOnlyWhenBothPanesArePlaying(
             bool primaryPlaying,
             bool comparePlaying,
             bool expectedShouldPause)
@@ -6260,6 +6260,135 @@ namespace FramePlayer.Avalonia.Tests
                 compareEngine);
 
             Assert.Equal(expectedShouldPause, shouldPause);
+        }
+
+        [Theory]
+        [InlineData(false, false, false, false)]
+        [InlineData(false, true, false, false)]
+        [InlineData(false, false, true, false)]
+        [InlineData(false, true, true, true)]
+        [InlineData(true, false, false, false)]
+        [InlineData(true, true, false, true)]
+        [InlineData(true, false, true, true)]
+        [InlineData(true, true, true, true)]
+        public void MainSharedTransport_PauseRuleSeparatesActiveSharedPlaybackFromLocalDivergence(
+            bool sharedPlaybackActive,
+            bool primaryPlaying,
+            bool comparePlaying,
+            bool expectedShouldPause)
+        {
+            _fixture.Run(() =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = primaryPlaying
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = comparePlaying
+                    };
+
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(
+                        window,
+                        "_isAllPanePlaybackControlActive",
+                        sharedPlaybackActive);
+
+                    var shouldPause = (bool)InvokePrivate(
+                        window,
+                        "ShouldPauseAllPanePlayback");
+
+                    Assert.Equal(expectedShouldPause, shouldPause);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task ComparePlayback_MasterPauseStopsLongerPaneAfterShorterPaneEndsWithLoopOff(
+            bool primaryIsLonger)
+        {
+            await _fixture.RunAsync(async () =>
+            {
+                var window = new MainWindow();
+                try
+                {
+                    var shortInfo = CreateMediaInfo("short.mp4", TimeSpan.FromSeconds(5));
+                    var longInfo = CreateMediaInfo("long.mp4", TimeSpan.FromSeconds(20));
+                    var primaryEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = primaryIsLonger,
+                        CurrentFilePath = primaryIsLonger ? "long.mp4" : "short.mp4",
+                        MediaInfo = primaryIsLonger ? longInfo : shortInfo,
+                        Position = new ReviewPosition(
+                            primaryIsLonger ? TimeSpan.FromSeconds(6) : shortInfo.Duration,
+                            primaryIsLonger ? 180 : 149,
+                            isFrameAccurate: true,
+                            isFrameIndexAbsolute: true,
+                            presentationTimestamp: primaryIsLonger ? 540_000 : 450_000,
+                            decodeTimestamp: primaryIsLonger ? 540_000 : 450_000)
+                    };
+                    var compareEngine = new TestVideoReviewEngine
+                    {
+                        IsMediaOpen = true,
+                        IsPlaying = !primaryIsLonger,
+                        CurrentFilePath = primaryIsLonger ? "short.mp4" : "long.mp4",
+                        MediaInfo = primaryIsLonger ? shortInfo : longInfo,
+                        Position = new ReviewPosition(
+                            primaryIsLonger ? shortInfo.Duration : TimeSpan.FromSeconds(6),
+                            primaryIsLonger ? 149 : 180,
+                            isFrameAccurate: true,
+                            isFrameIndexAbsolute: true,
+                            presentationTimestamp: primaryIsLonger ? 450_000 : 540_000,
+                            decodeTimestamp: primaryIsLonger ? 450_000 : 540_000)
+                    };
+
+                    SetPrivateField(window, "_primaryEngine", primaryEngine);
+                    SetPrivateField(window, "_compareEngine", compareEngine);
+                    SetPrivateField(window, "_isCompareModeSelected", true);
+                    SetPrivateField(window, "_isAllPaneTransportSelected", true);
+                    SetPrivateField(window, "_isPrimaryLoopPlaybackEnabled", false);
+                    SetPrivateField(window, "_isCompareLoopPlaybackEnabled", false);
+                    RequireControl<CheckBox>(window, "CompareModeCheckBox").IsChecked = true;
+                    SetPrivateField(window, "_isAllPanePlaybackControlActive", true);
+                    InvokePrivate(window, "UpdateCommandStates");
+
+                    Assert.True(RequireControl<Control>(window, "PlayPausePauseIcon").IsVisible);
+                    Assert.False(RequireControl<Control>(window, "PlayPausePlayIcon").IsVisible);
+                    Assert.Equal("Pause", RequireControl<MenuItem>(window, "PlayPauseMenuItem").Header);
+
+                    await InvokePrivateTask(window, "TogglePlaybackAsync", Type.EmptyTypes)
+                        .WaitAsync(TimeSpan.FromSeconds(2));
+
+                    Assert.False(primaryEngine.IsPlaying);
+                    Assert.False(compareEngine.IsPlaying);
+                    Assert.Equal(1, primaryEngine.PauseCallCount);
+                    Assert.Equal(1, compareEngine.PauseCallCount);
+                    Assert.Equal(0, primaryEngine.PlayCallCount);
+                    Assert.Equal(0, compareEngine.PlayCallCount);
+                    Assert.Equal(
+                        "Paused",
+                        RequireControl<TextBlock>(
+                            window,
+                            "PlaybackStateTextBlock").Text);
+                }
+                finally
+                {
+                    window.Close();
+                }
+            });
         }
 
         [Fact]
@@ -8435,7 +8564,7 @@ namespace FramePlayer.Avalonia.Tests
         }
 
         [Fact]
-        public void MainSharedTransport_MasterVisualTracksDisplayPaneWithoutChangingToggleRule()
+        public void MainSharedTransport_MasterVisualShowsPauseForAnyActiveSharedPlaybackPane()
         {
             var mainWindowSource = ReadRepositoryFile(
                 "src",
@@ -8468,8 +8597,7 @@ namespace FramePlayer.Avalonia.Tests
             Assert.Contains("ShouldShowMainPauseAction()", visualMethod, StringComparison.Ordinal);
             Assert.Contains("return IsMasterTransportDisplayPlaying();", visualRuleMethod, StringComparison.Ordinal);
             Assert.Contains("Volatile.Read(ref _isAllPanePlaybackControlActive)", displayRuleMethod, StringComparison.Ordinal);
-            Assert.Contains("var masterEngine = TryGetExistingEngine(GetMasterTransportPane());", displayRuleMethod, StringComparison.Ordinal);
-            Assert.Contains("return masterEngine != null && masterEngine.IsPlaying;", displayRuleMethod, StringComparison.Ordinal);
+            Assert.Contains("return IsAnyAllPanePlaybackPlaying(_primaryEngine, _compareEngine);", displayRuleMethod, StringComparison.Ordinal);
             Assert.Contains("if (ShouldPauseAllPanePlayback())", toggleAllPaneMethod, StringComparison.Ordinal);
         }
 
