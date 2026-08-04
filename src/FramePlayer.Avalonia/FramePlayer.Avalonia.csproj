@@ -46,6 +46,14 @@
           Condition="Exists('..\..\Runtime\rust\osx-arm64\libframeplayer_ffmpeg_probe.dylib')" />
   </ItemGroup>
 
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == 'osx-x64'">
+    <None Include="..\..\Runtime\rust\osx-x64\libframeplayer_ffmpeg_probe.dylib"
+          Link="libframeplayer_ffmpeg_probe.dylib"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest"
+          Condition="Exists('..\..\Runtime\rust\osx-x64\libframeplayer_ffmpeg_probe.dylib')" />
+  </ItemGroup>
+
   <ItemGroup Condition="'$(RuntimeIdentifier)' == 'win-x64'">
     <None Include="..\..\Runtime\rust\win-x64\frameplayer_ffmpeg_probe.dll"
           Link="frameplayer_ffmpeg_probe.dll"

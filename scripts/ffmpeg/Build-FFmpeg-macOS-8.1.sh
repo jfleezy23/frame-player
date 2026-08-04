@@ -6,16 +6,36 @@ FFMPEG_TAG="n8.1.2"
 FFMPEG_COMMIT="38b88335f99e76ed89ff3c93f877fdefce736c13"
 X264_COMMIT="0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee"
 MACOS_DEPLOYMENT_TARGET="13.0"
+MACOS_DEPLOYMENT_TARGET="${FRAMEPLAYER_MACOS_DEPLOYMENT_TARGET:-$MACOS_DEPLOYMENT_TARGET}"
 WORK_ROOT="${WORK_ROOT:-/tmp/frameplayer-ffmpeg-macos-8.1.2-source-build}"
-RUNTIME_DIR="${RUNTIME_DIR:-$ROOT_DIR/Runtime/macos/osx-arm64/ffmpeg}"
 JOBS="${JOBS:-$(sysctl -n hw.logicalcpu)}"
 
 export MACOSX_DEPLOYMENT_TARGET="$MACOS_DEPLOYMENT_TARGET"
 
-if [[ "$(uname -s)-$(uname -m)" != "Darwin-arm64" ]]; then
-  echo "This build script currently supports only native Apple Silicon macOS hosts." >&2
+case "$(uname -s)-$(uname -m)" in
+  Darwin-arm64)
+    HOST_RUNTIME_IDENTIFIER="osx-arm64"
+    TARGET_ARCH="arm64"
+    X264_HOST="aarch64-apple-darwin"
+    ;;
+  Darwin-x86_64)
+    HOST_RUNTIME_IDENTIFIER="osx-x64"
+    TARGET_ARCH="x86_64"
+    X264_HOST="x86_64-apple-darwin"
+    ;;
+  *)
+    echo "This build script supports only native Apple Silicon or Intel macOS hosts." >&2
+    exit 2
+    ;;
+esac
+
+RUNTIME_IDENTIFIER="${RUNTIME_IDENTIFIER:-$HOST_RUNTIME_IDENTIFIER}"
+if [[ "$RUNTIME_IDENTIFIER" != "$HOST_RUNTIME_IDENTIFIER" ]]; then
+  echo "Cross-compiling the FFmpeg runtime is not supported: requested $RUNTIME_IDENTIFIER on $HOST_RUNTIME_IDENTIFIER." >&2
   exit 2
 fi
+
+RUNTIME_DIR="${RUNTIME_DIR:-$ROOT_DIR/Runtime/macos/$RUNTIME_IDENTIFIER/ffmpeg}"
 
 case "$WORK_ROOT" in
   ""|/|"$ROOT_DIR"|"$ROOT_DIR"/)
@@ -25,8 +45,17 @@ case "$WORK_ROOT" in
   *) ;;
 esac
 
-runtime_parent="$(cd "$(dirname "$RUNTIME_DIR")" && pwd)"
-if [[ "$runtime_parent" != "$ROOT_DIR/Runtime/macos/osx-arm64" && "$runtime_parent" != "$WORK_ROOT"* ]]; then
+runtime_parent_path="$(dirname "$RUNTIME_DIR")"
+case "$runtime_parent_path" in
+  "$ROOT_DIR/Runtime/macos/$RUNTIME_IDENTIFIER"|"$WORK_ROOT"/*) ;;
+  *)
+    echo "Refusing to stage FFmpeg outside the repository macOS runtime or the task work root: '$RUNTIME_DIR'." >&2
+    exit 2
+    ;;
+esac
+mkdir -p "$runtime_parent_path"
+runtime_parent="$(cd "$runtime_parent_path" && pwd)"
+if [[ "$runtime_parent" != "$ROOT_DIR/Runtime/macos/$RUNTIME_IDENTIFIER" && "$runtime_parent" != "$WORK_ROOT"* ]]; then
   echo "Refusing to stage FFmpeg outside the repository macOS runtime or the task work root: '$RUNTIME_DIR'." >&2
   exit 2
 fi
@@ -39,13 +68,13 @@ for tool in clang git install_name_tool make otool shasum; do
 done
 
 FFMPEG_SOURCE_DIR="$WORK_ROOT/ffmpeg-$FFMPEG_TAG"
-FFMPEG_BUILD_DIR="$WORK_ROOT/build-osx-arm64-shared"
-FFMPEG_INSTALL_DIR="$WORK_ROOT/install-osx-arm64-shared"
+FFMPEG_BUILD_DIR="$WORK_ROOT/build-$RUNTIME_IDENTIFIER-shared"
+FFMPEG_INSTALL_DIR="$WORK_ROOT/install-$RUNTIME_IDENTIFIER-shared"
 X264_SOURCE_DIR="$WORK_ROOT/x264-$X264_COMMIT"
-X264_BUILD_DIR="$WORK_ROOT/build-x264-osx-arm64"
-X264_INSTALL_DIR="$WORK_ROOT/install-x264-osx-arm64"
+X264_BUILD_DIR="$WORK_ROOT/build-x264-$RUNTIME_IDENTIFIER"
+X264_INSTALL_DIR="$WORK_ROOT/install-x264-$RUNTIME_IDENTIFIER"
 PKG_CONFIG_WRAPPER="$WORK_ROOT/pkg-config-x264"
-STAGING_DIR="$WORK_ROOT/runtime-osx-arm64-$FFMPEG_TAG"
+STAGING_DIR="$WORK_ROOT/runtime-$RUNTIME_IDENTIFIER-$FFMPEG_TAG"
 
 mkdir -p "$WORK_ROOT"
 
@@ -74,7 +103,7 @@ mkdir -p "$X264_BUILD_DIR" "$X264_INSTALL_DIR"
   cd "$X264_BUILD_DIR"
   "$X264_SOURCE_DIR/configure" \
     --prefix="$X264_INSTALL_DIR" \
-    --host=aarch64-apple-darwin \
+    --host="$X264_HOST" \
     --enable-static \
     --enable-pic \
     --disable-cli
@@ -104,7 +133,7 @@ configure_flags=(
   --prefix="$FFMPEG_INSTALL_DIR"
   --cc=clang
   --pkg-config="$PKG_CONFIG_WRAPPER"
-  --arch=arm64
+  --arch="$TARGET_ARCH"
   --target-os=darwin
   --install-name-dir=@loader_path
   --enable-shared
@@ -168,7 +197,7 @@ make_version="$(make --version | head -1)"
   echo "FFmpeg tag: $FFMPEG_TAG"
   echo "FFmpeg commit: $actual_ffmpeg_commit"
   echo "x264 commit: $X264_COMMIT"
-  echo "Toolchain: macOS clang arm64"
+  echo "Toolchain: macOS clang $TARGET_ARCH"
   echo "Deployment target: $MACOS_DEPLOYMENT_TARGET"
   echo "Clang: $clang_version"
   echo "Make: $make_version"

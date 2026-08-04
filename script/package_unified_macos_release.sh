@@ -7,10 +7,35 @@ SIGN_MODE="${SIGN_MODE:-auto}"
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-}"
 DIST_DIR="$ROOT_DIR/dist"
 APP_BUNDLE="$DIST_DIR/Frame Player.app"
-ARTIFACT_DIR="$ROOT_DIR/artifacts/$ARTIFACT_VERSION"
-ZIP_PATH="$ARTIFACT_DIR/FramePlayer-macOS-arm64-$ARTIFACT_VERSION.zip"
 
-mkdir -p "$ARTIFACT_DIR"
+case "$(uname -s)-$(uname -m)" in
+  Darwin-arm64) HOST_RUNTIME_IDENTIFIER="osx-arm64" ;;
+  Darwin-x86_64) HOST_RUNTIME_IDENTIFIER="osx-x64" ;;
+  *)
+    echo "Unsupported macOS host architecture: $(uname -s)-$(uname -m)" >&2
+    exit 2
+    ;;
+esac
+
+MAC_RUNTIME_IDENTIFIER="${MAC_RUNTIME_IDENTIFIER:-$HOST_RUNTIME_IDENTIFIER}"
+case "$MAC_RUNTIME_IDENTIFIER" in
+  osx-arm64|osx-x64) ;;
+  *)
+    echo "Unsupported macOS runtime identifier: $MAC_RUNTIME_IDENTIFIER" >&2
+    exit 2
+    ;;
+esac
+
+if [[ "$MAC_RUNTIME_IDENTIFIER" != "$HOST_RUNTIME_IDENTIFIER" ]]; then
+  echo "Cross-packaging is not supported: requested $MAC_RUNTIME_IDENTIFIER on $HOST_RUNTIME_IDENTIFIER." >&2
+  exit 2
+fi
+
+ARTIFACT_DIR="$ROOT_DIR/artifacts/$ARTIFACT_VERSION"
+ZIP_ARCH="${MAC_RUNTIME_IDENTIFIER#osx-}"
+ZIP_PATH="$ARTIFACT_DIR/FramePlayer-macOS-$ZIP_ARCH-$ARTIFACT_VERSION.zip"
+RUNTIME_SOURCE_DIR="$ROOT_DIR/Runtime/macos/$MAC_RUNTIME_IDENTIFIER/ffmpeg"
+RUNTIME_MANIFEST="$ROOT_DIR/Runtime/macos/$MAC_RUNTIME_IDENTIFIER/ffmpeg-runtime-manifest.json"
 
 usage() {
   cat >&2 <<USAGE
@@ -19,6 +44,7 @@ usage: $0 [--unsigned|--sign [identity]]
 Environment:
   PACKAGE_VERSION=<label>      Artifact version label. Default: 2.1.0-rc.17
   APP_VERSION=<version>        Bundle short version. Default: numeric segment from PACKAGE_VERSION
+  MAC_RUNTIME_IDENTIFIER=<rid> Native macOS runtime. Default: current host (osx-arm64 or osx-x64)
   SIGNING_IDENTITY=<identity>  codesign identity name/hash
 
 Signing notes:
@@ -70,6 +96,22 @@ bundle_short_version_from_artifact() {
 
 BUNDLE_SHORT_VERSION="${APP_VERSION:-$(bundle_short_version_from_artifact "$ARTIFACT_VERSION")}"
 
+mkdir -p "$ARTIFACT_DIR"
+
+[[ -f "$RUNTIME_SOURCE_DIR/SHA256SUMS.txt" ]] || {
+  echo "Missing pinned macOS FFmpeg checksum file: $RUNTIME_SOURCE_DIR/SHA256SUMS.txt" >&2
+  exit 1
+}
+[[ -f "$RUNTIME_SOURCE_DIR/build-provenance.txt" ]] || {
+  echo "Missing macOS FFmpeg build provenance: $RUNTIME_SOURCE_DIR/build-provenance.txt" >&2
+  exit 1
+}
+
+if [[ "$SIGN_MODE" != "none" && ! -f "$RUNTIME_MANIFEST" ]]; then
+  echo "Signed/public $MAC_RUNTIME_IDENTIFIER packaging requires a pinned runtime manifest: $RUNTIME_MANIFEST" >&2
+  exit 1
+fi
+
 resolve_signing_identity() {
   if [[ -n "$SIGNING_IDENTITY" ]]; then
     echo "$SIGNING_IDENTITY"
@@ -97,8 +139,6 @@ sign_app_bundle() {
   local identity="$1"
   local entitlements="$ROOT_DIR/src/FramePlayer.Avalonia/FramePlayer.Avalonia.entitlements"
   local main_executable="$APP_BUNDLE/Contents/MacOS/FramePlayer.Avalonia"
-  local runtime_dir="$APP_BUNDLE/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg"
-  local runtime_checksums="$runtime_dir/SHA256SUMS.txt"
   local timestamp_args=(--timestamp=none)
 
   if [[ "$identity" == Developer\ ID\ Application:* ]]; then
@@ -113,7 +153,24 @@ sign_app_bundle() {
     codesign --force "${timestamp_args[@]}" --options runtime --sign "$identity" "$item"
   done < <(find "$APP_BUNDLE/Contents/MacOS" -type f | sort -r)
 
+  refresh_runtime_checksums "$APP_BUNDLE/Contents/MacOS/Runtime/macos/$MAC_RUNTIME_IDENTIFIER/ffmpeg" "$identity" "${timestamp_args[@]}"
+  codesign --force "${timestamp_args[@]}" --options runtime --entitlements "$entitlements" --sign "$identity" "$APP_BUNDLE"
+  codesign --verify --deep --verbose=2 "$APP_BUNDLE"
+}
+
+refresh_runtime_checksums() {
+  local runtime_dir="$1"
+  local identity="$2"
+  shift 2
+  local timestamp_args=("$@")
+  local runtime_checksums="$runtime_dir/SHA256SUMS.txt"
   local signed_checksums=""
+
+  [[ -f "$runtime_checksums" ]] || {
+    echo "Missing macOS runtime checksum file: $runtime_checksums" >&2
+    return 1
+  }
+
   while read -r expected_hash file_name || [[ -n "${expected_hash:-}" || -n "${file_name:-}" ]]; do
     expected_hash="${expected_hash%$'\r'}"
     if [[ -z "${expected_hash:-}" || "$expected_hash" == \#* ]]; then
@@ -144,12 +201,10 @@ sign_app_bundle() {
   printf '%s' "$signed_checksums" > "$runtime_checksums"
   chmod 0644 "$runtime_checksums"
   codesign --force "${timestamp_args[@]}" --options runtime --sign "$identity" "$runtime_checksums"
-  codesign --force "${timestamp_args[@]}" --options runtime --entitlements "$entitlements" --sign "$identity" "$APP_BUNDLE"
-  codesign --verify --deep --verbose=2 "$APP_BUNDLE"
 }
 
 validate_macos_runtime_checksums() {
-  local runtime_dir="$APP_BUNDLE/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg"
+  local runtime_dir="$APP_BUNDLE/Contents/MacOS/Runtime/macos/$MAC_RUNTIME_IDENTIFIER/ffmpeg"
   (
     cd "$runtime_dir"
     shasum -a 256 -c SHA256SUMS.txt
@@ -159,7 +214,7 @@ validate_macos_runtime_checksums() {
 rm -f "$ZIP_PATH" "$ZIP_PATH.sha256"
 
 env -u VERSION \
-  "$ROOT_DIR/scripts/Build-RustFfmpegProbe.sh" osx-arm64
+  "$ROOT_DIR/scripts/Build-RustFfmpegProbe.sh" "$MAC_RUNTIME_IDENTIFIER"
 
 env -u VERSION \
   CONFIGURATION=Release \
@@ -167,6 +222,7 @@ env -u VERSION \
   APP_VERSION="$BUNDLE_SHORT_VERSION" \
   APP_INFORMATIONAL_VERSION="$ARTIFACT_VERSION" \
   BUNDLE_ID=com.frameplayer \
+  APP_RUNTIME_IDENTIFIER="$MAC_RUNTIME_IDENTIFIER" \
   PROJECT="$ROOT_DIR/src/FramePlayer.Avalonia/FramePlayer.Avalonia.csproj" \
   APP_ICON_SOURCE="$ROOT_DIR/src/FramePlayer.Avalonia/Assets/FramePlayer.icns" \
   "$ROOT_DIR/script/build_and_run.sh" --build-only
@@ -175,9 +231,13 @@ env -u VERSION \
 [[ -s "$APP_BUNDLE/Contents/Resources/FramePlayer.icns" ]]
 /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_BUNDLE/Contents/Info.plist" >/dev/null
 /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP_BUNDLE/Contents/Info.plist" >/dev/null
-[[ -f "$APP_BUNDLE/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/libavformat.62.dylib" ]]
-[[ -f "$APP_BUNDLE/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg/libavfilter.11.dylib" ]]
-[[ -f "$APP_BUNDLE/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg-runtime-manifest.json" ]]
+[[ -f "$APP_BUNDLE/Contents/MacOS/Runtime/macos/$MAC_RUNTIME_IDENTIFIER/ffmpeg/libavformat.62.dylib" ]]
+[[ -f "$APP_BUNDLE/Contents/MacOS/Runtime/macos/$MAC_RUNTIME_IDENTIFIER/ffmpeg/libavfilter.11.dylib" ]]
+[[ -f "$APP_BUNDLE/Contents/MacOS/Runtime/macos/$MAC_RUNTIME_IDENTIFIER/ffmpeg/SHA256SUMS.txt" ]]
+[[ -f "$APP_BUNDLE/Contents/MacOS/Runtime/macos/$MAC_RUNTIME_IDENTIFIER/ffmpeg/build-provenance.txt" ]]
+if [[ -f "$RUNTIME_MANIFEST" ]]; then
+  [[ -f "$APP_BUNDLE/Contents/MacOS/Runtime/macos/$MAC_RUNTIME_IDENTIFIER/ffmpeg-runtime-manifest.json" ]]
+fi
 [[ -f "$APP_BUNDLE/Contents/MacOS/libframeplayer_ffmpeg_probe.dylib" ]]
 if [[ "$SIGN_MODE" != "none" ]]; then
   resolved_identity="$(resolve_signing_identity)" || {

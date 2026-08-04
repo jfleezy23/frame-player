@@ -16,6 +16,29 @@ REQUIRED_DYLIBS=(
   "libavformat.62.dylib"
 )
 
+case "$(uname -s)-$(uname -m)" in
+  Darwin-arm64) HOST_RUNTIME_IDENTIFIER="osx-arm64" ;;
+  Darwin-x86_64) HOST_RUNTIME_IDENTIFIER="osx-x64" ;;
+  *)
+    echo "Unsupported macOS host architecture: $(uname -s)-$(uname -m)" >&2
+    exit 2
+    ;;
+esac
+
+MAC_RUNTIME_IDENTIFIER="${MAC_RUNTIME_IDENTIFIER:-$HOST_RUNTIME_IDENTIFIER}"
+case "$MAC_RUNTIME_IDENTIFIER" in
+  osx-arm64|osx-x64) ;;
+  *)
+    echo "Unsupported macOS runtime identifier: $MAC_RUNTIME_IDENTIFIER" >&2
+    exit 2
+    ;;
+esac
+
+if [[ "$MAC_RUNTIME_IDENTIFIER" != "$HOST_RUNTIME_IDENTIFIER" ]]; then
+  echo "Cross-validation is not supported: requested $MAC_RUNTIME_IDENTIFIER on $HOST_RUNTIME_IDENTIFIER." >&2
+  exit 2
+fi
+
 usage() {
   cat >&2 <<USAGE
 usage: $0 --corpus <folder-or-zip>
@@ -61,7 +84,9 @@ rm -rf "$RESULTS_DIR"
 mkdir -p "$WORK_ROOT" "$RESULTS_DIR"
 
 if [[ -d "$CORPUS_INPUT" ]]; then
-  CORPUS_DIR="$(cd "$CORPUS_INPUT" && pwd)"
+  # Resolve a locally-linked corpus before find scans it; find does not descend a
+  # symlink supplied as its starting path on macOS.
+  CORPUS_DIR="$(cd -P "$CORPUS_INPUT" && pwd)"
 else
   rm -rf "$CORPUS_DIR"
   mkdir -p "$CORPUS_DIR"
@@ -85,13 +110,14 @@ if [[ ! -s "$RESULTS_DIR/corpus-files.txt" ]]; then
 fi
 
 PACKAGE_VERSION="${PACKAGE_VERSION:-2.1.0-rc.17}" \
+MAC_RUNTIME_IDENTIFIER="$MAC_RUNTIME_IDENTIFIER" \
   "$ROOT_DIR/script/package_unified_macos_release.sh" --unsigned
 
 [[ -s "$APP_BUNDLE/Contents/Resources/FramePlayer.icns" ]]
 [[ -x "$APP_BUNDLE/Contents/MacOS/FramePlayer.Avalonia" ]]
 [[ -f "$APP_BUNDLE/Contents/MacOS/libframeplayer_ffmpeg_probe.dylib" ]]
 
-runtime_dir="$APP_BUNDLE/Contents/MacOS/Runtime/macos/osx-arm64/ffmpeg"
+runtime_dir="$APP_BUNDLE/Contents/MacOS/Runtime/macos/$MAC_RUNTIME_IDENTIFIER/ffmpeg"
 missing_dylibs=()
 for dylib in "${REQUIRED_DYLIBS[@]}"; do
   if [[ ! -f "$runtime_dir/$dylib" ]]; then
@@ -116,7 +142,7 @@ FRAMEPLAYER_AVALONIA_EXPORT_HOST_EXECUTABLE="$APP_BUNDLE/Contents/MacOS/FramePla
 FRAMEPLAYER_GPU_BACKEND=cpu \
 dotnet test "$ROOT_DIR/tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj" \
   -c Release \
-  -r osx-arm64 \
+  -r "$MAC_RUNTIME_IDENTIFIER" \
   --filter "Category=ReleaseCandidate" \
   --logger "trx;LogFileName=macos-release-candidate.trx" \
   --results-directory "$RESULTS_DIR"

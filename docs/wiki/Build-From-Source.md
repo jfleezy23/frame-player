@@ -14,14 +14,14 @@ dotnet test .\tests\FramePlayer.Avalonia.Tests\FramePlayer.Avalonia.Tests.csproj
 .\scripts\Package-UnifiedWindows.ps1 -Version <release-version>
 ```
 
-On macOS, stage the pinned macOS FFmpeg runtime under `Runtime/macos/osx-arm64/ffmpeg`, make sure `cargo` is available, then run:
+On macOS, stage the pinned macOS FFmpeg runtime under `Runtime/macos/<rid>/ffmpeg`, make sure `cargo` is available, then run the matching native commands. On an Intel Mac, use `osx-x64`:
 
 ```bash
-scripts/Build-RustFfmpegProbe.sh osx-arm64
-dotnet build src/FramePlayer.Avalonia/FramePlayer.Avalonia.csproj -c Release
+scripts/Build-RustFfmpegProbe.sh osx-x64
+dotnet build src/FramePlayer.Avalonia/FramePlayer.Avalonia.csproj -c Release -r osx-x64
 dotnet test tests/FramePlayer.Core.Tests/FramePlayer.Core.Tests.csproj -c Release
 dotnet test tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj -c Release --filter "Category!=ReleaseCandidate"
-script/validate_macos_release_candidate.sh --corpus "Video Test Files"
+MAC_RUNTIME_IDENTIFIER=osx-x64 script/validate_macos_release_candidate.sh --corpus "Video Test Files"
 ```
 
 Package a local signed release build:

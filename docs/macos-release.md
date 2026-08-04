@@ -1,15 +1,16 @@
 # macOS Release Process
 
-The macOS package is built from `src/FramePlayer.Avalonia`, the same application project used on every supported operating system. The checked-in runtime currently produces an Apple Silicon (`osx-arm64`) package.
+The macOS package is built from `src/FramePlayer.Avalonia`, the same application project used on every supported operating system. The package scripts select the native host runtime (`osx-arm64` or `osx-x64`) by default.
 
 ## Build and test
 
-Hosted CI restores that runtime from `Runtime/macos/osx-arm64/ffmpeg-runtime-manifest.json` and validates the archive, every dylib, and the provenance record before building.
+Hosted CI currently restores the Apple Silicon runtime from `Runtime/macos/osx-arm64/ffmpeg-runtime-manifest.json` and validates the archive, every dylib, and the provenance record before building. Intel packaging is local-validation-only until `Runtime/macos/osx-x64/ffmpeg-runtime-manifest.json` pins a separately published Intel runtime archive.
 
-For local validation, stage the pinned FFmpeg runtime under `Runtime/macos/osx-arm64/ffmpeg`, then run:
+For local validation, stage the pinned FFmpeg runtime under `Runtime/macos/<rid>/ffmpeg`, build the matching Rust probe, then run:
 
 ```bash
-dotnet build src/FramePlayer.Avalonia/FramePlayer.Avalonia.csproj -c Release
+scripts/Build-RustFfmpegProbe.sh osx-x64 # use osx-arm64 on Apple Silicon
+APP_RUNTIME_IDENTIFIER=osx-x64 dotnet build src/FramePlayer.Avalonia/FramePlayer.Avalonia.csproj -c Release -r osx-x64
 dotnet test tests/FramePlayer.Core.Tests/FramePlayer.Core.Tests.csproj -c Release
 dotnet test tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj -c Release --filter "Category!=ReleaseCandidate"
 ```
@@ -17,7 +18,7 @@ dotnet test tests/FramePlayer.Avalonia.Tests/FramePlayer.Avalonia.Tests.csproj -
 For release-candidate corpus validation, run:
 
 ```bash
-PACKAGE_VERSION="<release-version>" script/validate_macos_release_candidate.sh --corpus "Video Test Files"
+PACKAGE_VERSION="<release-version>" MAC_RUNTIME_IDENTIFIER=osx-x64 script/validate_macos_release_candidate.sh --corpus "Video Test Files"
 ```
 
 The validator builds the Avalonia bundle, requires the maintained corpus, verifies native runtime files, and runs the `Category=ReleaseCandidate` tests through the packaged application/export host.
@@ -29,7 +30,7 @@ The validation never substitutes downloaded sample media for the maintained rele
 For an unsigned local package:
 
 ```bash
-PACKAGE_VERSION="<release-version>" script/package_unified_macos_release.sh --unsigned
+PACKAGE_VERSION="<release-version>" MAC_RUNTIME_IDENTIFIER=osx-x64 script/package_unified_macos_release.sh --unsigned
 ```
 
 For a signed release candidate:
@@ -65,4 +66,4 @@ Preserve extended attributes and detached signatures by using `ditto -c -k --kee
 
 - Do not stage the media corpus, generated bundles, build output, generated native libraries, certificates, or signing keys.
 - Keep runtime provenance, hashes, licensing notices, and release scripts in the same change as any runtime update.
-- An Intel or universal2 package requires separately pinned and validated `osx-x64` FFmpeg and Rust artifacts before it can be shipped.
+- An Intel or universal2 package requires separately pinned and validated `osx-x64` FFmpeg and Rust artifacts before it can be shipped. The x64 signed/public gate additionally requires a checked-in, published-runtime manifest; unsigned local corpus validation does not waive that gate.

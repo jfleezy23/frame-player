@@ -1359,7 +1359,7 @@ unsafe fn write_field<T>(base: *mut c_void, offset: usize, value: T) {
 unsafe fn ffmpeg_error(av_strerror: AvStrErrorFn, error_code: c_int) -> String {
     let mut buffer = [0 as c_char; MESSAGE_CAPACITY];
     if av_strerror(error_code, buffer.as_mut_ptr(), buffer.len()) < 0 {
-        return format!("FFmpeg error {}", error_code);
+        return format!("FFmpeg error {error_code}");
     }
 
     CStr::from_ptr(buffer.as_ptr())

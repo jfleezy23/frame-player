@@ -6,7 +6,7 @@ CONFIGURATION="${CONFIGURATION:-Debug}"
 APP_NAME="${APP_NAME:-FramePlayer.Avalonia}"
 BUNDLE_NAME="${BUNDLE_NAME:-Frame Player}"
 BUNDLE_ID="${BUNDLE_ID:-com.frameplayer}"
-MIN_SYSTEM_VERSION="${MIN_SYSTEM_VERSION:-13.0}"
+MIN_SYSTEM_VERSION="${MIN_SYSTEM_VERSION:-}"
 APP_VERSION_LABEL="${APP_VERSION:-0.1.0}"
 APP_INFORMATIONAL_VERSION="${APP_INFORMATIONAL_VERSION:-$APP_VERSION_LABEL}"
 APP_ASSEMBLY_VERSION="${APP_ASSEMBLY_VERSION:-}"
@@ -24,6 +24,31 @@ INFO_PLIST="$APP_CONTENTS/Info.plist"
 APP_ICON_SOURCE="${APP_ICON_SOURCE:-$ROOT_DIR/src/FramePlayer.Avalonia/Assets/FramePlayer.icns}"
 APP_ICON_NAME="${APP_ICON_NAME:-FramePlayer}"
 MAC_RUNTIME_SOURCE="${MAC_RUNTIME_SOURCE:-$ROOT_DIR/Runtime/macos}"
+
+case "$(uname -s)-$(uname -m)" in
+  Darwin-arm64) HOST_RUNTIME_IDENTIFIER="osx-arm64" ;;
+  Darwin-x86_64) HOST_RUNTIME_IDENTIFIER="osx-x64" ;;
+  *)
+    echo "Unsupported macOS host architecture: $(uname -s)-$(uname -m)" >&2
+    exit 2
+    ;;
+esac
+
+APP_RUNTIME_IDENTIFIER="${APP_RUNTIME_IDENTIFIER:-$HOST_RUNTIME_IDENTIFIER}"
+case "$APP_RUNTIME_IDENTIFIER" in
+  osx-arm64|osx-x64) ;;
+  *)
+    echo "Unsupported macOS application runtime identifier: $APP_RUNTIME_IDENTIFIER" >&2
+    exit 2
+    ;;
+esac
+
+if [[ -z "$MIN_SYSTEM_VERSION" ]]; then
+  case "$APP_RUNTIME_IDENTIFIER" in
+    osx-arm64) MIN_SYSTEM_VERSION="13.0" ;;
+    osx-x64) MIN_SYSTEM_VERSION="12.0" ;;
+  esac
+fi
 
 bundle_short_version_from_label() {
   local label="$1"
@@ -83,18 +108,18 @@ fi
 pkill -f -x "$APP_MACOS/$APP_NAME" >/dev/null 2>&1 || true
 
 build_app() {
-  rm -rf "$PUBLISH_ROOT/osx-arm64"
-  "$DOTNET_BIN" publish "$PROJECT" -c "$CONFIGURATION" -r osx-arm64 --self-contained true \
+  rm -rf "$PUBLISH_ROOT/$APP_RUNTIME_IDENTIFIER"
+  "$DOTNET_BIN" publish "$PROJECT" -c "$CONFIGURATION" -r "$APP_RUNTIME_IDENTIFIER" --self-contained true \
     -p:PublishSingleFile=false \
     -p:Version="$APP_VERSION" \
     -p:AssemblyVersion="$APP_ASSEMBLY_VERSION" \
     -p:FileVersion="$APP_ASSEMBLY_VERSION" \
     -p:InformationalVersion="$APP_INFORMATIONAL_VERSION" \
     -p:IncludeSourceRevisionInInformationalVersion=false \
-    -o "$PUBLISH_ROOT/osx-arm64"
+    -o "$PUBLISH_ROOT/$APP_RUNTIME_IDENTIFIER"
   rm -rf "$APP_BUNDLE"
   mkdir -p "$APP_MACOS" "$APP_RESOURCES"
-  cp -R "$PUBLISH_ROOT/osx-arm64/." "$APP_MACOS/"
+  cp -R "$PUBLISH_ROOT/$APP_RUNTIME_IDENTIFIER/." "$APP_MACOS/"
   cp "$APP_ICON_SOURCE" "$APP_RESOURCES/$APP_ICON_NAME.icns"
   if [[ -d "$MAC_RUNTIME_SOURCE" ]]; then
     mkdir -p "$APP_MACOS/Runtime"

@@ -24,11 +24,19 @@
     <ProjectReference Include="..\..\src\FramePlayer.Avalonia\FramePlayer.Avalonia.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == 'osx-arm64'">
     <None Include="..\..\Runtime\rust\osx-arm64\libframeplayer_ffmpeg_probe.dylib"
           Link="libframeplayer_ffmpeg_probe.dylib"
           CopyToOutputDirectory="PreserveNewest"
-          Condition="$([MSBuild]::IsOSPlatform('OSX')) And Exists('..\..\Runtime\rust\osx-arm64\libframeplayer_ffmpeg_probe.dylib')" />
+          Condition="Exists('..\..\Runtime\rust\osx-arm64\libframeplayer_ffmpeg_probe.dylib')" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == 'osx-x64'">
+    <None Include="..\..\Runtime\rust\osx-x64\libframeplayer_ffmpeg_probe.dylib"
+          Link="libframeplayer_ffmpeg_probe.dylib"
+          CopyToOutputDirectory="PreserveNewest"
+          Condition="Exists('..\..\Runtime\rust\osx-x64\libframeplayer_ffmpeg_probe.dylib')" />
+  </ItemGroup>
+  <ItemGroup>
     <None Include="..\..\Runtime\rust\win-x64\frameplayer_ffmpeg_probe.dll"
           Link="frameplayer_ffmpeg_probe.dll"
           CopyToOutputDirectory="PreserveNewest"

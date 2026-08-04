@@ -181,7 +181,7 @@ where
         Ok(version) => Ok(version),
         Err(message) => {
             ERR.with(|slot| {
-                *slot.borrow_mut() = Some(format!("Could not resolve {}: {}", symbol, message));
+                *slot.borrow_mut() = Some(format!("Could not resolve {symbol}: {message}"));
             });
             Err(STATUS_SYMBOL_LOAD_FAILED)
         }
