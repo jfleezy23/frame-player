@@ -28,7 +28,43 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Detect docs-only change
+        id: changes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $docsOnly = $false
+          $changedFiles = @()
+          if ("${{ github.event_name }}" -eq "pull_request") {
+              $base = "${{ github.event.pull_request.base.sha }}"
+              $changedFiles = @(git diff --name-only $base HEAD)
+          } elseif ("${{ github.event_name }}" -eq "push") {
+              $base = "${{ github.event.before }}"
+              if ($base -notmatch '^0+$') {
+                  $changedFiles = @(git diff --name-only $base HEAD)
+              }
+          }
+
+          if ($changedFiles.Count -gt 0) {
+              $docsOnly = $true
+              foreach ($file in $changedFiles) {
+                  if ($file -notmatch '^(README\.md|SECURITY\.md|THIRD_PARTY_NOTICES\.md|LICENSE|.*\.md|docs/.*|\.github/ISSUE_TEMPLATE/.*)$') {
+                      $docsOnly = $false
+                      break
+                  }
+              }
+          }
+
+          $changedFiles | ForEach-Object { Write-Host "Changed: $_" }
+          "docs_only=$($docsOnly.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
+      - name: Skip docs-only change
+        if: steps.changes.outputs.docs_only == 'true'
+        shell: pwsh
+        run: Write-Host "Docs-only change detected; SonarQube analysis is intentionally short-circuited."
+
       - name: Resolve SonarQube configuration
+        if: steps.changes.outputs.docs_only != 'true'
         id: sonar_config
         shell: pwsh
         env:
@@ -56,20 +92,20 @@ jobs:
           "project_key=$projectKey" >> $env:GITHUB_OUTPUT
 
       - name: Setup Java
-        if: steps.sonar_config.outputs.enabled == 'true'
+        if: steps.changes.outputs.docs_only != 'true' && steps.sonar_config.outputs.enabled == 'true'
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Setup .NET SDK
-        if: steps.sonar_config.outputs.enabled == 'true'
+        if: steps.changes.outputs.docs_only != 'true' && steps.sonar_config.outputs.enabled == 'true'
         uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5
         with:
           global-json-file: .\global.json
 
       - name: Cache SonarQube packages
-        if: steps.sonar_config.outputs.enabled == 'true'
+        if: steps.changes.outputs.docs_only != 'true' && steps.sonar_config.outputs.enabled == 'true'
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: ~\.sonar\cache
@@ -77,7 +113,7 @@ jobs:
           restore-keys: ${{ runner.os }}-sonar
 
       - name: Cache SonarQube scanner
-        if: steps.sonar_config.outputs.enabled == 'true'
+        if: steps.changes.outputs.docs_only != 'true' && steps.sonar_config.outputs.enabled == 'true'
         id: cache-sonar-scanner
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
@@ -85,14 +121,14 @@ jobs:
           key: ${{ runner.os }}-sonar-scanner-${{ env.SONAR_SCANNER_VERSION }}
 
       - name: Install SonarQube scanner
-        if: steps.sonar_config.outputs.enabled == 'true' && steps.cache-sonar-scanner.outputs.cache-hit != 'true'
+        if: steps.changes.outputs.docs_only != 'true' && steps.sonar_config.outputs.enabled == 'true' && steps.cache-sonar-scanner.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           New-Item -Path .\.sonar\scanner -ItemType Directory -Force | Out-Null
           dotnet tool install dotnet-sonarscanner --tool-path .\.sonar\scanner --version $env:SONAR_SCANNER_VERSION
 
       - name: Cache .NET coverage tool
-        if: steps.sonar_config.outputs.enabled == 'true'
+        if: steps.changes.outputs.docs_only != 'true' && steps.sonar_config.outputs.enabled == 'true'
         id: cache-dotnet-coverage
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
@@ -100,19 +136,19 @@ jobs:
           key: ${{ runner.os }}-dotnet-coverage-${{ env.DOTNET_COVERAGE_VERSION }}
 
       - name: Install .NET coverage tool
-        if: steps.sonar_config.outputs.enabled == 'true' && steps.cache-dotnet-coverage.outputs.cache-hit != 'true'
+        if: steps.changes.outputs.docs_only != 'true' && steps.sonar_config.outputs.enabled == 'true' && steps.cache-dotnet-coverage.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           New-Item -Path .\.sonar\coverage-tool -ItemType Directory -Force | Out-Null
           dotnet tool install dotnet-coverage --tool-path .\.sonar\coverage-tool --version $env:DOTNET_COVERAGE_VERSION
 
       - name: Restore pinned FFmpeg runtime
-        if: steps.sonar_config.outputs.enabled == 'true'
+        if: steps.changes.outputs.docs_only != 'true' && steps.sonar_config.outputs.enabled == 'true'
         shell: pwsh
         run: .\scripts\Ensure-DevRuntime.ps1
 
       - name: Build and analyze
-        if: steps.sonar_config.outputs.enabled == 'true'
+        if: steps.changes.outputs.docs_only != 'true' && steps.sonar_config.outputs.enabled == 'true'
         shell: pwsh
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
