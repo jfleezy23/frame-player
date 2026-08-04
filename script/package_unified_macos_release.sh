@@ -119,14 +119,14 @@ resolve_signing_identity() {
   fi
 
   local developer_id
-  developer_id="$(security find-identity -v -p codesigning 2>/dev/null | awk -F'\"' '/Developer ID Application/ { print $2; exit }')"
+  developer_id="$(security find-identity -v -p codesigning 2>/dev/null | awk '/Developer ID Application/ { print $2; exit }')"
   if [[ -n "$developer_id" ]]; then
     echo "$developer_id"
     return 0
   fi
 
   local development_id
-  development_id="$(security find-identity -v -p codesigning 2>/dev/null | awk -F'\"' '/Apple Development/ { print $2; exit }')"
+  development_id="$(security find-identity -v -p codesigning 2>/dev/null | awk '/Apple Development/ { print $2; exit }')"
   if [[ -n "$development_id" ]]; then
     echo "$development_id"
     return 0
