@@ -141,7 +141,7 @@ sign_app_bundle() {
   local main_executable="$APP_BUNDLE/Contents/MacOS/FramePlayer.Avalonia"
   local timestamp_args=(--timestamp=none)
 
-  if [[ "$identity" == Developer\ ID\ Application:* ]]; then
+  if security find-identity -v -p codesigning 2>/dev/null | awk -v identity="$identity" '$2 == identity && /Developer ID Application/ { found = 1 } END { exit found ? 0 : 1 }'; then
     timestamp_args=(--timestamp)
   fi
 
