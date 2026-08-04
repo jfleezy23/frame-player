@@ -3628,7 +3628,7 @@ namespace FramePlayer.Avalonia.Views
                         Pane.Compare,
                         transportIntentGeneration))
                 {
-                        await compareEngine!.PauseAsync().ConfigureAwait(false);
+                    await compareEngine!.PauseAsync().ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
